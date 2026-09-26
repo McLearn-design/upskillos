@@ -1008,8 +1008,8 @@ export default function AboutPage() {
                     },
                     {
                       icon: "📚",
-                      title: "Contributor Docs",
-                      desc: "Interactive guided tutorial in the ? menu — no experience required.",
+                      title: "Contribute in Help",
+                      desc: "Step-by-step contributor guide under Contribute in the ? Help menu — no experience required.",
                     },
                   ].map((item) => (
                     <div
@@ -1160,10 +1160,10 @@ export default function AboutPage() {
                   color:
                     "border-violet-500/25 bg-violet-900/10 hover:border-violet-400/40",
                   badge: "text-violet-300",
-                  desc: "Have an idea for a new lab, tool, or game? The architecture is modular — labs, games, and tools each have their own registry and can be added without touching the core app. Check the contributor docs in the ? menu.",
+                  desc: "Have an idea for a new lab, tool, or game? The architecture is modular — labs, games, and tools each have their own registry and can be added without touching the core app. Check Contribute in the ? Help menu.",
                   action: {
                     label: "→ Contributor Docs",
-                    href: "https://github.com/g4m3rm1k3/upskillos",
+                    href: "https://github.com/g4m3rm1k3/upskillos/blob/main/CONTRIBUTING.md",
                   },
                 },
                 {

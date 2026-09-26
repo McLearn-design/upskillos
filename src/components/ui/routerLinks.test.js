@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 // Help, navigation and About content must use <Link to> or navigate() instead.
 const src = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const jsx = dir => readdirSync(join(src, dir)).filter(f => f.endsWith('.jsx')).map(f => `${dir}/${f}`)
-const FILES = [...jsx('components/ui'), ...jsx('components/layout'), 'pages/AboutPage.jsx']
+const FILES = [...jsx('components/ui'), ...jsx('components/layout'), ...jsx('components/help'), ...jsx('components/help/sections'), 'pages/AboutPage.jsx']
 const PLAIN_INTERNAL_HREF = /href=\{?\s*["'`]\/(?!\/)[^"'`]*["'`]/g
 
 describe('in-app links in help, navigation and About', () => {

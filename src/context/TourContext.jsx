@@ -47,15 +47,14 @@ function buildSteps(isMobile) {
   )
 
   steps.push(
-    // Same target on mobile and desktop now — the Help ("?") button is
-    // visible at every breakpoint and Feedback & Bugs is its default
-    // section, so there's one real door to report a bug or leave an idea,
-    // not a different one per device size.
+    // Same target on mobile and desktop — the Help ("?") button is visible at
+    // every breakpoint, so there's one door for reporting, contributing and
+    // help, not a different one per device size.
     {
       id: 'report-bug',
       target: '[data-tour="report-bug"]',
       title: 'See something broken?',
-      body: "Click here — Feedback & Bugs is the first thing you'll see. Report a bug, leave a suggestion, or browse what's already been reported.",
+      body: "Click here for Help: report a bug or leave a suggestion, learn how to contribute, or fix common problems.",
     },
   )
 

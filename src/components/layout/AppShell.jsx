@@ -218,7 +218,7 @@ function TopBar() {
         <div data-tour="report-bug">
           <CubeIconButton
             glyph="?"
-            title="Contributor Docs"
+            title="Help"
             colorClass="text-brand-500 hover:text-brand-600 dark:text-brand-400 dark:hover:text-brand-300 text-[15px] font-black star-glow-effect"
             onClick={() => window.dispatchEvent(new CustomEvent('oc-toggle-help'))}
           />

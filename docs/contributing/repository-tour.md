@@ -34,7 +34,7 @@ A lesson file exports one object: title, prose, checks, notebooks and so on. [do
 
 | Folder | What's in it |
 |---|---|
-| `src/components/` | Shared React components. `layout/` is the app shell; `lesson/` renders lessons; `notebooks/` holds the in-browser Python notebook; `viz/` holds visualizations; `ui/` holds general UI, including the Help modal |
+| `src/components/` | Shared React components. `layout/` is the app shell; `lesson/` renders lessons; `notebooks/` holds the in-browser Python notebook; `viz/` holds visualizations; `ui/` holds general UI; `help/` holds the Help modal's sections (the modal shell is `ui/HelpModal.jsx`) |
 | `src/pages/` | One component per top-level page |
 | `src/engines/`, `src/engine/` | Non-UI logic, such as the CNC simulator engine and the lesson engine |
 | `src/features/` | Larger self-contained features: brain, calendar, compass, rpg |
