@@ -462,7 +462,7 @@ export default {
   spiral: {
     recoveryPoints: [
       {
-        lessonId: 'ch0-lines',
+        lessonId: 'lines-mastery',
         label: 'Last lesson: Lines and Slope (Ch. 0)',
         note: 'You computed slope as \u0394y / \u0394x — rise over run between two points. That ratio IS the difference quotient. The limit is what happens when you let the \u0394x shrink toward zero instead of leaving it fixed. Same formula. One more step.'
       },

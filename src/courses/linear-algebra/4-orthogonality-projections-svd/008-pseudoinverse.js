@@ -651,7 +651,7 @@ print(f"\\nAlternative solution ||q_other||: {np.linalg.norm(q_other):.4f} (larg
   spiral: {
     recoveryPoints: [
       {
-        lessonId: 'la4-002-svd',
+        lessonId: 'la4-004',
         label: 'SVD',
         note: 'The pseudoinverse is built directly from the SVD: A⁺ = VΣ⁺Uᵀ. Every pseudoinverse computation begins with the SVD.',
       },

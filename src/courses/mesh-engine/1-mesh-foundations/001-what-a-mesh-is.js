@@ -506,7 +506,7 @@ export default {
   coreConcept:
     'A mesh is two arrays — the distinct corner positions, and per triangle the three indices of its corners. The indirection is what lets two triangles be known to meet, and every later operation depends on it. An STL omits it and stores three private corners per triangle instead.',
   prerequisites: [],
-  nextLesson: 'vectors-and-triangles',
+  nextLesson: 'mesh-engine-1-2-vectors-and-triangles',
 
   semantics: {
     core: [

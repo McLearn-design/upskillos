@@ -405,7 +405,7 @@ export default {
   spiral: {
     recoveryPoints: [
       {
-        lessonId: 'ch1-intro-limits',
+        lessonId: 'ch1-limits-intro',
         label: 'Introduction to Limits (Ch. 1)',
         note: 'Limits at infinity follow the exact same logic as finite limits — the function is approaching a value — but the "approach" happens along the x-axis toward ±∞ rather than toward a finite point. If the basic limit definition still feels shaky, review it before this lesson.',
       },

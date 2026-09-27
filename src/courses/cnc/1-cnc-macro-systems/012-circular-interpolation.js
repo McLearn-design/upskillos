@@ -15,7 +15,7 @@ export default {
   aliases: 'G02 G03 circular interpolation arc clockwise counterclockwise IJK I J K radius R-word G17 G18 G19 plane helical arc full circle',
   timeToComplete: 25,
   coreConcept: 'G02 (CW) and G03 (CCW) move the tool along a circular arc; the center is defined by incremental I/J/K vectors from the start point, or by an R-word for simple arcs. Start and end must be equidistant from the center or the controller alarms.',
-  prerequisites: ['cnc-linear-interpolation'],
+  prerequisites: ['cnc-linear-motion'],
   nextLesson: 'plane-selection',
 
   semantics: {

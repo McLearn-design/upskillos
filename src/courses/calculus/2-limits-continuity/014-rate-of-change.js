@@ -364,24 +364,24 @@ export default {
   spiral: {
     recoveryPoints: [
       {
-        lessonId: 'ch0-lines',
+        lessonId: 'lines-mastery',
         label: 'Lines and Slope (Ch. 0)',
         note: 'The difference quotient is the slope formula $\\Delta y / \\Delta x$ with $\\Delta x = h$. If slope of a line feels shaky, review it before this lesson — the difference quotient is that exact calculation applied to a curve.',
       },
       {
-        lessonId: 'ch1-intro-limits',
+        lessonId: 'ch1-limits-intro',
         label: 'Introduction to Limits (Ch. 1)',
         note: 'The derivative is defined as a limit of the difference quotient. If limits feel uncertain, the definition of the derivative will be hard to interpret. Review the limit intro before studying what h→0 means here.',
       },
     ],
     futureLinks: [
       {
-        lessonId: 'ch2-tangent-problem',
+        lessonId: 'ch2-000',
         label: 'Ch. 2: The Tangent Problem',
         note: 'Chapter 2 opens by computing the difference quotient for specific functions and taking h→0. This lesson is the direct prerequisite — everything there starts from this formula.',
       },
       {
-        lessonId: 'ch2-differentiation-rules',
+        lessonId: 'ch2-001',
         label: 'Ch. 2: Differentiation Rules',
         note: 'Every differentiation rule (power, product, quotient, chain) is derived by applying the difference quotient to a family of functions. The rules are shortcuts — but they are shortcuts for this formula.',
       },

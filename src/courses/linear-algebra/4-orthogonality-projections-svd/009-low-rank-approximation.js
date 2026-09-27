@@ -662,7 +662,7 @@ for k in [1, 2, 3]:
   spiral: {
     recoveryPoints: [
       {
-        lessonId: 'la4-002-svd',
+        lessonId: 'la4-004',
         label: 'SVD',
         note: 'Low-rank approximation IS the truncated SVD. Every algorithm in this lesson begins with $A = U\\Sigma V^\\top$ — the full SVD — then discards the small singular values.',
       },

@@ -774,7 +774,7 @@ fprintf('Reconstructed pos: [%.2f; %.2f; %.2f]  (= next)\\n', check(1), check(2)
   // ── Spiral Learning ────────────────────────────────────────────────────────
   spiral: {
     recoveryPoints: [
-      { lessonId: 'algebra-pythagoras', label: 'The Pythagorean Theorem', note: 'Vector magnitude is just the Pythagorean theorem applied to the components. The hypotenuse of the triangle IS the length of the vector.' },
+      { lessonId: 'geometry-visual-proofs', label: 'The Pythagorean Theorem', note: 'Vector magnitude is just the Pythagorean theorem applied to the components. The hypotenuse of the triangle IS the length of the vector.' },
     ],
     futureLinks: [
       { lessonId: 'la1-003', label: 'Dot Products', note: 'Unit vectors and magnitudes learned here fuel the calculation of angles using the Dot Product.' },

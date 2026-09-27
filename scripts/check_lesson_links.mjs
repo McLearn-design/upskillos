@@ -4,8 +4,8 @@
 // WHAT IT CHECKS
 //   spiral.recoveryPoints[].lessonId   "go back and read this first"
 //   spiral.futureLinks[].lessonId      "this feeds into that"
-//   prerequisites[]                    by slug
-//   nextLesson                         by slug
+//   prerequisites[]                    by id (see Standards.jsx)
+//   nextLesson                         by id
 //
 // A dead prerequisite link is worse than none: it tells a reader there is
 // something to go and read, and then there is not.
@@ -14,8 +14,8 @@
 //   Roughly 200 lessons import Vite-only specifiers — `./diagram.svg?url` and
 //   the like — which Node cannot resolve. An import-based scan silently skips
 //   every one of those and then reports their ids as missing. That produced a
-//   confident false "6 dead links" against the linear-algebra course, whose
-//   ids were all fine. So ids are read out of the source text.
+//   confident false "194 dead links" against courses whose
+//   references were all fine. So ids are read out of the source text.
 //
 // Usage:
 //   node scripts/check_lesson_links.mjs                     every lesson
@@ -97,12 +97,14 @@ if (courseFilter) {
 
 let dead = 0
 let pending = 0
+let slugStyle = 0
 let checked = 0
 
 for (const file of files) {
   const label = relative(root, file)
   const source = readFileSync(file, 'utf8')
   const problems = []
+  let deadHere = 0
 
   for (const ref of references(source)) {
     checked++
@@ -111,39 +113,67 @@ for (const file of files) {
       pending++
       problems.push(`    PENDING  ${ref.id}  (forward link, not written yet)`)
     } else {
-      dead++
+      dead++; deadHere++
       problems.push(`    DEAD     ${ref.id}  (${ref.kind})`)
     }
   }
 
-  // prerequisites and nextLesson are slugs, not ids.
-  const prereqBlock = /prerequisites:\s*\[([^\]]*)\]/s.exec(source)?.[1] ?? ''
+  // prerequisites and nextLesson hold lesson IDS. That is the repo's own
+  // documented standard - src/components/help/sections/Standards.jsx:
+  // "prerequisites[] lists actual lesson ids, not topic names" - and it is
+  // what the great majority of courses do.
+  //
+  // A handful (the cnc course among them) use slugs instead. Those are
+  // accepted but reported, because a mixed convention is how this gets
+  // miscounted: validating ids against the slug table produced a confident
+  // false "194 dead links" the first time this script ran.
+  // TOP-LEVEL prerequisites only - two-space indent. There is also a
+  // mastery.prerequisites at four spaces, which sits beside mastery.unlocks
+  // and mastery.checkpoints and is PROSE by design:
+  //
+  //   mastery: {
+  //     prerequisites: ['Vector components and magnitude', 'Trigonometry: ...'],
+  //
+  // Matching `prerequisites:` at any depth reports all twelve of those in the
+  // physics vectors chapter as dead links. They are not links.
+  const prereqBlock = /^ {2}prerequisites:\s*\[([^\]]*)\]/ms.exec(source)?.[1] ?? ''
   for (const match of prereqBlock.matchAll(/'([^']+)'/g)) {
     checked++
-    if (!known.slugs.has(match[1])) {
-      dead++
-      problems.push(`    DEAD     ${match[1]}  (prerequisite slug)`)
+    const value = match[1]
+    if (known.ids.has(value)) continue
+    if (known.slugs.has(value)) {
+      slugStyle++
+      problems.push(`    SLUG     ${value}  (prerequisite: a real slug, but the standard is an id)`)
+    } else {
+      dead++; deadHere++
+      problems.push(`    DEAD     ${value}  (prerequisite, matches no id or slug)`)
     }
   }
 
   const next = /^\s{2}nextLesson:\s*'([^']+)'/m.exec(source)?.[1]
   if (next) {
     checked++
-    if (!known.slugs.has(next)) {
-      pending++
-      problems.push(`    PENDING  ${next}  (nextLesson slug, not written yet)`)
+    if (!known.ids.has(next)) {
+      if (known.slugs.has(next)) {
+        slugStyle++
+        problems.push(`    SLUG     ${next}  (nextLesson: a real slug, but the standard is an id)`)
+      } else {
+        pending++
+        problems.push(`    PENDING  ${next}  (nextLesson, not written yet)`)
+      }
     }
   }
 
   if (problems.length) {
-    console.log(`${dead ? '✗' : '~'} ${label}`)
+    console.log(`${deadHere ? '✗' : '~'} ${label}`)
     problems.forEach((p) => console.log(p))
   }
 }
 
 console.log(
   `\n${files.length} lesson file(s), ${checked} link(s) checked. `
-  + `${dead} dead, ${pending} pending.`,
+  + `${dead} dead, ${pending} pending, ${slugStyle} using a slug where the `
+  + `standard is an id.`,
 )
 console.log(`${known.ids.size} lesson ids and ${known.slugs.size} slugs known.`)
 

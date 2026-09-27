@@ -482,8 +482,8 @@ export default {
   timeToComplete: 50,
   coreConcept:
     'Two edge vectors from one corner give the cross product, whose direction is which way the triangle faces and whose length is twice the triangle area. Because both come from one operation, area weighting is free — and leaving the cross product un-normalised is what makes a large face count for more than a sliver.',
-  prerequisites: ['what-a-mesh-is'],
-  nextLesson: 'topology-and-welding',
+  prerequisites: ['mesh-engine-1-1-what-a-mesh-is'],
+  nextLesson: 'mesh-engine-1-3-topology-and-welding',
 
   semantics: {
     core: [

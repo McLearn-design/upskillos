@@ -431,7 +431,7 @@ export default {
   spiral: {
     recoveryPoints: [
       {
-        lessonId: 'ch1-intro-limits',
+        lessonId: 'ch1-limits-intro',
         label: 'Introduction to Limits (Ch. 1)',
         note: 'If the core idea of a limit still feels unclear — what it means to "approach" a value — return to the intro lesson before working through this review. Everything here assumes that foundation.',
       },
@@ -443,7 +443,7 @@ export default {
     ],
     futureLinks: [
       {
-        lessonId: 'ch2-tangent-problem',
+        lessonId: 'ch2-000',
         label: 'Ch. 2: The Tangent Problem',
         note: 'The derivative is defined as a limit: lim(h→0) [f(x+h)−f(x)]/h. Every limit technique from Chapter 1 is used in evaluating this expression. The transition from Chapter 1 to Chapter 2 is just applying limit tools to a specific new function.',
       },

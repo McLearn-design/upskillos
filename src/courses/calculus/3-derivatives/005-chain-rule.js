@@ -1020,12 +1020,12 @@ export default {
   spiral: {
     recoveryPoints: [
       {
-        lessonId: 'ch0-composition',
+        lessonId: 'ch0-functions',
         label: 'Composition of functions (Chapter 0)',
         note: 'The chain rule differentiates f(g(x)). If writing f(g(x)) and identifying the outer and inner functions still feels awkward, review function composition before this lesson — the chain rule is built entirely on that idea.'
       },
       {
-        lessonId: 'ch2-differentiation-rules',
+        lessonId: 'ch2-001',
         label: 'Differentiation rules (previous lesson)',
         note: 'The chain rule multiplies the derivative of the outer function by the derivative of the inner. Every outer and inner derivative you compute uses the power, product, or quotient rules from the last lesson. The power, product and quotient rules handle non-composed functions; the chain rule is the single missing piece that handles everything else.'
       }

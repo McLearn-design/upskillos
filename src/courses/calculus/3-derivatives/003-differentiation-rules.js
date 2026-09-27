@@ -895,12 +895,12 @@ export default {
   spiral: {
     recoveryPoints: [
       {
-        lessonId: 'ch2-tangent-problem',
+        lessonId: 'ch2-000',
         label: 'Limit definition of the derivative (previous lesson)',
         note: 'Every rule in this lesson is a theorem proved from the limit definition. The power rule d/dx[x\u207f]=nx\u207f\u207b\u00b9 was previewed by computing x\u207f derivatives from the definition. This lesson gives you the shortcuts so you never have to grind through limits again, but knowing they come from limits tells you when they apply and why.'
       },
       {
-        lessonId: 'ch0-algebra',
+        lessonId: 'algebra-tricky-parts',
         label: 'Algebra of polynomials (Chapter 0)',
         note: 'Applying the power and sum rules to polynomials is purely mechanical algebra — expanding, collecting like terms, and reading off coefficients. If polynomial arithmetic feels slow, a few minutes of review now will pay off across every problem in this lesson.'
       }
