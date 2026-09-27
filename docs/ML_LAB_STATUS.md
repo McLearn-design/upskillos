@@ -1,6 +1,6 @@
 # ML Lab — implementation status against the beginner-to-mastery assessment
 
-Updated 2026-09-25 (later the same day: Labs 09–19 notebooks done). Read this first when resuming work. The target is the assessment dated 2026-09-24
+Updated 2026-09-27. Read this first when resuming implementation work. The current product audit and prioritized next steps are in [ML_LAB_AUDIT_2026-09-27.md](ML_LAB_AUDIT_2026-09-27.md). The target is the assessment dated 2026-09-24
 (“ML beginner-to-mastery assessment and implementation handoff”). This file records what is
 done, how it was verified, and what is open. It does not claim that learners have mastered anything.
 
@@ -9,7 +9,7 @@ done, how it was verified, and what is open. It does not claim that learners hav
 **Lessons shown in order.** `LessonFlow.jsx` renders each lesson as paragraph →
 interactive figure / runnable cell / prediction, with the whole notebook still available at the end.
 Labs 01–19 and all of Lab 37 have ordered blocks (in `blocks.js`, or `lessons.js` for Labs 03 and 37) and figures in `figures.jsx`. Every figure's stated numbers were checked against the lab engine before writing the text (for example Lab 19's baseline crossover at h = 5, and SARSA's safer route in 37.4). Lessons
-without blocks render as before. Labs 09–19 have figures and predictions but **no notebooks yet**.
+without blocks render as before. Every lab now has ordered blocks, figures, predictions, runnable notebooks, formulas, math-to-code tables, and a practice sequence.
 
 **Lab 03 prediction practice sequence (“ladder” in the code).** At the end of Lesson 03.2. Steps: trace, loop vs `@`
 (requires the prescribed `w` edit), fill in, repair plus explanation, implement from a contract, fresh
@@ -604,4 +604,4 @@ colors on a light page. That was a preview-only problem, not an app bug.
 
 (The assessment calls items 1–2 “Slice A”, 5 “Slice B”, 6 “Slice C” and 7 “Slices D–F”.)
 
-No beginner review has been done. Nothing here is beginner-reviewed.
+An engineering and browser UX audit was completed on 2026-09-27. No observed usability study with first-time learners has been completed; see the audit for the proposed protocol.

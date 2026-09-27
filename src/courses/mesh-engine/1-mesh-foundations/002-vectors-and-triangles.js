@@ -111,9 +111,10 @@ turning up: a vector of length 0 has no direction to extract.`,
     },
 
     {
-      type: 'definition',
-      title: 'Where the linear algebra comes in — and what to read',
-      body: `Nothing in this lesson needs a linear algebra course first. But three ideas here are the concrete, three-dimensional case of something more general, and the general version is worth having later.
+      type: 'markdown',
+      instruction: `### Where the linear algebra comes in — and what to read
+
+Nothing in this lesson needs a linear algebra course first. But three ideas here are the concrete, three-dimensional case of something more general, and the general version is worth having later.
 
 **la1-001 — What is a Vector?**
 The point-versus-vector distinction above, done properly. Read it if "a place and a move are different things" felt like an assertion rather than a reason.

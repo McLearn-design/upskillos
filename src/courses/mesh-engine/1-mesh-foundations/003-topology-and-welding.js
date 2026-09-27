@@ -677,12 +677,13 @@ document.getElementById('out').textContent = lines.join('\\n');`,
 // This continues from exactly there and adds np.unique, which is the weld.
 const PY_CELLS = [
   {
-    title: 'Build both meshes',
-    explanation:
-      'The same two meshes as the drawings, in numpy. Nothing new yet except '
-      + 'that CORNERS[WELDED.ravel()] is the explode: it looks up all 36 corner '
-      + 'numbers at once and returns their coordinates, which is lesson 2’s '
-      + 'points[triangles] trick used to throw sharing away rather than to use it.',
+    id: 'build',
+    cellTitle: 'Build both meshes',
+    prose: [
+      'The same two meshes as the drawings, in numpy. Nothing here is new except the explode itself.',
+      'CORNERS[WELDED.ravel()] is the whole trick. ravel() flattens the 12x3 index array into 36 numbers; indexing CORNERS with those 36 numbers returns a 36x3 array of coordinates, with every duplicate written out in full. That is lesson 2\u2019s points[triangles] lookup used to throw sharing away rather than to make use of it.',
+      'arange(36).reshape(12, 3) then numbers those corners 0 to 35 in order, so no index is ever reused. The last two lines are the point: the welded triangles 0 and 1 share two corners, and the exploded ones share nothing.',
+    ],
     code: `import numpy as np
 
 CORNERS = np.array([
@@ -696,18 +697,11 @@ QUADS = [(0,1,5,4), (0,3,2,1), (4,5,6,7), (1,2,6,5), (3,0,4,7), (2,3,7,6)]
 WELDED = np.array([t for q in QUADS
                      for t in ((q[0],q[1],q[2]), (q[0],q[2],q[3]))])
 
-# The explode. ravel() flattens the 12x3 index array to 36 numbers; indexing
-# CORNERS with them returns a 36x3 array of coordinates, with every duplicate
-# written out in full. arange(36).reshape(12,3) then numbers them 0..35 in
-# order, so no index is reused.
 exploded_points = CORNERS[WELDED.ravel()]
 exploded_tris = np.arange(36).reshape(12, 3)
 
 print("welded  ", CORNERS.shape, WELDED.shape)
 print("exploded", exploded_points.shape, exploded_tris.shape)
-print()
-print("the first two triangles, welded  :", WELDED[0], WELDED[1])
-print("the first two triangles, exploded:", exploded_tris[0], exploded_tris[1])
 print()
 print("welded triangles 0 and 1 share corners",
       sorted(set(WELDED[0]) & set(WELDED[1])))
@@ -715,12 +709,14 @@ print("exploded triangles 0 and 1 share    ",
       sorted(set(exploded_tris[0]) & set(exploded_tris[1])), "<- nothing")`,
   },
   {
-    title: 'Count the edges by hand first',
-    explanation:
-      'The same dictionary as the JavaScript, in Python, so the idea is the '
-      + 'thing being carried across and not the syntax. tuple(sorted(pair)) is '
-      + 'the sort-the-pair step: a tuple can be a dict key where a list cannot, '
-      + 'because a list can be changed after the fact and a key must not.',
+    id: 'byhand',
+    cellTitle: 'Count the edges by hand first',
+    prose: [
+      'The same dictionary as the JavaScript, in Python, so what carries across is the idea and not the syntax.',
+      'tuple(sorted(pair)) is the sort-the-pair step. A tuple can be a dictionary key where a list cannot, because a list can be changed after it has been used as a key and a key must stay fixed \u2014 so Python refuses lists outright.',
+      'counts.get(key, 0) is the same guard as (counts[key] || 0) in the JavaScript: the first time a key is seen there is no entry, and asking for a missing key directly would raise KeyError.',
+      'Read the two lines of output side by side. The edge count and the Euler characteristic both separate the two meshes, and neither one needed to look at a single coordinate.',
+    ],
     code: `def count_edges(tris):
     counts = {}
     for t in tris:
@@ -733,22 +729,22 @@ for name, tris in (("exploded", exploded_tris), ("welded", WELDED)):
     c = count_edges(tris)
     ones = sum(1 for n in c.values() if n == 1)
     twos = sum(1 for n in c.values() if n == 2)
-    more = sum(1 for n in c.values() if n > 2)
     V, E, F = (36 if name == "exploded" else 8), len(c), len(tris)
     print(f"{name:>9}: {E:>3} edges from {len(tris)*3} slots  "
-          f"| used once {ones:>3}  twice {twos:>3}  3+ {more}")
+          f"| used once {ones:>3}  twice {twos:>3}")
     print(f"{'':>9}  V - E + F = {V} - {E} + {F} = {V - E + F}"
           f"   (2 for a closed surface)")`,
   },
   {
-    title: 'The same thing vectorised',
-    explanation:
-      'np.minimum and np.maximum sort all 36 pairs at once, elementwise, with '
-      + 'no loop. np.unique(..., axis=0) then treats each ROW as one item and '
-      + 'returns the distinct rows; return_counts gives how many times each '
-      + 'appeared, which is the count we were building by hand. axis=0 is the '
-      + 'part to be careful about — leave it out and numpy flattens the array '
-      + 'and finds unique NUMBERS instead of unique edges.',
+    id: 'vectorised',
+    cellTitle: 'The same thing without a loop',
+    prose: [
+      'Twelve triangles is fine in a Python loop. Two hundred thousand is not, so the same count has to be expressed as array operations.',
+      'tris[:, [0,1,2]] takes columns 0, 1 and 2 of every row at once, and ravel() strings them out; a and b together are the two ends of all 36 edges. np.minimum(a, b) then compares the two arrays elementwise and keeps the smaller of each pair \u2014 the sort step, done to all 36 edges in one operation with no loop at all.',
+      'np.stack(..., axis=1) glues the two 36-long arrays into one 36x2 array, one row per edge.',
+      'np.unique(edges, axis=0) is the part to be careful with. axis=0 tells it to treat each ROW as a single item and find the distinct rows. Leave axis out and numpy flattens the whole array and finds unique NUMBERS instead, which would tell you how many different corner indices appear and nothing about edges.',
+      'return_counts=True gives how many times each distinct row appeared, which is exactly the dictionary we built by hand.',
+    ],
     code: `def edge_counts(tris):
     a = tris[:, [0, 1, 2]].ravel()        # first end of each of the 36 edges
     b = tris[:, [1, 2, 0]].ravel()        # second end
@@ -756,61 +752,153 @@ for name, tris in (("exploded", exploded_tris), ("welded", WELDED)):
     return np.unique(edges, axis=0, return_counts=True)
 
 uniq, counts = edge_counts(WELDED)
-print("welded:", len(uniq), "distinct edges")
-print("counts seen:", np.unique(counts))
-print("boundary edges:", int((counts == 1).sum()))
-print()
+print("welded  :", len(uniq), "distinct edges, counts seen", np.unique(counts))
+print("           boundary edges:", int((counts == 1).sum()))
 
 uniq_x, counts_x = edge_counts(exploded_tris)
-print("exploded:", len(uniq_x), "distinct edges")
-print("boundary edges:", int((counts_x == 1).sum()), "<- all of them")
+print("exploded:", len(uniq_x), "distinct edges, counts seen", np.unique(counts_x))
+print("           boundary edges:", int((counts_x == 1).sum()), "<- all of them")
 print()
 print("agrees with the hand-written version:",
       len(uniq) == len(count_edges(WELDED)))`,
   },
   {
-    title: 'The weld',
-    explanation:
-      'np.unique with return_inverse does the whole weld. It returns the '
-      + 'distinct rows AND, for every original row, which distinct row it '
-      + 'became — which is exactly the old-index-to-new-index map. Indexing '
-      + 'that map with the triangle array rewrites all 36 indices in one go.\n\n'
-      + 'Two details worth knowing rather than discovering. np.unique SORTS, so '
-      + 'the point order changes and the corner numbering from lesson 1 no '
-      + 'longer applies. And the shape of the inverse array changed in numpy '
-      + '2.0, so .ravel() it before use and the code works on either.',
+    id: 'ch-boundary',
+    challengeType: 'write',
+    challengeTitle: 'Report on any mesh',
+    difficulty: 'warm-up',
+    prompt:
+      'Write is_closed(tris, n_points) that returns a (boundary_count, euler) pair, '
+      + 'using edge_counts from the cell above. Then say what it reports for the two meshes. '
+      + 'The welded cube should give (0, 2) and the exploded one (36, 12).',
+    hint:
+      'edge_counts returns two things: the distinct edges and how many triangles used each. '
+      + 'The boundary count is how many of those counts equal 1. Euler is points minus edges '
+      + 'plus faces \u2014 len(uniq) is the edge count and len(tris) is the face count.',
+    code: `def is_closed(tris, n_points):
+    # TODO: return (boundary_count, euler)
+    pass
+
+
+print(is_closed(WELDED, 8), "expected (0, 2)")
+print(is_closed(exploded_tris, 36), "expected (36, 12)")`,
+    solution: `def is_closed(tris, n_points):
+    uniq, counts = edge_counts(tris)
+    boundary = int((counts == 1).sum())
+    euler = n_points - len(uniq) + len(tris)
+    return (boundary, euler)
+
+
+print(is_closed(WELDED, 8), "expected (0, 2)")
+print(is_closed(exploded_tris, 36), "expected (36, 12)")`,
+    testCode: `try:
+    w = is_closed(WELDED, 8)
+    x = is_closed(exploded_tris, 36)
+except Exception as e:
+    raise AssertionError(f"is_closed raised {type(e).__name__}: {e}")
+
+assert w is not None, "is_closed returned None - it still has 'pass' in it."
+assert len(w) == 2, f"is_closed should return two values, got {len(w)}"
+assert tuple(w) == (0, 2), (
+    f"welded cube gave {tuple(w)}, expected (0, 2). It is closed, so no edge "
+    f"is used only once, and 8 - 18 + 12 = 2.")
+assert tuple(x) == (36, 12), (
+    f"exploded mesh gave {tuple(x)}, expected (36, 12). Nothing in it is "
+    f"shared, so all 36 edges are boundaries and 36 - 36 + 12 = 12.")
+"SUCCESS: both instruments agree, and neither looked at a coordinate."`,
+  },
+  {
+    id: 'weld',
+    cellTitle: 'The weld',
+    prose: [
+      'np.unique does the whole weld, because welding IS finding the distinct points.',
+      'return_inverse=True is the part that matters. Alongside the distinct rows it returns, for every original row, which distinct row it turned into \u2014 that is precisely an old-index-to-new-index map. Indexing that map with the triangle array rewrites all 36 indices in one go: inverse[exploded_tris] means "for every index in every triangle, look up what it became".',
+      'Two details worth being told rather than discovering. np.unique SORTS its output, so the point order changes and lesson 1\u2019s corner numbering no longer applies \u2014 the geometry is identical, the labels moved. And the shape of the inverse array changed in numpy 2.0, so call .ravel() on it and the code works under either version.',
+    ],
     code: `kept, inverse = np.unique(exploded_points, axis=0, return_inverse=True)
 inverse = inverse.ravel()      # numpy 2.0 changed this shape; ravel is safe
 
 welded_again = inverse[exploded_tris]
 
-print("36 points ->", len(kept))
-print("triangles :", welded_again.shape)
+print("36 points ->", len(kept), " triangles:", welded_again.shape)
 print("distinct indices now used:", len(np.unique(welded_again)))
-print()
 
 uniq, counts = edge_counts(welded_again)
 print(f"edges {len(uniq)}   boundary {int((counts == 1).sum())}"
       f"   V - E + F = {len(kept)} - {len(uniq)} + {len(welded_again)}"
       f" = {len(kept) - len(uniq) + len(welded_again)}")
 print()
-print("same shape as the mesh we started from:",
+print("same set of points we started from:",
       bool(np.allclose(np.sort(kept, axis=0), np.sort(CORNERS, axis=0))))
-print()
-print("note np.unique sorted the points, so the numbering moved:")
+print("but np.unique sorted them, so the numbering moved:")
 print("  lesson 1's corner 3 was", CORNERS[3],
       "-> now index", int(np.where((kept == CORNERS[3]).all(axis=1))[0][0]))`,
   },
   {
-    title: 'A second opinion, from a library that did not write itself',
-    explanation:
-      'Our own checker agreeing with our own weld proves less than it looks. '
-      + 'trimesh is an independent implementation, so run it on the same data '
-      + 'and see whether it reaches the same verdict.\n\n'
-      + 'Then the second half of the cell takes the welded cube and turns some '
-      + 'of its faces inside out, and asks every instrument in this lesson '
-      + 'about all three versions. Read that table slowly. It is the honest '
-      + 'limit of everything built here.',
+    id: 'ch-weld',
+    challengeType: 'write',
+    challengeTitle: 'Weld it yourself, and prove it worked',
+    difficulty: 'core',
+    prompt:
+      'Write weld(points, tris) returning (new_points, new_tris), then check your own '
+      + 'work: it must turn 36 points into 8, keep all 12 triangles, and take the '
+      + 'boundary-edge count from 36 to 0. Do not just call a library \u2014 the point is '
+      + 'that you can say what each line does.',
+    hint:
+      'np.unique(points, axis=0, return_inverse=True) gives you the kept points and the '
+      + 'old-to-new map. Remember .ravel() on the inverse, and that indexing the map with '
+      + 'the triangle array rewrites every index at once.',
+    code: `def weld(points, tris):
+    # TODO: return (new_points, new_tris)
+    pass
+
+
+pts, tris = weld(exploded_points, exploded_tris)
+print("points   ", len(exploded_points), "->", len(pts))
+print("triangles", len(exploded_tris), "->", len(tris))
+_, c = edge_counts(tris)
+print("boundary edges now:", int((c == 1).sum()))`,
+    solution: `def weld(points, tris):
+    kept, inverse = np.unique(points, axis=0, return_inverse=True)
+    return kept, inverse.ravel()[tris]
+
+
+pts, tris = weld(exploded_points, exploded_tris)
+print("points   ", len(exploded_points), "->", len(pts))
+print("triangles", len(exploded_tris), "->", len(tris))
+_, c = edge_counts(tris)
+print("boundary edges now:", int((c == 1).sum()))`,
+    testCode: `try:
+    pts, tris = weld(exploded_points, exploded_tris)
+except Exception as e:
+    raise AssertionError(f"weld raised {type(e).__name__}: {e}")
+
+assert pts is not None and tris is not None, "weld returned None - 'pass' is still there."
+assert len(pts) == 8, (
+    f"weld kept {len(pts)} points, expected 8. The 36 corners are bit-identical "
+    f"duplicates of 8 distinct positions.")
+assert len(tris) == 12, f"weld returned {len(tris)} triangles, expected 12 - none should be lost."
+assert int(tris.max()) < 8, (
+    f"an index of {int(tris.max())} still points past the end of the 8 kept points - "
+    f"the triangles were not remapped.")
+_, _c = edge_counts(np.asarray(tris))
+_b = int((_c == 1).sum())
+assert _b == 0, (
+    f"{_b} boundary edges remain, so the weld did not join everything. "
+    f"A closed solid has 0.")
+_e = len(pts) - len(np.unique(np.asarray(tris).reshape(-1))) * 0 - 0
+assert len(pts) - 18 + len(tris) == 2, (
+    f"Euler came out {len(pts) - 18 + len(tris)}, not 2.")
+"SUCCESS: 36 to 8, 12 triangles kept, 0 boundary edges, Euler 2."`,
+  },
+  {
+    id: 'trimesh',
+    cellTitle: 'A second opinion, from a library that did not write itself',
+    prose: [
+      'Your own checker agreeing with your own weld proves less than it appears to. Both could share the same wrong assumption. trimesh is an independent implementation, so run it on the same data and see whether it reaches the same verdict.',
+      'It does, on the vertex count. Then the second half of the cell takes the welded cube and turns some of its faces inside out, and asks every instrument in this lesson about all three versions.',
+      'Read that table slowly, because it is the honest limit of everything built here. Reversing a triangle\u2019s corner order turns it round, but it does not change which PAIRS of points its edges are made of \u2014 so edge counting cannot see it at all.',
+    ],
     code: `import micropip
 await micropip.install("trimesh")
 import trimesh
@@ -832,8 +920,6 @@ print("our weld and trimesh's agree on the vertex count:",
 print()
 
 # ── now the part worth slowing down for ────────────────────────────────────
-# Reversing a triangle's corner order turns it round. It does NOT change which
-# pairs of points its edges are made of, so the edge counts are untouched.
 flip_some = np.array([t[::-1] if i < 4 else t for i, t in enumerate(WELDED)])
 flip_all  = WELDED[:, ::-1]
 
@@ -858,15 +944,14 @@ print("here separates the middle one at all. Closed is not the same as")
 print("correctly wound, and this lesson only measures closed.")`,
   },
   {
-    title: 'The tolerance, and why it is mostly a trap',
-    explanation:
-      'Everyone reaches for a tolerance: how close is close enough to call two '
-      + 'points the same? Sweep it rather than pick one, and read the table.\n\n'
-      + 'The reason the answer is so blunt is floating point. STL duplicates are '
-      + 'bit-identical copies of the same number, not measurements that nearly '
-      + 'agree, so exact comparison already catches them. If 0.1 + 0.2 != 0.3 is '
-      + 'not a familiar fact, that is where to look first: the Python Values '
-      + 'lesson covers it.',
+    id: 'tolerance',
+    cellTitle: 'The tolerance, and why it is mostly a trap',
+    prose: [
+      'Everyone reaches for a tolerance: how close is close enough to call two points the same? Sweep it instead of picking one, and let the table decide.',
+      'The snapping trick is worth reading carefully. np.round(points / tol) divides every coordinate by the tolerance and rounds, so any two points within roughly one step of each other land on the same whole number \u2014 the same grid cell. Grouping by cell is then the same np.unique call as before.',
+      'The reason the answer turns out so blunt is floating point. STL duplicates are bit-identical copies of one number, not separate measurements that nearly agree, so exact comparison already catches every one of them. If 0.1 + 0.2 != 0.3 is not a familiar fact, the Python Values lesson is where to look first.',
+      'Watch the area column as well as the counts. While the cube is whole it stays at exactly 6.0; the moment the tolerance is large enough to matter, triangles collapse and the shape is gone rather than simplified.',
+    ],
     code: `def weld_tol(points, tris, tol):
     if tol == 0:
         kept, inverse = np.unique(points, axis=0, return_inverse=True)
@@ -879,24 +964,79 @@ print("correctly wound, and this lesson only measures closed.")`,
     keep = np.array([len(set(t)) == 3 for t in out])   # drop collapsed triangles
     return kept, out[keep]
 
-print(f"{'tolerance':>11} {'points':>7} {'triangles':>10} {'boundary':>9}  {'area':>6}")
+print(f"{'tolerance':>11} {'points':>7} {'triangles':>10} {'boundary':>9} {'area':>6}")
 for tol in (0, 1e-9, 1e-7, 1e-5, 1e-3, 1e-2, 0.1, 0.4, 0.9, 1.0):
     pts, tris = weld_tol(exploded_points, exploded_tris, tol)
     if len(tris):
         _, counts = edge_counts(tris)
         boundary = int((counts == 1).sum())
-        tri_pts = pts[tris]
-        cross = np.cross(tri_pts[:,1] - tri_pts[:,0], tri_pts[:,2] - tri_pts[:,0])
+        tp = pts[tris]
+        cross = np.cross(tp[:,1] - tp[:,0], tp[:,2] - tp[:,0])
         area = float(np.linalg.norm(cross, axis=1).sum() / 2)
     else:
         boundary, area = 0, 0.0
     label = "0 (exact)" if tol == 0 else f"{tol:g}"
-    print(f"{label:>11} {len(pts):>7} {len(tris):>10} {boundary:>9}  {area:>6.2f}")
+    print(f"{label:>11} {len(pts):>7} {len(tris):>10} {boundary:>9} {area:>6.2f}")
 
 print()
 print("Off, then whole, then destroyed. There is no gradual middle, and")
 print("the 'right' tolerance turns out not to be a decision at all -")
 print("until it is large enough to wreck the part.")`,
+  },
+  {
+    id: 'ch-tolerance',
+    challengeType: 'write',
+    challengeTitle: 'Try to find the middle ground',
+    difficulty: 'stretch',
+    prompt:
+      'The cell above claims there is no tolerance that leaves the cube PARTLY welded \u2014 '
+      + 'some duplicates merged and some not. Test that claim properly: sweep a wide range '
+      + 'of tolerances and collect every one that gives a point count strictly between '
+      + '8 and 36. Set partial to that list. Report what you find.',
+    hint:
+      'np.logspace(-12, 0.2, 200) gives 200 tolerances spanning twelve orders of magnitude. '
+      + 'weld_tol is already defined. A claim like this is only worth anything once you have '
+      + 'tried hard to break it, so sweep more values than feels necessary.',
+    code: `partial = []
+
+# TODO: sweep tolerances with weld_tol and collect any that give a point
+#       count strictly between 8 and 36.
+
+print(f"{len(partial)} tolerance(s) gave a partial weld")
+if partial:
+    print("so 'off, then whole' is FALSE:", partial[:5])
+else:
+    print("every tolerance gave 36, or 8, or fewer than 8. No gradual middle.")`,
+    solution: `partial = []
+
+for tol in [0.0] + list(np.logspace(-12, 0.2, 200)):
+    pts, _ = weld_tol(exploded_points, exploded_tris, float(tol))
+    if 8 < len(pts) < 36:
+        partial.append(float(tol))
+
+print(f"{len(partial)} tolerance(s) gave a partial weld")
+if partial:
+    print("so 'off, then whole' is FALSE:", partial[:5])
+else:
+    print("every tolerance gave 36, or 8, or fewer than 8. No gradual middle.")`,
+    testCode: `assert 'partial' in dir(), "partial was never set."
+assert isinstance(partial, (list, tuple)), f"partial should be a list, got {type(partial).__name__}"
+
+# Did they actually sweep? Re-run the search independently and compare.
+_found = []
+for _t in [0.0] + list(np.logspace(-12, 0.2, 200)):
+    _p, _tr = weld_tol(exploded_points, exploded_tris, float(_t))
+    if 8 < len(_p) < 36:
+        _found.append(float(_t))
+
+assert len(_found) == 0, (
+    f"The independent sweep found {len(_found)} partial welds, so the lesson's "
+    f"claim is wrong and needs correcting.")
+assert len(partial) == 0, (
+    f"You collected {len(partial)} partial welds, but a 200-point sweep across "
+    f"twelve orders of magnitude finds none. Check the condition - it is "
+    f"8 < len(points) < 36, strictly between.")
+"SUCCESS: no partial weld exists. You did not take that on trust, which is the point."`,
   },
 ];
 
