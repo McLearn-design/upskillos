@@ -43,7 +43,7 @@ There is no `src/content/` folder and no chapter `index.js` to register lessons 
 | When you change | Also |
 |---|---|
 | Add, remove or rename a lesson, course, lab or game | `npm run facts`, and commit the regenerated files |
-| A lesson file | `node scripts/validate-lesson-schema.mjs <file>`; for Python cells `node scripts/check_python_cells.mjs --files <file>`; for LaTeX `node scripts/check_latex.mjs --files <file>` |
+| A lesson file | `node scripts/validate-lesson-schema.mjs <file>`; for Python cells `node scripts/check_python_cells.mjs --files <file>`; **for JS sandbox cells `node scripts/check_js_cells.mjs --files <file>`**; for LaTeX `node scripts/check_latex.mjs --files <file>` |
 | Add a visualization or notebook to a lesson | Read [docs/lesson-visualizations-and-notebooks.md](docs/lesson-visualizations-and-notebooks.md) first, then **open the lesson in a browser** — neither checker can tell whether a notebook's cells actually reached the page |
 | A component with tests beside it | `npx vitest run <folder>` |
 | `package.json` scripts | [docs/contributing/setup.md](docs/contributing/setup.md) if a documented command changed |

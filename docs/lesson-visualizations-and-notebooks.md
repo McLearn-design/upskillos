@@ -179,6 +179,36 @@ it from a CDN with an import map if the cell needs 3D.
 |---|---|---|
 | `validate-lesson-schema.mjs` | the lesson survives the builder's load/save round-trip | anything inside a visualization entry |
 | `check_python_cells.mjs` | every Python cell runs under Pyodide | **where the cells live** |
+| `check_js_cells.mjs` | every `startCode` block parses, via acorn | whether it does the right thing — it is not run |
+
+### Run the JS checker. It catches the escape bug.
+
+A sandbox cell's code is a string inside a template literal, so escapes go
+through twice. The standard failure is losing a backslash:
+
+```text
+in the file       '...' + x + '\n' +
+                                 ^ one backslash
+
+what the cell     '...' + x + '
+actually gets     ' +
+                  ^ the template literal turned it into a REAL newline,
+                    and it landed inside a single-quoted string
+```
+
+The file needs \`\\\\n\` so the template literal yields the two characters
+backslash and n. With one backslash it inserts a real newline, and the cell
+throws at runtime inside an iframe — where the only way to find out is to
+open the lesson.
+
+```
+node scripts/check_js_cells.mjs --files <file>
+```
+
+reports it as `Unterminated string constant` with a line and column. It is
+cheap, and it is the difference between finding this in one second and
+finding it by accident. **It is not listed in every older guide — run it
+anyway.**
 
 `check_python_cells.mjs` finds cells by walking for any array named `cells`
 **or** `initialCells`, anywhere in the object. So a notebook with its cells in

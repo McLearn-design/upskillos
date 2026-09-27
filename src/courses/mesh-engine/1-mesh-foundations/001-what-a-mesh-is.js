@@ -66,6 +66,59 @@ The cell below draws exactly those nine numbers. **Drag it to turn it.**`,
     },
 
     {
+      type: 'markdown',
+      instruction: `### The six three.js words, before you meet them
+
+The drawing cells use a library called **three.js**. It is not the lesson, but
+you should not have to guess at it either. Six names appear, and each does one
+job:
+
+| | |
+|---|---|
+| **Scene** | a list of things to draw. That is all it is |
+| **PerspectiveCamera** | where you are looking from, and how wide the view is |
+| **WebGLRenderer** | owns the canvas, and turns the scene into pixels |
+| **BufferGeometry** | the shape, as raw numbers |
+| **Material** | how a surface should look — here just a flat colour |
+| **Mesh** | one geometry paired with one material. This is what goes in the Scene |
+
+So every cell has the same five lines of setup:
+
+\`\`\`js
+var scene    = new THREE.Scene();                 // somewhere to put things
+var camera   = new THREE.PerspectiveCamera(...);  // a point of view
+var renderer = new THREE.WebGLRenderer(...);      // something to draw with
+scene.add(new THREE.Mesh(geometry, material));    // put the shape in the list
+renderer.render(scene, camera);                   // draw it once
+\`\`\`
+
+### The two that matter here
+
+\`\`\`js
+var geometry = new THREE.BufferGeometry();
+geometry.setAttribute('position',
+  new THREE.BufferAttribute(new Float32Array(CORNERS), 3));
+\`\`\`
+
+**\`Float32Array\`** is a block of memory holding plain decimal numbers, one
+after another, with nothing between them. An ordinary JavaScript array of
+numbers is a list of separate boxed values scattered around; this is one
+contiguous run. The graphics card can only read the second kind.
+
+**\`BufferAttribute(data, 3)\`** is that block plus the number **3**, meaning
+"read these three at a time". Without the 3, nine numbers could be nine
+points, three points, or anything else — the data does not say.
+
+**\`'position'\`** is a name, and it has to be exactly that one. It is what the
+graphics card's own program looks for. Call it anything else and nothing
+appears, with no error.
+
+That is the whole of what you need. \`renderer.render\` inside a
+\`requestAnimationFrame\` loop just means "draw again before the next screen
+refresh", which is what makes dragging look live.`,
+    },
+
+    {
       type: 'js',
       instruction: `### One triangle
 
@@ -146,77 +199,120 @@ how many places would you have to change it?`,
       type: 'js',
       instruction: `### The same square, stored two ways
 
-Press the buttons. **The square does not change. The numbers underneath do.**
+Three buttons.
 
-- **Separate** — every triangle carries its own copy of its corners. Six
-  corners for a four-corner square.
-- **Shared** — four corners in one list, and each triangle says *which* of
-  them it uses, by position in that list.
+- **Shared** — four corners in one list; each triangle says *which* of them it
+  uses, by position.
+- **Separate** — every triangle carries its own copy. Six corners for a
+  four-corner square.
+- **Pull apart** — try to drag the two triangles away from each other.
 
-Then set \`MOVE_CORNER = true\`, run it again, and press both buttons. It
-nudges the top-right corner. Shared stays a square. **Separate tears**,
-because only one of the two copies moved.
+**That third button is the demonstration.** In *separate* they come apart,
+because they are two independent surfaces that happen to be touching — and now
+you can see two triangles, each with its own three edges, and the diagonal
+drawn twice.
 
-That is the whole difference, and the rest of this course depends on it.`,
+In *shared* nothing comes apart. There is nothing to pull: both triangles name
+the same two corners, so moving one moves the other. The whole square just
+sits there.
+
+Each triangle's outline is drawn in its own colour, so you can count the edges.`,
       html: `${THREE_CDN}
-<div style="display:flex;gap:8px;padding:8px 2px">
+<div style="display:flex;gap:8px;padding:8px 2px;flex-wrap:wrap">
   <button id="bShared" style="background:#1e3a5f;color:#dbeafe;border:1px solid #3b6ea5;border-radius:5px;padding:6px 14px;cursor:pointer;font:12px ui-monospace,monospace">Shared</button>
   <button id="bSep" style="background:#2b313a;color:#d7dade;border:1px solid #3d4550;border-radius:5px;padding:6px 14px;cursor:pointer;font:12px ui-monospace,monospace">Separate</button>
+  <button id="bPull" style="background:#3a2b3f;color:#f0d7f5;border:1px solid #6a4a75;border-radius:5px;padding:6px 14px;cursor:pointer;font:12px ui-monospace,monospace">Pull apart</button>
 </div>
-<div id="app" style="width:100%;height:300px;background:#0a0f1e;border-radius:8px"></div>
+<div id="app" style="width:100%;height:320px;background:#0a0f1e;border-radius:8px"></div>
 <div id="out" style="color:#9fb8e0;font:11px ui-monospace,monospace;padding:8px 2px;white-space:pre"></div>`,
       css: `body{margin:0;background:#0a0f1e}`,
-      startCode: `var MOVE_CORNER = false;   // <- set true, run again, press both buttons
-
-var app = document.getElementById('app');
+      startCode: `var app = document.getElementById('app');
 var scene = new THREE.Scene();
-var camera = new THREE.PerspectiveCamera(45, app.clientWidth / 300, 0.1, 100);
+var camera = new THREE.PerspectiveCamera(45, app.clientWidth / 320, 0.1, 100);
 var renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(app.clientWidth, 300);
+renderer.setSize(app.clientWidth, 320);
 app.appendChild(renderer.domElement);
 
-// SHARED: four corners; triangles point at them by position.
+var mode = 'shared';
+var pull = 0;            // how far apart to drag the two triangles
+
+// SHARED: four corners. Triangle 2 reuses corners 0 and 2.
 function shared() {
-  var points = [[-0.7,-0.7,0], [0.7,-0.7,0], [0.7,0.7,0], [-0.7,0.7,0]];
-  if (MOVE_CORNER) points[2] = [1.15, 1.15, 0];       // one place to change
-  return { points: points, tris: [[0,1,2],[0,2,3]], label: 'shared' };
+  return {
+    label: 'shared',
+    points: [[-0.7,-0.7,0], [0.7,-0.7,0], [0.7,0.7,0], [-0.7,0.7,0]],
+    tris: [[0,1,2],[0,2,3]],
+  };
 }
 
-// SEPARATE: private copies. Same square, six corners.
+// SEPARATE: six corners. Triangle 2 has its OWN copies of the two it shares.
 function separate() {
-  var points = [
-    [-0.7,-0.7,0], [0.7,-0.7,0], [0.7,0.7,0],         // triangle 1
-    [-0.7,-0.7,0], [0.7,0.7,0],  [-0.7,0.7,0],        // triangle 2
-  ];
-  if (MOVE_CORNER) points[2] = [1.15, 1.15, 0];       // only ONE of the copies
-  return { points: points, tris: [[0,1,2],[3,4,5]], label: 'separate' };
+  return {
+    label: 'separate',
+    points: [
+      [-0.7,-0.7,0], [0.7,-0.7,0], [0.7,0.7,0],       // triangle 1
+      [-0.7,-0.7,0], [0.7,0.7,0],  [-0.7,0.7,0],      // triangle 2 - copies
+    ],
+    tris: [[0,1,2],[3,4,5]],
+  };
 }
 
-var mesh = null, dots = null;
-
-function build(model) {
-  if (mesh) { scene.remove(mesh); scene.remove(dots); }
-
-  // Resolve every index into the flat run of numbers the GPU wants.
-  var flat = [];
-  model.tris.forEach(function (t) {
+// Pulling apart moves each TRIANGLE's own points. With shared corners, the
+// two triangles name the same points - so asking to move triangle 1's
+// corners moves triangle 2's as well, and nothing separates.
+function applyPull(model) {
+  if (!pull) return model;
+  var moved = model.points.map(function (p) { return p.slice(); });
+  var away = [-0.55, 0.55, 0];                        // perpendicular-ish
+  model.tris.forEach(function (t, n) {
+    var sign = (n === 0) ? 1 : -1;
     t.forEach(function (i) {
-      flat.push(model.points[i][0], model.points[i][1], model.points[i][2]);
+      moved[i] = [
+        moved[i][0] + away[0] * pull * sign,
+        moved[i][1] + away[1] * pull * sign,
+        moved[i][2],
+      ];
     });
   });
-  var geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(flat), 3));
-  mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
-    color: 0x4c9be8, side: THREE.DoubleSide, transparent: true, opacity: 0.75 }));
-  scene.add(mesh);
+  return { label: model.label, points: moved, tris: model.tris };
+}
 
-  // One dot per STORED point. In separate mode two pairs sit on top of each
-  // other, which is exactly the thing to notice.
+var drawn = [];
+
+function build() {
+  drawn.forEach(function (o) { scene.remove(o); });
+  drawn = [];
+
+  var model = applyPull(mode === 'shared' ? shared() : separate());
+
+  // One filled mesh and one outline PER TRIANGLE, each its own colour, so
+  // the edges can be counted.
+  var colours = [0x4c9be8, 0x2ecc71];
+  model.tris.forEach(function (t, n) {
+    var flat = [];
+    t.forEach(function (i) { flat.push(model.points[i][0], model.points[i][1], model.points[i][2]); });
+
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(flat), 3));
+
+    var face = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: colours[n], side: THREE.DoubleSide, transparent: true, opacity: 0.45 }));
+    scene.add(face); drawn.push(face);
+
+    // Its three edges, closed back to the first corner.
+    var loop = flat.concat([flat[0], flat[1], flat[2]]);
+    var lineGeo = new THREE.BufferGeometry();
+    lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(loop), 3));
+    var outline = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: colours[n] }));
+    scene.add(outline); drawn.push(outline);
+  });
+
+  // One dot per STORED point.
   var dotGeo = new THREE.BufferGeometry();
   dotGeo.setAttribute('position', new THREE.BufferAttribute(
     new Float32Array([].concat.apply([], model.points)), 3));
-  dots = new THREE.Points(dotGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.09 }));
-  scene.add(dots);
+  var dots = new THREE.Points(dotGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.075 }));
+  scene.add(dots); drawn.push(dots);
 
   var seen = {};
   model.points.forEach(function (p) { seen[p.join(',')] = 1; });
@@ -225,18 +321,23 @@ function build(model) {
     'storage          ' + model.label + '\\n' +
     'points stored    ' + model.points.length + '\\n' +
     'distinct corners ' + Object.keys(seen).length + '\\n' +
-    'triangles        ' + model.tris.length + '\\n' +
-    'indices          ' + JSON.stringify(model.tris);
+    'edges drawn      ' + (model.tris.length * 3) + '  (3 per triangle)\\n' +
+    'indices          ' + JSON.stringify(model.tris) + '\\n' +
+    'pulled apart     ' + (pull ? 'yes' : 'no') +
+      (pull && model.label === 'shared'
+        ? '   <- nothing moved apart: both triangles name the same corners'
+        : '');
 }
 
 ${ORBIT}
 orbit(camera, renderer.domElement, 3.0);
-(function loop() { requestAnimationFrame(loop); renderer.render(scene, camera); }());
+(function loopFrame() { requestAnimationFrame(loopFrame); renderer.render(scene, camera); }());
 
-document.getElementById('bShared').onclick = function () { build(shared()); };
-document.getElementById('bSep').onclick    = function () { build(separate()); };
-build(shared());`,
-      outputHeight: 480,
+document.getElementById('bShared').onclick = function () { mode = 'shared'; build(); };
+document.getElementById('bSep').onclick    = function () { mode = 'separate'; build(); };
+document.getElementById('bPull').onclick   = function () { pull = pull ? 0 : 1; build(); };
+build();`,
+      outputHeight: 500,
     },
 
     {

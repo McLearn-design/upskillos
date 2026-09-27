@@ -32,7 +32,7 @@ import { useLocalStorage } from "../../hooks/useLocalStorage.js";
 import { useGrapher } from "../../context/GrapherContext.jsx";
 import { setupOpenCalcMonaco } from "../../utils/monacoThemes.js";
 import openMatGuide from "../../../docs/OpenMAT.md?raw";
-import { createExecutionEngine, executeScript, normalizeLine as normalizeOpenMatLine } from "../../engines/openmat/openmatEngine.js";
+import { HELP_TEXT as OPENMAT_ENGINE_HELP, createExecutionEngine, executeScript, normalizeLine as normalizeOpenMatLine } from "../../engines/openmat/openmatEngine.js";
 
 import { useThemeColors } from '../../hooks/useThemeColors';
 import { useGlobalTheme } from '../../context/ThemeContext.jsx';
@@ -4917,6 +4917,190 @@ function OpenMatSimulationViewport({
   );
 }
 
+function parseOpenMatHelpSections(helpText) {
+  const sections = [];
+  let current = null;
+  String(helpText || "").split(/\r?\n/).forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line || /^=+$/.test(line) || line.startsWith("OpenMAT —")) return;
+    if (/^[A-Z][A-Z &()/-]+$/.test(line)) {
+      current = { title: line, lines: [] };
+      sections.push(current);
+      return;
+    }
+    if (current) current.lines.push(line);
+  });
+  return sections;
+}
+
+const OPENMAT_HELP_SECTIONS = parseOpenMatHelpSections(OPENMAT_ENGINE_HELP);
+
+function OpenMatGuidedSimulation({
+  simulations,
+  activeSimulation,
+  onOpenSimulation,
+  onRun,
+  running,
+  controlSpecs,
+  controlValues,
+  onUpdateControl,
+  enrichment,
+  workspaceItems,
+  metricCards,
+  figureJson,
+  surfaceConfig,
+  plotKind,
+  setPlotKind,
+  C,
+  openGrapher,
+  authoredElements,
+  onOpenAdvanced,
+}) {
+  const hasRun = controlSpecs.length > 0 || workspaceItems.length > 0 || Boolean(figureJson || surfaceConfig);
+  return (
+    <div className="min-h-0 flex-1 overflow-auto p-3 md:p-5" style={{ background: C.surface2 }}>
+      <div className="mx-auto max-w-[1500px] space-y-4">
+        <div className="rounded-2xl border p-4 md:p-5" style={{ borderColor: C.heroBorder, background: C.heroBg, color: C.heroText }}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-3xl">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: C.heroMuted }}>Guided simulation</div>
+              <div className="mt-1 text-xl font-semibold">Choose a model, run it, then change one input.</div>
+              <div className="mt-2 text-sm leading-6" style={{ color: C.heroMuted }}>
+                The picture, graph, inputs, and results all come from the same OpenMAT script. You can open the full workbench when you are ready to edit geometry or assembly details.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenAdvanced}
+              className="rounded-lg border px-3 py-2 text-xs font-semibold"
+              style={{ borderColor: C.heroBadgeBorder, background: C.heroPillBg, color: C.heroPillText }}
+            >
+              Open full workbench
+            </button>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            {["1. Pick a model", "2. Press Load & Run", "3. Move one slider"].map((step) => (
+              <div key={step} className="rounded-xl border px-3 py-2 text-xs font-semibold" style={{ borderColor: C.heroBadgeBorder, background: C.heroPillBg }}>
+                {step}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_320px]">
+          <section className="rounded-2xl border p-3" style={{ borderColor: C.border, background: C.surface }}>
+            <div className="px-1 pb-2 text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: C.hint }}>Models</div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+              {simulations.map((simulation) => {
+                const active = simulation.id === activeSimulation?.id;
+                return (
+                  <button
+                    key={simulation.id}
+                    type="button"
+                    onClick={() => onOpenSimulation(simulation.id)}
+                    className="rounded-xl border px-3 py-3 text-left"
+                    style={{ borderColor: active ? C.blue : C.border, background: active ? C.surface2 : C.surface }}
+                  >
+                    <div className="text-sm font-semibold">{simulation.title}</div>
+                    <div className="mt-1 text-xs leading-5" style={{ color: C.muted }}>{simulation.summary}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="min-h-[520px] rounded-2xl border p-3 md:p-4" style={{ borderColor: C.border, background: C.surface }}>
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: C.hint }}>Current model</div>
+                <div className="mt-1 text-lg font-semibold">{activeSimulation?.title || "Choose a model"}</div>
+                <div className="mt-1 text-xs leading-5" style={{ color: C.muted }}>{activeSimulation?.summary}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => hasRun ? onRun() : onOpenSimulation(activeSimulation.id)}
+                disabled={running || !activeSimulation}
+                className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                style={{ background: "linear-gradient(135deg, #0f8d85, #1769d1)", borderColor: "transparent" }}
+              >
+                <Play className="h-3.5 w-3.5" />
+                {running ? "Running..." : hasRun ? "Run again" : "Load & Run"}
+              </button>
+            </div>
+            <OpenMatSimulationViewport
+              activeSimulation={activeSimulation}
+              workspaceItems={workspaceItems}
+              figureJson={figureJson}
+              surfaceConfig={surfaceConfig}
+              plotKind={plotKind}
+              setPlotKind={setPlotKind}
+              C={C}
+              openGrapher={openGrapher}
+              authoredElements={authoredElements}
+              onSelectElement={() => {}}
+              onDoubleSelectElement={() => {}}
+              onSelectAttachment={() => {}}
+              onCompleteMate={() => {}}
+              onClearSelection={() => {}}
+              onDragAttachment={() => {}}
+            />
+          </section>
+
+          <section className="space-y-3">
+            <div className="rounded-2xl border p-4" style={{ borderColor: C.border, background: C.surface }}>
+              <div className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: C.hint }}>Inputs</div>
+              {!controlSpecs.length ? (
+                <div className="mt-3 rounded-xl border px-3 py-3 text-sm leading-6" style={{ borderColor: C.border, background: C.surface2, color: C.muted }}>
+                  Choose a model and press <strong style={{ color: C.text }}>Load & Run</strong>. Its adjustable inputs will appear here with real values and units.
+                </div>
+              ) : (
+                <div className="mt-3 space-y-4">
+                  {controlSpecs.map((control) => {
+                    const value = Object.prototype.hasOwnProperty.call(controlValues, control.name) ? Number(controlValues[control.name]) : control.value;
+                    const unit = getControlUnit(enrichment, control.name);
+                    return (
+                      <label key={control.name} className="block">
+                        <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+                          <span className="font-semibold">{control.name}{formatUnit(unit)}</span>
+                          <span style={{ color: C.blue }}>{Number(value).toFixed(3).replace(/\.?0+$/, "")}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={control.min}
+                          max={control.max}
+                          step={control.step || 0.01}
+                          value={value}
+                          onChange={(event) => onUpdateControl(control.name, event.target.value)}
+                          className="w-full accent-sky-500"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="rounded-2xl border p-4" style={{ borderColor: C.border, background: C.surface }}>
+              <div className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: C.hint }}>Results</div>
+              {!hasRun ? (
+                <div className="mt-3 text-sm leading-6" style={{ color: C.muted }}>Results appear after the model runs.</div>
+              ) : (
+                <div className="mt-3 grid gap-2">
+                  {metricCards.slice(0, 6).map((item) => (
+                    <div key={item.name} className="rounded-xl border px-3 py-2" style={{ borderColor: C.border, background: C.surface2 }}>
+                      <div className="text-[11px]" style={{ color: C.hint }}>{item.name}</div>
+                      <div className="mt-1 text-sm font-semibold">{item.preview}{formatUnit(getWorkspaceUnit(enrichment, item.name))}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OpenMatPlotWindow({
   isOpen,
   onClose,
@@ -5030,6 +5214,8 @@ export default function OpenMatStudio() {
   const [workspaceTab, setWorkspaceTab] = useLocalStorage("openmat-workspace-tab", "plot");
   const [browserTab, setBrowserTab] = useLocalStorage("openmat-browser-tab", "examples");
   const [workspaceMode, setWorkspaceMode] = useLocalStorage("openmat-workspace-mode", "script");
+  const [interfaceLevel, setInterfaceLevel] = useLocalStorage("openmat-interface-level", "guided");
+  const [functionQuery, setFunctionQuery] = useState("");
   const [activeSimulationId, setActiveSimulationId] = useLocalStorage("openmat-active-simulation", "pendulum-lab");
   const [simBridgeTab, setSimBridgeTab] = useLocalStorage("openmat-sim-bridge-tab", "script");
   const [simLeftTab, setSimLeftTab] = useLocalStorage("openmat-sim-left-tab", "models");
@@ -5811,6 +5997,7 @@ export default function OpenMatStudio() {
     () => displayWorkspaceItems.filter((item) => typeof extractNumericValue(item.value) === "number"),
     [displayWorkspaceItems],
   );
+  const parameterStudyReady = parameterStudyControls.length > 0 && numericWorkspaceOutputs.length > 0;
 
   const captureRecoverySnapshot = useCallback((reason) => {
     setRecoverySnapshot(
@@ -5841,15 +6028,35 @@ export default function OpenMatStudio() {
     { id: "plot", label: "Figure", icon: LineChart },
     { id: "console", label: "Console", icon: Rows3 },
     { id: "workspace", label: "Workspace", icon: Waves },
-    { id: "reference", label: "Reference", icon: Sigma },
-    { id: "normalized", label: "Normalized", icon: Cpu },
+    ...(interfaceLevel === "advanced" ? [
+      { id: "reference", label: "Reference", icon: Sigma },
+      { id: "normalized", label: "Normalized", icon: Cpu },
+    ] : []),
   ];
   const browserTabs = [
-    { id: "examples", label: "Examples" },
-    { id: "benchmarks", label: "Benchmarks" },
+    { id: "examples", label: interfaceLevel === "guided" ? "Learn" : "Examples" },
     { id: "functions", label: "Functions" },
-    { id: "notes", label: "Notes" },
+    ...(interfaceLevel === "advanced" ? [
+      { id: "benchmarks", label: "Benchmarks" },
+      { id: "notes", label: "Notes" },
+    ] : []),
   ];
+  const filteredHelpSections = useMemo(() => {
+    const query = functionQuery.trim().toLowerCase();
+    if (!query) return OPENMAT_HELP_SECTIONS;
+    return OPENMAT_HELP_SECTIONS
+      .map((section) => ({
+        ...section,
+        lines: section.lines.filter((line) => `${section.title} ${line}`.toLowerCase().includes(query)),
+      }))
+      .filter((section) => section.lines.length > 0);
+  }, [functionQuery]);
+
+  useEffect(() => {
+    if (interfaceLevel !== "guided") return;
+    if (browserTab === "benchmarks" || browserTab === "notes") setBrowserTab("examples");
+    if (workspaceTab === "reference" || workspaceTab === "normalized") setWorkspaceTab("plot");
+  }, [browserTab, interfaceLevel, setBrowserTab, setWorkspaceTab, workspaceTab]);
   const workspaceOverview = useMemo(() => {
     const bytes = displayWorkspaceItems.reduce((sum, item) => sum + Number(item.bytes || 0), 0);
     const matrixCount = displayWorkspaceItems.filter((item) => Array.isArray(item.value)).length;
@@ -5906,26 +6113,6 @@ export default function OpenMatStudio() {
     "Promote to Script copies the last useful console command into the active script tab.",
     "Workspace shows the current live variables that simulation and plotting tools build on.",
     "Simulation Mode wraps the same session with guided models, prompts, and lab workflow.",
-  ];
-  const referenceItems = [
-    "Language: MATLAB-like syntax over a local math engine, not raw JS/Python",
-    "Matrices: [1 2; 3 4], A', A \\\\ b, inv, det, trace, eig, qr, svd",
-    "Arrays: linspace, logspace, zeros, ones, eye, rand, randn, reshape, repmat",
-    "Statistics: mean, median, std, var, min, max, sum, prod, sort, unique, find",
-    "Numerics: trapz, gradient, roots, rank, cond, orth, null, interp1",
-    "Plots: plot, scatter, bar, hist, stem, area, hold on/off, clf, subplot",
-    "3D: surf(X,Y,Z), mesh(X,Y,Z), surfc(X,Y,Z), plot3(X,Y,Z), scatter3(X,Y,Z)",
-    "Axes: title, xlabel, ylabel, legend, grid, xlim, ylim, axis tight/equal/auto",
-    "Control: if/elseif/else/end, for i=1:n...end, while cond...end, break, continue",
-    "Interactivity: slider('name', min, max, step, default)",
-    "Animation: animate('t', min, max, step, default, speed, loop)",
-  "Simulation authoring: rods, springs, masses, supports, forces, moments, dimensions",
-  "Linked geometry: scratchpad geometry can sync back into simulation scenes by shape id",
-  "Workbenches: pendulum, spring-mass, projectile, Merchant circle, beam/cantilever",
-  "Functions: function [out]=name(in)...end and f = @(x) expr",
-  "Math: sin, cos, exp, log, fft, ifft, polyfit, polyval, diff, cumsum",
-  "Output/API: disp, sprintf, fprintf, num2str, who, whos, clear, clc, window.OpenMAT",
-  "Workbench API: listWorkbenches(), getWorkbench(id), openWorkbench(id), exportSession()",
   ];
   const hasWorkspaceContext = displayWorkspaceItems.length > 0;
   const sessionSummary = [
@@ -6911,11 +7098,11 @@ export default function OpenMatStudio() {
       }}
     >
       <div
-        className="flex items-center justify-between gap-4 border-b px-4 py-2"
+        className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2"
         style={{ background: C.surface3, borderColor: C.border }}
       >
         <div className="min-w-0">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div
               className="rounded-md px-2 py-1 text-[11px] font-bold uppercase tracking-[0.22em]"
               style={{ background: C.surface2, color: C.blue }}
@@ -6937,13 +7124,13 @@ export default function OpenMatStudio() {
                 </button>
               </div>
               <div className="text-[11px]" style={{ color: C.muted }}>
-                Matrix computing workspace • local engine • mobile-aware layout
+                Write MATLAB-style code, inspect variables, and explore simulations.
               </div>
             </div>
             <div className="ml-2 inline-flex rounded-lg border p-1" style={{ borderColor: C.border, background: C.surface }}>
               {[
-                { id: "script", label: "Script Mode" },
-                { id: "sim", label: "Simulation Mode" },
+                { id: "script", label: interfaceLevel === "guided" ? "Code" : "Script Mode" },
+                { id: "sim", label: interfaceLevel === "guided" ? "Simulations" : "Simulation Mode" },
               ].map((mode) => {
                 const active = workspaceMode === mode.id;
                 return (
@@ -6967,19 +7154,125 @@ export default function OpenMatStudio() {
                 );
               })}
             </div>
+            <div className="inline-flex rounded-lg border p-1" style={{ borderColor: C.border, background: C.surface }} aria-label="Interface level">
+              {[{ id: "guided", label: "Guided" }, { id: "advanced", label: "Advanced" }].map((level) => {
+                const active = interfaceLevel === level.id;
+                return (
+                  <button
+                    key={level.id}
+                    type="button"
+                    onClick={() => setInterfaceLevel(level.id)}
+                    className="rounded-md px-2.5 py-1 text-[11px] font-semibold"
+                    style={{ background: active ? C.surface2 : "transparent", color: active ? C.text : C.muted }}
+                    aria-pressed={active}
+                  >
+                    {level.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => startInteractiveTour()}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
-            style={{ borderColor: C.border, background: C.surface, color: C.text }}
-            title="Launch the interactive OpenMAT getting-started tour"
-          >
-            <Play className="h-3.5 w-3.5" />
-            Start Tour
-          </button>
+          {interfaceLevel === "advanced" && (
+            <>
+              <button
+                type="button"
+                onClick={() => startInteractiveTour()}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                style={{ borderColor: C.border, background: C.surface, color: C.text }}
+                title="Launch the interactive OpenMAT getting-started tour"
+              >
+                <Play className="h-3.5 w-3.5" />
+                Start Tour
+              </button>
+              <button
+                type="button"
+                onClick={() => setSidebarOpen((value) => !value)}
+                className="rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                style={{ borderColor: C.border, background: C.surface, color: C.text }}
+              >
+                {sidebarOpen ? "Hide Browser" : "Show Browser"}
+              </button>
+              <button
+                type="button"
+                onClick={exportWorkspace}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                style={{ borderColor: C.border, background: C.surface, color: C.text }}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export Session
+              </button>
+              <button
+                type="button"
+                onClick={() => importRef.current?.click()}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                style={{ borderColor: C.border, background: C.surface, color: C.text }}
+              >
+                <Upload className="h-3.5 w-3.5" />
+                Import Session
+              </button>
+              <button
+                type="button"
+                onClick={exportActiveDocument}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                style={{ borderColor: C.border, background: C.surface, color: C.text }}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export .m
+              </button>
+              <button
+                type="button"
+                onClick={() => dataImportRef.current?.click()}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                style={{ borderColor: C.border, background: C.surface, color: C.text }}
+              >
+                <Upload className="h-3.5 w-3.5" />
+                Import .m / CSV
+              </button>
+              <button
+                type="button"
+                onClick={applyMatlabClassroomFixes}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                style={{ borderColor: C.border, background: C.surface, color: C.text }}
+                title="Normalize common pasted MATLAB or ZyBooks syntax before running it in OpenMAT"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Fix MATLAB
+              </button>
+              {normalizeImportedDocuments(recoverySnapshot?.documents) && (
+                <button
+                  type="button"
+                  onClick={restoreRecoverySnapshot}
+                  className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                  style={{ borderColor: C.border, background: C.surface, color: C.text }}
+                  title={recoverySnapshot?.reason ? `Restore: ${recoverySnapshot.reason}` : "Restore last snapshot"}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Restore
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={resetWorkspace}
+                className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                style={{ background: C.surface, borderColor: C.border, color: C.text }}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Reset
+              </button>
+              {surfaceConfig && (
+                <button
+                  type="button"
+                  onClick={() => openGrapher(surfaceConfig)}
+                  className="rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                  style={{ borderColor: C.border, background: C.surface, color: C.text }}
+                >
+                  Separate 3D
+                </button>
+              )}
+            </>
+          )}
           <button
             type="button"
             onClick={() => setHelpOpen(true)}
@@ -6990,95 +7283,6 @@ export default function OpenMatStudio() {
             <CircleHelp className="h-3.5 w-3.5" />
             Help
           </button>
-          <button
-            type="button"
-            onClick={() => setSidebarOpen((value) => !value)}
-            className="rounded-lg border px-3 py-1.5 text-xs font-semibold"
-            style={{ borderColor: C.border, background: C.surface, color: C.text }}
-          >
-            {sidebarOpen ? "Hide Browser" : "Show Browser"}
-          </button>
-          <button
-            type="button"
-            onClick={exportWorkspace}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
-            style={{ borderColor: C.border, background: C.surface, color: C.text }}
-          >
-            <Download className="h-3.5 w-3.5" />
-            Export Session
-          </button>
-          <button
-            type="button"
-            onClick={() => importRef.current?.click()}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
-            style={{ borderColor: C.border, background: C.surface, color: C.text }}
-          >
-            <Upload className="h-3.5 w-3.5" />
-            Import Session
-          </button>
-          <button
-            type="button"
-            onClick={exportActiveDocument}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
-            style={{ borderColor: C.border, background: C.surface, color: C.text }}
-          >
-            <Download className="h-3.5 w-3.5" />
-            Export .m
-          </button>
-          <button
-            type="button"
-            onClick={() => dataImportRef.current?.click()}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
-            style={{ borderColor: C.border, background: C.surface, color: C.text }}
-          >
-            <Upload className="h-3.5 w-3.5" />
-            Import .m / CSV
-          </button>
-          <button
-            type="button"
-            onClick={applyMatlabClassroomFixes}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
-            style={{ borderColor: C.border, background: C.surface, color: C.text }}
-            title="Normalize common pasted MATLAB or ZyBooks syntax before running it in OpenMAT"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Fix MATLAB
-          </button>
-          {normalizeImportedDocuments(recoverySnapshot?.documents) && (
-            <button
-              type="button"
-              onClick={restoreRecoverySnapshot}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
-              style={{ borderColor: C.border, background: C.surface, color: C.text }}
-              title={recoverySnapshot?.reason ? `Restore: ${recoverySnapshot.reason}` : "Restore last snapshot"}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Restore
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={resetWorkspace}
-            className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold"
-            style={{
-              background: C.surface,
-              borderColor: C.border,
-              color: C.text,
-            }}
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Reset
-          </button>
-          {surfaceConfig && (
-            <button
-              type="button"
-              onClick={() => openGrapher(surfaceConfig)}
-              className="rounded-lg border px-3 py-1.5 text-xs font-semibold"
-              style={{ borderColor: C.border, background: C.surface, color: C.text }}
-            >
-              Separate 3D
-            </button>
-          )}
           <OpenMatTooltip content={workspaceMode === "sim" ? "Run the current workbench model. Static workbenches use Run plus sliders instead of a Play button." : "Run the current OpenMAT script and refresh the figure, workspace, and console."}>
             <button
               type="button"
@@ -7119,6 +7323,29 @@ export default function OpenMatStudio() {
       />
 
       {workspaceMode === "sim" ? (
+        interfaceLevel === "guided" ? (
+          <OpenMatGuidedSimulation
+            simulations={SIMULATION_WORKSPACES}
+            activeSimulation={activeSimulation}
+            onOpenSimulation={openSimulationWorkspace}
+            onRun={runCode}
+            running={running}
+            controlSpecs={controlSpecs}
+            controlValues={controlValues}
+            onUpdateControl={updateControlValue}
+            enrichment={activeWorkbenchEnrichment}
+            workspaceItems={displayWorkspaceItems}
+            metricCards={simulationMetricCards}
+            figureJson={displayFigureJson}
+            surfaceConfig={surfaceConfig}
+            plotKind={plotKind}
+            setPlotKind={setPlotKind}
+            C={C}
+            openGrapher={openGrapher}
+            authoredElements={displayedSimElements}
+            onOpenAdvanced={() => setInterfaceLevel("advanced")}
+          />
+        ) : (
         <div className="flex min-h-0 flex-1">
           <div className="flex w-14 shrink-0 flex-col border-r" style={{ borderColor: C.border, background: C.surface3 }}>
             {[
@@ -7425,7 +7652,8 @@ export default function OpenMatStudio() {
                         <button
                           type="button"
                           onClick={runParameterStudy}
-                          className="rounded-lg border px-3 py-1.5 text-[11px] font-semibold"
+                          disabled={!parameterStudyReady}
+                          className="rounded-lg border px-3 py-1.5 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                           style={{ borderColor: C.border, background: C.surface2, color: C.text }}
                         >
                           Run Study
@@ -7439,9 +7667,11 @@ export default function OpenMatStudio() {
                           <select
                             value={activeParameterStudy?.controlName || parameterStudyControls[0]?.name || ""}
                             onChange={(event) => updateParameterStudyConfig("controlName", event.target.value)}
+                            disabled={!parameterStudyControls.length}
                             className="rounded-xl border px-3 py-2 text-sm"
                             style={{ borderColor: C.border, background: C.surface2, color: C.text }}
                           >
+                            {!parameterStudyControls.length && <option value="">Run the model to load controls</option>}
                             {parameterStudyControls.map((control) => (
                               <option key={control.name} value={control.name}>
                                 {control.name}{formatUnit(getControlUnit(activeWorkbenchEnrichment, control.name))}
@@ -7456,9 +7686,11 @@ export default function OpenMatStudio() {
                           <select
                             value={activeParameterStudy?.outputName || numericWorkspaceOutputs[0]?.name || ""}
                             onChange={(event) => updateParameterStudyConfig("outputName", event.target.value)}
+                            disabled={!numericWorkspaceOutputs.length}
                             className="rounded-xl border px-3 py-2 text-sm"
                             style={{ borderColor: C.border, background: C.surface2, color: C.text }}
                           >
+                            {!numericWorkspaceOutputs.length && <option value="">Run the model to load results</option>}
                             {numericWorkspaceOutputs.map((item) => (
                               <option key={item.name} value={item.name}>
                                 {item.name}{formatUnit(getWorkspaceUnit(activeWorkbenchEnrichment, item.name))}
@@ -8114,7 +8346,8 @@ export default function OpenMatStudio() {
                         <button
                           type="button"
                           onClick={runParameterStudy}
-                          className="rounded-lg border px-3 py-1.5 text-[11px] font-semibold"
+                          disabled={!parameterStudyReady}
+                          className="rounded-lg border px-3 py-1.5 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                           style={{ borderColor: C.border, background: C.surface2, color: C.text }}
                         >
                           Run Study
@@ -8128,9 +8361,11 @@ export default function OpenMatStudio() {
                           <select
                             value={activeParameterStudy?.controlName || parameterStudyControls[0]?.name || ""}
                             onChange={(event) => updateParameterStudyConfig("controlName", event.target.value)}
+                            disabled={!parameterStudyControls.length}
                             className="rounded-xl border px-3 py-2 text-sm"
                             style={{ borderColor: C.border, background: C.surface2, color: C.text }}
                           >
+                            {!parameterStudyControls.length && <option value="">Run the model to load controls</option>}
                             {parameterStudyControls.map((control) => (
                               <option key={control.name} value={control.name}>
                                 {control.name}{formatUnit(getControlUnit(activeWorkbenchEnrichment, control.name))}
@@ -8145,9 +8380,11 @@ export default function OpenMatStudio() {
                           <select
                             value={activeParameterStudy?.outputName || numericWorkspaceOutputs[0]?.name || ""}
                             onChange={(event) => updateParameterStudyConfig("outputName", event.target.value)}
+                            disabled={!numericWorkspaceOutputs.length}
                             className="rounded-xl border px-3 py-2 text-sm"
                             style={{ borderColor: C.border, background: C.surface2, color: C.text }}
                           >
+                            {!numericWorkspaceOutputs.length && <option value="">Run the model to load results</option>}
                             {numericWorkspaceOutputs.map((item) => (
                               <option key={item.name} value={item.name}>
                                 {item.name}{formatUnit(getWorkspaceUnit(activeWorkbenchEnrichment, item.name))}
@@ -8721,12 +8958,13 @@ export default function OpenMatStudio() {
             })}
           </div>
         </div>
+        )
       ) : (
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto lg:flex-row lg:overflow-hidden">
         {sidebarOpen && (
           <div
-            className="flex w-full shrink-0 flex-col border-b lg:border-b-0 lg:border-r"
-            style={{ borderColor: C.border, background: C.surface3, width: browserPaneCssWidth }}
+            className="flex max-h-[42vh] w-full shrink-0 flex-col border-b lg:max-h-none lg:w-[var(--browser-pane-width)] lg:border-b-0 lg:border-r"
+            style={{ borderColor: C.border, background: C.surface3, "--browser-pane-width": browserPaneCssWidth }}
           >
             {workspaceMode === "script" ? (
               <div className="flex items-center gap-1 border-b px-3 py-2" style={{ borderColor: C.border }}>
@@ -8874,7 +9112,7 @@ export default function OpenMatStudio() {
                       <div>
                         <div className="text-sm font-semibold">OpenMAT Quick Start</div>
                         <div className="mt-1 text-xs leading-5" style={{ color: C.heroMuted }}>
-                          Start with one 2D plot, one matrix workflow, one 3D curve, and one surface. That gives judges and technical users a fast path to “this is real enough to trust.”
+                          Start with a small script, run it, and use the Figure, Workspace, and Console panels to understand what happened.
                         </div>
                       </div>
                       <span
@@ -8885,7 +9123,7 @@ export default function OpenMatStudio() {
                       </span>
                     </div>
                     <div className="mt-3 grid gap-2">
-                      {OPENMAT_TUTORIAL_CARDS.map((card) => {
+                      {OPENMAT_TUTORIAL_CARDS.slice(0, interfaceLevel === "guided" ? 1 : OPENMAT_TUTORIAL_CARDS.length).map((card) => {
                         const example = card.exampleId ? exampleMap[card.exampleId] : null;
                         const Icon = example?.icon || CircleHelp;
                         return (
@@ -8925,7 +9163,9 @@ export default function OpenMatStudio() {
                         "1. Load an example or write a short script in the editor.",
                         "2. Press Run and read Figure first, then Workspace, then Console.",
                         "3. Use slider(...) and animate(...) to rerun the same script with new inputs.",
-                        "4. If a script feels broken, check Reference for supported syntax and current limits before assuming MATLAB parity.",
+                        interfaceLevel === "guided"
+                          ? "4. Search Functions when you want to find a supported command or see its syntax."
+                          : "4. If a script feels broken, check Reference for supported syntax and current limits before assuming MATLAB parity.",
                       ].map((item) => (
                         <div key={item} className="rounded-xl border px-3 py-2 text-xs leading-5" style={{ borderColor: C.border, background: C.surface2, color: C.muted }}>
                           {item}
@@ -8933,6 +9173,30 @@ export default function OpenMatStudio() {
                       ))}
                     </div>
                   </div>
+                  {interfaceLevel === "guided" && (
+                    <div className="rounded-2xl border p-4" style={{ borderColor: C.border, background: C.surface }}>
+                      <div className="text-sm font-semibold">Beginner examples</div>
+                      <div className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+                        Each example opens in its own tab, so you can change it without losing your current script.
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        {matlabQuickStartExamples.map((example) => {
+                          const Icon = example.icon;
+                          return (
+                            <button key={example.id} type="button" onClick={() => loadExample(example.id)} className="flex items-start gap-3 rounded-xl border px-3 py-3 text-left" style={{ borderColor: C.border, background: C.surface2 }}>
+                              <Icon className="mt-0.5 h-4 w-4 shrink-0" style={{ color: C.blue }} />
+                              <span>
+                                <span className="block text-sm font-semibold">{example.label}</span>
+                                <span className="mt-1 block text-xs leading-5" style={{ color: C.muted }}>{example.description}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {interfaceLevel === "advanced" && (
+                    <>
                   <div
                     className="rounded-2xl border p-4"
                     style={{ borderColor: C.border, background: C.surface }}
@@ -9043,20 +9307,44 @@ export default function OpenMatStudio() {
                       </button>
                     );
                   })}
+                    </>
+                  )}
                 </div>
               )}
 
               {workspaceMode === "script" && browserTab === "functions" && (
-                <div className="grid gap-2">
-                  {referenceItems.map((item) => (
-                    <div
-                      key={item}
-                      className="rounded-xl border px-3 py-2 text-xs font-mono"
-                      style={{ borderColor: C.border, background: C.surface }}
-                    >
-                      {item}
+                <div className="space-y-3">
+                  <div className="rounded-2xl border p-4" style={{ borderColor: C.border, background: C.surface }}>
+                    <div className="text-sm font-semibold">Function reference</div>
+                    <div className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+                      Search the functions documented by the current OpenMAT engine.
                     </div>
+                    <input
+                      type="search"
+                      value={functionQuery}
+                      onChange={(event) => setFunctionQuery(event.target.value)}
+                      placeholder="Search, for example: atan2d, svd, fprintf"
+                      className="mt-3 w-full rounded-xl border px-3 py-2 text-sm outline-none"
+                      style={{ borderColor: C.border, background: C.surface2, color: C.text }}
+                    />
+                  </div>
+                  {filteredHelpSections.map((section) => (
+                    <section key={section.title} className="rounded-2xl border p-3" style={{ borderColor: C.border, background: C.surface }}>
+                      <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: C.hint }}>{section.title}</h3>
+                      <div className="mt-2 grid gap-1.5">
+                        {section.lines.map((line) => (
+                          <code key={line} className="rounded-lg border px-2.5 py-2 text-[11px] leading-5" style={{ borderColor: C.border, background: C.surface2, color: C.text }}>
+                            {line}
+                          </code>
+                        ))}
+                      </div>
+                    </section>
                   ))}
+                  {!filteredHelpSections.length && (
+                    <div className="rounded-2xl border p-4 text-sm" style={{ borderColor: C.border, background: C.surface, color: C.muted }}>
+                      No documented function matches “{functionQuery}”.
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -9140,7 +9428,7 @@ export default function OpenMatStudio() {
           </div>
         )}
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex min-h-[420px] min-w-0 flex-1 flex-col lg:min-h-0">
           <div className="flex items-center justify-between gap-3 border-b px-3 py-2" style={{ borderColor: C.border }}>
             <div className="flex min-w-0 items-center gap-2">
               <div className="flex min-w-0 items-end gap-1 overflow-x-auto pb-1">
@@ -9287,11 +9575,11 @@ export default function OpenMatStudio() {
         </div>
 
         <div
-          className="flex w-full min-w-0 shrink-0 flex-col border-t lg:border-t-0"
+          className="flex min-h-[420px] w-full min-w-0 shrink-0 flex-col border-t lg:min-h-0 lg:w-[var(--right-pane-width)] lg:border-t-0"
           style={{
             borderColor: C.border,
             background: C.surface2,
-            width: rightPaneCssWidth,
+            "--right-pane-width": rightPaneCssWidth,
           }}
         >
           <div
