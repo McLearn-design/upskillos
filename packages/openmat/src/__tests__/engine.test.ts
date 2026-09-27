@@ -48,6 +48,54 @@ roundTrip = rad2deg(deg2rad([0 45 180]));`)
     expect(r.workspace.find((entry: any) => entry.name === 'quadrants')?.value).toEqual([0, 90, -90])
     expect(r.workspace.find((entry: any) => entry.name === 'roundTrip')?.value).toEqual([0, 45, 180])
   })
+
+  it('accepts continuation markers after notebook line breaks are collapsed', () => {
+    const source = `noise = [0.2; -0.3; 0.1; -0.4; 0.5; -0.2; 0.3; -0.1; 0.4; -0.5; ... 0.1; -0.2; 0.3; -0.1; 0.2; -0.4; 0.3; -0.2; 0.1; -0.3; ... 0.4; -0.1; 0.2; -0.3; 0.1; -0.2; 0.3; -0.4; 0.2; -0.1; ... 0.3; -0.2; 0.4; -0.3; 0.1; -0.2; 0.3; -0.1; 0.2; -0.3; ... 0.1; -0.4; 0.2; -0.1; 0.3; -0.2; 0.4; -0.1; 0.2; -0.3];`
+    const r = executeScript(source)
+    const noise = r.workspace.find((entry: any) => entry.name === 'noise')?.value as number[]
+
+    expect(noise).toHaveLength(50)
+    expect(noise.slice(8, 13)).toEqual([0.4, -0.5, 0.1, -0.2, 0.3])
+  })
+
+  it('joins ordinary MATLAB continuation lines without changing ellipses inside strings', () => {
+    const r = executeScript("x = 1 + ... % continue the expression\n    2; label = 'wait...';")
+    expect(r.workspace.find((entry: any) => entry.name === 'x')?.value).toBe(3)
+    expect(r.workspace.find((entry: any) => entry.name === 'label')?.value).toBe('wait...')
+  })
+
+  it('preserves vector shapes across MATLAB array builders and least-squares workflows', () => {
+    const r = executeScript(`x = linspace(0, 10, 50)';
+y = 2 * x + 1 + randn(50, 1) * 0.5;
+X = [x, ones(50, 1)];
+w = X \\ y;
+y_pred = X * w;
+slope = w(1);
+intercept = w(2);
+plot(x, y)
+hold on
+plot(x, y_pred)`)
+
+    const X = r.workspace.find((entry: any) => entry.name === 'X')?.value as number[][]
+    const w = r.workspace.find((entry: any) => entry.name === 'w')?.value as number[]
+    const prediction = r.workspace.find((entry: any) => entry.name === 'y_pred')?.value as number[]
+    expect(X).toHaveLength(50)
+    expect(X[0]).toHaveLength(2)
+    expect(w).toHaveLength(2)
+    expect(w.every(Number.isFinite)).toBe(true)
+    expect(prediction).toHaveLength(50)
+    expect(r.figureJson).not.toBeNull()
+  })
+
+  it('matches MATLAB constructor dimensions, including size-vector arguments', () => {
+    const r = executeScript('square = zeros(3); row = ones(size([1 2 3])); column = randn(4, 1); scalar = rand();')
+    expect(r.workspace.find((entry: any) => entry.name === 'square')?.value).toEqual([
+      [0, 0, 0], [0, 0, 0], [0, 0, 0],
+    ])
+    expect(r.workspace.find((entry: any) => entry.name === 'row')?.value).toEqual([1, 1, 1])
+    expect(r.workspace.find((entry: any) => entry.name === 'column')?.value).toHaveLength(4)
+    expect(typeof r.workspace.find((entry: any) => entry.name === 'scalar')?.value).toBe('number')
+  })
 })
 
 describe('executeScript — matrices', () => {
@@ -110,6 +158,31 @@ describe('executeScript — user functions', () => {
     const hi = r.workspace.find((w: any) => w.name === 'hi')?.value
     expect(lo).toBe(1)
     expect(hi).toBe(5)
+  })
+
+  it('calls a local function declared after the script body', () => {
+    const r = executeScript(`result = custom_collatz(27);
+disp('Steps to reach 1:');
+disp(result);
+
+function steps = custom_collatz(n)
+    steps = 0;
+    while n > 1
+        if mod(n, 2) == 0
+            n = n / 2;
+        else
+            n = 3 * n + 1;
+        end
+        steps = steps + 1;
+        if steps > 1000
+            break;
+        end
+    end
+end`)
+
+    expect(r.workspace.find((entry: any) => entry.name === 'result')?.value).toBe(111)
+    expect(r.output).toContain('Steps to reach 1:')
+    expect(r.output).toContain('111')
   })
 })
 

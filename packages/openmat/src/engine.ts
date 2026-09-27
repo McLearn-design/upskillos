@@ -3,7 +3,7 @@ import { math, isSymObj, isSymArr } from './math-instance.js'
 import {
   toPlain, isComplexLike, realValue, isMatrix, isCollection,
   mapDeep, normalizeVector, flattenNumbers, toNumericMatrix,
-  inferSize, makeDiagonal, makeRandomArray, toColumnSeries,
+  inferSize, makeDiagonal, toColumnSeries,
   buildLinspace, buildLogspace, meshgrid, clampValue,
   diffArray, cumulative, dotProduct, crossProduct,
   dotMultiply, dotDivide, dotPow, polyfit, polyval,
@@ -333,24 +333,37 @@ export function createExecutionEngine(options: EngineOptions = {}): {
     const count = Math.floor((to - from) / step) + 1
     return Array.from({ length: Math.max(0, count) }, (_, i) => from + i * step)
   })
-  parser.set("zeros",  (r: any, c: any) => { const R = Number(r||1), C = Number(c ?? r ?? 1); return Array.from({length:R}, () => Array(C).fill(0)) })
-  parser.set("ones",   (r: any, c: any) => { const R = Number(r||1), C = Number(c ?? r ?? 1); return Array.from({length:R}, () => Array(C).fill(1)) })
-  parser.set("eye",    (n: any) => { const N = Number(n); return Array.from({length:N}, (_,i) => Array.from({length:N}, (_,j) => i===j?1:0)) })
-  parser.set("rand",   (r: any, c: any) => makeRandomArray(c == null ? [Number(r||1)] : [Number(r||1), Number(c)]))
-  parser.set("randn",  (r: any, c: any) => {
-    const shape = c == null ? [Number(r||1)] : [Number(r||1), Number(c)]
-    const box = (n: number) => {
-      const out: number[] = []
-      while (out.length < n) {
-        const u = 1 - Math.random(), v = Math.random()
-        const z = Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v)
-        const w = Math.sqrt(-2*Math.log(u)) * Math.sin(2*Math.PI*v)
-        out.push(z, w)
-      }
-      return out.slice(0, n)
+  const arrayShape = (r?: any, c?: any): number[] => {
+    if (r == null && c == null) return []
+    if (c != null) return [Math.max(0, Math.round(Number(r))), Math.max(0, Math.round(Number(c)))]
+    const plain = toPlain(r)
+    if (Array.isArray(plain)) return flattenNumbers(plain).map(value => Math.max(0, Math.round(value)))
+    const n = Math.max(0, Math.round(Number(plain)))
+    return [n, n]
+  }
+  const shapedValues = (shape: number[], makeValue: () => number): any => {
+    if (shape.length === 0) return makeValue()
+    if (shape.length === 1) return Array.from({ length: shape[0] }, makeValue)
+    if (shape.length === 2 && (shape[0] === 1 || shape[1] === 1)) {
+      return Array.from({ length: shape[0] * shape[1] }, makeValue)
     }
-    const [rr, cc] = shape.length >= 2 ? [shape[0], shape[1]] : [1, shape[0]]
-    return Array.from({length:rr}, () => box(cc))
+    const [head, ...tail] = shape
+    return Array.from({ length: head }, () => shapedValues(tail, makeValue))
+  }
+  parser.set("zeros",  (r?: any, c?: any) => shapedValues(arrayShape(r, c), () => 0))
+  parser.set("ones",   (r?: any, c?: any) => shapedValues(arrayShape(r, c), () => 1))
+  parser.set("eye",    (n: any) => { const N = Number(n); return Array.from({length:N}, (_,i) => Array.from({length:N}, (_,j) => i===j?1:0)) })
+  parser.set("rand",   (r?: any, c?: any) => shapedValues(arrayShape(r, c), Math.random))
+  parser.set("randn",  (r?: any, c?: any) => {
+    let spare: number | null = null
+    const normal = () => {
+      if (spare != null) { const value = spare; spare = null; return value }
+      const u = 1 - Math.random(), v = Math.random()
+      const radius = Math.sqrt(-2 * Math.log(u))
+      spare = radius * Math.sin(2 * Math.PI * v)
+      return radius * Math.cos(2 * Math.PI * v)
+    }
+    return shapedValues(arrayShape(r, c), normal)
   })
   parser.set("meshgrid", (x: any, y: any) => meshgrid(x, y))
 
@@ -2057,8 +2070,13 @@ export function executeScript(source: string, options: EngineOptions = {}): Exec
   const lines = normalizedSource.split(/\r?\n/)
   const tree = parseBlocks(lines)
 
+  // MATLAB scripts may call local functions that are declared at the end of
+  // the file. Register those definitions before executing the script body.
   for (const node of tree) {
-    executeNode(node)
+    if (node.type === "function") executeNode(node)
+  }
+  for (const node of tree) {
+    if (node.type !== "function") executeNode(node)
   }
 
   let figureJson: string | null

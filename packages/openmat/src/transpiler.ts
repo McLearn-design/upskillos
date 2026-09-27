@@ -458,9 +458,57 @@ function replaceElementwiseBinaryOperators(line: string): string {
   return output
 }
 
-/** Join continuation lines (... at end of line). */
+/**
+ * Join MATLAB continuation markers. Courseware and rich-text copy/paste can
+ * collapse the newline after `...`, so remove an out-of-string marker even
+ * when the next expression has landed on the same physical line.
+ */
 export function joinContinuationLines(source: string): string {
-  return String(source ?? "").replace(/\.\.\.\s*\r?\n\s*/g, " ")
+  const input = String(source ?? "")
+  let output = ""
+  let quote: "'" | '"' | null = null
+
+  for (let i = 0; i < input.length;) {
+    const char = input[i]
+    if (quote) {
+      output += char
+      if (char === quote) {
+        if (input[i + 1] === quote) { output += input[i + 1]; i += 2; continue }
+        quote = null
+      }
+      i++
+      continue
+    }
+
+    if (char === "'" || char === '"') {
+      // A quote after a value is MATLAB transpose, not a string delimiter.
+      const previous = output.trimEnd().slice(-1)
+      if (char === "'" && /[)\]\w]/.test(previous)) { output += char; i++; continue }
+      quote = char
+      output += char
+      i++
+      continue
+    }
+
+    if (input.slice(i, i + 3) === "...") {
+      let next = i + 3
+      while (input[next] === " " || input[next] === "\t") next++
+      if (input[next] === "%") {
+        while (next < input.length && input[next] !== "\n" && input[next] !== "\r") next++
+      }
+      if (input[next] === "\r") next++
+      if (input[next] === "\n") next++
+      while (input[next] === " " || input[next] === "\t") next++
+      output += " "
+      i = next
+      continue
+    }
+
+    output += char
+    i++
+  }
+
+  return output
 }
 
 function replaceIndexing(line: string, variables: Set<string>, functionNames = new Set<string>()): string {
