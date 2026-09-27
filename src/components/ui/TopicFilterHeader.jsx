@@ -186,20 +186,25 @@ export default function TopicFilterHeader({
                 }}
               >
                 {isActive && (
-                  <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" style={{ filter: 'drop-shadow(0 0 2px currentColor) drop-shadow(0 0 6px currentColor) drop-shadow(0 0 12px currentColor)' }}>
-                    <motion.rect
-                      x="0" y="0" width="100%" height="100%"
-                      rx="9999"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      pathLength={1}
-                      strokeDasharray="0.01 0.99"
-                      initial={{ strokeDashoffset: 0 }}
-                      animate={{ strokeDashoffset: -1 }}
-                      transition={{ duration: 4, ease: "linear", repeat: Infinity }}
-                    />
-                  </svg>
+                  <div 
+                     className="absolute -inset-[1px] rounded-full pointer-events-none"
+                     style={{
+                        padding: '1.5px',
+                        WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                        WebkitMaskComposite: 'xor',
+                        maskComposite: 'exclude',
+                     }}
+                  >
+                     <motion.div
+                        className="absolute inset-[-150%] opacity-100"
+                        style={{
+                           background: `conic-gradient(from 0deg, transparent 30%, currentColor 85%, currentColor 98%, white 100%)`,
+                           filter: 'drop-shadow(0 0 6px currentColor)'
+                        }}
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                     />
+                  </div>
                 )}
                 <span className="relative z-10" style={{ display: 'block', transform: 'translateZ(10px)' }}>{sub.label}</span>
               </motion.button>
