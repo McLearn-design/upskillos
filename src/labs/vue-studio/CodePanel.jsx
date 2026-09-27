@@ -292,7 +292,8 @@ export default function CodePanel({
                 background: C.surface,
                 border: `1px solid ${border}`, borderRadius: 6,
                 boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                zIndex: 9999, minWidth: 200, overflow: 'hidden',
+                zIndex: 9999, minWidth: 260, maxWidth: 340,
+                maxHeight: 'min(70vh, 520px)', overflowY: 'auto',
               }}>
                 {demos.map(d => (
                   <button

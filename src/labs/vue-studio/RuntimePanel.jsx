@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useThemeColors } from '../../hooks/useThemeColors.js'
+import WhyPanel from './WhyPanel.jsx'
 
 // ── Dependency Graph ──────────────────────────────────────────────────────────
 
@@ -424,6 +425,7 @@ export default function RuntimePanel({
 
   const tabs = [
     { id: 'tutor',    label: 'Vue Tutor' },
+    { id: 'why',      label: 'Why this file' },
     { id: 'reactive', label: 'Reactive State' },
     { id: 'deps',     label: 'Dep Graph' },
     { id: 'tree',     label: 'Components' },
@@ -445,7 +447,7 @@ export default function RuntimePanel({
       />
 
       {/* Tab bar */}
-      <div style={{ display: 'flex', borderBottom: `1px solid ${border}`, background: tabBg, flexShrink: 0 }}>
+      <div style={{ display: 'flex', borderBottom: `1px solid ${border}`, background: tabBg, flexShrink: 0, overflowX: 'auto' }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
             padding: '4px 12px', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
@@ -466,6 +468,9 @@ export default function RuntimePanel({
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {activeTab === 'tutor' && (
           <TutorLog execState={execState} reactiveHistory={reactiveHistory} componentTree={componentTree} C={C} />
+        )}
+        {activeTab === 'why' && (
+          <WhyPanel milestone={milestone} activeFile={activeFile} />
         )}
         {activeTab === 'reactive' && (
           <ReactiveState reactiveHistory={reactiveHistory} C={C} />

@@ -1,24 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import BlogPost from '../../components/blog/BlogPost.jsx'
-import { VUE_LESSONS } from './lessons/lessonLoader.js'
-import { SPREADSHEET_LESSONS } from './series/spreadsheet/seriesLoader.js'
-
-const SERIES = [
-  {
-    id: 'intro',
-    label: 'Vue Essentials',
-    sublabel: 'Core concepts — ref, computed, components, composables',
-    emoji: '🟢',
-    lessons: VUE_LESSONS,
-  },
-  {
-    id: 'spreadsheet',
-    label: 'Build a Spreadsheet',
-    sublabel: 'Project series — build Excel in Vue from scratch',
-    emoji: '📊',
-    lessons: SPREADSHEET_LESSONS,
-  },
-]
+import { VUE_STUDIO_SERIES } from './studioSeries.js'
 
 const PANEL_LS_KEY = 'vue-studio-panel-v1'
 
@@ -55,7 +37,7 @@ function SeriesList({ onSelect, onBack, ui }) {
 
       <div className="flex-1 overflow-y-auto px-3 pb-4">
         <div className="space-y-2">
-          {SERIES.map(s => (
+          {VUE_STUDIO_SERIES.map(s => (
             <button
               key={s.id}
               onClick={() => onSelect(s.id)}
@@ -65,6 +47,9 @@ function SeriesList({ onSelect, onBack, ui }) {
                 <span className="text-base">{s.emoji}</span>
                 <span className={`text-sm font-semibold ${ui.txt1} transition-colors leading-tight`}>
                   {s.label}
+                </span>
+                <span className={`ml-auto rounded-full border ${ui.border} px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${ui.txt2}`}>
+                  {s.badge}
                 </span>
               </div>
               <p className={`text-[11px] ${ui.txt2} leading-snug ml-6`}>{s.sublabel}</p>
@@ -124,6 +109,7 @@ function LessonList({ series, activeLessonIdx, onSelect, onBack, ui }) {
 // ── Lesson content view ──────────────────────────────────────────────────────
 
 function LessonView({ lesson, lessons, lessonIndex, seriesLabel, onBackToList, onSelectLesson, ui }) {
+  const previousLesson = lessonIndex > 0 ? lessons[lessonIndex - 1] : null
   const nextLesson = lessonIndex < lessons.length - 1 ? lessons[lessonIndex + 1] : null
 
   return (
@@ -140,13 +126,19 @@ function LessonView({ lesson, lessons, lessonIndex, seriesLabel, onBackToList, o
       <div className="flex-1 overflow-y-auto px-6 py-5" style={{ userSelect: 'text', cursor: 'text' }}>
         <BlogPost content={lesson.content} />
 
-        <div className={`mt-10 pt-6 border-t ${ui.border} flex items-center justify-between`}>
-          <button
-            onClick={onBackToList}
-            className={`text-sm ${ui.txt2} ${ui.hoverTx} transition-colors`}
-          >
-            ← All lessons
-          </button>
+        <div className={`mt-10 pt-6 border-t ${ui.border} flex items-center justify-between gap-3`}>
+          {previousLesson ? (
+            <button
+              onClick={() => onSelectLesson(lessonIndex - 1)}
+              className={`text-sm ${ui.txt2} ${ui.hoverTx} transition-colors text-left`}
+            >
+              ← {previousLesson.title}
+            </button>
+          ) : (
+            <button onClick={onBackToList} className={`text-sm ${ui.txt2} ${ui.hoverTx} transition-colors`}>
+              ← All lessons
+            </button>
+          )}
           {nextLesson && (
             <button
               onClick={() => onSelectLesson(lessonIndex + 1)}
@@ -163,7 +155,7 @@ function LessonView({ lesson, lessons, lessonIndex, seriesLabel, onBackToList, o
 
 // ── Root panel ───────────────────────────────────────────────────────────────
 
-export default function LessonPanel({ milestoneIdx, onSelectMilestone, onBack, ui }) {
+export default function LessonPanel({ activeSeriesId, activeLessonIdx, onSelectWorkspace, onBack, ui }) {
   // Restore navigation state from last session
   const saved = loadPanelState()
 
@@ -172,7 +164,7 @@ export default function LessonPanel({ milestoneIdx, onSelectMilestone, onBack, u
   const [lessonIdx, setLessonIdx] = useState(saved.lessonIdx ?? 0)
   const scrollRef = useRef(null)
 
-  const activeSeries = SERIES.find(s => s.id === seriesId) ?? null
+  const activeSeries = VUE_STUDIO_SERIES.find(s => s.id === seriesId) ?? null
   const activeLesson = activeSeries?.lessons[lessonIdx] ?? null
 
   // Reset scroll on navigation
@@ -191,8 +183,7 @@ export default function LessonPanel({ milestoneIdx, onSelectMilestone, onBack, u
     setLessonIdx(idx)
     setView('content')
     savePanelState({ lessonIdx: idx, view: 'content', seriesId })
-    // Sync code panel for the intro series (each lesson has its own starter files)
-    if (seriesId === 'intro') onSelectMilestone(idx)
+    onSelectWorkspace(seriesId, idx)
   }
 
   function backToList() {
@@ -205,9 +196,8 @@ export default function LessonPanel({ milestoneIdx, onSelectMilestone, onBack, u
     savePanelState({ view: 'series', seriesId, lessonIdx })
   }
 
-  // For the intro series, the active-lesson highlight tracks milestoneIdx (the
-  // code panel's authoritative state) so they never fall out of sync.
-  const activeLessonHighlight = seriesId === 'intro' ? milestoneIdx : lessonIdx
+  // The editor is authoritative when this list represents its active series.
+  const activeLessonHighlight = seriesId === activeSeriesId ? activeLessonIdx : lessonIdx
 
   return (
     <div ref={scrollRef} className={`h-full overflow-y-auto ${ui.bg0} ${ui.txt1}`}>

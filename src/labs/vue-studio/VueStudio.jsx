@@ -1,59 +1,50 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { MILESTONES } from './milestones/index.js'
 import LessonPanel from './LessonPanel.jsx'
 import CodePanel from './CodePanel.jsx'
 import RuntimePanel from './RuntimePanel.jsx'
-import { SANDBOX_HTML as SANDBOX_HTML_SRC } from './sandbox.js'
+import { SANDBOX_HTML as SANDBOX_HTML_SRC, computeDependencyGraph } from './sandbox.js'
 import { useGlobalTheme } from '../../context/ThemeContext.jsx'
 import { useThemeColors } from '../../hooks/useThemeColors.js'
 import { SPACE_INVADERS } from './demos/space-invaders.js'
+import { SPREADSHEET_MILESTONES } from './series/spreadsheet/milestones/index.js'
+import { getSeriesMilestone, getStudioSeries, getWorkspaceId } from './studioSeries.js'
 
-const DEMOS = [SPACE_INVADERS]
+const DEMOS = [
+  SPACE_INVADERS,
+  ...SPREADSHEET_MILESTONES.map(milestone => ({
+    id: `spreadsheet-checkpoint-${milestone.id}`,
+    label: `Spreadsheet: ${milestone.title}`,
+    description: milestone.objective,
+    files: milestone.files,
+  })),
+]
 
-// v3 busts any cached completed-solution state from before starter files were added.
-const LS_KEY = 'vue-studio-v3'
+const LS_KEY = 'vue-studio-v4'
+const LEGACY_LS_KEY = 'vue-studio-v3'
 
-function loadSavedFiles(milestoneId, starter) {
+function loadSavedFiles(workspaceId, starter, legacyMilestoneId = null) {
   try {
-    const saved = JSON.parse(localStorage.getItem(`${LS_KEY}:${milestoneId}`) ?? 'null')
+    const current = localStorage.getItem(`${LS_KEY}:files:${workspaceId}`)
+    const legacy = legacyMilestoneId ? localStorage.getItem(`${LEGACY_LS_KEY}:${legacyMilestoneId}`) : null
+    const saved = JSON.parse(current ?? legacy ?? 'null')
     return saved ?? starter
   } catch { return starter }
 }
 
-function saveFiles(milestoneId, files) {
-  try { localStorage.setItem(`${LS_KEY}:${milestoneId}`, JSON.stringify(files)) } catch {}
+function saveFiles(workspaceId, files) {
+  try { localStorage.setItem(`${LS_KEY}:files:${workspaceId}`, JSON.stringify(files)) } catch {}
 }
 
-function computeDepGraph(files) {
-  const nodes = Object.keys(files).map(f => ({
-    id: f,
-    label: f.split('/').pop(),
-    isEntry: /\/main\.[jt]s$/.test(f),
-  }))
-  const edges = []
-  for (const [filename, content] of Object.entries(files)) {
-    for (const [, imp] of content.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
-      if (!imp.startsWith('.')) continue
-      const dir = filename.includes('/') ? filename.slice(0, filename.lastIndexOf('/') + 1) : ''
-      const parts = (dir + imp).split('/')
-      const resolved = []
-      for (const p of parts) {
-        if (p === '..') resolved.pop()
-        else if (p !== '.') resolved.push(p)
-      }
-      let target = resolved.join('/')
-      if (!target.match(/\.[a-z]+$/i)) target += '.vue'
-      if (files[target]) edges.push({ from: filename, to: target })
-    }
-  }
-  return { nodes, edges }
-}
-
-function getInitialMilestoneIdx() {
+function getInitialLocation() {
   try {
-    const n = parseInt(localStorage.getItem(`${LS_KEY}:milestone-idx`) ?? '0', 10)
-    return isNaN(n) ? 0 : Math.max(0, Math.min(MILESTONES.length - 1, n))
-  } catch { return 0 }
+    const location = JSON.parse(localStorage.getItem(`${LS_KEY}:location`) ?? 'null') ?? {}
+    const panel = JSON.parse(localStorage.getItem('vue-studio-panel-v1') ?? 'null') ?? {}
+    const saved = Object.keys(location).length ? location : panel
+    const series = getStudioSeries(saved.seriesId ?? 'intro')
+    const max = series.lessons.length - 1
+    const requested = Number.isInteger(saved.lessonIdx) ? saved.lessonIdx : 0
+    return { seriesId: series.id, lessonIdx: Math.max(0, Math.min(max, requested)) }
+  } catch { return { seriesId: 'intro', lessonIdx: 0 } }
 }
 
 export default function VueStudio({ onBack }) {
@@ -61,11 +52,17 @@ export default function VueStudio({ onBack }) {
   const C = useThemeColors()
 
   // Persisted across sessions — user resumes the lesson they were on
-  const [milestoneIdx, setMilestoneIdx] = useState(getInitialMilestoneIdx)
-  const milestone = MILESTONES[milestoneIdx]
+  const [location, setLocation] = useState(getInitialLocation)
+  const activeSeries = getStudioSeries(location.seriesId)
+  const milestone = getSeriesMilestone(activeSeries, location.lessonIdx)
+  const workspaceId = getWorkspaceId(activeSeries, location.lessonIdx)
 
   // Virtual file system: { 'src/App.vue': content, ... }
-  const [files, setFiles] = useState(() => loadSavedFiles(milestone.id, milestone.starter ?? milestone.files))
+  const [files, setFiles] = useState(() => loadSavedFiles(
+    workspaceId,
+    milestone.starter ?? milestone.files,
+    activeSeries.id === 'intro' ? milestone.id : null,
+  ))
   const [activeFile, setActiveFile] = useState(() => Object.keys(milestone.starter ?? milestone.files)[0] ?? '')
 
   // Runtime panel
@@ -76,7 +73,7 @@ export default function VueStudio({ onBack }) {
   const iframeRef = useRef(null)
 
   // Dependency graph — recomputed when files change (debounced by useMemo)
-  const depGraph = useMemo(() => computeDepGraph(files), [files])
+  const depGraph = useMemo(() => computeDependencyGraph(files), [files])
 
   // Timeline — last 60 reactive-update snapshots (used by bottom panel)
   const [timeline, setTimeline] = useState([])
@@ -92,9 +89,11 @@ export default function VueStudio({ onBack }) {
   const reactiveHistoryAccRef = useRef(new Map())
 
   // Panel dimensions
-  const [lessonW,  setLessonW]  = useState(240)
-  const [previewW, setPreviewW] = useState(420)
+  const [lessonW,  setLessonW]  = useState(340)
+  const [previewW, setPreviewW] = useState(320)
   const [bottomH,  setBottomH]  = useState(240)
+  const [lessonVisible, setLessonVisible] = useState(true)
+  const [previewVisible, setPreviewVisible] = useState(true)
 
   // When a demo is active its files must not overwrite the lesson's saved state
   const [demoActive, setDemoActive] = useState(false)
@@ -110,8 +109,8 @@ export default function VueStudio({ onBack }) {
 
   // Persist file edits as the student types — skipped when a demo is running
   useEffect(() => {
-    if (!demoActive) saveFiles(milestone.id, files)
-  }, [files, milestone.id, demoActive])
+    if (!demoActive) saveFiles(workspaceId, files)
+  }, [files, workspaceId, demoActive])
 
   const filesRef = useRef(files)
   useEffect(() => { filesRef.current = files }, [files])
@@ -125,7 +124,9 @@ export default function VueStudio({ onBack }) {
   useEffect(() => {
     let execTimer1 = null
     let execTimer2 = null
-    const handler = ({ data }) => {
+    const handler = (event) => {
+      if (event.source !== iframeRef.current?.contentWindow) return
+      const { data } = event
       if (!data?.type) return
       if (data.type === 'sandbox-ready') {
         iframeRef.current?.contentWindow?.postMessage({ type: 'run', files: filesRef.current }, '*')
@@ -194,16 +195,21 @@ export default function VueStudio({ onBack }) {
     }
   }, [])
 
-  // Navigate to a milestone: restore saved files or fall back to lesson starter
-  const goToMilestone = useCallback((idx) => {
-    const m = MILESTONES[idx]
-    if (!m) return
-    try { localStorage.setItem(`${LS_KEY}:milestone-idx`, String(idx)) } catch {}
+  // Switch the editor to the workspace owned by a lesson series.
+  const goToWorkspace = useCallback((seriesId, lessonIdx) => {
+    const series = getStudioSeries(seriesId)
+    if (!series.lessons[lessonIdx]) return
+    const m = getSeriesMilestone(series, lessonIdx)
+    const nextWorkspaceId = getWorkspaceId(series, lessonIdx)
+    try {
+      localStorage.setItem(`${LS_KEY}:location`, JSON.stringify({ seriesId: series.id, lessonIdx }))
+      if (series.id === 'intro') localStorage.setItem(`${LEGACY_LS_KEY}:milestone-idx`, String(lessonIdx))
+    } catch {}
     setDemoActive(false)
     setActiveDemo(null)
-    setMilestoneIdx(idx)
+    setLocation({ seriesId: series.id, lessonIdx })
     const defaultFiles = m.starter ?? m.files
-    const saved = loadSavedFiles(m.id, defaultFiles)
+    const saved = loadSavedFiles(nextWorkspaceId, defaultFiles, series.id === 'intro' ? m.id : null)
     setFiles(saved)
     setActiveFile(Object.keys(defaultFiles)[0] ?? '')
     setLogs([])
@@ -244,7 +250,7 @@ export default function VueStudio({ onBack }) {
     setActiveDemo(null)
     setFiles(defaultFiles)
     setActiveFile(Object.keys(defaultFiles)[0] ?? '')
-    saveFiles(milestone.id, defaultFiles)
+    saveFiles(workspaceId, defaultFiles)
     setLogs([])
     setComponentTree(null)
     setReactiveHistory(new Map())
@@ -254,7 +260,7 @@ export default function VueStudio({ onBack }) {
     prevTreeRef.current = null
     reactiveHistoryAccRef.current = new Map()
     iframeRef.current?.contentWindow?.postMessage({ type: 'run', files: defaultFiles }, '*')
-  }, [milestone])
+  }, [milestone, workspaceId])
 
   // Load the reference solution for this lesson and run it immediately
   const loadSolution = useCallback(() => {
@@ -304,8 +310,8 @@ export default function VueStudio({ onBack }) {
 
   const clearDemo = useCallback(() => {
     setActiveDemo(null)
-    goToMilestone(milestoneIdx)
-  }, [milestoneIdx, goToMilestone])
+    goToWorkspace(location.seriesId, location.lessonIdx)
+  }, [location, goToWorkspace])
 
   const addFile = useCallback((filename) => {
     if (!filename || files[filename] !== undefined) return
@@ -320,11 +326,33 @@ export default function VueStudio({ onBack }) {
   return (
     <div style={{ display: 'flex', height: '100vh', background: C.bg, color: C.text, fontFamily: 'system-ui, sans-serif', overflow: 'hidden' }}>
 
-      {/* Lesson panel */}
-      <div style={{ width: lessonW, flexShrink: 0, borderRight: `1px solid ${C.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <LessonPanel milestoneIdx={milestoneIdx} onSelectMilestone={goToMilestone} onBack={onBack} ui={themeStyles.ui} />
+      {/* Lesson panel + collapse rail */}
+      {lessonVisible && (
+        <div style={{ width: lessonW, flexShrink: 0, borderRight: `1px solid ${C.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <LessonPanel
+            activeSeriesId={location.seriesId}
+            activeLessonIdx={location.lessonIdx}
+            onSelectWorkspace={goToWorkspace}
+            onBack={onBack}
+            ui={themeStyles.ui}
+          />
+        </div>
+      )}
+      <div
+        onMouseDown={lessonVisible ? startResize(setLessonW, () => lessonW) : undefined}
+        style={{ width: lessonVisible ? 12 : 28, cursor: lessonVisible ? 'col-resize' : 'default', background: C.surface2, borderRight: `1px solid ${C.border}`, flexShrink: 0, position: 'relative' }}
+      >
+        <button
+          type="button"
+          aria-label={lessonVisible ? 'Hide lesson panel' : 'Show lesson panel'}
+          title={lessonVisible ? 'Hide lesson panel' : 'Show lesson panel'}
+          onMouseDown={event => event.stopPropagation()}
+          onClick={() => setLessonVisible(value => !value)}
+          style={{ position: 'absolute', top: 8, left: lessonVisible ? -8 : 3, width: 22, height: 26, borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.muted, cursor: 'pointer', zIndex: 2 }}
+        >
+          {lessonVisible ? '‹' : '›'}
+        </button>
       </div>
-      <div onMouseDown={startResize(setLessonW, () => lessonW)} style={{ width: 4, cursor: 'col-resize', background: C.border, flexShrink: 0, opacity: 0.5 }} />
 
       {/* Middle column: editor (top) + visualization (bottom) */}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -340,7 +368,7 @@ export default function VueStudio({ onBack }) {
             onNewFile={addFile}
             onRun={handleRun}
             onResetFiles={resetFiles}
-            onLoadSolution={loadSolution}
+            onLoadSolution={milestone.hasSolution === false ? null : loadSolution}
             demos={DEMOS}
             onLoadDemo={loadDemo}
             activeDemo={activeDemo}
@@ -374,21 +402,37 @@ export default function VueStudio({ onBack }) {
         </div>
       </div>
 
-      <div onMouseDown={startResize(setPreviewW, () => previewW, 'x', 280, 700, -1)} style={{ width: 4, cursor: 'col-resize', background: C.border, flexShrink: 0, opacity: 0.5 }} />
+      <div
+        onMouseDown={previewVisible ? startResize(setPreviewW, () => previewW, 'x', 240, 700, -1) : undefined}
+        style={{ width: previewVisible ? 12 : 28, cursor: previewVisible ? 'col-resize' : 'default', background: C.surface2, borderLeft: `1px solid ${C.border}`, flexShrink: 0, position: 'relative' }}
+      >
+        <button
+          type="button"
+          aria-label={previewVisible ? 'Hide preview panel' : 'Show preview panel'}
+          title={previewVisible ? 'Hide preview panel' : 'Show preview panel'}
+          onMouseDown={event => event.stopPropagation()}
+          onClick={() => setPreviewVisible(value => !value)}
+          style={{ position: 'absolute', top: 8, left: previewVisible ? -3 : 3, width: 22, height: 26, borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.muted, cursor: 'pointer', zIndex: 2 }}
+        >
+          {previewVisible ? '›' : '‹'}
+        </button>
+      </div>
 
       {/* Live preview — full height, no tabs */}
-      <div style={{ width: previewW, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderLeft: `1px solid ${C.border}` }}>
-        <div style={{ padding: '4px 10px', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.hint, borderBottom: `1px solid ${C.border}`, background: C.surface2, flexShrink: 0 }}>
-          Preview
+      {previewVisible && (
+        <div style={{ width: previewW, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ padding: '4px 10px', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.hint, borderBottom: `1px solid ${C.border}`, background: C.surface2, flexShrink: 0 }}>
+            Preview
+          </div>
+          <iframe
+            ref={iframeRef}
+            srcDoc={SANDBOX_HTML_SRC}
+            sandbox="allow-scripts"
+            title="Vue Studio Preview"
+            style={{ flex: 1, border: 'none', background: '#fff', minHeight: 0 }}
+          />
         </div>
-        <iframe
-          ref={iframeRef}
-          srcDoc={SANDBOX_HTML_SRC}
-          sandbox="allow-scripts allow-same-origin"
-          title="Vue Studio Preview"
-          style={{ flex: 1, border: 'none', background: '#fff', minHeight: 0 }}
-        />
-      </div>
+      )}
     </div>
   )
 }

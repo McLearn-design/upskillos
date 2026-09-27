@@ -21,15 +21,40 @@ function resolvePath(importee, importer) {
   return resolved.join('/')
 }
 
+export function resolveModulePath(importee, importer, available) {
+  const base = resolvePath(importee, importer)
+  const candidates = [
+    base,
+    `${base}.vue`, `${base}.ts`, `${base}.js`,
+    `${base}/index.vue`, `${base}/index.ts`, `${base}/index.js`,
+  ]
+  return candidates.find(candidate => available[candidate])
+}
+
 // Rewrite `import ... from 'vue'` and `import ... from './Foo.vue'` in compiled JS.
-function rewriteImports(code, importer, moduleMap) {
+export function rewriteImports(code, importer, moduleMap) {
   return code
     .replace(/from\s+['"]vue['"]/g, `from '${VUE_URL}'`)
-    .replace(/from\s+['"]([^'"]+\.vue)['"]/g, (_, specifier) => {
-      const resolved = resolvePath(specifier, importer)
-      const blobUrl = moduleMap[resolved] ?? moduleMap[specifier]
-      return blobUrl ? `from '${blobUrl}'` : `from '${specifier}'`
+    .replace(/from\s+['"](\.{1,2}\/[^'"]+)['"]/g, (original, specifier) => {
+      const resolved = resolveModulePath(specifier, importer, moduleMap)
+      return resolved ? `from '${moduleMap[resolved]}'` : original
     })
+}
+
+export function computeDependencyGraph(files) {
+  const nodes = Object.keys(files).map(filename => ({
+    id: filename,
+    label: filename.split('/').pop(),
+    isEntry: /\/main\.[jt]s$/.test(filename),
+  }))
+  const edges = []
+  for (const [filename, content] of Object.entries(files)) {
+    for (const match of content.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
+      const target = resolveModulePath(match[1], filename, files)
+      if (target) edges.push({ from: filename, to: target })
+    }
+  }
+  return { nodes, edges }
 }
 
 export const SANDBOX_HTML = `<!DOCTYPE html>
@@ -117,11 +142,24 @@ function snapshotTree(instance) {
       }
     }
   } catch(_) {}
-  const children = (instance.subTree?.component
-    ? [snapshotTree(instance.subTree.component)]
-    : instance.subTree?.children?.flatMap(c => c?.component ? [snapshotTree(c.component)] : []) ?? []
-  ).filter(Boolean)
+  const children = childComponentInstances(instance.subTree).map(snapshotTree).filter(Boolean)
   return { name, data, children }
+}
+
+function childComponentInstances(vnode, result = []) {
+  if (!vnode) return result
+  if (Array.isArray(vnode)) {
+    for (const child of vnode) childComponentInstances(child, result)
+    return result
+  }
+  if (vnode.component) {
+    result.push(vnode.component)
+    return result
+  }
+  if (Array.isArray(vnode.children)) {
+    for (const child of vnode.children) childComponentInstances(child, result)
+  }
+  return result
 }
 
 // ── SFC compiler (loaded on first Run, cached thereafter) ─────────────────────
@@ -145,13 +183,23 @@ function resolvePath(importee, importer) {
   return resolved.join('/')
 }
 
+function resolveModulePath(importee, importer, available) {
+  const base = resolvePath(importee, importer)
+  const candidates = [
+    base,
+    \`\${base}.vue\`, \`\${base}.ts\`, \`\${base}.js\`,
+    \`\${base}/index.vue\`, \`\${base}/index.ts\`, \`\${base}/index.js\`,
+  ]
+  return candidates.find(candidate => available[candidate])
+}
+
 function rewriteImports(code, importer, moduleMap) {
   const VUE_URL = '${VUE_URL}'
   return code
     .replace(/from\\s+['"]vue['"]/g, \`from '\${VUE_URL}'\`)
-    .replace(/from\\s+['"]([^'"]+\\.(vue|ts|js))['"]/g, (original, spec) => {
-      const resolved = resolvePath(spec, importer)
-      const url = moduleMap[resolved] ?? moduleMap[spec]
+    .replace(/from\\s+['"](\\.{1,2}\\/[^'"]+)['"]/g, (original, spec) => {
+      const resolved = resolveModulePath(spec, importer, moduleMap)
+      const url = resolved ? moduleMap[resolved] : null
       // Return blob URL if found; keep original if not (so error messages are readable)
       return url ? \`from '\${url}'\` : original
     })
@@ -161,11 +209,14 @@ function rewriteImports(code, importer, moduleMap) {
 // absolute paths — used to order blob-URL creation by actual dependency edges
 // rather than by path depth (two files at the same depth can still import
 // each other, e.g. a component importing a same-level composable).
-function extractLocalDeps(code, importer) {
+function extractLocalDeps(code, importer, available) {
   const deps = []
-  const re = /from\\s+['"]([^'"]+\\.(vue|ts|js))['"]/g
+  const re = /from\\s+['"](\\.{1,2}\\/[^'"]+)['"]/g
   let m
-  while ((m = re.exec(code))) deps.push(resolvePath(m[1], importer))
+  while ((m = re.exec(code))) {
+    const resolved = resolveModulePath(m[1], importer, available)
+    if (resolved) deps.push(resolved)
+  }
   return deps
 }
 
@@ -180,7 +231,7 @@ function topoSortByDeps(compiled) {
   function visit(filename) {
     if (visited.has(filename) || visiting.has(filename) || !compiled[filename]) return
     visiting.add(filename)
-    for (const dep of extractLocalDeps(compiled[filename].code, filename)) {
+    for (const dep of extractLocalDeps(compiled[filename].code, filename, compiled)) {
       visit(dep)
     }
     visiting.delete(filename)
@@ -236,7 +287,7 @@ async function run(files) {
   }
   document.getElementById('__vue_styles__').textContent = ''
 
-  const [{ parse, compileScript, compileStyleAsync }, stripTS] = await Promise.all([getCompiler(), getStripTS()])
+  const [{ parse, compileScript, compileTemplate, compileStyleAsync }, stripTS] = await Promise.all([getCompiler(), getStripTS()])
 
   // Phase 1a: compile all .vue files → { code, styles }
   const compiled = {} // filename → { code, styles }
@@ -268,8 +319,33 @@ async function run(files) {
         return
       }
     }
-    // Empty SFC (no script block) — provide a minimal valid default export
+    // A template-only component is valid Vue. compileScript cannot generate its
+    // render function when both script blocks are absent (or empty), so compile
+    // the template directly instead of mounting an empty component definition.
+    if (!scriptCode && descriptor.template) {
+      const result = compileTemplate({
+        source: descriptor.template.content,
+        filename,
+        id,
+        scoped: descriptor.styles.some(style => style.scoped),
+      })
+      if (result.errors.length) {
+        console.error('Template compile error in ' + filename + ': ' + result.errors[0])
+        return
+      }
+      const renderCode = result.code.replace('export function render', 'function render')
+      scriptCode = renderCode + '\\nexport default { render }'
+    }
+    // A completely empty SFC still needs a valid module.
     if (!scriptCode) scriptCode = 'export default {}'
+
+    // The browser compiler normally relies on a bundler plugin to attach the
+    // scope id. The studio is that bundler, so attach it before creating the
+    // module blob or <style scoped> selectors will never match the template.
+    if (descriptor.styles.some(style => style.scoped)) {
+      scriptCode = scriptCode.replace('export default', 'const __sfc__ =')
+      scriptCode += '\\n__sfc__.__scopeId = "data-v-' + id + '"\\nexport default __sfc__'
+    }
 
     const styleTexts = []
     for (const style of descriptor.styles) {
