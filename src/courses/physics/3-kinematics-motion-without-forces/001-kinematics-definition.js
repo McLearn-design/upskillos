@@ -275,7 +275,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Displacement vs distance',
           type: 'code',
@@ -417,11 +418,13 @@ x_data = np.array([0.0, 1.2, 2.1, 2.5, 2.2, 1.6, 2.8])
             `For part 5, average acceleration = change in velocity over the full interval / total time: $\\bar{a} = (v_{last} - v_{first}) / (t_{last} - t_{first})$. The velocity array from step 4 gives you $v_{first}$ and $v_{last}$.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Displacement vs distance',
           type: 'code',
@@ -544,7 +547,8 @@ x_data = [0.0, 1.2, 2.1, 2.5, 2.2, 1.6, 2.8];
             `For the average acceleration, take the first and last elements of the velocity array: \`v_arr(end) - v_arr(1)\`, then divide by total time. Compare this to computing $\\bar{a} = \\Delta v / \\Delta t$ directly from the definition.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

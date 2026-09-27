@@ -309,7 +309,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Braking car — sign discipline with cross-check',
           type: 'code',
@@ -443,11 +444,13 @@ a2 = -8.0   # m/s² (phase 2)
             `Expected answers: $v_1 = 20$ m/s, $\\Delta x_1 = 50$ m, $\\Delta x_2 = 25$ m, total = 75 m. The braking phase is shorter (25 m) than the acceleration phase (50 m) despite starting from the same speed, because the braking rate ($|a_2| = 8$ m/s²) is twice the acceleration rate ($a_1 = 4$ m/s²).`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Braking car — sign discipline with cross-check',
           type: 'code',
@@ -574,7 +577,8 @@ a2 = -8.0;   % m/s² (phase 2)
             `Expected results: $v_1 = 20$ m/s, $\\Delta x_1 = 50$ m, $\\Delta x_2 = 25$ m, total = 75 m. The braking is twice as fast ($|a_2| = 8$ vs $a_1 = 4$), so the braking distance is half the acceleration distance for the same speed change.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

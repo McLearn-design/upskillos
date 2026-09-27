@@ -326,7 +326,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Differentiate down: x(t) → v(t) → a(t)',
           type: 'code',
@@ -446,11 +447,13 @@ v0_est, x0_est = 2.0, 5.0
             `Compute RMS error as \`np.sqrt(np.mean((x_est - x_exact)**2))\`. Typical result: noise of $\\pm 0.5$ m/s² in acceleration accumulates to several meters of position error over 5 seconds of integration.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Differentiate down: x(t) → v(t) → a(t)',
           type: 'code',
@@ -561,7 +564,8 @@ v0_est = 2.0; x0_est = 5.0;
             `Expected finding: noise of $\\pm 0.5$ m/s² in acceleration accumulates to meters of error in position after 5 seconds. This error accumulation is why GPS is fused with inertial sensors in navigation — the GPS corrects the drifting integral periodically.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

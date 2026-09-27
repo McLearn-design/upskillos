@@ -224,7 +224,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Average velocity: computing and visualizing secant slopes',
           type: 'code',
@@ -378,11 +379,13 @@ x2 = np.array([5, 5, 5, 8, 11, 14, 16, 15, 13])
             `Challenge: the object in this dataset stops for 2 seconds, then moves forward, then reverses. Can you identify all three phases and the exact moments of transition from the computed velocities?`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Average velocity: secant slopes from data',
           type: 'code',
@@ -522,7 +525,8 @@ x2 = [5, 5, 5, 8, 11, 14, 16, 15, 13];
             `The expected phases: stopped for $t \\in [0,2]$, forward with roughly constant velocity for $t \\in [2,6]$, then backward for $t \\in [6,8]$. Verify this by inspecting the velocity signs.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

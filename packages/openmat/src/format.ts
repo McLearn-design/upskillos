@@ -18,22 +18,42 @@ export function sprintfFormat(fmt: unknown, ...args: unknown[]): string {
     }
     return p as unknown[]
   })
+  const escapes: Record<string, string> = {
+    "\\": "\\", n: "\n", r: "\r", t: "\t", b: "\b", f: "\f",
+  }
+  const format = String(fmt).replace(/\\([\\nrtbf])/g, (_, code: string) => escapes[code])
   let i = 0
-  return String(fmt).replace(/%[\d.]*[diouxXeEfgGs]/g, m => {
+  return format.replace(/%([-+ 0#]*)(\d*)(?:\.(\d+))?([diouxXeEfgGs])/g, (m, flags: string, widthText: string, precisionText: string, conversion: string) => {
     const val = flatArgs[i++]
     if (val == null) return m
-    if (m.endsWith("d") || m.endsWith("i")) return Math.round(Number(val)).toString()
-    if (m.endsWith("f") || m.endsWith("e") || m.endsWith("g")) {
-      const prec = (m.match(/\.(\d+)/) ?? [, "6"])[1]
-      return Number(val).toFixed(Number(prec))
+    const lower = conversion.toLowerCase()
+    const precision = precisionText == null ? 6 : Number(precisionText)
+    let rendered: string
+    if (lower === "d" || lower === "i") rendered = Math.round(Number(val)).toString()
+    else if (lower === "u") rendered = Math.abs(Math.round(Number(val))).toString()
+    else if (lower === "o") rendered = Math.round(Number(val)).toString(8)
+    else if (lower === "x") rendered = Math.round(Number(val)).toString(16)
+    else if (lower === "f") rendered = Number(val).toFixed(precision)
+    else if (lower === "e") rendered = Number(val).toExponential(precision)
+    else if (lower === "g") rendered = Number(val).toPrecision(precision).replace(/(?:\.0+|(?:(\.\d*?)0+))(?=e|$)/i, "$1")
+    else rendered = String(val)
+    if (conversion === conversion.toUpperCase() && lower !== "s") rendered = rendered.toUpperCase()
+    if (flags.includes("+") && Number(val) >= 0 && lower !== "s") rendered = "+" + rendered
+    const width = Number(widthText || 0)
+    if (width > rendered.length) {
+      const padding = (flags.includes("0") && !flags.includes("-")) ? "0" : " "
+      rendered = flags.includes("-") ? rendered.padEnd(width, padding) : rendered.padStart(width, padding)
     }
-    return String(val)
-  })
+    return rendered
+  }).replace(/%%/g, "%")
 }
 
 // ── Value display formatting ──────────────────────────────────────────────────
 
-export function formatValue(value: unknown): string {
+export function formatValue(
+  value: unknown,
+  options: { precision?: number; notation?: "auto" | "fixed" } = {},
+): string {
   if (value == null) return ""
   if (typeof value === "string") return value
   // Symbolic row vector
@@ -49,7 +69,7 @@ export function formatValue(value: unknown): string {
   if (value && typeof value === "object" && "__multi" in value)
     return (value as { __multi: unknown[] }).__multi.map(item => formatValue(item)).join("\n\n")
   const plain = toPlain(value)
-  try { return mathFormat(plain, { precision: 6, notation: "auto" }) }
+  try { return mathFormat(plain, { precision: options.precision ?? 6, notation: options.notation ?? "auto" }) }
   catch { return JSON.stringify(plain, null, 2) }
 }
 

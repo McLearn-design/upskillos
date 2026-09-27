@@ -8,9 +8,9 @@
     "game": "An entry in GAMES in src/games/registry.js."
   },
   "counts": {
-    "courses": 41,
-    "chapters": 212,
-    "lessons": 1213,
+    "courses": 42,
+    "chapters": 213,
+    "lessons": 1214,
     "labs": 49,
     "games": 15
   },
@@ -244,6 +244,14 @@
       "label": "Machine Learning",
       "domain": "cs",
       "description": "Machine learning derived from first principles — the mathematics, the algorithms, and the engineering",
+      "chapters": 1,
+      "lessons": 1
+    },
+    {
+      "id": "mesh-engine",
+      "label": "Mesh Engine",
+      "domain": "engineering",
+      "description": "Computational geometry for a CAM application — meshes, surface queries, and comparing two models to find what was cut",
       "chapters": 1,
       "lessons": 1
     },

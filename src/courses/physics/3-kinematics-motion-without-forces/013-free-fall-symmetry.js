@@ -228,7 +228,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Verify rise time equals fall time numerically',
           type: 'code',
@@ -375,11 +376,13 @@ print(f"Simulated peak h    : {y_peak:.4f} m  (should be {h})")`,
             `The verification block simulates forward from the recovered $v_0$ and checks that the resulting flight time and peak height match the observed values. Expected output: $v_0 \\approx 24.5$ m/s, both methods agree, $T = 5.0$ s, $h \\approx 30.6$ m.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Verify rise time equals fall time numerically',
           type: 'code',
@@ -515,7 +518,8 @@ fprintf('Simulated h         : %.4f m (target %.1f)\\n', y_peak_check, h)`,
             `The verification block at the bottom simulates forward from the recovered $v_0$ and checks that the resulting $T$ and $h$ match the observed values. Expected: \`Simulated T: 5.0000 s\`, \`Simulated h: 30.625 m\` (close to 30.6 m, any discrepancy is from rounding).`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
   quiz: [

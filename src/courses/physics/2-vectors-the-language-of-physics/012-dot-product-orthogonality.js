@@ -258,7 +258,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Testing orthogonality — the zero dot product',
           type: 'code',
@@ -389,11 +390,13 @@ print(f"Angle between F_c and v: {np.degrees(np.arccos(np.dot(F_c, vel))):.1f}°
             `This pattern — "solve for an unknown to make a dot product zero" — appears throughout physics when you need to find directions perpendicular to a given constraint.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Testing orthogonality in MATLAB',
           type: 'code',
@@ -505,7 +508,8 @@ fprintf('Angle: %.1f deg\\n', rad2deg(acos(dot(F_c, vel))));`,
             `This "solve for the missing component" pattern appears in physics when you need to find a force direction that does no work on a given motion, or a vector that lies in a specific plane.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

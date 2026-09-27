@@ -443,7 +443,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Computing Work with Vectors',
           type: 'code',
@@ -584,11 +585,13 @@ f_friction = 25  # N opposing motion
 # TODO: W_net = sum of all four
 # TODO: Print each and state whether box speeds up (W_net > 0) or slows down`,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Work as a Dot Product',
           type: 'code',
@@ -691,7 +694,8 @@ f_fric = 30; % N opposing motion
 % TODO: if box starts from rest, v_f = sqrt(2*W_net / m)
 % TODO: fprintf results`,
         },
-      ],
+      ]
+      },
     },
   },
 }

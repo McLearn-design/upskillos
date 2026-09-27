@@ -436,7 +436,8 @@ y₁ + y₂ = 0.04[sin(3x−6t) + sin(3x+6t)] = 0.08 sin(3x) cos(6t).`,
     python: {
       type: 'PythonNotebook',
       title: 'Wave Equation in Python',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Superposition: constructive, destructive, standing wave',
           type: 'code',
@@ -612,12 +613,14 @@ t = np.linspace(0, 2, 1000)  # 2 seconds
 # 5. How many harmonics are needed to look "square"? Why does the series converge slowly near the jumps?
 `,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
       title: 'Wave Equation in MATLAB/Octave',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Superposition and standing wave formation',
           type: 'code',
@@ -750,7 +753,8 @@ y_square = sign(sin(omega * t));   % true square wave for reference
 % 5. Observe: near the discontinuity, the series "overshoots" — this is the Gibbs phenomenon
 `,
         },
-      ],
+      ]
+      },
     },
   },
 };

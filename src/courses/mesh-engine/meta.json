@@ -1,0 +1,7 @@
+{
+  "label": "Mesh Engine",
+  "icon": "\u25b3",
+  "description": "Computational geometry for a CAM application \u2014 meshes, surface queries, and comparing two models to find what was cut",
+  "domain": "engineering",
+  "color": "emerald"
+}

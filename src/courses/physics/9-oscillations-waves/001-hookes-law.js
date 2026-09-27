@@ -390,7 +390,8 @@ Memory aid: series springs = resistors in parallel (use the reciprocal formula).
     python: {
       type: 'PythonNotebook',
       title: "Hooke's Law in Python",
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'F = −kx: the force-displacement curve',
           type: 'code',
@@ -554,12 +555,14 @@ U = A / r**12 - B / r**6
 # 5. Print: r0 in angstroms, k_eff in N/m, and compare to typical atomic bonds (~10-100 N/m)
 `,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
       title: "Hooke's Law in MATLAB/Octave",
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'F = −kx: force-displacement curve',
           type: 'code',
@@ -683,7 +686,8 @@ U = A ./ r.^12 - B ./ r.^6;
 % (Typical atomic bonds have k ≈ 10-100 N/m)
 `,
         },
-      ],
+      ]
+      },
     },
   },
 };

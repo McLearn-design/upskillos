@@ -137,10 +137,21 @@ export interface PlotSeries {
   label?: string
   values?: number[]
   labels?: string[]
+  color?: string
+  width?: number
+}
+
+export interface PlotAnnotation {
+  x: number
+  y: number
+  text: string
+  color?: string
+  size?: number
 }
 
 export interface PlotState {
   series: PlotSeries[]
+  annotations: PlotAnnotation[]
   hold: boolean
   title: string
   xlabel: string

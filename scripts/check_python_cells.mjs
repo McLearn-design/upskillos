@@ -67,9 +67,17 @@ function extractPythonCells(lesson) {
     if (Array.isArray(value)) {
       if (key === 'cells' || key === 'initialCells') {
         for (const item of value) {
-          if (item && typeof item.code === 'string' && typeof item.startCode === 'undefined') {
-            cells.push(item)
-          }
+          if (!item || typeof item.code !== 'string') continue
+          // startCode marks a JS sandbox cell (the geometry/CNC viz blocks).
+          if (typeof item.startCode !== 'undefined') continue
+          // An OpenMatNotebook's cells live under the same array names and
+          // carry MATLAB/Octave source. Running those through Pyodide reports
+          // a SyntaxError in every one - six per lesson on the wave chapter -
+          // which is noise, not a finding. A cell that names a language other
+          // than Python is not ours to check.
+          const language = String(item.language ?? 'python').toLowerCase()
+          if (language !== 'python' && language !== 'py') continue
+          cells.push(item)
         }
       }
       value.forEach(v => walk(v, key))

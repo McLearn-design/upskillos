@@ -248,7 +248,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Max height and apex time from v₀',
           type: 'code',
@@ -395,11 +396,13 @@ print(f"Impact speed               : {abs(v_land):.3f} m/s")`,
             `Expected output: apex ≈ 27.35 m above ground (20 + 7.35 m), land time ≈ 3.55 s, impact speed ≈ 22.8 m/s. The impact speed is larger than the launch speed because the ball falls farther than it rose (from 27.35 m down to 0 m).`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Max height and apex time from v₀',
           type: 'code',
@@ -538,7 +541,8 @@ fprintf('Impact speed               : %.3f m/s\\n', abs(v_land))`,
             `Expected: apex ≈ 27.35 m, land time ≈ 3.55 s, impact speed ≈ 22.8 m/s. The impact speed exceeds the launch speed because the ball falls farther (from 27.35 m) than it rose (7.35 m above the platform), gaining extra kinetic energy.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
   quiz: [

@@ -260,7 +260,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Same drop — two conventions compared side by side',
           type: 'code',
@@ -420,11 +421,13 @@ print(f"Heights agree? {np.isclose(h_peak_dn, h_peak_up)}")`,
             `Both \`np.isclose\` checks should return \`True\`. If they don't, at least one sign assignment is wrong. Systematic comparison is the best way to catch convention errors before they cascade into wrong final answers.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Same drop — two conventions compared',
           type: 'code',
@@ -573,7 +576,8 @@ fprintf('Heights agree? %d\\n', abs(h_peak_dn - h_peak_up) < 1e-6)`,
             `Both agreement checks should print \`1\`. This challenge reinforces the core lesson: sign conventions are bookkeeping — the physics is identical regardless of which direction you call positive.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
   quiz: [

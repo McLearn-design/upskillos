@@ -395,7 +395,8 @@ This matches the direct formula (1/3)ML² = (1/3)(2)(1) = 2/3 kg·m². ✓`,
     python: {
       type: 'PythonNotebook',
       title: 'Moment of Inertia in Python',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Compare I for common shapes — same M and R',
           type: 'code',
@@ -556,12 +557,14 @@ R_neutron = R_star / 1000  # radius shrinks by factor of 1000
 # 5. The fastest observed pulsars spin at ~700 rev/s — is this consistent?
 `,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
       title: 'Moment of Inertia in MATLAB/Octave',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Compare I values for common shapes',
           type: 'code',
@@ -691,7 +694,8 @@ R_neutron = R_star / 1000;  % radius shrinks by 1000x
 % 5. Print the ratio I_star/I_neutron and compare omega values
 `,
         },
-      ],
+      ]
+      },
     },
   },
 };

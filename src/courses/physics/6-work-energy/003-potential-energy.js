@@ -433,7 +433,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Potential Energy Curves',
           type: 'code',
@@ -572,11 +573,13 @@ x_compress = 0.1  # m
 # TODO: plot PE_spring = 0.5*k*x**2 for x from 0 to 0.15 m
 # mark x_compress with a vertical line`,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'PE Curves — Gravity and Spring',
           type: 'code',
@@ -698,7 +701,8 @@ h_target = 3;  % m
 % TODO: plot PE_spring vs x (x from 0 to 0.3) and mark x_eq
 % TODO: add horizontal line at PE_grav_target`,
         },
-      ],
+      ]
+      },
     },
   },
 }

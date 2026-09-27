@@ -412,7 +412,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'KE vs Speed — The Quadratic Relationship',
           type: 'code',
@@ -551,11 +552,13 @@ d = 5   # m displacement
 # TODO: plot KE = 0.5 * m * v**2 for v from 0 to 10 m/s
 # mark v_i and v_f on the plot`,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'KE vs Speed — Quadratic Scaling',
           type: 'code',
@@ -662,7 +665,8 @@ v = [0, 2, 4, 6, 8];   % m/s
 % TODO: F_avg = delta_KE / delta_x  (from W = F*d = delta_KE)
 % TODO: plot F_avg vs midpoint of each interval`,
         },
-      ],
+      ]
+      },
     },
   },
 }

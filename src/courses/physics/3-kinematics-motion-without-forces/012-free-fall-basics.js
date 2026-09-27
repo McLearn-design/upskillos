@@ -244,7 +244,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Dropped from rest — solve analytically',
           type: 'code',
@@ -402,11 +403,13 @@ ax.legend(); plt.tight_layout(); plt.show()`,
             `Expected output: Moon ≈ 7.87 s fall time and 12.9 m/s impact; Earth ≈ 3.19 s and 31.3 m/s; Jupiter ≈ 2.01 s and 49.7 m/s. The plot shows a steep inverse-square-root curve.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Dropped from rest — solve analytically',
           type: 'code',
@@ -555,7 +558,8 @@ grid on`,
             `Expected: Moon ≈ 7.87 s, Mars ≈ 5.18 s, Earth ≈ 3.19 s, Jupiter ≈ 2.01 s. The hyperbolic curve $t = \\sqrt{2h/g}$ is steep at low $g$ and flattens at high $g$ — compare it to the four labeled points.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
   quiz: [

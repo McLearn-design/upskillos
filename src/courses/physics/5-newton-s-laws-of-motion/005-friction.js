@@ -643,7 +643,8 @@ export default {
     python: {
       type: 'PythonNotebook',
       title: 'Friction: Static vs Kinetic — Python Lab',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'The friction curve: static vs kinetic',
           type: 'code',
@@ -777,12 +778,14 @@ print(f"Check: braking distance = {d_check:.2f} m  (should be 45.00)")`,
             `Test with v0=30 m/s, d=45 m, g=10: expected $\\mu_k = 900 / 900 = 1.0$. Also try v0=10 m/s, d=25 m, g=10: $\\mu_k = 100 / 500 = 0.2$ (wet asphalt).`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
       title: 'Friction: Static vs Kinetic — MATLAB/Octave Lab',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'The friction curve: static vs kinetic',
           type: 'code',
@@ -904,7 +907,8 @@ fprintf('Check: braking distance = %.2f m  (should be 45.00)\\n', d_check);`,
             `Try calling \`find_mu_k(20, 80, 10)\` — expected $\\mu_k = 400/1600 = 0.25$ (wet road). Notice that a car going twice as fast (20 vs 10 m/s) on the same road needs four times the stopping distance.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

@@ -227,7 +227,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Component dot product in 2D and 3D',
           type: 'code',
@@ -372,11 +373,13 @@ for i in range(len(names)):
             `Always verify with the manual formula after using \`np.dot\` — the component breakdown shows exactly which terms contribute and why the result has a particular sign.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Component dot product in 2D and 3D',
           type: 'code',
@@ -509,7 +512,8 @@ end`,
             `After computing with \`dot\`, verify with the manual formula to build the habit of checking component-by-component. The manual breakdown shows exactly which terms drive the sign.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

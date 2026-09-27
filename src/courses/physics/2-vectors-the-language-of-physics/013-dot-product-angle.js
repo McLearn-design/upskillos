@@ -290,7 +290,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'The angle formula in Python — three steps',
           type: 'code',
@@ -434,11 +435,13 @@ def angle_between(A, B):
             `When the two lines overlap perfectly on the plot, you've confirmed the identity is exact — not an approximation. The formula $\\vec{A}\\cdot\\vec{B} = |A||B|\\cos\\phi$ is a theorem, not a model.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'The angle formula in MATLAB',
           type: 'code',
@@ -569,7 +572,8 @@ fprintf('Tetrahedral angle = %.2f deg  (expected 109.47 deg)\\n', angle_between(
             `Plotting both curves on the same axes with \`plot\` shows whether they visually overlap. Use different colors or line styles (\`'b-'\`, \`'r--'\`) to distinguish them.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

@@ -436,7 +436,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'All Three Collision Types',
           type: 'code',
@@ -576,11 +577,13 @@ m2 = 1; v2 = np.array([0.0, 0.0])
 # TODO: print v_f, KE_i, KE_f, % KE lost
 # TODO: verify p_x: m1*v1[0] + m2*v2[0] == (m1+m2)*v_f[0]`,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Three Collision Types',
           type: 'code',
@@ -690,7 +693,8 @@ g = 9.8;
 % TODO: % KE lost
 % TODO: fprintf all results`,
         },
-      ],
+      ]
+      },
     },
   },
 }

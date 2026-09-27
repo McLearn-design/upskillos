@@ -321,7 +321,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Computing a cross product — determinant and perpendicularity check',
           type: 'code',
@@ -478,11 +479,13 @@ B = np.array([0.0, 0.5, 0.0])   # tesla
             `The force is perpendicular to the velocity — magnetic forces never do work. They can only change the direction of motion, not the speed. This is why charged particles in a magnetic field move in circles.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Computing a cross product in MATLAB',
           type: 'code',
@@ -604,7 +607,8 @@ B_field = [0, 0.5, 0];
             `The magnetic force is always perpendicular to velocity — \`dot(v, F)\` should equal zero. This confirms the force cannot do work on the proton; it can only change the direction of travel.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

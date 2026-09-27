@@ -632,7 +632,8 @@ Correct equations: ΣFx = F − f_k = ma_x; ΣFy = N − mg = 0.`,
     python: {
       type: 'PythonNotebook',
       title: 'Free Body Diagrams in Python',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Draw an FBD using matplotlib arrows',
           type: 'code',
@@ -789,12 +790,14 @@ W = m * g                # weight (down)
 # 5. Verify: compute ΣFx and ΣFy — should both be ≈ 0
 `,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
       title: 'Free Body Diagrams in MATLAB/Octave',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Force decomposition and net force',
           type: 'code',
@@ -925,7 +928,8 @@ theta2 = deg2rad(45);  % cable 2 from horizontal
 % 5. Verify ΣFy = T1*sin(t1) + T2*sin(t2) ≈ W
 `,
         },
-      ],
+      ]
+      },
     },
   },
 };

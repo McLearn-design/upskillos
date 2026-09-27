@@ -528,7 +528,8 @@ export default {
     python: {
       type: 'PythonNotebook',
       title: "Newton's First Law in Python",
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'ΣF = 0 → x(t) is a straight line',
           type: 'code',
@@ -679,12 +680,14 @@ for name, x_data in [("Inertial?", x_inertial), ("Accelerated?", x_accel)]:
     print(f"{name}: {result}")
 `,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
       title: "Newton's First Law in MATLAB/Octave",
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'ΣF = 0 → linear x(t)',
           type: 'code',
@@ -821,7 +824,8 @@ fprintf('Dataset 1: %s, value = %.2f\\n', c1, v1);
 fprintf('Dataset 2: %s, value = %.2f\\n', c2, a2);
 `,
         },
-      ],
+      ]
+      },
     },
   },
 };

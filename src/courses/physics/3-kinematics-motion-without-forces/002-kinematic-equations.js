@@ -207,7 +207,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'The five SUVAT equations as functions',
           type: 'code',
@@ -348,11 +349,13 @@ print(f"r2: {r2}")   # expect dx≈75, t≈5`,
             `The test cases mirror the examples from the lesson. Once your function passes those, try \`suvat_solve(v=0, a=-9.8, v0=15)\` to find the max height of a thrown ball — it should return $\\Delta x \\approx 11.5$ m.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'The five SUVAT equations as functions',
           type: 'code',
@@ -476,7 +479,8 @@ fprintf('dx = %.1f m, t = %.2f s\\n', r2.dx, r2.t)     % expect 75, 5`,
             `Test all four common cases: $(v_0, a, t)$, $(v_0, v, t)$, $(v_0, v, a)$, $(v_0, a, \\Delta x)$. Each maps to specific SUVAT equations from the lesson. The function is a useful tool for automating the "pick the right equation" step.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

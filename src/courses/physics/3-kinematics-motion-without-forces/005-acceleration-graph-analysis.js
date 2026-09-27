@@ -230,7 +230,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Piecewise constant acceleration: step-by-step velocity reconstruction',
           type: 'code',
@@ -369,11 +370,13 @@ def a_sin(t):
             `The bonus plot shows that the sinusoidal a-t creates a periodic-ish v-t (between 0 and 2 m/s) and a monotonically increasing x-t. This demonstrates a key insight: oscillating acceleration doesn't necessarily mean oscillating position.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Piecewise constant acceleration: velocity reconstruction',
           type: 'code',
@@ -507,7 +510,8 @@ a_func = @(t) sin(t);
             `Interestingly, the position increases monotonically even though the acceleration is oscillating. This is because $v(t) = 1 - \\cos(t) \\geq 0$ always — the oscillating acceleration never makes the velocity negative, so the object never reverses direction.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

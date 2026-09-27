@@ -409,7 +409,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Momentum as a Vector',
           type: 'code',
@@ -549,11 +550,13 @@ m2, v2_i = 2.0, -3.0
 # TODO: verify KE_before == KE_after (kinetic energy conserved)
 # TODO: print results with verification`,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Momentum Calculation and Vector Addition',
           type: 'code',
@@ -657,7 +660,8 @@ m_B = 80;
 % TODO: fprintf results
 % TODO: bar chart: [abs(p_A), abs(p_B)] and [KE_A, KE_B]`,
         },
-      ],
+      ]
+      },
     },
   },
 }

@@ -313,7 +313,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Torque analysis — how force angle affects rotational effect',
           type: 'code',
@@ -476,11 +477,13 @@ print("Flat quad coplanar: ", are_coplanar(*pts_b))   # should be True`,
             `This connects both halves of the lesson: angular momentum uses the cross product to capture orbital geometry, and the coplanarity test uses the scalar triple product to detect when three vectors fail to span 3D space. Both rely on the same perpendicularity machinery.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Torque analysis — how force angle affects rotation',
           type: 'code',
@@ -617,7 +620,8 @@ fprintf('Flat quad coplanar:   %d\\n', are_coplanar(pts_b{:}))`,
             `The coplanarity test is used in 3D geometry to check if a polygon is flat (needed before triangulation), and in linear algebra to check if three vectors span the full 3D space (or only a 2D subspace within it).`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

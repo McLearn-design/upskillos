@@ -308,7 +308,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Both dot product formulas — verify they agree',
           type: 'code',
@@ -437,11 +438,13 @@ sun_angle = np.radians(40)
             `When the panel's normal exactly faces the sun, $\\hat{n}\\cdot\\hat{s} = 1$. This is why solar panels are angled — not flat — to maximise the dot product with the sun's direction. This is the dot product as a real engineering design tool.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Both dot product formulas in MATLAB',
           type: 'code',
@@ -559,7 +562,8 @@ sun_angle = deg2rad(40);
             `The panel aligned with the sun achieves \`dot(n2, sun_hat) = 1.0\` because $\\phi=0°$. This is the dot product as engineering: maximise $\\hat{n}\\cdot\\hat{s}$ to maximise power. Real solar trackers do exactly this calculation.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

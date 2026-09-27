@@ -449,7 +449,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Energy Conservation — Free Fall',
           type: 'code',
@@ -596,11 +597,13 @@ checkpoints = [30, 10, 0]  # m heights
 # v_friction = sqrt(0.85 * 2 * g * (h0 - h))
 # plot on same axes for comparison`,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Free Fall Energy Conservation',
           type: 'code',
@@ -712,7 +715,8 @@ k = 300; m = 0.4; g = 9.8; x = 0.2;
 % State 2: E_spring = 0, E_kinetic = PE_spring, E_grav = 0
 % State 3: E_spring = 0, E_kinetic = 0, E_grav = PE_spring`,
         },
-      ],
+      ]
+      },
     },
   },
 }

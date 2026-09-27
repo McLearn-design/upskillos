@@ -10,6 +10,7 @@ export const SERIES_COLORS = ["teal", "blue", "amber", "purple", "red", "green"]
 export function makePlotState(): PlotState {
   return {
     series: [],
+    annotations: [],
     hold: false,
     title: "",
     xlabel: "",
@@ -51,9 +52,9 @@ export function buildFigureFromPlotState(plotState: PlotState): string | null {
     elements.push({ type: "grid", step: Math.max((xBounds[1] - xBounds[0]) / 8, 1e-6), color: "border" })
   elements.push({ type: "axes", labels: true, ticks: true })
   plotState.series.forEach((series, index) => {
-    const color = SERIES_COLORS[index % SERIES_COLORS.length]
+    const color = series.color || SERIES_COLORS[index % SERIES_COLORS.length]
     if (series.kind === "plot") {
-      elements.push({ type: "curve", xs: series.x, ys: series.y, color, width: 2.5, label: series.label || null })
+      elements.push({ type: "curve", xs: series.x, ys: series.y, color, width: series.width ?? 2.5, label: series.label || null })
     } else if (series.kind === "area") {
       elements.push({ type: "curve", xs: series.x, ys: series.y, color, width: 2.5, fill: true, fill_alpha: 0.18, label: series.label || null })
     } else if (series.kind === "scatter") {
@@ -66,6 +67,15 @@ export function buildFigureFromPlotState(plotState: PlotState): string | null {
     } else if (series.kind === "bar") {
       elements.push({ type: "bars", labels: series.labels, values: series.values, color, alpha: 0.8 })
     }
+  })
+  plotState.annotations.forEach(annotation => {
+    elements.push({
+      type: "text",
+      pos: [annotation.x, annotation.y],
+      content: annotation.text,
+      color: annotation.color || "text",
+      size: annotation.size ?? 12,
+    })
   })
   if (plotState.xlabel)
     elements.push({ type: "text", pos: [(xmin + xmax) / 2, ymin - padY * 0.55], content: plotState.xlabel, color: "muted", size: 12 })

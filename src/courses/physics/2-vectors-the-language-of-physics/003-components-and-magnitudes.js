@@ -405,7 +405,8 @@ export default {
     python: {
       type: 'PythonNotebook',
       title: 'Components and Magnitudes in Python',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Forward and inverse: both conversion directions',
           type: 'code',
@@ -562,12 +563,14 @@ print(f"Quadrant IV confirmed: Ax > 0 = {Ax > 0}, Ay < 0 = {Ay < 0}")`,
             `The magnitude check $\\sqrt{A_x^2 + A_y^2} = \\sqrt{9.19^2 + 9.19^2} = \\sqrt{169} = 13$ must hold. Note: even though $A_y$ is negative, squaring it gives $+84.47 \\approx 9.19^2$ — magnitudes are always positive.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
       title: 'Components and Magnitudes in MATLAB/Octave',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Forward and inverse: both conversion directions',
           type: 'code',
@@ -700,7 +703,8 @@ fprintf('Q4 confirmed: Ax > 0 = %d, Ay < 0 = %d\\n', Ax > 0, Ay < 0);`,
             `The magnitude check \`norm([Ax, Ay]) = sqrt(9.19^2 + 9.19^2) = 13.0\` verifies correctness. In MATLAB, \`Ax > 0\` returns 1 (true) and \`Ay < 0\` returns 1 (true) — both confirming Q4.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

@@ -239,7 +239,8 @@ export default {
     python: {
       type: 'PythonNotebook',
       title: 'Vectors in Python — from arrows to code',
-      cells: [
+      props: {
+        initialCells: [
 
         {
           cellTitle: 'Vectors as arrays: creation, magnitude, direction',
@@ -397,12 +398,14 @@ for vx, vy, exp_mag, exp_ang in test_cases:
             `Once this function works, you can describe ANY 2D vector — regardless of its quadrant — with two numbers: magnitude and angle. This is the fundamental operation you'll use throughout physics when converting between component form and magnitude-direction form.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
       title: 'Vectors in MATLAB/Octave',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Vectors as arrays: creation, magnitude, direction',
           type: 'code',
@@ -528,7 +531,8 @@ end`,
             `Once this function works correctly for all four quadrants, you have the fundamental tool for every physics problem involving vectors: given components, find magnitude and direction. This exact computation appears in projectile motion, force decomposition, and electromagnetic field problems.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

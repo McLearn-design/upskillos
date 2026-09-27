@@ -236,7 +236,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'DSMD step-by-step: 40 N at 30° + 25 N at 145°',
           type: 'code',
@@ -364,11 +365,13 @@ print(f"theta   = {net_ang:.2f} degrees")`,
             `This is the pattern used in spacecraft attitude control: multiple thrusters fire simultaneously, and the flight computer uses exactly this four-step calculation to determine the net force vector 100 times per second.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'DSMD step-by-step: 40 N at 30° + 25 N at 145°',
           type: 'code',
@@ -477,7 +480,8 @@ fprintf('theta   = %.2f degrees\\n', net_ang)`,
             `In real spacecraft software this calculation runs in a real-time control loop at 100 Hz. The MATLAB code you wrote is structurally identical — the difference is the hardware reading sensor values and sending commands.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

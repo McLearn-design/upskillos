@@ -669,7 +669,8 @@ The scale shows 896 N (the person feels heavier). The 210 N is just the excess a
     python: {
       type: 'PythonNotebook',
       title: "Newton's Second Law in Python",
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'F = ma: visualizing the triad',
           type: 'code',
@@ -821,12 +822,14 @@ a_measured = F_applied / 4.2 + np.random.normal(0, 0.15, len(F_applied))
 # 4. Print the estimated mass and compare to the true value (4.2 kg)
 `,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
       title: "Newton's Second Law in MATLAB/Octave",
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'F = ma relationships',
           type: 'code',
@@ -933,7 +936,8 @@ a_measured = F_applied / 4.2 + 0.15*randn(1, length(F_applied));  % noisy
 % 5. Print m_estimated vs true value 4.2 kg
 `,
         },
-      ],
+      ]
+      },
     },
   },
 };

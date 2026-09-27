@@ -354,7 +354,8 @@ export default {
     python: {
       type: 'PythonNotebook',
       title: 'Vector Notation in Python',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'All five notations for one vector',
           type: 'code',
@@ -481,12 +482,14 @@ print(f"|T_hat| = {np.linalg.norm(T_hat):.10f}  (must be 1.0)")`,
             `The verification \`np.linalg.norm(T_hat)\` should print exactly 1.0 (or very close due to floating point). If it doesn't, your \`T_hat\` formula is wrong. This round-trip check is a habit worth building.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
       title: 'Vector Notation in MATLAB/Octave',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'All five notations for one vector',
           type: 'code',
@@ -596,7 +599,8 @@ fprintf('|T_hat| = %.10f  (must be 1.0)\\n', norm(T_hat));`,
             `\`norm(T_hat)\` should print 1.0000000000 (10 decimal places). Any deviation beyond floating-point precision ($\\sim 10^{-15}$) indicates a formula error.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

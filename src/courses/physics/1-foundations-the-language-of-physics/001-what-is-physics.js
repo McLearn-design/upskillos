@@ -464,7 +464,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Free Fall: x = ½gt²',
           type: 'code',
@@ -625,11 +626,13 @@ times   = np.array([0.452, 0.639, 0.957])  # s
 # TODO: Print mean and std of g estimates
 # TODO: Compare to 9.8 m/s²`,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Free Fall: x = ½gt²',
           type: 'code',
@@ -710,7 +713,8 @@ t_query = [6, 9, 1.5];
 % TODO: compare and print both
 % TODO: plot both on same axes`,
         },
-      ],
+      ]
+      },
     },
   },
 

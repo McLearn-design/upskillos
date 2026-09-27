@@ -225,7 +225,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Three-vector chain addition',
           type: 'code',
@@ -340,11 +341,13 @@ print(f"angle = {angle:.2f} degrees")`,
             `Verify: add all three and confirm the total is (very close to) zero. This is the standard structural equilibrium check — find the reaction force that balances a given load.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Three-vector chain addition',
           type: 'code',
@@ -444,7 +447,8 @@ fprintf('angle = %.2f degrees\\n', angle)`,
             `Verify with \`norm(F1 + F2 + F3)\` — it should return (essentially) zero. This is the standard reaction-force calculation used in every structural statics program.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

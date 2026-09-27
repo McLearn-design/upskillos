@@ -388,7 +388,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Angular Kinematics — The Rotational Analogy',
           type: 'code',
@@ -515,11 +516,13 @@ r = 0.2; omega_0 = 80; alpha = -3
 # TODO: print all
 # TODO: plot omega vs t from 0 to t_stop`,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Angular Kinematic Equations',
           type: 'code',
@@ -630,7 +633,8 @@ v_kmh = 15;     % km/h
 % TODO: plot speed vs angle phi for a point on the rim
 % speed = sqrt((v_ms + r*omega*sin(phi)).^2 + (r*omega*cos(phi)).^2) ... or similar`,
         },
-      ],
+      ]
+      },
     },
   },
 }

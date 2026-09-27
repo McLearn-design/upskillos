@@ -965,7 +965,7 @@ product = a_2sf * t_4sf;
 
 fprintf('\\nSig figs example:\\n');
 fprintf('  %.1f × %.3f = %.4f\\n', a_2sf, t_4sf, product);
-fprintf('  Rounded to 2 sf: %.0f\\n', round(product, 1, 'significant'));
+fprintf('  Rounded to 2 sf: %.0f\\n', round(product, 2, 'significant'));
 fprintf('  Rule: multiply/divide → answer has fewest input sig figs\\n');`,
         },
         {

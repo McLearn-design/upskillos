@@ -8,12 +8,43 @@
       "Learning"
     ]
   },
+    {
+    "title": "Google Developers Machine Learning",
+    "url": "https://developers.google.com/machine-learning",
+    "description": "Learn to build ML products with Google's Machine Learning Courses",
+    "tags": [
+      "Machine Learning",
+      "Google", 
+      "AI"
+    ]
+  },
+      {
+    "title": "IBM think topics",
+    "url": "https://www.ibm.com/think/topics",
+    "description": "Become an expert on emerging and fundamental tech topics",
+    "tags": [
+      "Machine Learning",
+      "quantum computing", 
+      "AI"
+    ]
+  },
   {
     "title": "FreeCodeCamp",
     "url": "https://www.freecodecamp.org/",
     "description": "Learn to code — for free. Build projects. Earn certifications.",
     "tags": [
       "Web Dev",
+      "Learning"
+    ]
+  },
+    {
+    "title": "codingFleet",
+    "url": "https://codingfleet.com/code-converter/python/c++/",
+    "description": "Python to C++ Code Converter helps translate code from Python into C++.",
+    "tags": [
+      "Python",
+      "CPP",
+
       "Learning"
     ]
   },

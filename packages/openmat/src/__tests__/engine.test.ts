@@ -26,6 +26,28 @@ describe('executeScript — arithmetic', () => {
     const r = executeScript("fprintf('val = %d\\n', 7)")
     expect(r.output).toContain('val = 7')
   })
+
+  it('fprintf supports MATLAB numeric formats, widths and literal percent signs', () => {
+    const r = executeScript("fprintf('%08.2f %X %.2e %%', 3.5, 255, 1200)")
+    expect(r.output).toContain('00003.50 FF 1.20e+3 %')
+  })
+
+  it('supports MATLAB degree-based trigonometry for scalars and arrays', () => {
+    const r = executeScript(`theta = 30;
+v0 = 20;
+vx = v0 * cosd(theta);
+vy = v0 * sind(theta);
+A = [3; 4];
+thetaA = atan2d(A(2), A(1));
+quadrants = atan2d([0 1 -1], [1 0 0]);
+roundTrip = rad2deg(deg2rad([0 45 180]));`)
+
+    expect(r.workspace.find((entry: any) => entry.name === 'vx')?.value).toBeCloseTo(10 * Math.sqrt(3))
+    expect(r.workspace.find((entry: any) => entry.name === 'vy')?.value).toBeCloseTo(10)
+    expect(r.workspace.find((entry: any) => entry.name === 'thetaA')?.value).toBeCloseTo(53.1301023542)
+    expect(r.workspace.find((entry: any) => entry.name === 'quadrants')?.value).toEqual([0, 90, -90])
+    expect(r.workspace.find((entry: any) => entry.name === 'roundTrip')?.value).toEqual([0, 45, 180])
+  })
 })
 
 describe('executeScript — matrices', () => {
@@ -104,6 +126,72 @@ describe('executeScript — plotting', () => {
     const r = executeScript("plot(1:3, [1 4 9])\ntitle('My Chart')\nxlabel('X')")
     const fig = JSON.parse(r.figureJson as string)
     expect(fig.title).toBe('My Chart')
+  })
+
+  it('runs a MATLAB pendulum notebook with TeX labels, subplots and annotations', () => {
+    const source = String.raw`g = 9.8;
+L = linspace(0.1, 4.0, 200);
+T = 2*pi*sqrt(L/g);
+
+figure;
+subplot(1,2,1);
+plot(L, T, 'm-', 'LineWidth', 2);
+xlabel('L [m]'); ylabel('T [s]');
+title('Pendulum period vs length');
+grid on;
+
+subplot(1,2,2);
+plot(sqrt(L), T, 'r-', 'LineWidth', 2);
+xlabel('\surdL  [m^{1/2}]'); ylabel('T [s]');
+title('T vs \surdL — linear as Buckingham Pi predicts');
+grid on;
+slope = 2*pi/sqrt(g);
+text(0.5, slope*0.5+0.2, sprintf('slope = 2\pi/\surdg = %.3f', slope), ...
+     'Color','r','FontSize',10);
+
+a_2sf = 9.8;
+t_4sf = 3.147;
+product = a_2sf * t_4sf;
+fprintf('\nSig figs example:\n');
+fprintf('  %.1f × %.3f = %.4f\n', a_2sf, t_4sf, product);
+fprintf('  Rounded to 2 sf: %.0f\n', round(product, 2, 'significant'));
+fprintf('  Rule: multiply/divide → answer has fewest input sig figs\n');`
+
+    const result = executeScript(source)
+    const figure = JSON.parse(result.figureJson as string)
+    const secondPanel = JSON.parse(figure.panels[1])
+
+    expect(figure.type).toBe('opencalc_subplots')
+    expect(figure.panels).toHaveLength(2)
+    expect(secondPanel.elements).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'text', content: String.raw`\surdL  [m^{1/2}]` }),
+      expect.objectContaining({ type: 'text', content: expect.stringContaining(String.raw`2\pi/\surdg`), color: 'red', size: 10 }),
+      expect.objectContaining({ type: 'curve', color: 'red', width: 2 }),
+    ]))
+    expect(result.output).toContain('Sig figs example:')
+    expect(result.output).toContain('9.8 × 3.147 = 30.8406')
+    expect(result.output).toContain('Rounded to 2 sf: 31')
+  })
+
+  it('rounds to decimal places or significant digits like MATLAB', () => {
+    const result = executeScript("a = round(30.8406, 1); b = round(30.8406, 2, 'significant');")
+    expect(result.workspace.find((entry: any) => entry.name === 'a')?.value).toBe(30.8)
+    expect(result.workspace.find((entry: any) => entry.name === 'b')?.value).toBe(31)
+  })
+
+  it('preserves TeX backslashes in both character vectors and strings', () => {
+    const result = executeScript(String.raw`a = '\alpha'; b = "\beta";`)
+    expect(result.workspace.find((entry: any) => entry.name === 'a')?.value).toBe(String.raw`\alpha`)
+    expect(result.workspace.find((entry: any) => entry.name === 'b')?.value).toBe(String.raw`\beta`)
+  })
+
+  it('accepts MATLAB format commands and changes numeric display precision', () => {
+    const short = executeScript('format short\nx = 1/3')
+    const long = executeScript('format long\nx = 1/3')
+    const bank = executeScript('format bank\nx = 1/3')
+
+    expect(long.output.length).toBeGreaterThan(short.output.length)
+    expect(bank.output).toContain('0.33')
   })
 
   it('no plot → figureJson is null', () => {

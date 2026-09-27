@@ -5,6 +5,22 @@
 
 import { useEffect, useRef } from 'react'
 
+const MATLAB_TEX_SYMBOLS = {
+  surd: '√', pi: 'π', alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ',
+  theta: 'θ', lambda: 'λ', mu: 'μ', sigma: 'σ', phi: 'φ', omega: 'ω',
+  Delta: 'Δ', Gamma: 'Γ', Lambda: 'Λ', Sigma: 'Σ', Phi: 'Φ', Omega: 'Ω',
+  leq: '≤', geq: '≥', neq: '≠', times: '×', pm: '±', infty: '∞',
+}
+
+function renderMatlabText(value) {
+  return String(value ?? '').replace(/\\([A-Za-z]+)/g, (match, name) => {
+    const command = Object.keys(MATLAB_TEX_SYMBOLS)
+      .sort((a, b) => b.length - a.length)
+      .find(candidate => name.startsWith(candidate))
+    return command ? MATLAB_TEX_SYMBOLS[command] + name.slice(command.length) : match
+  })
+}
+
 function getNiceTickStep(min, max, targetCount = 8) {
   const range = Math.abs(max - min) || 1
   const raw = range / Math.max(targetCount, 2)
@@ -135,7 +151,7 @@ export default function FigureRenderer({ figureJson, C }) {
         ctx.fillStyle = cc.text
         ctx.font = '500 14px sans-serif'
         ctx.textAlign = 'center'
-        ctx.fillText(fig.title, canvasW / 2, 20)
+        ctx.fillText(renderMatlabText(fig.title), canvasW / 2, 20)
       }
 
       // ── Draw clip region so elements don't overflow ──────────────────────
@@ -322,7 +338,7 @@ export default function FigureRenderer({ figureJson, C }) {
             ctx.fillStyle = color
             ctx.font = `${el.bold ? '500 ' : ''}${el.size || 13}px sans-serif`
             ctx.textAlign = el.align || 'center'
-            ctx.fillText(el.content, toX(el.pos[0]), toY(el.pos[1]))
+            ctx.fillText(renderMatlabText(el.content), toX(el.pos[0]), toY(el.pos[1]))
             break
           }
 

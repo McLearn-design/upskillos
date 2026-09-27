@@ -511,7 +511,20 @@ export function replaceBackslash(expr: string): string {
 }
 
 function convertMatlabStringEscapes(line: string): string {
-  return line.replace(/'(?:[^']|'')*'/g, match => `'${match.slice(1, -1).replace(/''/g, "\\'")}'`)
+  return line.replace(/'(?:[^']|'')*'|"(?:[^"]|"")*"/g, match => {
+    // MATLAB character vectors do not interpret backslashes while they are
+    // being parsed. They are used heavily by TeX labels (\alpha, \surd, ...)
+    // and are interpreted later by functions such as fprintf. mathjs parses
+    // strings like JavaScript and rejects unknown escapes, so protect every
+    // backslash for the parser and preserve the original value.
+    const quote = match[0]
+    const doubledQuote = quote + quote
+    const escapedQuote = "\\" + quote
+    const content = match.slice(1, -1)
+      .replace(/\\/g, "\\\\")
+      .split(doubledQuote).join(escapedQuote)
+    return `${quote}${content}${quote}`
+  })
 }
 
 /**
@@ -524,6 +537,9 @@ export function preprocessLine(line: string, variables: Set<string>, functionNam
   if (!output) return ""
   if (/^pkg\s+/i.test(output)) return ""
   output = output.replace(/\bnull\s*\(/g, "nullspace(")
+  // mathjs reserves text() internally; route MATLAB's plot annotation helper
+  // to a non-conflicting runtime name.
+  output = output.replace(/\btext\s*\(/gi, "plottext(")
   output = output.replace(/^hold\s+on$/i, "hold('on')")
   output = output.replace(/^hold\s+off$/i, "hold('off')")
   output = output.replace(/^grid\s+on$/i, "grid('on')")

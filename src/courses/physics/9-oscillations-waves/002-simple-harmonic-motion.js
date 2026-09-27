@@ -452,7 +452,8 @@ The mass oscillates with A = 10 cm even though it started at x = 0.`,
     python: {
       type: 'PythonNotebook',
       title: 'Simple Harmonic Motion in Python',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'x(t), v(t), a(t): all three oscillators',
           type: 'code',
@@ -615,12 +616,14 @@ omega = np.sqrt(k / m)
 # 5. Label A and T on the plot
 `,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
       title: 'Simple Harmonic Motion in MATLAB/Octave',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'x(t), v(t), a(t): the three SHM functions',
           type: 'code',
@@ -752,7 +755,8 @@ T = 2*pi / omega;
 % 5. Mark amplitude and turning points on the plot
 `,
         },
-      ],
+      ]
+      },
     },
   },
 };

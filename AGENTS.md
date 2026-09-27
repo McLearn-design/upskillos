@@ -44,6 +44,7 @@ There is no `src/content/` folder and no chapter `index.js` to register lessons 
 |---|---|
 | Add, remove or rename a lesson, course, lab or game | `npm run facts`, and commit the regenerated files |
 | A lesson file | `node scripts/validate-lesson-schema.mjs <file>`; for Python cells `node scripts/check_python_cells.mjs --files <file>`; for LaTeX `node scripts/check_latex.mjs --files <file>` |
+| Add a visualization or notebook to a lesson | Read [docs/lesson-visualizations-and-notebooks.md](docs/lesson-visualizations-and-notebooks.md) first, then **open the lesson in a browser** — neither checker can tell whether a notebook's cells actually reached the page |
 | A component with tests beside it | `npx vitest run <folder>` |
 | `package.json` scripts | [docs/contributing/setup.md](docs/contributing/setup.md) if a documented command changed |
 | Any Markdown in `AGENTS.md`, `CONTRIBUTING.md` or `docs/contributing/` | `npm run docs:check` |
@@ -68,4 +69,5 @@ Don't start a dev server and leave it running. If you need one for a browser che
 - [docs/contributing/](docs/contributing/): setup, first change, repository tour.
 - [docs/contributor-experience-and-lms-roadmap.md](docs/contributor-experience-and-lms-roadmap.md): the prioritized backlog. Update its status board when completing or changing planned work.
 - [docs/lesson-writing-standard.md](docs/lesson-writing-standard.md): how a good lesson is written.
+- [docs/lesson-visualizations-and-notebooks.md](docs/lesson-visualizations-and-notebooks.md): how an interactive block reaches the page, and the two ways it silently does not.
 - [ARCHITECTURE.md](ARCHITECTURE.md): design history. Parts describe systems that have since been replaced; trust the code and the repository tour first.

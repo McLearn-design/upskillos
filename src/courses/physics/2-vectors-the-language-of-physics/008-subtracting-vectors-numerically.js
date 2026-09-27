@@ -228,7 +228,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: '5-step numerical subtraction: 60 N at 20° minus 45 N at 110°',
           type: 'code',
@@ -344,11 +345,13 @@ print(f"angle = {ang:.2f} degrees")`,
             `Try changing the arc to 180° (v2 = [-10, 0]) — a half-circle. What is $|\\Delta\\vec{v}|$? For anti-parallel velocities of equal speed, $|\\Delta\\vec{v}| = 2v$ (maximum possible).`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: '5-step numerical subtraction: 60 N at 20° minus 45 N at 110°',
           type: 'code',
@@ -449,7 +452,8 @@ fprintf('angle = %.2f degrees\\n', ang)`,
             `Try \`v1 = [10, 0]\`, \`v2 = [-10, 0]\` (half-circle, 180°). The result is \`delta_v = [-20, 0]\`, magnitude 20 m/s — the maximum possible velocity change for speed 10 m/s.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

@@ -646,7 +646,8 @@ The gravity (Earth) and normal force (table) are different types of forces from 
     python: {
       type: 'PythonNotebook',
       title: "Newton's Third Law in Python",
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Action-reaction: equal forces, unequal accelerations',
           type: 'code',
@@ -797,12 +798,14 @@ F = 12.0   # N applied to A
 # 5. Identify the 3rd law pair involving the string tension
 `,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
       title: "Newton's Third Law in MATLAB/Octave",
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Collision: equal forces, unequal accelerations',
           type: 'code',
@@ -912,7 +915,8 @@ m_A = 3; m_B = 2; F = 12;
 % 5. Identify the 3rd law pair: A pulls B forward (T) → B pulls A backward (-T)
 `,
         },
-      ],
+      ]
+      },
     },
   },
 };

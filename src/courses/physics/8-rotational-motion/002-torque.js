@@ -398,7 +398,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Torque vs Force Angle',
           type: 'code',
@@ -531,11 +532,13 @@ d_person = 3.5  # m along ladder
 # TODO: f_min = N_wall (ΣF_x = 0)
 # TODO: print results`,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Torque vs Angle',
           type: 'code',
@@ -647,7 +650,8 @@ lengths = [0.2, 0.35, 0.5];  % m
 % TODO: find angle where F = 2 * F_min analytically: sind(theta) = 0.5 → theta = 30 deg
 % TODO: mark this point on the plot`,
         },
-      ],
+      ]
+      },
     },
   },
 }

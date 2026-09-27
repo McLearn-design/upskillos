@@ -241,7 +241,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Component-wise addition and the parallelogram',
           type: 'code',
@@ -359,11 +360,13 @@ print(f"Offset = {angle_east_of_north:.2f} degrees east of north")`,
             `Expected: speed ≈ 5.000 m/s, angle ≈ 36.87° east of north. The current pushes the boat off its intended heading — which is exactly the problem a navigator using the parallelogram method must solve.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Component-wise addition and the parallelogram',
           type: 'code',
@@ -463,7 +466,8 @@ fprintf('Offset = %.2f degrees east of north\\n', angle_east_of_north)`,
             `Expected: speed = 5.0000 m/s, angle ≈ 36.87° east of north. This is the classic 3-4-5 river crossing — the current deflects the boat off its heading, exactly as the parallelogram predicts.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

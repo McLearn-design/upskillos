@@ -122,7 +122,43 @@ Then the notebook below lets students try it themselves.
     \`,
     visualizations: [
       // PythonNotebook adds an interactive Python editor right here.
-      { id: 'PythonNotebook', props: {} },
+      //
+      // THE CELLS MUST LIVE IN props.initialCells.
+      // normalizeViz() keeps only { id, initialProps, props, title, caption,
+      // mathBridge } off this entry, so a \`cells:\` written at the top level
+      // of it is dropped — and the notebook then renders its built-in
+      // STARTER_CELLS instead. You get a working notebook containing somebody
+      // else's content, with no error anywhere. 58 lessons had this.
+      //
+      // \`id\` is required. Without it the whole entry is discarded.
+      {
+        id: 'PythonNotebook',
+        title: 'Optional heading shown above the notebook',
+        caption: 'Optional line under it — say what to run and in what order.',
+        props: {
+          initialCells: [
+            {
+              id: 1,
+              cellTitle: 'What this cell demonstrates',
+              prose: [
+                'One short paragraph per entry. Say what the code does and what to watch for.',
+                'Ask for a prediction before the cell is run — that is what makes it a lesson.',
+              ],
+              code: [
+                'import numpy as np',
+                '',
+                'print(np.arange(5) ** 2)',
+              ].join('\n'),
+            },
+            {
+              id: 2,
+              cellTitle: 'Cells share one namespace, in order',
+              prose: ['Anything cell 1 defined is still here.'],
+              code: 'print("cell 2 can use cell 1\'s variables")',
+            },
+          ],
+        },
+      },
     ],
   },
 

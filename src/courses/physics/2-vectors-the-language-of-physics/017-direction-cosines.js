@@ -297,7 +297,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Computing direction cosines from any 3D vector',
           type: 'code',
@@ -463,11 +464,13 @@ beta_deg = 60.0
             `Cable B fails because $0.9^2 + 0.9^2 + 0.1^2 = 0.81 + 0.81 + 0.01 = 1.63 \\ne 1$. No 3D vector can have these three direction cosines simultaneously — they would require the unit vector to have magnitude $\\sqrt{1.63} > 1$, which is impossible.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Computing direction cosines from any 3D vector',
           type: 'code',
@@ -591,7 +594,8 @@ alpha_deg = 60;  beta_deg = 45;
             `This challenge tests whether you can use the identity in BOTH directions: validating a given set of cosines (Part A) and computing a missing cosine from two known ones (Part B). Both skills are essential in structural engineering and aerospace applications.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

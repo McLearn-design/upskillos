@@ -238,7 +238,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Force decomposition and net force',
           type: 'code',
@@ -360,11 +361,13 @@ print(f"angle = {ang3:.2f} degrees")`,
             `This is the equilibrant — the single force that balances all others. In structural engineering, this calculation finds the reaction force at a support: given all applied loads, the support must provide exactly the negative of their sum.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Force decomposition and net force',
           type: 'code',
@@ -474,7 +477,8 @@ fprintf('angle = %.2f degrees\\n', ang3)`,
             `In structural analysis, this calculation is called finding the "reaction force." Given all applied loads on a joint, the support (wall, pin, cable) must supply exactly $-\\vec{F}_{net,applied}$ to maintain equilibrium.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

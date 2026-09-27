@@ -378,7 +378,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Power vs Speed — The v³ Relationship',
           type: 'code',
@@ -502,11 +503,13 @@ c_d = 0.5  # drag coefficient (N·s²/m²)
 # TODO: at 100 km/h, find drag power
 # TODO: fuel energy per hour = drag_power * 3600 / efficiency`,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Power vs Speed — v³ Scaling',
           type: 'code',
@@ -620,7 +623,8 @@ efficiency = 0.70;   % 70% mechanical efficiency
 % TODO: P_rated = P_mechanical / efficiency
 % TODO: fprintf all results and convert to kW`,
         },
-      ],
+      ]
+      },
     },
   },
 }

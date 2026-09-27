@@ -232,7 +232,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Braking car: triangular area = displacement',
           type: 'code',
@@ -386,11 +387,13 @@ v_c = np.array([4, 6, 3, -2, -5, -3, 1, 4])
             `The expected displacement is approximately 8–9 m (the object moves forward overall). The distance will be larger because the object reverses around $t=3$ s and again around $t=6$ s. The colored area plot shows both contributions clearly.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Braking car: triangle area = displacement',
           type: 'code',
@@ -524,7 +527,8 @@ v_c = [4, 6, 3, -2, -5, -3, 1, 4];
             `There are two sign changes in this dataset (near $t=3$ and $t=6$). The displacement should be positive (the object ends ahead of where it started); the distance should be larger than the displacement magnitude.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

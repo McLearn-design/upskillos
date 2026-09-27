@@ -240,7 +240,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Vector subtraction: flip-and-add',
           type: 'code',
@@ -367,11 +368,13 @@ print(f"angle = {ang:.2f} degrees")`,
             `This is a key insight: even when speed is constant, there can be a non-zero $\\Delta\\vec{v}$ (and hence a non-zero acceleration). Uniform circular motion is the extreme case.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Vector subtraction: flip-and-add',
           type: 'code',
@@ -472,7 +475,8 @@ fprintf('angle = %.2f degrees\\n', ang)`,
             `This result means the acceleration (which is proportional to $\\Delta\\vec{v}$) pointed west during this interval — even though the projectile was moving mostly upward. Understanding this is the key to centripetal and tangential acceleration.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

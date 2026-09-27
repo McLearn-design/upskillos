@@ -411,7 +411,8 @@ export default {
   notebooks: {
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Two-Object Meeting — Algebraic Solution in MATLAB',
           type: 'code',
@@ -514,7 +515,8 @@ figure; hold on;
 % YOUR PLOT CODE HERE`,
           prose: [],
         },
-      ],
+      ]
+      },
     },
   },
 

@@ -326,7 +326,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Convergence table: forward vs central difference',
           type: 'code',
@@ -436,11 +437,13 @@ exact = np.cos(t0)   # d/dt[sin(t)] = cos(t)
             `Expected result: forward difference minimum error near $h \\approx 10^{-8}$; central difference minimum near $h \\approx 10^{-5}$. Below these optimal values, floating-point precision limits overwhelm the mathematical convergence — the actual reason why you cannot just use arbitrarily small $h$ in practice.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Convergence table: forward vs central difference',
           type: 'code',
@@ -547,7 +550,8 @@ exact = cos(t0);   % d/dt[sin(t)] = cos(t)
             `Expected MATLAB output: forward minimum near $h \\approx 10^{-8}$; central minimum near $h \\approx 10^{-5}$. Use \`[~, idx] = min(errors)\` to find the index of the minimum, then read \`h_vals(idx)\` to get the optimal value.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

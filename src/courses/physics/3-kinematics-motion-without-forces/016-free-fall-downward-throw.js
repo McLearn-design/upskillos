@@ -245,7 +245,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Impact speed and time — downward throw',
           type: 'code',
@@ -396,11 +397,13 @@ print(f"Drop-from-rest speed    : {v_drop:.3f} m/s  (vs thrown: {v_impact} m/s)"
             `The bonus print shows that dropping from rest from 33.8 m gives about 25.7 m/s — compared to the 26.6 m/s thrown impact. The 6 m/s initial throw adds less than 1 m/s to the impact speed from 33.8 m — the subadditive effect at work.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Impact speed and time — downward throw',
           type: 'code',
@@ -543,7 +546,8 @@ fprintf('Drop-from-rest speed    : %.3f m/s (vs thrown %.1f m/s)\\n', v_drop, v_
             `The drop-from-rest speed from 33.8 m is about 25.7 m/s vs. the 26.6 m/s thrown speed. The 6 m/s initial throw added less than 1 m/s — the subadditive effect is dramatic at heights where free fall already gives high impact speed.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
   quiz: [

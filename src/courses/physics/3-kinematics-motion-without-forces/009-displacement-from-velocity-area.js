@@ -333,7 +333,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Exact integral: v(t) = 10 + 2t, verify with antiderivative',
           type: 'code',
@@ -466,11 +467,13 @@ def v3(t): return np.sin(2*t)
             `After finding total distance = 4 m, plot $v(t) = \\sin(2t)$ on $[0, 2\\pi]$ and shade the positive and negative regions in different colors. Count the shaded regions and verify there are 4 (two above, two below), each with area $= 1$ m.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Exact integral: v(t) = 10 + 2t, verify with antiderivative',
           type: 'code',
@@ -593,7 +596,8 @@ crossings = [0, pi/2, pi, 3*pi/2, 2*pi];
             `For visualization, plot $\\sin(2t)$ on $[0, 2\\pi]$ using \`fplot\`, add shading using \`area\` for positive and negative regions, and draw vertical lines at each zero crossing using \`xline\`. The four shaded regions should have equal areas, confirming the 4 m result.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

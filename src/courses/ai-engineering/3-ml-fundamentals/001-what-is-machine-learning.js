@@ -46,7 +46,8 @@ export default {
       {
         id: 'PythonNotebook',
         type: 'PythonNotebook',
-        cells: [
+        props: {
+          initialCells: [
           {
             id: 1,
             prose: [
@@ -314,7 +315,8 @@ y_te = [d[1] for d in data[split:]]
 except Exception as e:
     print(f"FAIL: {e}")`,
           },
-        ],
+        ]
+        },
       },
     ],
   },

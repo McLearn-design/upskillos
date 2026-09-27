@@ -442,7 +442,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Multi-Step Energy Audit — Bungee Jump',
           type: 'code',
@@ -608,11 +609,13 @@ mu_k = 0.1
 # TODO: h_extra = v_top**2 * (sin(theta_rad))**2 / (2*g)  (projectile height)
 # TODO: print all intermediate and final results`,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Bungee Jump Energy Audit',
           type: 'code',
@@ -737,7 +740,8 @@ m = 0.3; g = 9.8; r = 0.8;
 % TODO: N_bottom = m*v_bottom^2/r + m*g  (both point toward center = up)
 % TODO: plot N_bottom and N_top vs h for h in linspace(h_min, 2*h_min, 100)`,
         },
-      ],
+      ]
+      },
     },
   },
 }

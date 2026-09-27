@@ -334,7 +334,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Implementing the cross product from the determinant formula',
           type: 'code',
@@ -471,11 +472,13 @@ for k in solutions:
             `This challenge combines the two big results from the lesson: the determinant formula (needed to compute the cross product) and the Lagrange identity (a consistency check). A failed identity check means your cross product has an error.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Implementing the cross product from the determinant formula',
           type: 'code',
@@ -595,7 +598,8 @@ end`,
             `Set \`all_passed = false\` and print the index whenever a check fails. For correct code, all 5 should pass. This challenge reinforces that the Lagrange identity is an algebraic identity, not a special-case coincidence.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

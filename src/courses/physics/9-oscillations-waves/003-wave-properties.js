@@ -417,7 +417,8 @@ The student used ω for the spatial quantity and k for the temporal quantity. Ru
     python: {
       type: 'PythonNotebook',
       title: 'Wave Properties in Python',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Wave snapshot: y(x,t₀) and v = fλ',
           type: 'code',
@@ -575,12 +576,14 @@ X, Y = np.meshgrid(x, y)
 # 5. Mark the two speaker positions with red dots
 `,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
       title: 'Wave Properties in MATLAB/Octave',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Wave snapshot and v = fλ',
           type: 'code',
@@ -707,7 +710,8 @@ y = linspace(-8, 8, 200);
 %    title('Two-speaker interference pattern (680 Hz)')
 `,
         },
-      ],
+      ]
+      },
     },
   },
 };

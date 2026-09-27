@@ -296,7 +296,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Accelerating bike — step by step with cross-check',
           type: 'code',
@@ -452,11 +453,13 @@ for c in cases:
             `The test code below checks both new cases. After adding both branches, verify that all six test cases pass. A complete solver is useful for quickly checking homework answers or generating multiple related problems.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Accelerating bike — step by step with cross-check',
           type: 'code',
@@ -591,7 +594,8 @@ end
             `With all six branches working, the function handles every constant-acceleration scenario solvable with SUVAT. Cross-checking using a different branch is straightforward: call \`suvat_complete\` with three of your computed answers as knowns and verify the function reproduces the other two.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
 

@@ -417,7 +417,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Impulse and F-t Graph Area',
           type: 'code',
@@ -577,11 +578,13 @@ F_max_safe = 6000  # N
 # TODO: a_avg = (v_i / dt_min) / g  (deceleration in g-forces)
 # TODO: print all results`,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Impulse as F-t Graph Area',
           type: 'code',
@@ -703,7 +706,8 @@ t = t_ms / 1000;  % convert to seconds
 % TODO: plot F_avg vs t_mid
 % TODO: compare sum(delta_p) to m*(v(end)-v(1))`,
         },
-      ],
+      ]
+      },
     },
   },
 }

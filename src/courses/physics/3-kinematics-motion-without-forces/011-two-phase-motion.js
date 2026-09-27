@@ -272,7 +272,8 @@ export default {
   notebooks: {
     python: {
       type: 'PythonNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Phase handoff — compute and print both phases',
           type: 'code',
@@ -449,11 +450,13 @@ for i, res in enumerate(solve_phases(test_phases), 1):
             `Test output: Phase 1 ends at 10 m/s, Phase 2 ends at 10 m/s (cruise), Phase 3 decelerates to 0. Verify total displacement matches what you would compute by hand.`,
           ],
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'Phase handoff — compute and display both phases',
           type: 'code',
@@ -612,7 +615,8 @@ fprintf('Total check  : %.2f m (should be %.1f)\\n', dx_acc+dx_cruise+dx_brake, 
             `Expected output: cruise speed = 20 m/s, phase-1 distance = 50 m, brake distance = 100 m, cruise distance = 170 m, cruise time = 8.5 s. Total check should print 320.00 m.`,
           ],
         },
-      ],
+      ]
+      },
     },
   },
   quiz: [

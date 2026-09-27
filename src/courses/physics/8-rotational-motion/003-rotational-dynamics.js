@@ -422,7 +422,8 @@ Always check which shape's I formula applies — solid vs hollow changes the res
     python: {
       type: 'PythonNotebook',
       title: 'Rotational Dynamics in Python',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'τ = Iα: compare solid vs hollow disk',
           type: 'code',
@@ -592,12 +593,14 @@ theta = np.radians(30)  # 30° ramp
 L = h / np.sin(theta)   # ramp length
 `,
         },
-      ],
+      ]
+      },
     },
     matlab: {
       type: 'OpenMatNotebook',
       title: 'Rotational Dynamics in MATLAB/Octave',
-      cells: [
+      props: {
+        initialCells: [
         {
           cellTitle: 'τ = Iα: solid vs hollow disk',
           type: 'code',
@@ -726,7 +729,8 @@ labels = {'Hollow cylinder', 'Solid disk', 'Hollow sphere', 'Solid sphere'};
 % 4. Sort by arrival time and print a leaderboard
 `,
         },
-      ],
+      ]
+      },
     },
   },
 };

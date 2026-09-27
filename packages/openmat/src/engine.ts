@@ -59,6 +59,37 @@ export function registerElementwiseUnary(name: string, fn: (x: number) => number
   }, { override: true, wrap: false })
 }
 
+function mapBinaryNumeric(a: unknown, b: unknown, fn: (left: number, right: number) => number): unknown {
+  const left = toPlain(a)
+  const right = toPlain(b)
+  if (Array.isArray(left) && Array.isArray(right)) {
+    if (left.length !== right.length) throw new Error("Matrix dimensions must agree")
+    return left.map((value, index) => mapBinaryNumeric(value, right[index], fn))
+  }
+  if (Array.isArray(left)) return left.map(value => mapBinaryNumeric(value, right, fn))
+  if (Array.isArray(right)) return right.map(value => mapBinaryNumeric(left, value, fn))
+  return fn(Number(left), Number(right))
+}
+
+const degreesToRadians = (degrees: number) => degrees * Math.PI / 180
+const radiansToDegrees = (radians: number) => radians * 180 / Math.PI
+
+function sinDegrees(degrees: number): number {
+  const normalized = ((degrees % 360) + 360) % 360
+  if (normalized === 0 || normalized === 180) return 0
+  if (normalized === 90) return 1
+  if (normalized === 270) return -1
+  return Math.sin(degreesToRadians(degrees))
+}
+
+function cosDegrees(degrees: number): number {
+  const normalized = ((degrees % 360) + 360) % 360
+  if (normalized === 90 || normalized === 270) return 0
+  if (normalized === 0) return 1
+  if (normalized === 180) return -1
+  return Math.cos(degreesToRadians(degrees))
+}
+
 // ── HELP_TEXT ─────────────────────────────────────────────────────────────────
 
 export const HELP_TEXT = `
@@ -70,6 +101,12 @@ ARITHMETIC & OPERATORS
   .*  ./  .^           Element-wise operations
   A'                  Conjugate transpose (A.' for non-conjugate)
   A \\ b               Left division (solve A*x = b)
+
+TRIGONOMETRY
+  sin cos tan asin acos atan atan2       Radian functions
+  sind cosd tand asind acosd atand atan2d  Degree functions
+  secd cscd cotd asecd acscd acotd
+  deg2rad rad2deg
 
 MATRICES
   [1 2; 3 4]          Matrix literal (rows separated by ;)
@@ -92,8 +129,9 @@ STATISTICS
   hist(v,bins)  cumsum  cumprod  diff
 
 PLOTTING
-  plot(x,y)  scatter(x,y)  bar(labels,values)  stem(x,y)
+  plot(x,y)  plot(x,y,'r-','LineWidth',2)  scatter(x,y)  bar(labels,values)
   title('...')  xlabel('...')  ylabel('...')  legend('...')
+  text(x,y,'label','Color','r','FontSize',10)
   hold on / hold off  grid on / grid off  xlim([a b])  ylim([a b])
   surf(X,Y,Z)  mesh(X,Y,Z)  scatter3(x,y,z)  plot3(x,y,z)
   colormap('parula')  colorbar
@@ -113,6 +151,7 @@ FUNCTIONS
 STRING & DISPLAY
   disp(x)  fprintf('%g\\n', x)  sprintf('%d items', n)
   num2str(x)  str2num(s)  strsplit(s)  strjoin(c)
+  format short  format long  format longE  format longG  format bank
 
 SYMBOLIC (limited)
   syms x y         Declare symbolic variables
@@ -161,6 +200,8 @@ export function createExecutionEngine(options: EngineOptions = {}): {
   functionNames: Set<string>
   getPlot3DRequest(): Record<string, any> | null
   getControls(): any[]
+  setDisplayFormat(style: string): void
+  formatOutput(value: unknown): string
   clearVariables(names: string[]): void
 } {
   const extensions  = options.extensions  ?? []
@@ -174,6 +215,8 @@ export function createExecutionEngine(options: EngineOptions = {}): {
   const functionNames = new Set<string>()
   const controls: any[] = []
   let plot3DRequest: Record<string, any> | null = null
+  let displayFormat: { precision: number; notation: "auto" | "fixed" } = { precision: 6, notation: "auto" }
+  const formatOutput = (value: unknown) => formatValue(value, displayFormat)
 
   // Restore initial workspace variables
   initialWorkspace.forEach(entry => {
@@ -183,6 +226,29 @@ export function createExecutionEngine(options: EngineOptions = {}): {
 
   // Bind control values (slider/dropdown overrides)
   const controlValues: Record<string, number> = options.controlValues ?? {}
+
+  const MATLAB_COLORS: Record<string, string> = {
+    r: "red", g: "green", b: "blue", c: "cyan",
+    m: "magenta", y: "gold", k: "black", w: "white",
+  }
+  const matlabColor = (value: any) => MATLAB_COLORS[String(value).toLowerCase()] ?? String(value)
+
+  function parsePlotOptions(args: any[]): { color?: string; width?: number; label?: string } {
+    const options: { color?: string; width?: number; label?: string } = {}
+    for (let i = 0; i < args.length; i++) {
+      const value = args[i]
+      if (typeof value !== "string") continue
+      const property = value.toLowerCase()
+      if (property === "color" && args[i + 1] != null) options.color = matlabColor(args[++i])
+      else if (property === "linewidth" && args[i + 1] != null) options.width = Number(args[++i])
+      else if (property === "displayname" && args[i + 1] != null) options.label = String(args[++i])
+      else {
+        const colorCode = value.match(/[rgbcmykw]/i)?.[0]
+        if (colorCode && /^[rgbcmykw]?[-:.]+[rgbcmykw]?$/i.test(value)) options.color = matlabColor(colorCode)
+      }
+    }
+    return options
+  }
 
   // ── Plot registration helper ───────────────────────────────────────────────
   function registerPlot(kind: string, ...args: any[]): void {
@@ -196,15 +262,15 @@ export function createExecutionEngine(options: EngineOptions = {}): {
       } else {
         x = normalizeVector(xRaw); y = normalizeVector(yRaw)
       }
-      const labelArg = rest.find((a: any) => typeof a === "string")
-      if (!plotState.hold) plotState.series = []
-      plotState.series.push({ kind: kind as any, x, y, label: labelArg })
+      const style = parsePlotOptions(rest)
+      if (!plotState.hold) { plotState.series = []; plotState.annotations = [] }
+      plotState.series.push({ kind: kind as any, x, y, ...style })
       return
     }
 
     if (kind === "scatter") {
       const x = normalizeVector(xRaw), y = normalizeVector(yRaw)
-      if (!plotState.hold) plotState.series = []
+      if (!plotState.hold) { plotState.series = []; plotState.annotations = [] }
       plotState.series.push({ kind: "scatter", x, y })
       return
     }
@@ -217,7 +283,7 @@ export function createExecutionEngine(options: EngineOptions = {}): {
       } else {
         x = normalizeVector(xRaw); y = normalizeVector(yRaw)
       }
-      if (!plotState.hold) plotState.series = []
+      if (!plotState.hold) { plotState.series = []; plotState.annotations = [] }
       plotState.series.push({ kind: "stem", x, y })
       return
     }
@@ -227,11 +293,11 @@ export function createExecutionEngine(options: EngineOptions = {}): {
       if (Array.isArray(raw) && !Array.isArray(raw[0]) && typeof raw[0] === "string") {
         const labels = raw.map(String)
         const values = normalizeVector(yRaw)
-        if (!plotState.hold) plotState.series = []
+        if (!plotState.hold) { plotState.series = []; plotState.annotations = [] }
         plotState.series.push({ kind: "bar", x: [], y: [], labels, values })
       } else {
         const vals = normalizeVector(xRaw)
-        if (!plotState.hold) plotState.series = []
+        if (!plotState.hold) { plotState.series = []; plotState.annotations = [] }
         plotState.series.push({ kind: "bar", x: [], y: [], values: vals, labels: vals.map((_, i) => String(i + 1)) })
       }
       return
@@ -356,14 +422,37 @@ export function createExecutionEngine(options: EngineOptions = {}): {
   parser.set("acos",   (v: any) => isCollection(v) ? mapDeep(v, (x: any) => Math.acos(Number(x))) : Math.acos(Number(v)))
   parser.set("atan",   (v: any) => isCollection(v) ? mapDeep(v, (x: any) => Math.atan(Number(x))) : Math.atan(Number(v)))
   parser.set("atan2",  (y: any, x: any) => Math.atan2(Number(y), Number(x)))
+  parser.set("sind",   (v: any) => isCollection(v) ? mapDeep(v, (x: any) => sinDegrees(Number(x))) : sinDegrees(Number(v)))
+  parser.set("cosd",   (v: any) => isCollection(v) ? mapDeep(v, (x: any) => cosDegrees(Number(x))) : cosDegrees(Number(v)))
+  parser.set("tand",   (v: any) => isCollection(v) ? mapDeep(v, (x: any) => sinDegrees(Number(x)) / cosDegrees(Number(x))) : sinDegrees(Number(v)) / cosDegrees(Number(v)))
+  parser.set("cscd",   (v: any) => isCollection(v) ? mapDeep(v, (x: any) => 1 / sinDegrees(Number(x))) : 1 / sinDegrees(Number(v)))
+  parser.set("secd",   (v: any) => isCollection(v) ? mapDeep(v, (x: any) => 1 / cosDegrees(Number(x))) : 1 / cosDegrees(Number(v)))
+  parser.set("cotd",   (v: any) => isCollection(v) ? mapDeep(v, (x: any) => cosDegrees(Number(x)) / sinDegrees(Number(x))) : cosDegrees(Number(v)) / sinDegrees(Number(v)))
+  parser.set("asind",  (v: any) => isCollection(v) ? mapDeep(v, (x: any) => radiansToDegrees(Math.asin(Number(x)))) : radiansToDegrees(Math.asin(Number(v))))
+  parser.set("acosd",  (v: any) => isCollection(v) ? mapDeep(v, (x: any) => radiansToDegrees(Math.acos(Number(x)))) : radiansToDegrees(Math.acos(Number(v))))
+  parser.set("atand",  (v: any) => isCollection(v) ? mapDeep(v, (x: any) => radiansToDegrees(Math.atan(Number(x)))) : radiansToDegrees(Math.atan(Number(v))))
+  parser.set("acscd",  (v: any) => isCollection(v) ? mapDeep(v, (x: any) => radiansToDegrees(Math.asin(1 / Number(x)))) : radiansToDegrees(Math.asin(1 / Number(v))))
+  parser.set("asecd",  (v: any) => isCollection(v) ? mapDeep(v, (x: any) => radiansToDegrees(Math.acos(1 / Number(x)))) : radiansToDegrees(Math.acos(1 / Number(v))))
+  parser.set("acotd",  (v: any) => isCollection(v) ? mapDeep(v, (x: any) => radiansToDegrees(Math.atan(1 / Number(x)))) : radiansToDegrees(Math.atan(1 / Number(v))))
+  parser.set("atan2d", (y: any, x: any) => mapBinaryNumeric(y, x, (yv, xv) => radiansToDegrees(Math.atan2(yv, xv))))
+  parser.set("deg2rad",(v: any) => isCollection(v) ? mapDeep(v, (x: any) => degreesToRadians(Number(x))) : degreesToRadians(Number(v)))
+  parser.set("rad2deg",(v: any) => isCollection(v) ? mapDeep(v, (x: any) => radiansToDegrees(Number(x))) : radiansToDegrees(Number(v)))
   parser.set("sinh",   (v: any) => isCollection(v) ? mapDeep(v, (x: any) => Math.sinh(Number(x))) : Math.sinh(Number(v)))
   parser.set("cosh",   (v: any) => isCollection(v) ? mapDeep(v, (x: any) => Math.cosh(Number(x))) : Math.cosh(Number(v)))
   parser.set("tanh",   (v: any) => isCollection(v) ? mapDeep(v, (x: any) => Math.tanh(Number(x))) : Math.tanh(Number(v)))
   parser.set("ceil",   (v: any) => isCollection(v) ? mapDeep(v, (x: any) => Math.ceil(Number(x)))  : Math.ceil(Number(v)))
   parser.set("floor",  (v: any) => isCollection(v) ? mapDeep(v, (x: any) => Math.floor(Number(x))) : Math.floor(Number(v)))
-  parser.set("round",  (v: any, d?: any) => {
-    const f = d != null ? Math.pow(10, Number(d)) : 1
-    return isCollection(v) ? mapDeep(v, (x: any) => Math.round(Number(x)*f)/f) : Math.round(Number(v)*f)/f
+  parser.set("round",  (v: any, d?: any, mode?: any) => {
+    const digits = d == null ? 0 : Number(d)
+    const significant = String(mode ?? "").toLowerCase() === "significant"
+    const roundOne = (raw: any) => {
+      const x = Number(raw)
+      if (!Number.isFinite(x) || x === 0) return x
+      const places = significant ? digits - Math.ceil(Math.log10(Math.abs(x))) : digits
+      const f = Math.pow(10, places)
+      return Math.round(x * f) / f
+    }
+    return isCollection(v) ? mapDeep(v, roundOne) : roundOne(v)
   })
   parser.set("fix",    (v: any) => statFix(v))
   parser.set("sign",   (v: any) => isCollection(v) ? mapDeep(v, (x: any) => Math.sign(Number(x))) : Math.sign(Number(v)))
@@ -462,8 +551,8 @@ export function createExecutionEngine(options: EngineOptions = {}): {
   parser.set("gradient",(f: any, h?: any) => gradientArray(f, h))
 
   // ── String helpers ────────────────────────────────────────────────────────
-  parser.set("disp",    (v: any) => { logs.push(formatValue(v)); return null })
-  parser.set("display", (v: any) => { logs.push(formatValue(v)); return null })
+  parser.set("disp",    (v: any) => { logs.push(formatOutput(v)); return null })
+  parser.set("display", (v: any) => { logs.push(formatOutput(v)); return null })
   parser.set("fprintf", (fmt: any, ...args: any[]) => { logs.push(sprintfFormat(fmt, ...args)); return null })
   parser.set("printf",  (fmt: any, ...args: any[]) => { logs.push(sprintfFormat(fmt, ...args)); return null })
   parser.set("sprintf", (fmt: any, ...args: any[]) => sprintfFormat(fmt, ...args))
@@ -549,7 +638,10 @@ export function createExecutionEngine(options: EngineOptions = {}): {
       subplotState.slots[subplotState.current - 1] = { ...makePlotState(), ...plotState, series: [...plotState.series] }
     subplotState.current = Number(n)
     const slot = subplotState.slots[Number(n) - 1]
-    if (slot) { plotState.series = [...slot.series]; plotState.title = slot.title }
+    if (slot) Object.assign(plotState, slot, {
+      series: [...slot.series],
+      annotations: [...(slot.annotations ?? [])],
+    })
     else { Object.assign(plotState, makePlotState()) }
     return null
   })
@@ -574,6 +666,17 @@ export function createExecutionEngine(options: EngineOptions = {}): {
   parser.set("title",   (v: any) => { plotState.title = String(v); return null })
   parser.set("xlabel",  (v: any) => { plotState.xlabel = String(v); return null })
   parser.set("ylabel",  (v: any) => { plotState.ylabel = String(v); return null })
+  parser.set("plottext", (x: any, y: any, value: any, ...args: any[]) => {
+    let color: string | undefined
+    let size: number | undefined
+    for (let i = 0; i < args.length; i += 2) {
+      const property = String(args[i] ?? "").toLowerCase()
+      if (property === "color" && args[i + 1] != null) color = matlabColor(args[i + 1])
+      if (property === "fontsize" && args[i + 1] != null) size = Number(args[i + 1])
+    }
+    plotState.annotations.push({ x: Number(x), y: Number(y), text: String(value), color, size })
+    return null
+  })
   parser.set("xline",   (v: any) => { const x = Number(v); plotState.series.push({ kind: "plot", x: [x, x], y: [-1e9, 1e9], label: undefined }); return x })
   parser.set("yline",   (v: any) => { const y = Number(v); plotState.series.push({ kind: "plot", x: [-1e9, 1e9], y: [y, y], label: undefined }); return y })
   parser.set("zlabel",  (v: any) => { plotState.zlabel = String(v); return null })
@@ -1074,7 +1177,7 @@ export function createExecutionEngine(options: EngineOptions = {}): {
   parser.set("polarplot", (...args: any[]) => registerPlot("plot", args[0], args[1]))
   parser.set("pie",       (v: any) => registerPlot("bar", [], v))
   parser.set("sgtitle",   (t: any) => { plotState.title = String(t); return t })
-  parser.set("text",      () => null)
+  parser.set("text",      (...args: any[]) => parser.get("plottext")(...args))
 
   // ── QR and Schur decompositions ───────────────────────────────────────────
   parser.set("qr", (A: any, economy?: any) => {
@@ -1134,6 +1237,16 @@ export function createExecutionEngine(options: EngineOptions = {}): {
     parser, logs, plotState, subplotState, variables, functionNames,
     getPlot3DRequest() { return plot3DRequest },
     getControls() { return controls },
+    setDisplayFormat(style: string) {
+      const normalized = String(style || "short").toLowerCase()
+      if (normalized === "long" || normalized === "longe" || normalized === "longg")
+        displayFormat = { precision: 15, notation: "auto" }
+      else if (normalized === "bank")
+        displayFormat = { precision: 2, notation: "fixed" }
+      else if (!["compact", "loose"].includes(normalized))
+        displayFormat = { precision: 6, notation: "auto" }
+    },
+    formatOutput,
     clearVariables(names: string[]) {
       if (names.length === 0) { Array.from(variables).forEach(name => parser.remove(name)); variables.clear(); return }
       names.forEach(name => { parser.remove(name); variables.delete(name) })
@@ -1181,6 +1294,12 @@ export function executeScript(source: string, options: EngineOptions = {}): Exec
     const hasSemicolon = /;\s*$/.test(trimmedRaw)
     const withoutSemicolon = trimmedRaw.replace(/;\s*$/, "")
 
+    const formatMatch = withoutSemicolon.match(/^format(?:\s+([A-Za-z]+))?$/i)
+    if (formatMatch) {
+      engine.setDisplayFormat(formatMatch[1] ?? "short")
+      return null
+    }
+
     if (/^clear(\s+.+)?$/i.test(withoutSemicolon)) {
       const args = withoutSemicolon.replace(/^clear/i, "").trim().split(/\s+/).filter(Boolean)
       engine.clearVariables(args)
@@ -1216,7 +1335,7 @@ export function executeScript(source: string, options: EngineOptions = {}): Exec
           : wrap(argVal)
       }
       if (lhsName) { parser.set(lhsName, result); variables.add(lhsName) }
-      if (!hasSemicolon) logs.push(`${lhsName ?? "ans"} =\n${formatValue(result)}`)
+      if (!hasSemicolon) logs.push(`${lhsName ?? "ans"} =\n${engine.formatOutput(result)}`)
       return hasSemicolon ? null : result
     }
 
@@ -1323,7 +1442,7 @@ export function executeScript(source: string, options: EngineOptions = {}): Exec
       try {
         const coeffs = extractPolyCoeffs(evalSymFn(rawExpr))
         if (assignLhs) { const lhs = assignLhs.replace(/\s*=\s*$/, "").trim(); parser.set(lhs, coeffs); variables.add(lhs) }
-        if (!hasSemicolon) logs.push(`${assignLhs ? assignLhs.replace(/\s*=\s*$/, "").trim() : "ans"} =\n${formatValue(coeffs)}`)
+        if (!hasSemicolon) logs.push(`${assignLhs ? assignLhs.replace(/\s*=\s*$/, "").trim() : "ans"} =\n${engine.formatOutput(coeffs)}`)
         return hasSemicolon ? null : coeffs
       } catch { /* fall through */ }
     }
@@ -1335,7 +1454,7 @@ export function executeScript(source: string, options: EngineOptions = {}): Exec
         const val = toPlain(parser.evaluate(preprocessLine(valStr.trim(), variables, functionNames)))
         const evaluated = toPlain((math as any).parse(evalSymFn(rawExpr)).compile().evaluate({ [varName]: val }))
         if (assignLhs) { const lhs = assignLhs.replace(/\s*=\s*$/, "").trim(); parser.set(lhs, evaluated); variables.add(lhs) }
-        if (!hasSemicolon) logs.push(`${assignLhs ? assignLhs.replace(/\s*=\s*$/, "").trim() : "ans"} =\n${formatValue(evaluated)}`)
+        if (!hasSemicolon) logs.push(`${assignLhs ? assignLhs.replace(/\s*=\s*$/, "").trim() : "ans"} =\n${engine.formatOutput(evaluated)}`)
         return hasSemicolon ? null : evaluated
       } catch { /* fall through */ }
     }
@@ -1474,7 +1593,7 @@ export function executeScript(source: string, options: EngineOptions = {}): Exec
               parser.set(name, mat.map((row: number[]) => row.filter((_: any, c: number) => !toDelete.has(c))))
             }
             variables.add(name)
-            if (!hasSemicolon) { const _v = parser.get(name); if (_v != null) logs.push(`${name} =\n${formatValue(_v)}`) }
+            if (!hasSemicolon) { const _v = parser.get(name); if (_v != null) logs.push(`${name} =\n${engine.formatOutput(_v)}`) }
             return hasSemicolon ? null : parser.get(name)
           }
           const rowIdxs = evalIdx(rowExpr, nRows)
@@ -1489,7 +1608,7 @@ export function executeScript(source: string, options: EngineOptions = {}): Exec
           parser.set(name, mat)
         }
         variables.add(name)
-        if (!hasSemicolon) { const _v = parser.get(name); if (_v != null) logs.push(`${name} =\n${formatValue(_v)}`) }
+        if (!hasSemicolon) { const _v = parser.get(name); if (_v != null) logs.push(`${name} =\n${engine.formatOutput(_v)}`) }
         return hasSemicolon ? null : parser.get(name)
       }
 
@@ -1500,12 +1619,12 @@ export function executeScript(source: string, options: EngineOptions = {}): Exec
         parser.set(name, result)
         parser.set("ans", result)
         variables.add(name)
-        if (!hasSemicolon && result != null && result !== "") logs.push(`${name} =\n${formatValue(result)}`)
+        if (!hasSemicolon && result != null && result !== "") logs.push(`${name} =\n${engine.formatOutput(result)}`)
         return hasSemicolon ? null : result
       }
       const result = toPlain(parser.evaluate(replaceBackslash(line)))
       parser.set("ans", result)
-      if (!hasSemicolon && result != null && result !== "") logs.push(`ans =\n${formatValue(result)}`)
+      if (!hasSemicolon && result != null && result !== "") logs.push(`ans =\n${engine.formatOutput(result)}`)
       return (hasSemicolon || result == null || result === "") ? null : result
     } catch (error) {
       throw formatExecutionError(error, { lineNo, rawLine: trimmedRaw, normalizedLine: line })
