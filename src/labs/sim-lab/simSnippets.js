@@ -1,5 +1,6 @@
 import { ADVANCED_SIM_SNIPPETS } from './simAdvancedSnippets.js'
 import { CORE_SNIPPET_WALKTHROUGHS } from './simSnippetWalkthroughs.js'
+import { THREE_LEARNING_SNIPPETS } from './simThreeLearningSnippets.js'
 
 const canvasLoop = (setup, draw) => `${setup}
 
@@ -351,5 +352,9 @@ const enrichedCore = CORE_SIM_SNIPPETS.map(category => ({
   })),
 }))
 
-export const SIM_SNIPPETS = [...enrichedCore, ...ADVANCED_SIM_SNIPPETS]
+export const SIM_SNIPPETS = [
+  ...enrichedCore,
+  ...ADVANCED_SIM_SNIPPETS,
+  ...THREE_LEARNING_SNIPPETS,
+]
 export const DEFAULT_SIM_SNIPPET = SIM_SNIPPETS[0].items[0]

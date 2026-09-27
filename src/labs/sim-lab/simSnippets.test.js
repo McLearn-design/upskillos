@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SIM_SNIPPET, SIM_SNIPPETS } from './simSnippets.js'
 import { SIM_TEMPLATES } from './simTemplates.js'
+import { buildSandbox } from '../../utils/simSandbox.js'
 
 describe('Sim Lab starter and snippet library', () => {
   const snippets = SIM_SNIPPETS.flatMap(category => category.items)
@@ -13,7 +14,7 @@ describe('Sim Lab starter and snippet library', () => {
   })
 
   it('gives every snippet unique code, teaching text, and a runnable preview', () => {
-    expect(snippets.length).toBeGreaterThanOrEqual(60)
+    expect(snippets.length).toBeGreaterThanOrEqual(80)
     expect(new Set(snippets.map(snippet => snippet.key)).size).toBe(snippets.length)
     for (const snippet of snippets) {
       expect(snippet.code.trim().length).toBeGreaterThan(10)
@@ -50,9 +51,24 @@ describe('Sim Lab starter and snippet library', () => {
       'Controls & Interaction',
       'SVG',
       'Simulation Projects',
+      '3D Movement & Controllers',
+      'Animation & Rigging',
+      'CAD & Inspection',
+      'Procedural Geometry & Paths',
+      'Model I/O',
     ]))
     expect(snippets.some(snippet => snippet.key === 'quaternion-slerp')).toBe(true)
     expect(snippets.some(snippet => snippet.key === 'svg-interactive-nodes')).toBe(true)
+    expect(snippets.some(snippet => snippet.key === 'model-upload-glb')).toBe(true)
+    expect(snippets.some(snippet => snippet.key === 'model-export-glb')).toBe(true)
+  })
+
+  it('bundles the loaders and exporter required by model I/O lessons', () => {
+    const sandbox = buildSandbox()
+    expect(sandbox).toContain('GLTFLoader.js')
+    expect(sandbox).toContain('OBJLoader.js')
+    expect(sandbox).toContain('GLTFExporter.js')
+    expect(sandbox).toContain('TransformControls.js')
   })
 
   it('uses a real library entry as the initial modal selection', () => {

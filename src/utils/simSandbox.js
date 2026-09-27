@@ -27,6 +27,7 @@ export function buildSandbox() {
   body > canvas { position:absolute; top:0; left:0; display:block }
   #c2d { position:absolute; top:0; left:0; display:none }
   #app { display:none; width:100%; min-height:100%; font-family:system-ui,sans-serif }
+  .sim-overlay { position:fixed; z-index:7; font:12px/1.4 system-ui,sans-serif }
   #err { position:fixed; bottom:0; left:0; right:0; padding:8px 14px;
          background:rgba(20,4,4,0.95); color:#ff6b6b; font:11px/1.6 monospace;
          white-space:pre-wrap; border-top:1px solid #ff4444; display:none;
@@ -39,6 +40,10 @@ export function buildSandbox() {
 <div id="app"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
 <script>
 let animId=null, userUpdate=null, lastTs=0, currentMode='3d', isDark=false
 const c2d = document.getElementById('c2d')
@@ -100,6 +105,7 @@ function addDefaultLights() {
 }
 function clearScene() {
   while (scene.children.length) scene.remove(scene.children[0])
+  document.querySelectorAll('.sim-overlay').forEach(element => element.remove())
   addDefaultLights()
 }
 function switchMode(mode) {
