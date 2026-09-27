@@ -1,3 +1,6 @@
+import { ADVANCED_SIM_SNIPPETS } from './simAdvancedSnippets.js'
+import { CORE_SNIPPET_WALKTHROUGHS } from './simSnippetWalkthroughs.js'
+
 const canvasLoop = (setup, draw) => `${setup}
 
 function init() {}
@@ -18,7 +21,7 @@ function update(dt) {
   ${update}
 }`
 
-export const SIM_SNIPPETS = [
+const CORE_SIM_SNIPPETS = [
   {
     category: 'Physics',
     color: 'text-sky-400',
@@ -332,4 +335,21 @@ const y = r * Math.sin(theta)`, mode: '2d',
   },
 ]
 
+const CATEGORY_DEFAULTS = {
+  Physics: { level: 'Intermediate', kind: 'Technique', concepts: ['simulation', 'motion'] },
+  'Canvas 2D': { level: 'Beginner', kind: 'Drawing', concepts: ['Canvas 2D', 'paths'] },
+  'Three.js': { level: 'Beginner', kind: 'Three.js', concepts: ['scene graph', 'rendering'] },
+  Math: { level: 'Beginner', kind: 'Math lab', concepts: ['math', 'vectors'] },
+}
+
+const enrichedCore = CORE_SIM_SNIPPETS.map(category => ({
+  ...category,
+  items: category.items.map(item => ({
+    ...CATEGORY_DEFAULTS[category.category],
+    ...item,
+    walkthrough: CORE_SNIPPET_WALKTHROUGHS[item.key],
+  })),
+}))
+
+export const SIM_SNIPPETS = [...enrichedCore, ...ADVANCED_SIM_SNIPPETS]
 export const DEFAULT_SIM_SNIPPET = SIM_SNIPPETS[0].items[0]
