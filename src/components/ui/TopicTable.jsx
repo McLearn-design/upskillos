@@ -118,7 +118,7 @@ export default function TopicTable({ group, query, matchItem }) {
   const groupMeta = filtered.length > 0 ? (GLASS_META[filtered[0].cardItem.color] ?? GLASS_META.slate) : GLASS_META.slate;
 
   return (
-    <fieldset className={`rounded-[32px] border-[2px] ${groupMeta.border.replace('/30', '/40')} px-6 pb-6 pt-2 sm:px-8 sm:pb-8 sm:pt-2 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-2xl relative shadow-[0_20px_40px_rgba(0,0,0,0.05)] dark:shadow-[0_20px_40px_rgba(0,0,0,0.2)] min-w-0 z-10`}>
+    <fieldset className={`rounded-[32px] border-[2px] ${groupMeta.outerBorder} px-6 pb-6 pt-2 sm:px-8 sm:pb-8 sm:pt-2 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-2xl relative shadow-[0_20px_40px_rgba(0,0,0,0.05)] dark:shadow-[0_20px_40px_rgba(0,0,0,0.2)] min-w-0 z-10`}>
       
       {/* Subtle Background Glow for the Table Container */}
       <div className={`absolute -top-40 -left-40 w-96 h-96 bg-gradient-to-br ${groupMeta.header} rounded-full blur-[100px] opacity-[0.15] dark:opacity-[0.25] pointer-events-none`} />

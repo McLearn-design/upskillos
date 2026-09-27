@@ -30,9 +30,26 @@ export function completeTopics(curated, registries) {
   const placed = new Set(Object.values(topics).flatMap(t => Object.values(t.subtopics).flatMap(s => s.items.map(i => `${i.kind}:${i.key}`))))
   const domains = { math: 'mathematics', science: 'science', cs: 'computer-science', engineering: 'engineering', data: 'data-ai', creative: 'creative' }
   const subjects = { Math: 'mathematics', Science: 'science', Engineering: 'engineering', 'CS Theory': 'computer-science', 'Computer Science': 'computer-science', 'Software Engineering': 'programming', 'Data Science': 'data-ai', 'Web Dev': 'programming', Creative: 'creative' }
+  const tagToDomain = {
+    Math: 'mathematics', 'Linear Algebra': 'mathematics', Calculus: 'mathematics', Geometry: 'mathematics', Probability: 'mathematics', Statistics: 'mathematics',
+    Physics: 'science', Chemistry: 'science', Biology: 'science',
+    CS: 'computer-science', Programming: 'programming', Python: 'programming', 'C++': 'programming',
+    '3D': 'engineering', Data: 'data-ai', 'Data Science': 'data-ai'
+  }
   for (const [kind, items] of Object.entries(registries)) for (const item of items) {
     if (placed.has(`${kind}:${item.key}`)) continue
-    const topicId = subjects[item.subject] || domains[item.domain] || 'general'
+    
+    let topicId = subjects[item.subject] || domains[item.domain]
+    if (!topicId && item.tags) {
+      for (const tag of item.tags) {
+        if (subjects[tag] || tagToDomain[tag]) {
+          topicId = subjects[tag] || tagToDomain[tag]
+          break
+        }
+      }
+    }
+    topicId = topicId || 'general'
+
     const topic = topics[topicId] || topics.general
     const id = `more-${kind}s`
     topic.subtopics[id] ??= { label: kind === 'course' ? 'More courses' : kind === 'lab' ? 'More labs & tools' : 'More games', color: topic.color, items: [] }

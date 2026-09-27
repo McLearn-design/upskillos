@@ -1,6 +1,8 @@
+import { useState, useRef, useEffect } from 'react'
 import HomeTopicSearch from './HomeTopicSearch.jsx'
 import { GLASS_META } from '../../styles/courseColors.js'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 export default function TopicFilterHeader({
   query, onQueryChange,
@@ -11,18 +13,71 @@ export default function TopicFilterHeader({
   const activeTopic = topics[activeTopicId]
   const activeMeta = activeTopic ? (GLASS_META[activeTopic.color] ?? GLASS_META.slate) : GLASS_META.slate
 
+  const scrollRef = useRef(null)
+  const [showLeftArrow, setShowLeftArrow] = useState(false)
+  const [showRightArrow, setShowRightArrow] = useState(false)
+
+  const checkScroll = () => {
+    if (!scrollRef.current) return
+    const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current
+    setShowLeftArrow(scrollLeft > 5)
+    setShowRightArrow(scrollLeft < scrollWidth - clientWidth - 5)
+  }
+
+  useEffect(() => {
+    checkScroll()
+    window.addEventListener('resize', checkScroll)
+    return () => window.removeEventListener('resize', checkScroll)
+  }, [topicOrder])
+
+  const scrollBy = (dir) => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollBy({ left: dir === 'left' ? -300 : 300, behavior: 'smooth' })
+    }
+  }
+
+
   return (
     <div className="w-[90vw] max-w-none mx-auto mb-6">
       <HomeTopicSearch onSearch={onQueryChange} />
 
-      <div className="flex flex-wrap items-end gap-x-8 gap-y-2 border-b-[2px] border-slate-300/50 dark:border-slate-700/50 pb-2">
+      <div className="relative group">
+        <AnimatePresence>
+          {showLeftArrow && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute left-0 top-0 bottom-[2px] w-16 bg-gradient-to-r from-[#f8fafc] dark:from-[#0b0f19] to-transparent z-10 flex items-center justify-start pointer-events-none">
+              <button 
+                onClick={() => scrollBy('left')} 
+                className={`pointer-events-auto p-1.5 rounded-full backdrop-blur-md transition-all duration-300 border-[1.5px] ${activeMeta.border} bg-white/60 dark:bg-[#0b0f19]/60 hover:bg-white dark:hover:bg-slate-800 ${activeMeta.text} ml-1`}
+                style={{ boxShadow: activeMeta.glow.replace('32px', '8px').replace('0.50', '0.4') }}
+                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = activeMeta.glow.replace('32px', '16px').replace('0.50', '0.8') }}
+                onMouseLeave={(e) => { e.currentTarget.style.boxShadow = activeMeta.glow.replace('32px', '8px').replace('0.50', '0.4') }}
+              >
+                <ChevronLeft size={18} strokeWidth={3} />
+              </button>
+            </motion.div>
+          )}
+          {showRightArrow && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute right-0 top-0 bottom-[2px] w-16 bg-gradient-to-l from-[#f8fafc] dark:from-[#0b0f19] to-transparent z-10 flex items-center justify-end pointer-events-none">
+              <button 
+                onClick={() => scrollBy('right')} 
+                className={`pointer-events-auto p-1.5 rounded-full backdrop-blur-md transition-all duration-300 border-[1.5px] ${activeMeta.border} bg-white/60 dark:bg-[#0b0f19]/60 hover:bg-white dark:hover:bg-slate-800 ${activeMeta.text} mr-1`}
+                style={{ boxShadow: activeMeta.glow.replace('32px', '8px').replace('0.50', '0.4') }}
+                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = activeMeta.glow.replace('32px', '16px').replace('0.50', '0.8') }}
+                onMouseLeave={(e) => { e.currentTarget.style.boxShadow = activeMeta.glow.replace('32px', '8px').replace('0.50', '0.4') }}
+              >
+                <ChevronRight size={18} strokeWidth={3} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <div ref={scrollRef} onScroll={checkScroll} className="flex overflow-x-auto whitespace-nowrap items-end gap-x-8 border-b-[2px] border-slate-300/50 dark:border-slate-700/50 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden scroll-smooth">
         {/* Only shown once the learner actually has something to resume —
             an empty "In Progress" pill would just be a dead click. */}
         {hasInProgress && (
           <button
             type="button"
             onClick={() => onSelectTopic('in-progress')}
-            className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wider pb-2 -mb-[10px] border-b-[3px] transition-all duration-300 relative ${
+            className={`shrink-0 flex items-center gap-2 text-xs font-bold uppercase tracking-wider pb-2 -mb-[10px] border-b-[3px] transition-all duration-300 relative ${
               activeTopicId === 'in-progress'
                 ? 'border-transparent bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.1)]'
                 : 'border-transparent text-amber-600 dark:text-amber-400 opacity-[0.8] hover:opacity-100 hover:border-slate-300 dark:hover:border-slate-700'
@@ -56,7 +111,7 @@ export default function TopicFilterHeader({
               key={id}
               type="button"
               onClick={() => onSelectTopic(id)}
-              className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wider pb-2 -mb-[10px] border-b-[3px] transition-all duration-300 relative ${
+              className={`shrink-0 flex items-center gap-2 text-xs font-bold uppercase tracking-wider pb-2 -mb-[10px] border-b-[3px] transition-all duration-300 relative ${
                 activeTopicId === id
                   ? `border-transparent bg-gradient-to-r ${meta.header} bg-clip-text text-transparent filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.1)]`
                   : `border-transparent ${meta.text} opacity-[0.55] hover:opacity-100 hover:border-slate-300 dark:hover:border-slate-700`
@@ -65,7 +120,7 @@ export default function TopicFilterHeader({
               {activeTopicId === id && (
                 <div 
                   className="absolute -bottom-[2.5px] left-0 right-0 h-[3px] bg-slate-200/50 dark:bg-slate-700/50 rounded-full overflow-hidden" 
-                  style={{ boxShadow: meta.glow.replace('32px', '8px').replace('0.50', '0.8') }}
+                  style={{ boxShadow: `${meta.glow.replace('32px', '12px').replace('0.50', '1')}, ${meta.glow.replace('32px', '24px').replace('0.50', '0.6')}` }}
                 >
                   <div className={`absolute inset-0 bg-gradient-to-r ${meta.header} opacity-80`} />
                   <motion.div 
@@ -84,6 +139,7 @@ export default function TopicFilterHeader({
             </button>
           )
         })}
+        </div>
       </div>
 
       {activeTopic && (
