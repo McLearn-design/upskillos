@@ -254,6 +254,7 @@ function NotebookCell({ cell, cellIndex, T, dark, monacoTheme }) {
   const [logs, setLogs] = useState([]);
   const [hasRun, setHasRun] = useState(false);
   const [challengeState, setChallengeState] = useState(null);
+  const [challengeMessage, setChallengeMessage] = useState(null);
   const [showSolution, setShowSolution] = useState(false);
   const [showConsole, setShowConsole] = useState(false);
   const [showPreview, setShowPreview] = useState(!!cell.showPreviewByDefault);
@@ -282,9 +283,18 @@ function NotebookCell({ cell, cellIndex, T, dark, monacoTheme }) {
     if (cell.type === "challenge" && cell.check) {
       setTimeout(() => {
         try {
-          const passed = cell.check(activeJs, logs, html);
-          setChallengeState(passed ? "pass" : "fail");
-        } catch (_) { setChallengeState("fail"); }
+          // check() may return a plain boolean, or { pass, message } to say
+          // WHY it failed. "Not quite — try again" on its own leaves the
+          // reader guessing, which is the opposite of what a challenge is
+          // for. Booleans keep behaving exactly as they did.
+          const result = cell.check(activeJs, logs, html);
+          const detailed = result && typeof result === "object";
+          setChallengeState((detailed ? result.pass : result) ? "pass" : "fail");
+          setChallengeMessage(detailed && result.message ? result.message : null);
+        } catch (_) {
+          setChallengeState("fail");
+          setChallengeMessage(null);
+        }
       }, 300);
     }
   }, [html, css, js, showSolution, cell, logs, cellIndex, dark]);
@@ -297,6 +307,7 @@ function NotebookCell({ cell, cellIndex, T, dark, monacoTheme }) {
     setHasRun(false);
     setShowConsole(false);
     setChallengeState(null);
+    setChallengeMessage(null);
     setShowSolution(false);
     if (iframeRef.current) iframeRef.current.srcdoc = "";
   };
@@ -443,6 +454,11 @@ function NotebookCell({ cell, cellIndex, T, dark, monacoTheme }) {
           {!hasRun || !challengeState
             ? "Run your solution to unlock the next step."
             : (challengeState === "pass" ? (cell.successMessage || "✓ Challenge complete!") : (cell.failMessage || "✗ Not quite — try again."))}
+          {challengeMessage && (
+            <div style={{ marginTop: 6, fontWeight: 400, opacity: 0.9, whiteSpace: "pre-wrap" }}>
+              {challengeMessage}
+            </div>
+          )}
         </div>
       )}
     </div>

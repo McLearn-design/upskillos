@@ -388,6 +388,608 @@ mesh tool, and it is Lesson 3.`,
     },
 
     {
+      type: 'js',
+      instruction: `### Unfold it
+
+**Drag the fold slider.** The cube opens out into a flat net, the way a dice
+template is printed before it is cut and folded. Every corner carries its own
+number and its own colour.
+
+Six faces, four corners each, is **24 corner-slots**. But a cube only has
+**8 corners**. So the same number has to turn up more than once — and the
+question worth asking is how many times, and where.
+
+Watch the \`distinct points\` line in the readout as you drag.
+
+- **Folded: 8.** Three faces meet at each corner and all three agree where it
+  is, so every slot with the same number sits at the same place.
+- **Flat: 14.** Not 24, and not 8. Some numbers stayed put and some split.
+
+**Stop on that 14.** A dice net is not six loose squares. Some of its edges are
+*folds*, which stay joined, and the rest are *cuts*, which come apart. Corner 0
+has folds on both sides of it, so on the paper it is still one point that three
+panels share. Corner 3 has cuts either side, so it prints in three separate
+places and you glue them back together. Click 0, then click 3, and look at the
+difference.
+
+**Now drag the second slider.** It shrinks each panel away from its neighbours
+so nothing is shared at all, and the count reaches **24** — six separate
+squares with no corner in common.
+
+Those three numbers are one shape described three ways: **24 corners with
+nothing shared, 14 with some shared, 8 with everything shared.** The cube never
+changed. Only the bookkeeping did, and that bookkeeping is the whole subject of
+the next lesson.
+
+Click a number to light up just that one and follow it round.
+
+One more thing to notice before you go on. Each panel has a **faint yellow line
+across it**, corner 0 to corner 2. That is not decoration: a panel is not a
+square as far as the computer is concerned, it is *two triangles*, and that line
+is where they meet. Both triangles use the two corners at its ends. The next
+cell is about nothing but those shared lines.
+
+**Before you move on, predict two things.** The front face uses corners
+0, 1, 5, 4 — which four does the top use? And with the panels pulled fully
+apart, what should the count be for a single square drawn as two triangles?
+Work both out before you look.`,
+      html: `${THREE_CDN}
+<div style="display:flex;gap:5px;padding:8px 2px;flex-wrap:wrap;align-items:center">
+  <span style="color:#7d8794;font:11px ui-monospace,monospace;margin-right:4px">corner</span>
+  <button data-c="0" style="background:#2b313a;color:#d7dade;border:1px solid #3d4550;border-radius:4px;padding:4px 9px;cursor:pointer;font:11px ui-monospace,monospace">0</button>
+  <button data-c="1" style="background:#2b313a;color:#d7dade;border:1px solid #3d4550;border-radius:4px;padding:4px 9px;cursor:pointer;font:11px ui-monospace,monospace">1</button>
+  <button data-c="2" style="background:#2b313a;color:#d7dade;border:1px solid #3d4550;border-radius:4px;padding:4px 9px;cursor:pointer;font:11px ui-monospace,monospace">2</button>
+  <button data-c="3" style="background:#2b313a;color:#d7dade;border:1px solid #3d4550;border-radius:4px;padding:4px 9px;cursor:pointer;font:11px ui-monospace,monospace">3</button>
+  <button data-c="4" style="background:#2b313a;color:#d7dade;border:1px solid #3d4550;border-radius:4px;padding:4px 9px;cursor:pointer;font:11px ui-monospace,monospace">4</button>
+  <button data-c="5" style="background:#2b313a;color:#d7dade;border:1px solid #3d4550;border-radius:4px;padding:4px 9px;cursor:pointer;font:11px ui-monospace,monospace">5</button>
+  <button data-c="6" style="background:#2b313a;color:#d7dade;border:1px solid #3d4550;border-radius:4px;padding:4px 9px;cursor:pointer;font:11px ui-monospace,monospace">6</button>
+  <button data-c="7" style="background:#2b313a;color:#d7dade;border:1px solid #3d4550;border-radius:4px;padding:4px 9px;cursor:pointer;font:11px ui-monospace,monospace">7</button>
+  <button data-c="all" style="background:#1e3a5f;color:#dbeafe;border:1px solid #3b6ea5;border-radius:4px;padding:4px 9px;cursor:pointer;font:11px ui-monospace,monospace">all</button>
+</div>
+<div style="padding:4px 2px 6px">
+  <input id="fold" type="range" min="0" max="1" step="0.01" value="1" style="width:100%">
+  <div style="display:flex;justify-content:space-between;color:#7d8794;font:10px ui-monospace,monospace">
+    <span>flat (printed)</span><span>folded (a cube)</span>
+  </div>
+</div>
+<div style="padding:2px 2px 8px">
+  <input id="spread" type="range" min="0" max="1" step="0.01" value="0" style="width:100%">
+  <div style="display:flex;justify-content:space-between;color:#7d8794;font:10px ui-monospace,monospace">
+    <span>panels joined</span><span>panels apart</span>
+  </div>
+</div>
+<div id="app" style="width:100%;height:330px;background:#0a0f1e;border-radius:8px"></div>
+<div id="out" style="color:#9fb8e0;font:11px ui-monospace,monospace;padding:8px 2px;white-space:pre"></div>`,
+      css: `body{margin:0;background:#0a0f1e}`,
+      startCode: `// The eight corners, numbered as in Lesson 1.
+var CORNERS = [
+  [-0.5,-0.5,-0.5], [0.5,-0.5,-0.5], [0.5,0.5,-0.5], [-0.5,0.5,-0.5],
+  [-0.5,-0.5, 0.5], [0.5,-0.5, 0.5], [0.5,0.5, 0.5], [-0.5,0.5, 0.5],
+];
+
+// Each face: the four corners it is made of, and where each of those lands
+// when the cube is cut open and laid flat. The two lists line up - corner
+// FACES[f].corners[i] goes to FACES[f].flat[i].
+var FACES = [
+  { name: 'front',  corners: [0,1,5,4], flat: [[-0.5,-0.5],[ 0.5,-0.5],[ 0.5, 0.5],[-0.5, 0.5]] },
+  { name: 'bottom', corners: [0,3,2,1], flat: [[-0.5,-0.5],[-0.5,-1.5],[ 0.5,-1.5],[ 0.5,-0.5]] },
+  { name: 'top',    corners: [4,5,6,7], flat: [[-0.5, 0.5],[ 0.5, 0.5],[ 0.5, 1.5],[-0.5, 1.5]] },
+  { name: 'right',  corners: [1,2,6,5], flat: [[ 0.5,-0.5],[ 1.5,-0.5],[ 1.5, 0.5],[ 0.5, 0.5]] },
+  { name: 'left',   corners: [3,0,4,7], flat: [[-1.5,-0.5],[-0.5,-0.5],[-0.5, 0.5],[-1.5, 0.5]] },
+  { name: 'back',   corners: [2,3,7,6], flat: [[ 1.5,-0.5],[ 2.5,-0.5],[ 2.5, 0.5],[ 1.5, 0.5]] },
+];
+
+// The net above runs from x = -1.5 to x = 2.5, so its middle is at x = 0.5,
+// but the camera always looks at the origin. Slide the whole net left by half
+// a unit so it is centred on screen. The folded cube is already centred, so
+// this only moves the flat end.
+var NET_SHIFT_X = -0.5;
+
+// One colour per corner NUMBER, so the same number is the same colour
+// wherever it turns up.
+var COLOURS = [0xff6b6b, 0xffa94d, 0xffd43b, 0x69db7c,
+               0x38d9a9, 0x4dabf7, 0xb197fc, 0xf783ac];
+
+var app = document.getElementById('app');
+var scene = new THREE.Scene();
+var camera = new THREE.PerspectiveCamera(45, app.clientWidth / 330, 0.1, 100);
+var renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(app.clientWidth, 330);
+app.appendChild(renderer.domElement);
+
+var highlight = 'all';
+var drawn = [];
+
+// Straight-line interpolation between where a corner sits on the flat net
+// and where it sits on the folded cube. Not a rigid hinge - a real fold
+// rotates about each edge - but the two ends are exact, which is what the
+// picture is for.
+function place(face, i, t, spread) {
+  var folded = CORNERS[face.corners[i]];
+  var flatX = face.flat[i][0] + NET_SHIFT_X;
+  var flatY = face.flat[i][1];
+  var p = [
+    flatX + (folded[0] - flatX) * t,
+    flatY + (folded[1] - flatY) * t,
+    0     + (folded[2] - 0)     * t,
+  ];
+  if (!spread) return p;
+
+  // Shrink the panel towards its own middle. The shape of each panel is
+  // unchanged - they just stop touching, so a corner that two panels used to
+  // share becomes two separate points. That is the whole difference between
+  // 8, 14 and 24 in the readout.
+  var mid = [0, 0, 0];
+  for (var k = 0; k < 4; k++) {
+    var q = placeJoined(face, k, t);
+    mid[0] += q[0] / 4; mid[1] += q[1] / 4; mid[2] += q[2] / 4;
+  }
+  var shrink = 1 - 0.22 * spread;
+  return [0, 1, 2].map(function (a) { return mid[a] + (p[a] - mid[a]) * shrink; });
+}
+
+// place() without the shrink, so the panel's middle can be worked out without
+// calling place() from inside itself.
+function placeJoined(face, i, t) {
+  return place(face, i, t, 0);
+}
+
+// How many separate points are on screen right now. Two slots landing on the
+// same spot count once - which is the only reason 24, 14 and 8 differ.
+function distinctPoints(t, spread) {
+  var seen = {};
+  FACES.forEach(function (face) {
+    [0,1,2,3].forEach(function (i) {
+      var p = place(face, i, t, spread);
+      seen[p.map(function (v) { return v.toFixed(5); }).join(',')] = true;
+    });
+  });
+  return Object.keys(seen).length;
+}
+
+// A corner's NUMBER, drawn on a small canvas and hung in the scene as a
+// sprite. A sprite always turns to face the camera, so the digit stays
+// readable however you orbit. One per number, made once and reused.
+var LABELS = COLOURS.map(function (colour, n) {
+  var canvas = document.createElement('canvas');
+  canvas.width = 64; canvas.height = 64;
+  var ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#' + colour.toString(16).padStart(6, '0');
+  ctx.beginPath(); ctx.arc(32, 32, 26, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#0a0f1e';
+  ctx.font = 'bold 40px ui-monospace, monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(String(n), 32, 34);
+  return new THREE.CanvasTexture(canvas);
+});
+
+function build(t, spread) {
+  drawn.forEach(function (o) { scene.remove(o); });
+  drawn = [];
+  var lines = [];
+
+  FACES.forEach(function (face) {
+    var pts = [0,1,2,3].map(function (i) { return place(face, i, t, spread); });
+
+    // The quad, as two triangles - which is what the next cell asks for.
+    var flat = [];
+    [[0,1,2],[0,2,3]].forEach(function (tri) {
+      tri.forEach(function (i) { flat.push(pts[i][0], pts[i][1], pts[i][2]); });
+    });
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(flat), 3));
+    var panel = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: 0x39414d, side: THREE.DoubleSide, transparent: true, opacity: 0.55 }));
+    scene.add(panel); drawn.push(panel);
+
+    // Its outline, and the diagonal where its two triangles meet. Without
+    // that diagonal a panel looks like one square, and the next cell is
+    // entirely about the line you would not be able to see.
+    var loop = [];
+    [0,1,2,3,0].forEach(function (i) { loop.push(pts[i][0], pts[i][1], pts[i][2]); });
+    var lineGeo = new THREE.BufferGeometry();
+    lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(loop), 3));
+    var outline = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0x5a6472 }));
+    scene.add(outline); drawn.push(outline);
+
+    var diag = new THREE.BufferGeometry();
+    diag.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      pts[0][0], pts[0][1], pts[0][2], pts[2][0], pts[2][1], pts[2][2],
+    ]), 3));
+    var split = new THREE.Line(diag, new THREE.LineBasicMaterial({
+      color: 0xffd43b, transparent: true, opacity: 0.45 }));
+    scene.add(split); drawn.push(split);
+
+    // The numbered label at each corner. Same number, same colour, wherever
+    // it turns up - which is the thing to watch as the net opens.
+    [0,1,2,3].forEach(function (i) {
+      var n = face.corners[i];
+      var lit = (highlight === 'all' || highlight === n);
+      var tag = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: LABELS[n], transparent: true, opacity: lit ? 1 : 0.22,
+        depthTest: false }));
+      tag.scale.setScalar(lit ? 0.30 : 0.19);
+      tag.position.set(pts[i][0], pts[i][1], pts[i][2]);
+      scene.add(tag); drawn.push(tag);
+    });
+
+    if (highlight !== 'all' && face.corners.indexOf(highlight) !== -1) {
+      lines.push(face.name);
+    }
+  });
+
+  var n = distinctPoints(t, spread);
+  var note = n === 8  ? 'a folded cube - every shared corner agrees'
+           : n === 24 ? 'nothing shared at all - six separate squares'
+           : n === 14 ? 'the printed net - folds stay joined, cuts came apart'
+           : 'part way';
+
+  document.getElementById('out').textContent =
+    'corner-slots    24   (6 faces x 4 corners)' +
+    '\\n' +
+    'distinct points ' + (n < 10 ? ' ' : '') + n + '   <- ' + note +
+    '\\n' +
+    'fold ' + (t === 0 ? 'flat  ' : t === 1 ? 'folded' : t.toFixed(2)) +
+    '   panels ' + (spread === 0 ? 'joined' : spread === 1 ? 'apart ' : spread.toFixed(2)) +
+    '\\n\\n' +
+    (highlight === 'all'
+      ? 'Click a number to follow one corner. Watch the count as you drag.'
+      : 'corner ' + highlight + ' is on ' + lines.length + ' faces: ' + lines.join(', '));
+}
+
+${ORBIT}
+var replace = orbit(camera, renderer.domElement, 4.4);
+(function loopFrame() { requestAnimationFrame(loopFrame); renderer.render(scene, camera); }());
+
+var foldSlider = document.getElementById('fold');
+var spreadSlider = document.getElementById('spread');
+function redraw() {
+  build(Number(foldSlider.value), Number(spreadSlider.value));
+}
+foldSlider.addEventListener('input', redraw);
+spreadSlider.addEventListener('input', redraw);
+
+Array.prototype.forEach.call(document.querySelectorAll('button[data-c]'), function (b) {
+  b.addEventListener('click', function () {
+    var v = b.getAttribute('data-c');
+    highlight = (v === 'all') ? 'all' : Number(v);
+    redraw();
+  });
+});
+
+redraw();`,
+      outputHeight: 560,
+    },
+
+    {
+      type: 'js',
+      instruction: `### The shared edges
+
+Corners were the easy half. This is the half that matters.
+
+A triangle has three edges. Twelve triangles means **36 edge-slots** — and
+just like the corners, most of them are the same edge counted more than once.
+
+**Fold it up and read the count.** 36 slots, **18 distinct edges**, and every
+single one is **used by exactly two triangles**.
+
+That sentence is the definition of a closed solid, so it is worth saying
+plainly: an edge with two triangles on it is a seam, and an edge with only one
+triangle on it is **a hole you can see through**. Nothing else distinguishes a
+watertight part from a broken one.
+
+Use the stepper. Pick a triangle and the readout names its three edges and, for
+each one, which other triangle is on the other side:
+
+- two of them lead to a **neighbouring face** — drawn blue
+- one leads to the **other triangle of the same face**, across the diagonal —
+  drawn yellow
+
+That third one catches people out. Face corners 0,1,5,4 split into [0,1,5] and
+[0,5,4], and both of those contain 0 and 5. The diagonal 0–5 is shared, which
+is exactly why the split has to be \`[a,b,c]\` and \`[a,c,d]\` and not any two
+triangles you like.
+
+**Predict before you drag anything.** Lay the net flat. Some seams will come
+apart, so the count of distinct edges must go up and some edges will have only
+one triangle. How many of the cube's 12 edges get cut, and how many stay as
+folds? Work it out from the net in the cell above — then drag and check.
+
+**Then pull the triangles apart.** Note that this slider goes further than the
+one in the cell above. There the six panels came away from each other, but each
+panel's own two triangles still met along their diagonal — six edges stayed
+shared and the count stopped at 30. This one separates all twelve triangles, so
+every slot becomes its own edge: **36 distinct, every one open, nothing shared
+with anything.**
+
+**That last state is what an STL file is.** An STL stores twelve triangles as
+thirty-six independent corners and records no sharing whatsoever. Every blue
+and yellow line you can see here is absent from the file — it has to be worked
+out again from the numbers, and working it out is what the next lesson does.
+
+So the edges tell the same story the corners did, one level up:
+
+| | corners | edges |
+|---|---|---|
+| slots written down | 24 | 36 |
+| folded, everything shared | 8 | 18 |
+| flat as a printed net | 14 | 25 |
+| nothing shared — an STL | 24 | 36 |
+
+The shape never changed once.`,
+      html: `${THREE_CDN}
+<div style="display:flex;gap:6px;padding:8px 2px;flex-wrap:wrap;align-items:center">
+  <button id="prev" style="background:#2b313a;color:#d7dade;border:1px solid #3d4550;border-radius:4px;padding:4px 10px;cursor:pointer;font:11px ui-monospace,monospace">&#9664; prev</button>
+  <button id="next" style="background:#2b313a;color:#d7dade;border:1px solid #3d4550;border-radius:4px;padding:4px 10px;cursor:pointer;font:11px ui-monospace,monospace">next &#9654;</button>
+  <button id="all" style="background:#1e3a5f;color:#dbeafe;border:1px solid #3b6ea5;border-radius:4px;padding:4px 10px;cursor:pointer;font:11px ui-monospace,monospace">all 12</button>
+  <span style="flex:1"></span>
+  <span style="color:#4dabf7;font:11px ui-monospace,monospace">&#9644; between faces</span>
+  <span style="color:#ffd43b;font:11px ui-monospace,monospace">&#9644; the diagonal</span>
+  <span style="color:#ff6b6b;font:11px ui-monospace,monospace">&#9644; open</span>
+</div>
+<div style="padding:4px 2px 6px">
+  <input id="fold" type="range" min="0" max="1" step="0.01" value="1" style="width:100%">
+  <div style="display:flex;justify-content:space-between;color:#7d8794;font:10px ui-monospace,monospace">
+    <span>flat</span><span>folded</span>
+  </div>
+</div>
+<div style="padding:2px 2px 8px">
+  <input id="spread" type="range" min="0" max="1" step="0.01" value="0" style="width:100%">
+  <div style="display:flex;justify-content:space-between;color:#7d8794;font:10px ui-monospace,monospace">
+    <span>triangles joined</span><span>all 12 apart</span>
+  </div>
+</div>
+<div id="app" style="width:100%;height:330px;background:#0a0f1e;border-radius:8px"></div>
+<div id="out" style="color:#9fb8e0;font:11px ui-monospace,monospace;padding:8px 2px;white-space:pre"></div>`,
+      css: `body{margin:0;background:#0a0f1e}`,
+      startCode: `// The same eight corners and six faces as the cell above.
+var CORNERS = [
+  [-0.5,-0.5,-0.5], [0.5,-0.5,-0.5], [0.5,0.5,-0.5], [-0.5,0.5,-0.5],
+  [-0.5,-0.5, 0.5], [0.5,-0.5, 0.5], [0.5,0.5, 0.5], [-0.5,0.5, 0.5],
+];
+var FACES = [
+  { name: 'front',  corners: [0,1,5,4], flat: [[-0.5,-0.5],[ 0.5,-0.5],[ 0.5, 0.5],[-0.5, 0.5]] },
+  { name: 'bottom', corners: [0,3,2,1], flat: [[-0.5,-0.5],[-0.5,-1.5],[ 0.5,-1.5],[ 0.5,-0.5]] },
+  { name: 'top',    corners: [4,5,6,7], flat: [[-0.5, 0.5],[ 0.5, 0.5],[ 0.5, 1.5],[-0.5, 1.5]] },
+  { name: 'right',  corners: [1,2,6,5], flat: [[ 0.5,-0.5],[ 1.5,-0.5],[ 1.5, 0.5],[ 0.5, 0.5]] },
+  { name: 'left',   corners: [3,0,4,7], flat: [[-1.5,-0.5],[-0.5,-0.5],[-0.5, 0.5],[-1.5, 0.5]] },
+  { name: 'back',   corners: [2,3,7,6], flat: [[ 1.5,-0.5],[ 2.5,-0.5],[ 2.5, 0.5],[ 1.5, 0.5]] },
+];
+var NET_SHIFT_X = -0.5;
+
+// Split each face the way the challenge asks: a square a,b,c,d becomes
+// [a,b,c] and [a,c,d]. Two per face, twelve in all. TRI_FACE remembers which
+// face each triangle came off, which is what lets us tell a diagonal from a
+// seam between two faces.
+var TRIANGLES = [];
+var TRI_FACE = [];
+FACES.forEach(function (f) {
+  TRIANGLES.push([f.corners[0], f.corners[1], f.corners[2]]); TRI_FACE.push(f);
+  TRIANGLES.push([f.corners[0], f.corners[2], f.corners[3]]); TRI_FACE.push(f);
+});
+
+var BETWEEN  = 0x4dabf7;   // two triangles, on different faces
+var DIAGONAL = 0xffd43b;   // two triangles, both on the same face
+var OPEN     = 0xff6b6b;   // one triangle only: a hole
+
+var app = document.getElementById('app');
+var scene = new THREE.Scene();
+var camera = new THREE.PerspectiveCamera(45, app.clientWidth / 330, 0.1, 100);
+var renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(app.clientWidth, 330);
+app.appendChild(renderer.domElement);
+
+var focus = null;      // null = show all twelve, otherwise a triangle index
+var drawn = [];
+
+// Where corner n of a face sits once the cube is folded by t. Same fold as
+// the cell above; nothing is separated yet.
+function foldPos(face, n, t) {
+  var i = face.corners.indexOf(n);
+  var folded = CORNERS[n];
+  var flatX = face.flat[i][0] + NET_SHIFT_X, flatY = face.flat[i][1];
+  return [
+    flatX + (folded[0] - flatX) * t,
+    flatY + (folded[1] - flatY) * t,
+    folded[2] * t,
+  ];
+}
+
+// Corner n of triangle ti, after shrinking that TRIANGLE towards its own
+// middle.
+//
+// This goes one step further than the cell above. There the six panels came
+// apart from each other, but each panel's two triangles still shared their
+// diagonal - so six edges stayed shared and the count stopped at 30. Here
+// every triangle comes away from every other, which is the only way to get to
+// 36 with nothing shared at all.
+function at(ti, n, t, spread) {
+  var face = TRI_FACE[ti];
+  var p = foldPos(face, n, t);
+  if (!spread) return p;
+  var mid = [0, 0, 0];
+  TRIANGLES[ti].forEach(function (m) {
+    var q = foldPos(face, m, t);
+    mid[0] += q[0] / 3; mid[1] += q[1] / 3; mid[2] += q[2] / 3;
+  });
+  var shrink = 1 - 0.25 * spread;
+  return [0, 1, 2].map(function (a) { return mid[a] + (p[a] - mid[a]) * shrink; });
+}
+function keyOf(p) {
+  return p.map(function (v) { return v.toFixed(5); }).join(',');
+}
+
+// Walk all 36 edge-slots and group the ones that land in the same place. An
+// edge is identified by WHERE its two ends are, not by the corner numbers, so
+// two panels that have come apart count as two separate edges even though
+// they are the same edge of the cube.
+function edgeGroups(t, spread) {
+  var groups = {};
+  TRIANGLES.forEach(function (tri, ti) {
+    for (var k = 0; k < 3; k++) {
+      var n1 = tri[k], n2 = tri[(k + 1) % 3];
+      var p1 = at(ti, n1, t, spread), p2 = at(ti, n2, t, spread);
+      var a = keyOf(p1), b = keyOf(p2);
+      var id = a < b ? a + '|' + b : b + '|' + a;
+      if (!groups[id]) groups[id] = { p1: p1, p2: p2, tris: [] };
+      groups[id].tris.push(ti);
+    }
+  });
+  return groups;
+}
+
+function idFor(ti, n1, n2, t, spread) {
+  var a = keyOf(at(ti, n1, t, spread)), b = keyOf(at(ti, n2, t, spread));
+  return a < b ? a + '|' + b : b + '|' + a;
+}
+
+function colourOf(g) {
+  if (g.tris.length === 1) return OPEN;
+  return TRI_FACE[g.tris[0]] === TRI_FACE[g.tris[1]] ? DIAGONAL : BETWEEN;
+}
+
+// A line thick enough to see. LineBasicMaterial ignores linewidth on most
+// machines, so each edge is a thin cylinder instead.
+function tube(p1, p2, colour, radius, opacity) {
+  var a = new THREE.Vector3(p1[0], p1[1], p1[2]);
+  var b = new THREE.Vector3(p2[0], p2[1], p2[2]);
+  var dir = new THREE.Vector3().subVectors(b, a);
+  var len = dir.length();
+  if (len < 1e-9) return null;
+  var mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius, len, 6),
+    new THREE.MeshBasicMaterial({
+      color: colour, transparent: opacity < 1, opacity: opacity }));
+  mesh.position.copy(a).add(b).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0), dir.normalize());
+  return mesh;
+}
+
+function clear() {
+  drawn.forEach(function (o) {
+    scene.remove(o);
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) o.material.dispose();
+  });
+  drawn = [];
+}
+
+function build(t, spread) {
+  clear();
+  var groups = edgeGroups(t, spread);
+
+  // The triangles themselves, faint, so the edges are what you look at.
+  TRIANGLES.forEach(function (tri, ti) {
+    var xyz = [];
+    tri.forEach(function (n) {
+      var p = at(ti, n, t, spread);
+      xyz.push(p[0], p[1], p[2]);
+    });
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(xyz), 3));
+    var lit = (focus === null || focus === ti);
+    var mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: focus === ti ? 0x6d7a8c : 0x39414d,
+      side: THREE.DoubleSide, transparent: true, opacity: lit ? 0.5 : 0.12 }));
+    scene.add(mesh); drawn.push(mesh);
+  });
+
+  // Every distinct edge, coloured by how many triangles use it.
+  var focusIds = {};
+  if (focus !== null) {
+    var ft = TRIANGLES[focus];
+    for (var k = 0; k < 3; k++) {
+      focusIds[idFor(focus, ft[k], ft[(k + 1) % 3], t, spread)] = true;
+    }
+  }
+  Object.keys(groups).forEach(function (id) {
+    var g = groups[id];
+    var picked = (focus === null) || focusIds[id];
+    var seg = tube(g.p1, g.p2, colourOf(g),
+                   picked ? 0.022 : 0.008, picked ? 1 : 0.3);
+    if (seg) { scene.add(seg); drawn.push(seg); }
+  });
+
+  report(groups, t, spread);
+}
+
+function pad(n) { return (n < 10 ? '  ' : n < 100 ? ' ' : '') + n; }
+
+function report(groups, t, spread) {
+  var ids = Object.keys(groups);
+  var twice = 0, once = 0;
+  ids.forEach(function (id) {
+    if (groups[id].tris.length === 2) twice++;
+    if (groups[id].tris.length === 1) once++;
+  });
+
+  var lines = [
+    'edge-slots      36   (12 triangles x 3 edges)',
+    'distinct edges ' + pad(ids.length),
+    'used by 2      ' + pad(twice) + (once === 0 ? '   every edge is a seam: a closed solid' : ''),
+    'used by 1      ' + pad(once)  + (once > 0 ? '   open - you can see through there' : ''),
+    'fold ' + (t === 0 ? 'flat  ' : t === 1 ? 'folded' : t.toFixed(2)) +
+      '   triangles ' + (spread === 0 ? 'joined' : spread === 1 ? 'apart ' : spread.toFixed(2)),
+    '',
+  ];
+
+  if (focus === null) {
+    lines.push('Step through the triangles to see which one is on the other');
+    lines.push('side of each edge.');
+  } else {
+    var tri = TRIANGLES[focus], face = TRI_FACE[focus];
+    lines.push('triangle ' + (focus + 1) + ' of 12   [' + tri.join(',') +
+               ']   on the ' + face.name + ' face');
+    for (var k = 0; k < 3; k++) {
+      var n1 = tri[k], n2 = tri[(k + 1) % 3];
+      var g = groups[idFor(focus, n1, n2, t, spread)];
+      var other = null;
+      g.tris.forEach(function (x) { if (x !== focus) other = x; });
+      if (other === null) {
+        lines.push('  edge ' + n1 + '-' + n2 + '   nothing on the other side: open');
+      } else if (TRI_FACE[other] === face) {
+        lines.push('  edge ' + n1 + '-' + n2 + '   triangle ' + (other + 1) +
+                   ', same face - this is the diagonal');
+      } else {
+        lines.push('  edge ' + n1 + '-' + n2 + '   triangle ' + (other + 1) +
+                   ', on the ' + TRI_FACE[other].name + ' face');
+      }
+    }
+  }
+  document.getElementById('out').textContent = lines.join('\\n');
+}
+
+${ORBIT}
+orbit(camera, renderer.domElement, 4.4);
+(function frame() { requestAnimationFrame(frame); renderer.render(scene, camera); }());
+
+var foldSlider = document.getElementById('fold');
+var spreadSlider = document.getElementById('spread');
+function redraw() {
+  build(Number(foldSlider.value), Number(spreadSlider.value));
+}
+foldSlider.addEventListener('input', redraw);
+spreadSlider.addEventListener('input', redraw);
+
+document.getElementById('next').addEventListener('click', function () {
+  focus = (focus === null) ? 0 : (focus + 1) % 12;
+  redraw();
+});
+document.getElementById('prev').addEventListener('click', function () {
+  focus = (focus === null) ? 11 : (focus + 11) % 12;
+  redraw();
+});
+document.getElementById('all').addEventListener('click', function () {
+  focus = null;
+  redraw();
+});
+
+redraw();`,
+      outputHeight: 620,
+    },
+
+    {
       type: 'challenge',
       instruction: `### 🎯 Build a cube
 
@@ -405,6 +1007,26 @@ z = -0.5 (bottom)      z = +0.5 (top)
 The bottom face is done as the pattern: a square \`a,b,c,d\` becomes
 \`[a,b,c]\` and \`[a,c,d]\`.
 
+**The other five are not given.** Go back to the unfold and read them off —
+lay the net flat, or click a corner number and see which faces it belongs to.
+That is what the net is for.
+
+Keep the split rule the way the last cell showed it: both triangles of a face
+must share the diagonal. \`[a,b,c]\` and \`[a,c,d]\` do. \`[a,b,c]\` and
+\`[b,c,d]\` do not — those two overlap and leave a gap.
+
+**One thing will catch you, and it caught this lesson.** The order you list a
+face's four corners in decides which way it faces. The bottom face above is
+written \`0,3,2,1\`, not \`0,1,2,3\` — because going round the bottom the same
+direction as the top makes both loops turn the same way *in space*, and for the
+bottom that is into the solid. It draws dark or vanishes when you look up at it
+from underneath.
+
+You do not have to get that right to pass. The check accepts a cube with faces
+turned the wrong way, tells you how many, and lets you turn it round and see
+them. **Which way a triangle faces, and what decides it, is the whole of the
+next lesson.**
+
 It draws what you write, so a face you miss is a hole you can turn round and
 look through — and a face wound the wrong way shows red from outside.`,
       html: `${THREE_CDN}
@@ -418,13 +1040,24 @@ var CORNERS = [
 ];
 
 // TODO: 12 triangles. Two per face, six faces. Indices into CORNERS.
+//
+// The bottom face is done, as the pattern: a square a,b,c,d becomes
+// [a,b,c] and [a,c,d].
+//
+// Note its corner order: 0,3,2,1 and not 0,1,2,3. Going round the bottom the
+// same way you would go round the top makes it face INTO the cube, because
+// the two loops then turn the same direction in space. See below.
+//
+// The other five faces are NOT listed. Read their corners off the unfold in
+// the cell above - click a corner number to see which faces it belongs to,
+// or lay the net flat and read each panel.
 var TRIANGLES = [
-  [0,1,2], [0,2,3],      // bottom — the pattern to follow
-  // top     4,5,6,7
-  // front   0,1,5,4
-  // right   1,2,6,5
-  // back    2,3,7,6
-  // left    3,0,4,7
+  [0,3,2], [0,2,1],      // bottom
+  // top
+  // front
+  // right
+  // back
+  // left
 ];
 
 // ── draws whatever you wrote ───────────────────────────────────────────
@@ -469,18 +1102,147 @@ document.getElementById('out').textContent =
   'corners used  ' + Object.keys(used).length + ' of 8\\n' +
   (bad.length ? 'OUT OF RANGE: ' + bad.join(', ') : 'all indices in range');`,
       check: (js) => {
+        // Returns { pass, message }. The message is the point: this check is
+        // strict, so a bare "no" would leave the reader hunting one digit.
+        const no = (message) => ({ pass: false, message });
+
         const match = /var\s+TRIANGLES\s*=\s*(\[[\s\S]*?\n\];)/.exec(js);
-        if (!match) return false;
+        if (!match) return no('Could not find "var TRIANGLES = [ ... ];" — keep that line as it is and fill in the middle.');
+
         let tris;
         try {
           // eslint-disable-next-line no-new-func
           tris = new Function('return ' + match[1].replace(/;$/, ''))();
-        } catch { return false; }
-        if (!Array.isArray(tris) || tris.length !== 12) return false;
+        } catch {
+          return no('TRIANGLES is not valid JavaScript yet — check for a missing comma or bracket.');
+        }
+
+        if (!Array.isArray(tris)) return no('TRIANGLES is not a list.');
+        if (tris.length !== 12) {
+          return no('Found ' + tris.length + ' triangles, not 12. Six faces, two triangles each.'
+            + (tris.length < 12 ? ' ' + (12 - tris.length) + ' still to go.' : ''));
+        }
+
+        const badShape = tris.findIndex((t) => !Array.isArray(t) || t.length !== 3);
+        if (badShape >= 0) {
+          return no('Triangle ' + (badShape + 1) + ' does not have exactly three corner numbers.');
+        }
+
         const flat = tris.flat();
-        if (flat.length !== 36) return false;
-        if (!flat.every((i) => Number.isInteger(i) && i >= 0 && i < 8)) return false;
-        return new Set(flat).size === 8;
+        const outOfRange = flat.find((i) => !Number.isInteger(i) || i < 0 || i > 7);
+        if (outOfRange !== undefined) {
+          return no('The number ' + outOfRange + ' is not a corner. CORNERS has eight entries, so the indices run 0 to 7.');
+        }
+
+        const unused = [0,1,2,3,4,5,6,7].filter((n) => flat.indexOf(n) === -1);
+        if (unused.length) {
+          return no('Corner ' + unused.join(' and ') + ' never appears. Every corner of a cube is on three faces, so each number should turn up more than once.');
+        }
+
+        // Three DIFFERENT corners. [3,3,4] passes every count above and has no
+        // area at all — it would draw nothing, next to a green tick.
+        const degenerate = tris.findIndex((t) => new Set(t).size !== 3);
+        if (degenerate >= 0) {
+          return no('Triangle ' + (degenerate + 1) + ' (' + tris[degenerate].join(',') + ') uses the same corner twice, so it has no area and draws nothing.');
+        }
+
+        // No triangle twice. Twelve entries where two are the same leaves a
+        // hole somewhere else, which the counts alone would not notice.
+        const key = (t) => t.slice().sort((a, b) => a - b).join('-');
+        const keys = tris.map(key);
+        const repeat = keys.find((k, i) => keys.indexOf(k) !== i);
+        if (repeat) {
+          return no('The triangle ' + repeat.split('-').join(',') + ' is in the list twice, which means some other face is missing.');
+        }
+
+        const CUBE = [
+          [-0.5,-0.5,-0.5], [0.5,-0.5,-0.5], [0.5,0.5,-0.5], [-0.5,0.5,-0.5],
+          [-0.5,-0.5, 0.5], [0.5,-0.5, 0.5], [0.5,0.5, 0.5], [-0.5,0.5, 0.5],
+        ];
+        const AXIS = ['x', 'y', 'z'];
+
+        // Every triangle has to lie ON a face, not slice through the middle.
+        // Its three corners must agree on one of x, y or z, and that shared
+        // value must be +/-0.5 — the surface, not the inside.
+        const faceOf = (t) => {
+          for (const axis of [0, 1, 2]) {
+            const v = CUBE[t[0]][axis];
+            if (t.every((n) => CUBE[n][axis] === v) && Math.abs(v) === 0.5) {
+              return AXIS[axis] + ' = ' + v;
+            }
+          }
+          return null;
+        };
+        const faces = tris.map(faceOf);
+        const slicing = faces.indexOf(null);
+        if (slicing >= 0) {
+          return no('Triangle ' + (slicing + 1) + ' (' + tris[slicing].join(',') + ') cuts through the inside of the cube. Its three corners do not all sit on one face — they need to share an x, a y or a z.');
+        }
+
+        // Six faces, two triangles each. This is what makes it a closed cube
+        // rather than twelve triangles that happen to be on the surface.
+        const perFace = {};
+        faces.forEach((f, i) => { (perFace[f] = perFace[f] || []).push(tris[i]); });
+        const named = Object.keys(perFace);
+        const ALL = ['x = -0.5', 'x = 0.5', 'y = -0.5', 'y = 0.5', 'z = -0.5', 'z = 0.5'];
+        const missing = ALL.filter((f) => !perFace[f]);
+        if (missing.length) {
+          return no('No triangles on the face ' + missing.join(' or ') + ' — that side is an open hole. Turn the cube round and you can look straight through it.');
+        }
+        const wrongCount = named.find((f) => perFace[f].length !== 2);
+        if (wrongCount) {
+          return no('The face ' + wrongCount + ' has ' + perFace[wrongCount].length + ' triangles, not 2.');
+        }
+
+        // The two triangles on a face must TILE it, not overlap it. Bottom as
+        // [0,1,2] and [1,2,3] is two different triangles using all four
+        // corners, and still leaves a hole — because they meet along an edge
+        // instead of across the middle.
+        //
+        // Two corners one step apart (differing in a single coordinate) are an
+        // edge of the square. Two differing in two coordinates are its
+        // diagonal. A correct pair shares the diagonal.
+        for (const f of named) {
+          const [a, b] = perFace[f];
+          const shared = a.filter((n) => b.indexOf(n) !== -1);
+          const covers = new Set(a.concat(b)).size === 4;
+          const diagonal = shared.length === 2 &&
+            [0, 1, 2].filter((k) => CUBE[shared[0]][k] !== CUBE[shared[1]][k]).length === 2;
+          if (!covers || !diagonal) {
+            return no('On the face ' + f + ', the two triangles overlap instead of splitting the square in half. They should meet corner-to-corner across the middle, not along an edge: a square a,b,c,d becomes [a,b,c] and [a,c,d].');
+          }
+        }
+
+        // Winding is lesson 2's subject, so it does not gate this challenge -
+        // but passing a cube with faces turned inside out while saying nothing
+        // is how a reader ends up trusting a wrong mesh. Count them and say.
+        //
+        // The cube is centred on the origin, so a triangle faces outward when
+        // its cross product points the same way as its own middle.
+        var inward = [];
+        tris.forEach(function (t, i) {
+          var A = CUBE[t[0]], B = CUBE[t[1]], C = CUBE[t[2]];
+          var u = [B[0]-A[0], B[1]-A[1], B[2]-A[2]];
+          var v = [C[0]-A[0], C[1]-A[1], C[2]-A[2]];
+          var n = [u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0]];
+          var mid = [(A[0]+B[0]+C[0])/3, (A[1]+B[1]+C[1])/3, (A[2]+B[2]+C[2])/3];
+          if (n[0]*mid[0] + n[1]*mid[1] + n[2]*mid[2] <= 0) inward.push(i + 1);
+        });
+
+        if (inward.length) {
+          return {
+            pass: true,
+            message: 'A closed cube \u2014 all six faces, no holes. Note: ' +
+              inward.length + ' of the 12 triangles (' + inward.join(', ') +
+              ') face INTO the cube, so they draw dark or vanish from outside. ' +
+              'Swapping any two of a triangle\u2019s corners turns it round. ' +
+              'That is the next lesson, so it is fine to leave.',
+          };
+        }
+        return {
+          pass: true,
+          message: 'A closed cube, and every one of the 12 triangles faces outward.',
+        };
       },
       successMessage: '✓ A cube, from 8 corners and 36 indices. Notice what you never wrote: a coordinate. The shape lives in CORNERS and the surface lives in TRIANGLES — move one corner and three faces follow, because all three point at it.',
       failMessage: 'Read the counts under the cube. 12 triangles, 36 indices, all 8 corners used, every index 0–7. Each face is four corners split into two triangles, the way the bottom face shows.',

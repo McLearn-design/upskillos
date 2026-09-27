@@ -381,11 +381,11 @@ print(f"\\nK @ K_inv = I? {np.allclose(K @ K_inv, np.eye(2))}")`,
               challengeNumber: 1,
               challengeTitle: 'Invertibility check',
               difficulty: 'medium',
-              prompt: 'For each matrix below: (1) compute the determinant, (2) state whether it is invertible, (3) for any invertible matrix, compute A⁻¹ and verify A @ A⁻¹ = I. Explain why matrix C is singular.',
+              prompt: 'For each matrix below: (1) compute the determinant, (2) state whether it is invertible, (3) for any invertible matrix, compute A⁻¹ and verify A @ A⁻¹ = I. Explain why matrix B is singular.',
               code: `import numpy as np
 
 A = np.array([[4., 2.], [1., 3.]])
-B = np.array([[1., 2.], [3., 6.]])   # note: row2 = 3 × row1
+B = np.array([[1., 2.], [3., 6.]])   # row2 is exactly 3 x row1
 C = np.array([[2., -1.], [4., 3.]])
 
 # For each: det, invertible?, and if yes: compute inv and verify

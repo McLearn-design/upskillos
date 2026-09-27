@@ -173,6 +173,40 @@ it from a CDN with an import map if the cell needs 3D.
 - **Make `failMessage` diagnostic.** "Check all three TODOs" is useless;
   "12 triangles, 36 indices, every index 0–7" tells them which one is wrong.
 
+#### Saying *why* it failed
+
+A boolean can only turn the bar red. `check` may instead return
+`{ pass, message }`, and `JSNotebook` renders the message under the bar:
+
+```js
+check: (code) => {
+  const no = (message) => ({ pass: false, message });
+  if (tris.length !== 12) {
+    return no(`Found ${tris.length} triangles, not 12. Six faces, two each.`);
+  }
+  // ... one branch per way of getting it wrong ...
+  return { pass: true };
+},
+```
+
+Returning a plain boolean still works exactly as before, so no existing
+challenge needs changing. Reach for the object form as soon as a check is
+strict enough that a red bar would leave the reader hunting one digit — which
+is most checks worth writing.
+
+A message should name what is wrong and leave the fix to them. "Corner 7 never
+appears" is right. "Change line 9 to `[3,4,7]`" is not; that is the answer.
+
+Mind the difference between the two fields: `failMessage` is fixed text shown
+on every failure, and `message` is computed from what they actually wrote. Both
+can be present — the banner shows `failMessage` first, then the message.
+
+`src/courses/mesh-engine/1-mesh-foundations/001-what-a-mesh-is.js` is the
+worked example. It rejects the wrong triangle count, an out-of-range index, an
+unused corner, a degenerate triangle, a repeated triangle, a triangle slicing
+through the solid, a missing face, and two triangles that overlap a face
+instead of tiling it — each with its own sentence.
+
 ## What the checkers do not catch
 
 | Checker | Catches | Misses |
