@@ -38,7 +38,7 @@ function EMView() {
       <circle cx={PX(Math.min(t, hist.length - 1))} cy={PY(step.ll)} r="5" fill="var(--chart-val)" />
     </>}</Plot>
     <Metrics items={[['Log-likelihood', Number.isFinite(step.ll) ? fmt(step.ll, 1) : '∞ (collapsed)'], ['Best of the five starts', fmt(Math.max(...runs.map(h => h.at(-1).ll)), 1)], ['Agreement with true clusters', acc === null ? `set K = ${trueK(world)}` : pct(acc)], ['Smallest component weight', pct(Math.min(...step.model.map(c => c.w)))]]} />
-    <Insight title="What to notice">Every EM iteration raises the log-likelihood (or leaves it unchanged) — never lowers it, apart from dips too small to see caused by the variance floor. But different starting points climb to different peaks: on the parallel clusters, most starts split the data the wrong way and stay there. Run several starts and keep the best. Turn off the variance floor with K = 6 on the three-cluster data: some component can shrink onto one or two points, and the “likelihood” it earns is meaningless.</Insight>
+    <Insight title="What to notice">Every EM iteration raises the log-likelihood (or leaves it unchanged) — never lowers it, apart from dips too small to see caused by the variance floor. But monotone is not fast: on the parallel clusters, most starts reach a plateau with the data split the wrong way, and within these 60 iterations only one escapes to the better solution (the others get there after 70 to 130). A stopping rule based on a tiny change per step would stop on the plateau. Run several starts, allow enough iterations, and keep the best. Turn off the variance floor with K = 6 on the three-cluster data: some component can shrink onto one or two points, and the “likelihood” it earns is meaningless.</Insight>
   </>
 }
 

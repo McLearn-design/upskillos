@@ -1,13 +1,16 @@
 import { lazy } from 'react'
 import { lessons, sources } from './lessons.js'
 import python from './python.js'
+import { blocks } from './blocks.js'
+import { withBlocks } from '../../kit/blocks.js'
+import { bayes } from './ladder.js'
 
 export default {
   number: 41,
   short: 'Bayesian inference',
   question: 'How should beliefs about parameters change when data arrive — and what does that say about regularization and model choice?',
   intro: 'Priors, posteriors and conjugacy; credible intervals and posterior predictives; ridge and lasso as MAP estimates; Bayesian linear regression with honest uncertainty; and the evidence as Occam’s razor.',
-  lessons, sources, python,
+  lessons: withBlocks(lessons, blocks), sources, python, figures: () => import('./figures.jsx'), ladders: { bayes },
   math: ['stat.bayes', 'stat.normal', 'la.cholesky', 'la.inverse', 'calc.integral'],
   Playground: lazy(() => import('./Playground.jsx')),
   scope: 'Bayes’ rule for parameters, Beta–binomial conjugacy and pseudo-counts, posterior mean, MAP and credible intervals, posterior predictive and Laplace’s rule, prior sensitivity, Gaussian and Laplace priors as ridge and lasso, the Bayesian linear regression posterior and predictive variance, posterior function samples, marginal likelihood, Bayes factors and empirical Bayes.',

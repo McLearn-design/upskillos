@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 const AB = { a: [-1.5, 1.5], b: [-1, 1], x: [-2, 2], y: [0, 5] }
 
 export const lessons = [
@@ -166,3 +168,6 @@ export const sources = [
   { title: 'Boyd & Vandenberghe · Convex Optimization, §9.5 Newton’s method (free book)', url: 'https://web.stanford.edu/~boyd/cvxbook/' },
   { title: 'scikit-learn · Generalized linear models (Poisson, Tweedie) and solvers', url: 'https://scikit-learn.org/stable/modules/linear_model.html#generalized-linear-models' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

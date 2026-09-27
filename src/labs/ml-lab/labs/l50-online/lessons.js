@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l50-regret',
@@ -158,3 +160,6 @@ export const sources = [
   { title: 'Arora, Hazan & Kale (2012) · The multiplicative weights update method: a meta-algorithm and applications', url: 'https://theoryofcomputing.org/articles/v008a006/' },
   { title: 'Russo et al. (2018) · A tutorial on Thompson sampling', url: 'https://arxiv.org/abs/1707.02038' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

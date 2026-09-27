@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l45-bn',
@@ -133,7 +135,7 @@ export const lessons = [
     paragraphs: [
       'If the hidden states were recorded (an incident log), learning is counting: Aᵢⱼ = (transitions i → j)/(visits to i), Bⱼₖ = (times state j showed reading k)/(visits to j) — maximum likelihood, like GDA (Lab 40). Add pseudo-counts to avoid zeros.',
       'Without labels, **Baum–Welch** is EM for HMMs (Lab 43): the E-step runs forward–backward to get expected state occupancies and expected transitions; the M-step replaces counts by those expectations and normalizes. The log-likelihood never decreases.',
-      'In the playground, most of six random starts reach a log-likelihood slightly above the true model’s (maximum likelihood fits this particular sample), and one stalls on a lower peak. States come out in arbitrary order — match them by their emissions.',
+      'In the playground, most of six random starts reach a log-likelihood slightly above the true model’s (maximum likelihood fits this particular sample), and one sits far below (−1928 against −1583) for the 120 iterations shown. Run on, it escapes after about 300–600 iterations and reaches the same solution as the others: a plateau, as in Lab 43, not a separate peak — “stopped changing” is not “converged”. States come out in arbitrary order — match them by their emissions.',
       'Graphical models extend far: **conditional random fields** model p(z | x) discriminatively for sequence labelling; **factor graphs** and belief propagation perform inference on general graphs (exactly on trees); and deep sequence models (Labs 25–26) replace hand-built structure with learned representations, at the cost of interpretability.',
       'You have completed this lab when you can: factorize a joint distribution along a graph and count parameters; answer queries by enumeration; read independences with d-separation and predict explaining away; run the forward, backward and Viterbi recursions; and learn HMMs by counting or Baum–Welch. The Python challenge implements the HMM algorithms and checks them against brute force.',
     ],
@@ -162,3 +164,6 @@ export const sources = [
   { title: 'Bishop · Pattern Recognition and Machine Learning, ch. 8 and 13 (free PDF)', url: 'https://www.microsoft.com/en-us/research/publication/pattern-recognition-machine-learning/' },
   { title: 'Jurafsky & Martin · Speech and Language Processing, appendix A: HMMs (free draft)', url: 'https://web.stanford.edu/~jurafsky/slp3/' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

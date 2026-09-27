@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l49-trick',
@@ -158,3 +160,6 @@ export const sources = [
   { title: 'Schölkopf, Smola & Müller (1998) · Nonlinear component analysis as a kernel eigenvalue problem', url: 'https://doi.org/10.1162/089976698300017467' },
   { title: 'scikit-learn · Kernel ridge regression and kernel approximation', url: 'https://scikit-learn.org/stable/modules/kernel_ridge.html' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

@@ -342,7 +342,149 @@ colors on a light page. That was a preview-only problem, not an app bug.
    Corrected: 38.2 said fresh seeds put the gain at “about a third” of the claim; 3.4 of 8.6 is about 40%. Figures
    `SeedSpread`, `AblationBars`; four predictions; the `replicate` sequence. Ladder 470/470 in both runtimes; 502
    tests.
-   Next: Lab 39.
+   *(Done: Lab 39.)* 5 cells: the three log-partition functions’ derivatives against the means and variances by
+   finite differences, and the Bernoulli derivation checked; Poisson regression by Newton’s method (slope 0.241,
+   factor 1.272; a least-squares line predicts −0.43 at x = 0) and an overdispersion check (0.87 against 5.47 with
+   unmeasured day effects); a stable softmax, a gradient check, three-class training and the two-class sigmoid;
+   Newton against gradient descent on raw and standardized x and the Gaussian solved in one step; locally weighted
+   regression with leave-one-out bandwidth choice (τ = 0.5, where training error would pick 0.1). Lesson claims
+   checked against the engine (logistic gap 4e−7 → 1.7e−12 in one step; Poisson slope 0.243). Figures `NewtonRace`,
+   `BandwidthLOO`; five predictions; the `glm` sequence. Ladder 483/483 in both runtimes; 510 tests.
+   *(Done: Lab 40.)* 5 cells on the playground’s worlds (same means and covariances, NumPy draws; scikit-learn as the
+   reference in 40.4): Bayes’ rule as a sigmoid, LDA against logistic regression, and sampling from the fit as a
+   realism check (the fitted Gaussian puts 28% of class 1 in the empty valley between its two clumps, where the real
+   data has 13%); the maximum-likelihood estimates with the pooled against the overall covariance; LDA’s posterior
+   equal to a sigmoid of θᵀx + θ₀ to six decimals, QDA against LDA, parameter counts; learning curves with 20
+   features, the far-subgroup world and Fisher’s ratio maximized by Σ⁻¹(μ₁ − μ₀); naive Bayes with a missing feature,
+   checked against integrating it out (0.750 both). Lesson numbers checked against the engine (8.9/12.4/15.8% at 40
+   examples, Bayes 5.9%, far subgroup LDA 19.6% against logistic 15.9%). Corrected: 40.3’s experiment asked why QDA
+   loses at 10 examples in the different-covariances world; there QDA wins at every size (0.372 vs 0.421 at 8) — it
+   loses at small samples in the shared-covariance world, and the experiment now asks that. Found while building the
+   probe: measuring the covariance from the overall mean does not change LDA’s boundary direction (the class gap adds
+   a term along μ₁ − μ₀), only the probabilities and the covariance itself — the probe now shows exactly that.
+   Figures `GdaBoundary`, `LearningCurvesFig`; five predictions; the `gda` sequence. Ladder 495/495 in both
+   runtimes; 513 tests.
+   *(Done: Lab 41.)* 5 cells: the Beta–binomial update batch and sequential, checked against likelihood × prior on a
+   grid (7e−15); summaries, Laplace’s rule, prior sensitivity at 3 and 30 flips, and the credible interval’s
+   coverage over coins drawn from the prior (0.951); MAP by numerical minimization equal to ridge with λ = σ²/τ², and
+   a Laplace prior’s exact zeros; the Bayesian linear regression posterior (its mean equals ridge with λ = α/β to
+   7e−13) and the predictive sd among the data (0.31), in the widest gap (3.04) and beyond (1.61), matched by 5,000
+   posterior draws; evidence against degree (highest at 3, as is test error), the coin’s Bayes factor 93.1 and α by
+   empirical Bayes. Evidence claims checked against the engine at 10, 15 and 30 points. Corrected: 41.5 said the
+   evidence “rises until degree 3”; it dips at degree 2 — it now says it is highest at 3 and declines beyond it.
+   Figures `BetaUpdate`, `PredictiveBand`; five predictions; the `bayes` sequence (its probe shows a plug-in “95%”
+   band covering 74.8% of new points against 95.2% with the weight uncertainty). Ladder 507/507 in both runtimes;
+   516 tests.
+   *(Done: Lab 42.)* 5 cells: the linear kernel recovered from 200,000 weight draws (1.504 vs 1.5) and RBF prior
+   functions; the smallest eigenvalue of six Gram matrices (sums and products valid, 1 − (x − x′)² not: −0.295);
+   the GP posterior by Cholesky among the data, in the gap and beyond, equal to scikit-learn’s to 4e−15; the log
+   marginal likelihood over length scales, equal to scikit-learn’s value, and its optimizer’s choice; Bayesian
+   optimization by an upper confidence bound (finds the peak in 10 evaluations) and Cholesky timing. The
+   observations follow the playground’s target and gap with NumPy draws. Lesson claims checked against the engine
+   (best ℓ = 0.2 at noise 0.1; RBF −1.6, Matérn −3.3, periodic −17.2; Bayes factor 5.5). Figures `GpPosterior`,
+   `LmlScan`; five predictions; the `gp` sequence (probe: choosing ℓ by training error picks 0.02 and errs 0.45 in
+   the gap; the marginal likelihood picks 0.1, 0.19). Ladder 519/519 in both runtimes; 519 tests.
+   *(Done: Lab 43.)* 5 cells on the playground’s worlds (NumPy draws; scikit-learn’s GaussianMixture as reference):
+   responsibilities by hand and under the true parameters; EM from scratch (monotone, weights 0.441/0.356/0.203,
+   log-likelihood equal to scikit-learn’s best of five to 0.03); the ELBO + KL decomposition for two choices of q;
+   k-means against mixtures, collapse and label switching; BIC, AIC and held-out likelihood for K = 1–6.
+   Corrected, found while building the figures: 43.3 said most starts on the parallel clusters “settle on the wrong
+   split” at a local maximum. Run longer, every start reaches −893 — the wrong split is a plateau near a saddle
+   point, where the log-likelihood changes by about 10⁻⁴ per step; the playground’s 60 iterations stop four of five
+   starts on it. The lesson paragraph, the playground’s note, the cell (60 against 1,500 iterations) and the probe
+   now say that. Also found: scikit-learn’s default mixture start (from k-means) stops on the same plateau (50%
+   agreement); ten random starts reach 100% — shown in 43.4’s cell, and 43.5 uses random starts so BIC finds the
+   true K in all three worlds. Figures `EmSteps`, `RestartCurves`; five predictions; the `em` sequence. Ladder
+   531/531 in both runtimes; 522 tests.
+   *(Done: Lab 44.)* 5 cells on the playground’s targets: the 1/√S Monte Carlo error over 500 repeats; importance
+   sampling with three proposals (the one on a single mode: ESS 290 and mean −1.92 against −0.40); Metropolis step
+   size against acceptance and ESS, and detailed balance checked exactly on five states; Gibbs, ESS and R̂ for four
+   chains (two modes: R̂ 3.7); mean-field variance 1 − ρ² and one Gaussian fitted to the two-mode posterior by
+   reverse KL (P(θ > 0) = 0.000) and forward KL (0.424, truth 0.398). Corrected against the playground’s own seeds
+   and 5,000 draws: 44.3 said step 1.5 yields about 180 effective samples (it is about 125; 85% and 15%
+   acceptance); 44.4 said each two-mode chain has a healthy ESS and R̂ is above 3 (three of four chains have ESS in
+   the hundreds, one hops between modes, and R̂ is about 2.5); the playground’s note now says “most chains”.
+   Figures `ImportanceFig`, `TraceFig`; five predictions; the `sampling` sequence. Ladder 543/543 in both
+   runtimes; 525 tests.
+   *(Done: Lab 45.)* 5 cells on the playground’s CI network and server-health HMM: the factorized joint (sums to 1)
+   and queries by enumeration; explaining away (0.630 → 0.121 → 0.158), six independence checks, and selection on a
+   common effect (correlation +0.002 in all builds, −0.665 among failed builds); the scaled forward algorithm equal
+   to brute force over 3⁸ sequences, and filtering against raw readings (no help at persistence 0.4); backward,
+   smoothing and Viterbi (checked against brute force); counting with labels and Baum–Welch from four starts.
+   Checked against the engine: every Bayesian-network number, filtering vs raw, the true model’s likelihood.
+   Corrected: 45.5 said one Baum–Welch start “stalls on a lower peak”; run on, it escapes the −1928 plateau after
+   about 300–600 iterations and reaches the same −1583 as the others (the same happens in NumPy) — the lesson, the
+   playground’s note and the cell now say so. (The 45.2 question looked wrong but is stored as a choice index; it
+   is right.) Figures `ExplainAway`, `HmmStrip`; five predictions; the `hmm` sequence (probe: 2,000 readings
+   underflow to exactly 0 without scaling). Ladder 554/554 in both runtimes; 528 tests.
+   *(Done: Lab 46.)* 5 cells: entropy of five sources in bits and nats (checked against SciPy); Huffman codes against
+   the entropy (1.75 = 1.75; 1.9 against 1.846) and zlib on the playground’s text; cross-entropy, both KLs and
+   log-loss checked against scikit-learn; correlation, binned MI with shuffled baselines at 8 and 20 bins, and
+   scikit-learn’s nearest-neighbour MI for four relationships (the U-shape: correlation −0.05, MI 1.3–1.8 bits);
+   perplexity of three character models on the training text and a new passage (the unsmoothed previous-letter model
+   reproduces the playground’s 7.8 and gives infinite perplexity on the new passage, which has 4 unseen pairs), and
+   label smoothing. Every lesson number checked against the engine (1.75/1.9/1.846; perplexities 27, 16.6, 7.8).
+   Figures `CodeLengths`, `MiBias`; five predictions; the `info` sequence (probe: independent variables give 1.09
+   “bits” of MI in 20 × 20 bins; the shuffled baseline is 1.00). Ladder 566/566 in both runtimes; 531 tests.
+   *(Done: Lab 47.)* 5 cells: Hoeffding for one fixed hypothesis against 2,000 simulated samples at four sizes; the
+   union bound against the actual worst gap and ERM’s excess error for 10, 50 and 1,000 thresholds; shattering of
+   the four point sets by linear programming (8/8, 6/8, 14/16, 14/16) and intervals on two and three points; double
+   descent with random ReLU features (min-norm via the pseudo-inverse: 0.72 at p = 20, 113 at p = n = 40, 0.65 at
+   400; ridge removes the spike); validation optimism for the best of k configurations. Every lesson number checked
+   against the engine (0.195 against 0.14; 35 at p = 40, 0.78, 0.59; ridge max 1.21). Figures `UnionGap`,
+   `DoubleDescentFig`; five predictions; the `theory` sequence (probe: the best of 1,000 configurations reports 0.870
+   on validation against a true 0.818; an untouched test set reports 0.820). Ladder 578/578 in both runtimes; 534
+   tests.
+   *(Done: Lab 48.)* 5 cells: the chord test on five losses (squared, logistic and hinge pass; sin and a one-unit
+   network fail) and the logistic Hessian’s positive eigenvalues; the constrained quadratic solved by SciPy and by
+   KKT, with the shadow price (−0.195 against −0.2) and the inactive case; the dual function, weak duality, strong
+   duality and gaps as certificates; the SVM dual read back from scikit-learn’s SVC (w recovered exactly, primal =
+   dual, every point beyond the margin with α = 0); ISTA against subgradient descent and scikit-learn’s Lasso (same
+   objective to 1e−8, identical 23 zeros; subgradient: 0 zeros). Lesson claims checked against the engine (λ = 2,
+   f* change −0.195; primal = dual for every C; ISTA to 1e−10 in 44 iterations at λ = 0.1). Figures `KktFig`
+   (axes scaled so the distance contours are circles), `LassoRace`; five predictions; the `convex` sequence (probe:
+   ISTA with step 3/L diverges, 1/L converges with 23 zeros). Ladder 590/590 in both runtimes; 537 tests.
+   *(Done: Lab 49.)* 5 cells: the polynomial kernel against its explicit features in one and four dimensions (35
+   scaled monomials reproduce (1 + x·z)³ exactly); the smallest eigenvalue of seven Gram matrices (sums and products
+   valid, tanh(xz − 1) at −10.8) and RBF eigenvalue decay; kernel ridge from scratch equal to scikit-learn’s
+   KernelRidge and to a Gaussian process’s mean, and the polynomial kernel equal to explicit ridge (2.7e−11); kernel
+   PCA by hand equal to scikit-learn’s (100% ring separation on component 2 at γ = 2; linear PCA 74%); the median
+   heuristic, a cross-validated grid and Nyström error by number of landmarks. Lesson claims checked against the
+   engine (96,560,646 monomials; RBF γ = 2 separating on component 2; best CV cell γ = 3, λ = 0.1; tanh negative).
+   Figures `KrrFit`, `RingsPca`; five predictions; the `kernels` sequence. Ladder 602/602 in both runtimes; 540
+   tests.
+   *(Done: Lab 50.)* 5 cells: regret of a random learner and of explore-then-commit; perceptron mistakes against the
+   (R/γ)² bound for three margins over 20 orders of the stream; Hedge against follow-the-leader on the adversarial
+   and changing sequences with three values of η (FTL regret 1,000, Hedge 13.4 against a bound of 26.3); greedy,
+   ε-greedy and UCB1 on three arm sets and ε-greedy’s linear growth; Thompson sampling against UCB1 and the bias a
+   bandit leaves in naive estimates (an arm with true rate 0.40 estimated at 0.35, against 0.40 from a fixed split).
+   Lesson claims checked against the engine (FTL 1,000 over 2,000 rounds; ε-greedy behind UCB1 at 20,000 on the
+   clear winner; UCB1 over-exploring the 5% ads; Thompson best or within a point of the best everywhere). Figures
+   `HedgeVsLeader`, `BanditRace`; five predictions; the `online` sequence (probe: greedy averages 421 regret, worst
+   run 899; Thompson 37). Ladder 612/612 in both runtimes; 543 tests.
+   *(Done: Lab 51.)* 5 cells: PCA on the swiss roll (88% of the variance, rank correlation 0.15 with the position along
+   it); three source pairs mixed and separated (PCA 0.73; FastICA 1.00 for sine/sawtooth and spiky voices, 0.85 for
+   Gaussian sources); Isomap from scratch (kNN graph, SciPy shortest paths, classical MDS) equal to scikit-learn’s,
+   over k — and the same k = 8 on four other samples of the roll (0.64–1.00: one short-circuit edge spoils a sample);
+   perplexity calibration by binary search and scikit-learn’s t-SNE at three perplexities; ratios in PCA, t-SNE over
+   three seeds, and in the original space. Corrected: 51.3 said Isomap works for k = 4–8 and collapses at k ≥ 15; in
+   the playground it works up to k = 9 and degrades from k = 10 (0.71, then 0.30 at 11). Checked in the browser as
+   well as Node: t-SNE is chaotic, so its exact ratios differ between JavaScript engines (seed 1, perplexity 20:
+   1.74 in Node, 2.17 in Chrome); the lesson’s perplexity-5 claim (about 1 : 1 and 1.2 : 1) holds in the browser
+   across seeds. Figures `IsomapK`, `MapRatios`; five predictions; the `manifold` sequence. Ladder 623/623 in both
+   runtimes; 546 tests.
+   *(Done: Lab 52.)* 5 cells with a small NumPy MLP (AdamW, inverted dropout, input jitter) on the playground’s noisy
+   spirals: memorization over 1,500 epochs (training 98.8%, validation loss lowest at epoch 70); inverted dropout
+   checked in expectation, dropout and decoupled decay; jitter and all three stacked; batch norm in training and
+   evaluation mode (a single example in training mode is erased to zeros) and layer norm; plain against residual
+   tanh networks at depths 2, 8 and 16 over three starts (on these noisy labels the plain depth-16 network stalls at
+   0.26–0.37, the residual one reaches 0.09–0.12; on clean labels both train — stated in the cell’s setup). Every
+   playground number checked against the engine. Corrected: 52.3 said stacking dropout, decay, augmentation and early
+   stopping reached the best validation accuracy; all three together reach 91%, below jitter alone (93% at 0.15, 95%
+   at 0.25). 52.4’s batch-norm figure was 0.03 in Node but 0.043 in the browser — now “about 0.03–0.04”. Figures
+   `RegCurves`, `DepthTrain` (log scale); five predictions; the `dlreg` sequence. Ladder 633/633 in both runtimes;
+   549 tests.
+   Next: Lab 53.
 
 (The assessment calls items 1–2 “Slice A”, 5 “Slice B”, 6 “Slice C” and 7 “Slices D–F”.)
 

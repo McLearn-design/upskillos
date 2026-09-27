@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 const G = { x: [-3, 3], m1: [-2, 2], m0: [-2, 2] }
 
 export const lessons = [
@@ -87,7 +89,7 @@ export const lessons = [
       ],
       result: 'With identity covariance, LDA’s boundary is the perpendicular bisector of the two means; a non-identity Σ tilts it by Σ⁻¹.',
     },
-    experiment: 'Choose “different covariances”. Compare LDA and QDA error at 10 and at 400 examples. Why does QDA lose at 10 but win at 400?',
+    experiment: 'Compare LDA and QDA error at 10 and at 400 examples, first in “shared covariance”, then in “different covariances”. In which world does QDA’s extra flexibility cost it at 10 examples, and why does it win at both sizes in the other?',
     question: 'QDA with 3 features and two classes: 2 mean vectors, 2 covariance matrices (each symmetric, 6 distinct entries) and 1 prior. How many parameters in total?',
     answer: 19,
     explanation: '2 × 3 + 2 × 6 + 1 = 19. LDA would need 2 × 3 + 6 + 1 = 13; logistic regression 4.',
@@ -151,3 +153,6 @@ export const sources = [
   { title: 'Hastie, Tibshirani & Friedman · The Elements of Statistical Learning, §4.3 (free book)', url: 'https://hastie.su.domains/ElemStatLearn/' },
   { title: 'scikit-learn · Linear and quadratic discriminant analysis (shrinkage)', url: 'https://scikit-learn.org/stable/modules/lda_qda.html' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l47-hoeffding',
@@ -157,3 +159,6 @@ export const sources = [
   { title: 'Zhang et al. (2017) · Understanding deep learning requires rethinking generalization', url: 'https://arxiv.org/abs/1611.03530' },
   { title: 'Stanford CS229 lecture notes · Learning theory', url: 'https://cs229.stanford.edu/main_notes.pdf' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l51-beyond',
@@ -67,7 +69,7 @@ export const lessons = [
       'On a curved surface, the meaningful distance between two points is along the surface — the **geodesic** — not straight through space.',
       '**Isomap** approximates geodesics: connect each point to its k nearest neighbours (short straight hops are good approximations of the surface), then take the shortest path through that graph between every pair of points (Dijkstra’s algorithm).',
       '**Classical MDS** turns a distance matrix into coordinates: square the distances, double-centre them (B = −½ H D² H), and use the top eigenvectors scaled by the square roots of their eigenvalues. For Euclidean distances it reproduces PCA exactly; for geodesic distances it unrolls the manifold.',
-      'In the playground, Isomap’s first axis tracks the position along the swiss roll perfectly (rank correlation 1.00) where PCA reaches 0.23. The neighbourhood size matters: k = 4–8 works, but at k ≥ 15 the graph gains “short-circuit” edges between adjacent layers and the unrolling collapses.',
+      'In the playground, Isomap’s first axis tracks the position along the swiss roll perfectly (rank correlation 1.00) where PCA reaches 0.23. The neighbourhood size matters: k = 4–9 works, but from k = 10 the graph gains “short-circuit” edges between adjacent layers and the unrolling degrades (rank correlation 0.71 at k = 10, 0.30 at k = 11, about 0.2 beyond).',
       'Relatives: locally linear embedding (LLE) preserves how each point is reconstructed from its neighbours; Laplacian eigenmaps preserve graph smoothness. All depend on a good neighbourhood graph and struggle with noise and holes.',
     ],
     formula: 'Isomap: kNN graph → shortest-path distances D → B = −½ H D² H → top eigenvectors √λ v',
@@ -156,3 +158,6 @@ export const sources = [
   { title: 'van der Maaten & Hinton (2008) · Visualizing data using t-SNE', url: 'https://www.jmlr.org/papers/v9/vandermaaten08a.html' },
   { title: 'Wattenberg, Viégas & Johnson (2016) · How to use t-SNE effectively (Distill)', url: 'https://distill.pub/2016/misread-tsne/' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

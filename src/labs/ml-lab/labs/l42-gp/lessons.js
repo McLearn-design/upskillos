@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l42-functions',
@@ -156,3 +158,6 @@ export const sources = [
   { title: 'Duvenaud · The kernel cookbook', url: 'https://www.cs.toronto.edu/~duvenaud/cookbook/' },
   { title: 'scikit-learn · Gaussian processes', url: 'https://scikit-learn.org/stable/modules/gaussian_process.html' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

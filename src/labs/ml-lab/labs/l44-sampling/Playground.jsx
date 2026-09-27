@@ -37,7 +37,7 @@ function McmcView() {
     <Plot x={[0, 40]} y={[-0.2, 1]} height={140} xLabel="lag" yLabel="autocorrelation" label="Autocorrelation of chain 1">{({ X, Y }) => <>
       {ac.map((v, k) => <line key={k} x1={X(k)} x2={X(k)} y1={Y(0)} y2={Y(v)} stroke="var(--chart-model)" strokeWidth="3" />)}
     </>}</Plot>
-    <Insight title="What to notice">Tiny steps are almost always accepted but crawl: high autocorrelation, few effective samples. Huge steps are almost always rejected: the chain sits still. In between, the chain explores efficiently. On the two-mode target with small steps, each chain stays in its own mode — its own effective sample size looks fine, but the four chains disagree and **R̂ is far above 1.01**. Always run several chains from dispersed starts. Gibbs never rejects, yet on a strongly correlated target it still moves in tiny axis-aligned steps.</Insight>
+    <Insight title="What to notice">Tiny steps are almost always accepted but crawl: high autocorrelation, few effective samples. Huge steps are almost always rejected: the chain sits still. In between, the chain explores efficiently. On the two-mode target with small steps, most chains stay in one mode — their own effective sample sizes look fine, but the four chains disagree and **R̂ is far above 1.01**. Always run several chains from dispersed starts. Gibbs never rejects, yet on a strongly correlated target it still moves in tiny axis-aligned steps.</Insight>
   </>
 }
 

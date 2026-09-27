@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l52-overfit',
@@ -67,7 +69,7 @@ export const lessons = [
       'Each augmentation encodes an invariance you believe in: a cat photo flipped left–right is still a cat; a sentence with a synonym is still positive; a sensor reading with tiny noise is still the same state. The model learns to ignore exactly those variations.',
       'Adding small Gaussian noise to inputs — **input jitter** — turns each point into a small cloud and discourages boundaries that bend sharply around individual points. For small noise it is equivalent to a smoothness penalty. In the playground, jitter 0.15 reaches about 93% validation accuracy.',
       'Augmentations must preserve labels. Rotating a “6” by 180° makes a “9”; flipping medical images can move the heart to the wrong side; cropping can remove the object. A lying augmentation adds label noise instead of removing overfitting.',
-      'Regularizers stack but interact: dropout, decay, augmentation and early stopping together reached the best validation accuracy here, but each extra one needs tuning. Add one at a time, and compare on the same validation set with the same seeds (Lab 27).',
+      'Regularizers stack but interact: here dropout 0.3, weight decay 1 and jitter 0.15 together reach about 91% validation accuracy — worse than jitter alone (about 93% at 0.15, 95% at 0.25). Stacked regularizers can over-constrain the network, so each extra one needs tuning. Add one at a time, and compare on the same validation set with the same seeds (Lab 27).',
     ],
     formula: 'augmented example: (T(x), y) with T label-preserving     jitter: x + ε, ε ~ N(0, σ²I)',
     derivation: {
@@ -95,7 +97,7 @@ export const lessons = [
       '**Batch normalization** standardizes each feature using the mean and variance over the current mini-batch, then applies a learned scale γ and shift β: y = γ·(x − μ_B)/σ_B + β. The layer can still represent any scale, but the optimization landscape becomes much smoother.',
       'At evaluation there may be only one example, so batch norm uses running averages of the training statistics instead. Mismatches between the two modes — tiny batches, shifted data, forgetting eval mode — are a common source of bugs. Batch statistics also couple examples in a batch, which complicates small-batch and sequence models.',
       '**Layer normalization** standardizes across the features of each example separately, so it behaves the same in training and evaluation and does not depend on batch size. Transformers use it (Lab 26).',
-      'In the playground at depth 16, adding batch norm to a plain tanh network cuts the training loss after 100 steps from about 0.26 to about 0.03. Why exactly normalization helps is still debated — smoother loss surfaces and better-conditioned gradients are the leading explanations.',
+      'In the playground at depth 16, adding batch norm to a plain tanh network cuts the training loss after 100 steps from about 0.25 to about 0.03–0.04 (the exact value varies slightly between browsers). Why exactly normalization helps is still debated — smoother loss surfaces and better-conditioned gradients are the leading explanations.',
     ],
     formula: 'BN: y = γ (x − μ_batch)/√(σ²_batch + ε) + β     LN: statistics over features of one example',
     derivation: {
@@ -156,3 +158,6 @@ export const sources = [
   { title: 'He et al. (2016) · Deep residual learning for image recognition', url: 'https://arxiv.org/abs/1512.03385' },
   { title: 'Loshchilov & Hutter (2019) · Decoupled weight decay regularization (AdamW)', url: 'https://arxiv.org/abs/1711.05101' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

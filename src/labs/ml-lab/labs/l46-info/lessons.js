@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l46-entropy',
@@ -154,3 +156,6 @@ export const sources = [
   { title: 'Shannon (1948) · A mathematical theory of communication', url: 'https://doi.org/10.1002/j.1538-7305.1948.tb01338.x' },
   { title: 'Olah · Visual information theory', url: 'https://colah.github.io/posts/2015-09-Visual-Information/' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

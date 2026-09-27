@@ -81,7 +81,7 @@ function LearnView() {
     <Legend items={[['┄', 'log-likelihood of the true model', 'var(--text)'], ['━', 'six random starts', 'var(--chart-model)'], ['━', 'best start', 'var(--chart-val)']]} />
     <Table head={['learned transitions (best start)', ...STATES.map((_, j) => `to state ${j + 1}`)]} rows={best.m.A.map((r, i) => [`from state ${i + 1}`, ...r.map(v => fmt(v, 2))])} caption="States come out in an arbitrary order (label switching) — match them to Healthy/Degraded/Down by their reading probabilities." />
     <Table head={['learned reading probabilities', ...SYMBOLS]} rows={best.m.B.map((r, i) => [`state ${i + 1}`, ...r.map(v => fmt(v, 2))])} />
-    <Insight title="What to notice">Each iteration is an E-step (forward–backward gives the expected state occupancies and transitions) and an M-step (normalized expected counts) — EM from Lab 43. The log-likelihood never decreases. Most starts end slightly *above* the true model’s likelihood — maximum likelihood fits this particular sample — but one start stalls on a worse peak. Restarts again.</Insight>
+    <Insight title="What to notice">Each iteration is an E-step (forward–backward gives the expected state occupancies and transitions) and an M-step (normalized expected counts) — EM from Lab 43. The log-likelihood never decreases. Most starts end slightly *above* the true model’s likelihood — maximum likelihood fits this particular sample — but one start sits far below for all 120 iterations — a plateau it leaves only after several hundred more. Restarts and generous iteration limits again.</Insight>
   </>
 }
 

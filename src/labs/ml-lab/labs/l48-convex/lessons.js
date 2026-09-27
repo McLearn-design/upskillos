@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l48-convexity',
@@ -163,3 +165,6 @@ export const sources = [
   { title: 'Beck & Teboulle (2009) · A fast iterative shrinkage-thresholding algorithm (FISTA)', url: 'https://doi.org/10.1137/080716542' },
   { title: 'Stanford CS229 lecture notes · Support vector machines and duality', url: 'https://cs229.stanford.edu/main_notes.pdf' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

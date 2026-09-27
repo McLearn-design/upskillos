@@ -810,3 +810,150 @@ describe('Lab 38 ladder values', () => {
     expect(PLAN_CASES.map(c => c.expected)).toEqual([[0, 1, 3, 4], [1, 2], [], [0, 1, 2]])
   })
 })
+
+// ---- Lab 39: GLMs & Newton's method --------------------------------------------------------------------
+import { glm as lab39, NS_CASES } from './labs/l39-glm/ladder.js'
+describe('Lab 39 ladder values', () => {
+  it('the trace follows from the formulas; Newton steps are as checked in Python', () => {
+    expect(lab39.steps[0].fields.map(f => Math.round(f.answer * 1000) / 1000)).toEqual([3.32, 1.284, 0.665, 0.011])
+    expect(NS_CASES[0].expected.map(v => Math.round(v * 1e6) / 1e6)).toEqual([-0.4, 0.8])
+  })
+})
+
+// ---- Lab 40: Generative classifiers --------------------------------------------------------------------
+import { gda as lab40, NB_CASES, ldaThetaOf } from './labs/l40-gda/ladder.js'
+describe('Lab 40 ladder values', () => {
+  it('the trace follows from its numbers; LDA weights and naive-Bayes log-odds are as checked', () => {
+    expect(lab40.steps[0].fields.map(f => f.answer)).toEqual([0.5, 2.5, 19, 1.3])
+    expect(ldaThetaOf([[2, 0.5], [0.5, 1]], [1, 1], [2, 0]).map(v => Math.round(v * 1000) / 1000)).toEqual([0.857, -1.429])
+    expect(Math.round(NB_CASES[2].expected * 1000) / 1000).toBe(2.403)
+  })
+})
+
+// ---- Lab 41: Bayesian inference ------------------------------------------------------------------------
+import { bayes as lab41, EV_CASES } from './labs/l41-bayes/ladder.js'
+describe('Lab 41 ladder values', () => {
+  it('the trace follows from the formulas; the coin evidence matches log(1/11)', () => {
+    expect(lab41.steps[0].fields.map(f => Math.round(f.answer * 10000) / 10000)).toEqual([0.6429, 0.8571, 0.0625, 0.2915])
+    expect(EV_CASES[0].expected).toBeCloseTo(Math.log(1 / 11), 10)
+  })
+})
+
+// ---- Lab 42: Gaussian processes ------------------------------------------------------------------------
+import { gp as lab42, MEAN_CASES as GP_MEANS } from './labs/l42-gp/ladder.js'
+describe('Lab 42 ladder values', () => {
+  it('the trace follows from the formulas; the one-point posterior mean is k·y/(1 + σn²)', () => {
+    expect(lab42.steps[0].fields.slice(0, 3).map(f => f.answer)).toEqual([1.5, 4, 0.5])
+    expect(GP_MEANS[0].expected[0]).toBeCloseTo(1, 12)
+    expect(GP_MEANS[0].expected[1]).toBeCloseTo(Math.exp(-0.5), 12)
+  })
+})
+
+// ---- Lab 43: Mixtures & EM -----------------------------------------------------------------------------
+import { em as lab43, BIC_CASES } from './labs/l43-em/ladder.js'
+import { bic as engineBic } from './labs/l43-em/engine.js'
+describe('Lab 43 ladder values', () => {
+  it('the trace follows from its numbers; BIC matches the engine for d = 2', () => {
+    expect(lab43.steps[0].fields.map(f => Math.round(f.answer * 1000) / 1000)).toEqual([0.632, 4.5, -103, 19])
+    expect(BIC_CASES[0].expected).toBeCloseTo(engineBic(-877.7, 3, 300), 9)
+  })
+})
+
+// ---- Lab 44: Sampling & approximate inference ----------------------------------------------------------
+import { sampling as lab44, RHAT_CASES } from './labs/l44-sampling/ladder.js'
+describe('Lab 44 ladder values', () => {
+  it('the trace follows from the formulas; R̂ separates agreeing from disagreeing chains', () => {
+    expect(lab44.steps[0].fields.map(f => Math.round(f.answer * 1000) / 1000)).toEqual([0.1, 4.2, 0.301, 200])
+    expect(RHAT_CASES[0].expected).toBeLessThan(1.01)
+    expect(RHAT_CASES[1].expected).toBeGreaterThan(10)
+  })
+})
+
+// ---- Lab 45: Graphical models & HMMs -------------------------------------------------------------------
+import { hmm as lab45, LL_CASES } from './labs/l45-graphical/ladder.js'
+import { forward as fwd45 } from './labs/l45-graphical/engine.js'
+describe('Lab 45 ladder values', () => {
+  it('the trace follows from its numbers; the scaled log-likelihood matches the engine', () => {
+    expect(lab45.steps[0].fields.map(f => f.answer)).toEqual([18, 0, 9000, 0.75])
+    const c = LL_CASES[0]
+    expect(c.expected).toBeCloseTo(fwd45({ pi: c.pi, A: c.A, B: c.B }, c.x).loglik, 10)
+  })
+})
+
+// ---- Lab 46: Information theory ------------------------------------------------------------------------
+import { info as lab46, PPL_CASES, klOf } from './labs/l46-info/ladder.js'
+describe('Lab 46 ladder values', () => {
+  it('the trace follows from the formulas; perplexity and KL are as checked', () => {
+    expect(lab46.steps[0].fields.map(f => f.answer)).toEqual([3, 2300, 2, 0.3])
+    expect(PPL_CASES[0].expected).toBeCloseTo(2, 12)
+    expect(klOf([0.5, 0.5], [0.75, 0.25])).toBeCloseTo(0.2075, 4)
+  })
+})
+
+// ---- Lab 47: Learning theory ---------------------------------------------------------------------------
+import { theory as lab47, IL_CASES, nNeededOf } from './labs/l47-theory/ladder.js'
+import { hoeffdingEps } from './labs/l47-theory/engine.js'
+describe('Lab 47 ladder values', () => {
+  it('the trace follows from the engine’s bound; counts are as checked by enumeration', () => {
+    const f = lab47.steps[0].fields.map(x => x.answer)
+    expect(f[0]).toBeCloseTo(hoeffdingEps(2500, 0.05), 12)
+    expect(f[1]).toBeCloseTo(hoeffdingEps(1000, 0.05, 20), 12)
+    expect(IL_CASES.map(c => c.expected)).toEqual([2, 4, 7, 16, 56])
+    expect(nNeededOf(0.05, 0.05, 1000)).toBe(2120)
+  })
+})
+
+// ---- Lab 48: Convex optimization & duality -------------------------------------------------------------
+import { convex as lab48, STEP_CASES as ISTA48, wFromDualOf } from './labs/l48-convex/ladder.js'
+import { kkt as kkt48 } from './labs/l48-convex/engine.js'
+describe('Lab 48 ladder values', () => {
+  it('the trace follows from its numbers; the dual weights and an ISTA step are as checked', () => {
+    expect(lab48.steps[0].fields.map(f => f.answer)).toEqual([-0.03, 0.0003, 40, 0.8])
+    expect(wFromDualOf([0, 0.5, 0, 0.5], [1, 1, -1, -1], [[1, 0], [2, 1], [0, 3], [-1, 1]])).toEqual([1.5, 0])
+    expect(ISTA48[0].expected.map(v => Math.round(v * 1e4) / 1e4)).toEqual([0.6167, 0.7833])
+    expect(kkt48([2, 1], 1).lambda).toBe(2)
+  })
+})
+
+// ---- Lab 49: Kernel methods ----------------------------------------------------------------------------
+import { kernels as lab49, CENTER_CASES, krrAlphaOf } from './labs/l49-kernels/ladder.js'
+import { centerGram as center49 } from './labs/l49-kernels/engine.js'
+describe('Lab 49 ladder values', () => {
+  it('the trace follows from its numbers; centring matches the engine; kernel ridge is as checked', () => {
+    expect(lab49.steps[0].fields.map(f => f.answer)).toEqual([6, 4, 10000, 25])
+    expect(CENTER_CASES[1].expected).toEqual(center49(CENTER_CASES[1].K))
+    expect(krrAlphaOf([[1, 0.5], [0.5, 1]], [1, 2], 0.1).map(v => Math.round(v * 1000) / 1000)).toEqual([0.104, 1.771])
+  })
+})
+
+// ---- Lab 50: Online learning & bandits -----------------------------------------------------------------
+import { online as lab50, PERC_CASES } from './labs/l50-online/ladder.js'
+import { hedgeBound } from './labs/l50-online/engine.js'
+describe('Lab 50 ladder values', () => {
+  it('the trace follows from the formulas; perceptron mistakes are as checked', () => {
+    expect(lab50.steps[0].fields.map(f => f.answer)).toEqual([40, 144, 107, 800])
+    expect(Math.round(hedgeBound(5000, 100))).toBe(107)
+    expect(PERC_CASES.map(c => c.expected)).toEqual([1, 2, 2])
+  })
+})
+
+// ---- Lab 51: Nonlinear DR & ICA ------------------------------------------------------------------------
+import { manifold as lab51, KURT_CASES, mdsGramOf } from './labs/l51-manifold/ladder.js'
+import { excessKurtosis } from './labs/l51-manifold/engine.js'
+describe('Lab 51 ladder values', () => {
+  it('the trace follows from its numbers; kurtosis matches the engine; the MDS Gram matrix is as checked', () => {
+    expect(lab51.steps[0].fields.map(f => f.answer)).toEqual([65536, 1, 1000000, 20])
+    expect(KURT_CASES[1].expected).toBeCloseTo(excessKurtosis([0, 0, 0, 0, 10]), 12)
+    expect(mdsGramOf([[0, 1], [1, 0]])).toEqual([[0.25, -0.25], [-0.25, 0.25]])
+  })
+})
+
+// ---- Lab 52: DL regularization & normalization ---------------------------------------------------------
+import { dlreg as lab52, LN_CASES, bnEvalOf } from './labs/l52-dlreg/ladder.js'
+describe('Lab 52 ladder values', () => {
+  it('the trace follows from its numbers; batch norm in eval mode and layer norm are as checked', () => {
+    expect(lab52.steps[0].fields.map(f => f.answer)).toEqual([90, 0.005, 15, 0])
+    expect(bnEvalOf([[5, 1]], [3, 0], [4, 1], [1, 1], [0, 0], 0)).toEqual([[1, 1]])
+    expect(LN_CASES[0].expected[0].map(v => Math.round(v * 1e4) / 1e4)).toEqual([-1.2247, 0, 1.2247])
+  })
+})

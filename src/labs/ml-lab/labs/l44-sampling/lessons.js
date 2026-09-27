@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l44-mc',
@@ -68,7 +70,7 @@ export const lessons = [
       '**Random-walk Metropolis**: from θ, propose θ′ = θ + step·z with z ~ N(0, I). Accept with probability min(1, p(θ′)/p(θ)); otherwise stay at θ (and count θ again). Uphill moves are always taken; downhill moves sometimes, in proportion to how much lower p is.',
       'Why it works: the acceptance rule makes p(θ)·T(θ → θ′) = p(θ′)·T(θ′ → θ) for every pair — **detailed balance**. The flow of probability between any two states balances, so p is the stationary distribution. (For asymmetric proposals, Metropolis–Hastings multiplies the ratio by q(θ | θ′)/q(θ′ | θ).)',
       'The acceptance probability uses only the ratio p(θ′)/p(θ), so the unknown normalizer p(D) cancels. That is the whole reason MCMC is practical for posteriors.',
-      'The step size is a trade-off: tiny steps are nearly always accepted but move slowly; huge steps are nearly always rejected. In the playground’s correlated target, step 0.1 accepts 86% and yields about 16 effective samples out of 4,500, while step 1.5 accepts 14% and yields about 180. Rules of thumb aim for acceptance around 20–50%, adapted during warm-up.',
+      'The step size is a trade-off: tiny steps are nearly always accepted but move slowly; huge steps are nearly always rejected. In the playground’s correlated target with 5,000 draws (4,500 after warm-up), step 0.1 accepts 85% and yields about 16 effective samples, while step 1.5 accepts 15% and yields about 125. Rules of thumb aim for acceptance around 20–50%, adapted during warm-up.',
     ],
     formula: 'accept θ′ with probability min(1, p̃(θ′)/p̃(θ))     detailed balance: p(θ)T(θ→θ′) = p(θ′)T(θ′→θ)',
     derivation: {
@@ -96,7 +98,7 @@ export const lessons = [
       '**Gibbs sampling** updates one coordinate at a time by drawing it from its full conditional distribution given all the others. Every move is accepted. For a standard bivariate normal with correlation ρ, θ₁ | θ₂ ~ N(ρθ₂, 1 − ρ²). With ρ = 0.95 each move is tiny relative to the long diagonal, so the chain crawls.',
       'Consecutive MCMC samples are correlated. The **effective sample size** n / (1 + 2 Σₖ ρₖ), with ρₖ the autocorrelation at lag k, says how many independent samples the chain is worth. Monte Carlo error uses the ESS, not n.',
       'Discard an initial **burn-in** while the chain travels from its start to the typical region. Plot **traces**: good chains look like overlapping fuzzy caterpillars; trends or long flat runs signal trouble.',
-      'A single chain can look perfect while stuck. Run several chains from dispersed starts and compare them: **R̂** is the ratio of the between-chain-plus-within-chain variance estimate to the within-chain variance. It approaches 1 when chains agree; values above about 1.01 mean “keep sampling or fix the sampler”. In the two-mode target with small steps, each chain reports a healthy ESS but R̂ is above 3.',
+      'A single chain can look perfect while stuck. Run several chains from dispersed starts and compare them: **R̂** is the ratio of the between-chain-plus-within-chain variance estimate to the within-chain variance. It approaches 1 when chains agree; values above about 1.01 mean “keep sampling or fix the sampler”. In the two-mode target with step 0.5 and 5,000 draws, three of the four chains report an ESS in the hundreds, yet R̂ is about 2.5: the chains disagree about which mode the mass is in.',
       'Modern samplers use gradients: **Hamiltonian Monte Carlo** and its adaptive variant NUTS (used by Stan and PyMC) make long, directed moves and handle correlated posteriors far better than random walks. Multimodal posteriors remain hard for every sampler.',
     ],
     formula: 'ESS = n / (1 + 2 Σₖ ρₖ)     R̂ = √( ((n−1)/n·W + B/n) / W )',
@@ -153,3 +155,6 @@ export const sources = [
   { title: 'Vehtari et al. (2021) · Rank-normalization, folding, and localization: an improved R̂', url: 'https://arxiv.org/abs/1903.08008' },
   { title: 'Betancourt (2017) · A conceptual introduction to Hamiltonian Monte Carlo', url: 'https://arxiv.org/abs/1701.02434' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

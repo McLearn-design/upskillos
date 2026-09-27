@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 const R = { x: [-3, 3], m1: [-2, 2], m2: [-2, 2], p: [0.1, 0.9] }
 
 export const lessons = [
@@ -73,7 +75,7 @@ export const lessons = [
       'For any distribution q(z) over the latent label, write log p(x) = log Σ_z q(z) · p(x, z)/q(z) ≥ Σ_z q(z) log [p(x, z)/q(z)]. The right-hand side is the **evidence lower bound** (ELBO). Exactly: log p(x) = ELBO(q, θ) + KL(q ‖ p(z | x, θ)), and the KL divergence is never negative.',
       'The **E-step** sets q(z) = p(z | x, θ) — the responsibilities. The KL term becomes 0 and the bound touches log p(x).',
       'The **M-step** maximizes the ELBO over θ with q fixed; since the bound touched the log-likelihood before and the log-likelihood is always above the bound, the log-likelihood cannot go down. Hence the monotone curves in the playground.',
-      'Monotone does not mean global: EM climbs to a **local** maximum or saddle. On the parallel clusters, most starting points settle on the wrong split with log-likelihood about −1044, while one start finds −893. Restarts, sensible initialization and model checks are part of the algorithm. The same ELBO drives variational inference (Lab 44) and VAEs (Lab 53).',
+      'Monotone does not mean fast, or global. On the parallel clusters, most starts first climb to a **plateau** near −1044 — the wrong split, close to a saddle point — where the log-likelihood changes by about 10⁻⁴ per iteration. They escape to −893 only after 43 to 130 iterations in the playground’s first eight starts; stopped after 60, as the playground’s view is, four of five still look converged on the wrong answer. A convergence test on the change per step stops right there. In other problems EM does settle in genuinely different local maxima. Restarts, sensible initialization, generous iteration limits and model checks are part of the algorithm. The same ELBO drives variational inference (Lab 44) and VAEs (Lab 53).',
     ],
     formula: 'log p(x | θ) = ELBO(q, θ) + KL(q(z) ‖ p(z | x, θ)) ≥ ELBO(q, θ)',
     derivation: {
@@ -149,3 +151,6 @@ export const sources = [
   { title: 'Stanford CS229 lecture notes · The EM algorithm', url: 'https://cs229.stanford.edu/main_notes.pdf' },
   { title: 'scikit-learn · Gaussian mixture models', url: 'https://scikit-learn.org/stable/modules/mixture.html' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

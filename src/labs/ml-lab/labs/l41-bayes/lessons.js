@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l41-update',
@@ -129,7 +131,7 @@ export const lessons = [
     paragraphs: [
       'The denominator we kept ignoring, p(D | model) = ∫ p(D | θ) p(θ) dθ, is the **evidence** or **marginal likelihood**: how probable the data were under the model, averaging over its prior. It is a score for the whole model, not for one parameter value.',
       'A complex model can fit many datasets, so it must spread its prior probability thinly across them; a simple model concentrates probability on few datasets. If the data are among the simple model’s few, it wins. This is **Occam’s razor** made quantitative, with no validation set.',
-      'For polynomial regression on the sine data, the log evidence rises until degree 3 and then declines, while training error keeps falling; degree 3 also has the lowest test error. The ratio of evidences for two models is the **Bayes factor**: a factor of 10 or more is conventionally strong evidence.',
+      'For polynomial regression on the sine data, the log evidence is highest at degree 3 and declines steadily beyond it, while training error keeps falling; degree 3 also has the lowest test error. The ratio of evidences for two models is the **Bayes factor**: a factor of 10 or more is conventionally strong evidence.',
       'Choosing hyperparameters such as α and β by maximizing the evidence is **empirical Bayes** (type-II maximum likelihood); Gaussian processes use it to tune kernels (Lab 42). Cautions: the evidence depends heavily on the prior (an absurdly vague prior makes any model look bad), and it assumes one of the models is sensible. Cross-validation remains the robust default for predictive goals.',
       'You have completed this lab when you can: compute and summarize posteriors with conjugate priors; distinguish credible from confidence intervals; use posterior predictives; derive ridge and lasso as MAP estimates; compute the Bayesian linear regression posterior and predictive variance; and compare models by their evidence while stating its limits. The Python challenge implements all of these.',
     ],
@@ -157,3 +159,6 @@ export const sources = [
   { title: 'Gelman et al. · Bayesian Data Analysis, 3rd ed. (free PDF)', url: 'http://www.stat.columbia.edu/~gelman/book/' },
   { title: 'Murphy · Probabilistic Machine Learning: An Introduction, ch. 4 and 11 (free PDF)', url: 'https://probml.github.io/pml-book/book1.html' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])
