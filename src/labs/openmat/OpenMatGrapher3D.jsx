@@ -539,7 +539,7 @@ const OpenMatGrapher3D = ({ isOpen, onClose, onSwitchTo2D, onSwitchToJSX, launch
   const [functions, setFunctions] = useLocalStorage("openmat-grapher-3d-funcs", [
     { id: 1, latex: "sin(x) * cos(y)", color: "#6366f1", visible: true, plotType: "surf", wireframe: false, opacity: 0.9 },
   ]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activePanel, setActivePanel] = useState(null);
   const [settings, setSettings] = useLocalStorage("openmat-grapher-3d-settings", {
     showGrid: true,
     range: 12,
@@ -619,192 +619,77 @@ const OpenMatGrapher3D = ({ isOpen, onClose, onSwitchTo2D, onSwitchToJSX, launch
   const yl = settings.ylim || [-6, 6];
   const zl = settings.zlim || [-6, 6];
 
+  const panels = [
+    { id: "objects", label: `Objects (${functions.length})`, icon: Layers },
+    { id: "appearance", label: "Appearance", icon: Settings2 },
+    { id: "view", label: "View & Help", icon: Info },
+  ];
+
   return (
     <div className={embedded
       ? "h-full w-full overflow-hidden"
-      : "fixed inset-0 z-[70] overflow-hidden bg-slate-900/80 backdrop-blur-xl sm:flex sm:items-center sm:justify-center sm:p-4"
+      : "fixed inset-0 z-[1800] overflow-hidden bg-slate-900/80 backdrop-blur-xl sm:flex sm:items-center sm:justify-center sm:p-4"
     }>
       <div className={embedded
-        ? "flex h-full w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 md:flex-row"
-        : "flex h-full w-full flex-col overflow-hidden rounded-none bg-white shadow-2xl dark:bg-slate-900 sm:h-[92vh] sm:max-w-7xl sm:rounded-3xl sm:border sm:border-slate-200 dark:sm:border-slate-800 md:flex-row"
+        ? "flex h-full w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+        : "flex h-full w-full flex-col overflow-hidden rounded-none bg-white shadow-2xl dark:bg-slate-900 sm:h-[92vh] sm:max-w-7xl sm:rounded-3xl sm:border sm:border-slate-200 dark:sm:border-slate-800"
       }>
-
-        {/* ── Sidebar ── */}
-        {sidebarOpen && (
-          <div className="flex w-full flex-col border-r border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-950/30 md:w-[19rem] lg:w-[21rem]">
-            {/* Header */}
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/50 p-5 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/50">
-              <h3 className="flex items-center gap-2 font-black tracking-tight text-slate-800 dark:text-slate-100">
-                <Box className="h-5 w-5 text-indigo-500" />
-                {launchConfig?.title || "OpenMAT 3D"}
-              </h3>
-              <div className="flex items-center gap-1">
-                {typeof onSwitchTo2D === "function" && (
-                  <button onClick={onSwitchTo2D} title="Switch to 2D" className="rounded-lg border border-transparent p-1.5 text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/40">
-                    <Activity className="h-5 w-5" />
-                  </button>
-                )}
-                {typeof onSwitchToJSX === "function" && (
-                  <button onClick={onSwitchToJSX} title="JSXGraph Pro" className="rounded-lg border border-transparent p-1.5 text-emerald-600 hover:border-emerald-100 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/40">
-                    <Settings2 className="h-5 w-5" />
-                  </button>
-                )}
-                <button onClick={addFunction} className="rounded-xl bg-indigo-500 p-1.5 text-white shadow-lg shadow-indigo-500/20 hover:bg-indigo-600 active:scale-95">
-                  <Plus className="h-5 w-5" />
-                </button>
-                {!embedded && onClose && (
-                  <button onClick={onClose} className="ml-1 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/40 md:hidden">
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Function list */}
-            <div className="custom-scrollbar flex-1 space-y-3 overflow-y-auto p-5">
-              {functions.map((fn) => (
-                <div key={fn.id} className="group flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:border-indigo-400 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-500/50">
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => updateFn(fn.id, { visible: !fn.visible })}
-                      className="h-4 w-4 flex-shrink-0 rounded-full border-2 transition-all"
-                      style={{ backgroundColor: fn.visible ? fn.color : undefined, borderColor: fn.color, opacity: fn.visible ? 1 : 0.4 }} />
-                    <input value={fn.latex}
-                      onChange={(e) => updateFn(fn.id, { latex: e.target.value })}
-                      className="flex-1 border-none bg-transparent font-mono text-sm text-slate-700 focus:ring-0 dark:text-slate-200"
-                      placeholder="z = f(x,y)" />
-                    <button onClick={() => removeFn(fn.id)} className="text-slate-300 hover:text-red-500">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {/* Type badge */}
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                      {fn.plotType || "expr"}
-                    </span>
-                    <button onClick={() => updateFn(fn.id, { wireframe: !fn.wireframe })}
-                      className={`rounded-md border px-2 py-1 text-[10px] font-bold transition-all ${fn.wireframe ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-200 text-slate-500 dark:border-slate-800"}`}>
-                      WIRE
-                    </button>
-                    <input type="range" min="0" max="1" step="0.05" value={fn.opacity}
-                      onChange={(e) => updateFn(fn.id, { opacity: parseFloat(e.target.value) })}
-                      className="h-1 w-16 cursor-pointer rounded-lg bg-slate-200 accent-indigo-500 dark:bg-slate-800" />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Settings */}
-            <div className="space-y-4 border-t border-slate-200 p-5 dark:border-slate-800">
-              <h4 className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                <Settings2 className="h-3 w-3" /> Render Settings
-              </h4>
-
-              {/* Colormap */}
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-500 dark:text-slate-400">Colormap</span>
-                <select value={settings.colormap || "parula"}
-                  onChange={(e) => setSetting("colormap", e.target.value)}
-                  className="rounded bg-slate-100 px-2 py-1 text-[11px] text-slate-700 dark:bg-slate-800 dark:text-slate-100">
-                  {Object.keys(COLOR_MAPS).map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Resolution */}
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-500 dark:text-slate-400">Resolution</span>
-                <select value={settings.resolution}
-                  onChange={(e) => setSetting("resolution", parseInt(e.target.value))}
-                  className="rounded bg-slate-100 px-1 text-[10px] text-slate-700 dark:bg-slate-800 dark:text-slate-100">
-                  <option value="32">Low</option>
-                  <option value="64">Medium</option>
-                  <option value="128">High</option>
-                </select>
-              </div>
-
-              {/* Toggles */}
-              {[
-                ["showGrid",   "Axis box & grid"],
-                ["colorbar",   "Colorbar"],
-                ["autoRotate", "Auto-rotate"],
-                ["flatShading","Smooth shading"],
-              ].map(([key, label]) => (
-                <label key={key} className="flex cursor-pointer items-center gap-2 text-[11px]">
-                  <input type="checkbox" checked={!!settings[key]}
-                    onChange={(e) => setSetting(key, e.target.checked)}
-                    className="rounded border-slate-300 text-indigo-500 focus:ring-indigo-400 dark:border-slate-700" />
-                  <span className="text-slate-500 dark:text-slate-400">{label}</span>
-                </label>
-              ))}
-
-              {/* View info */}
-              <div className="rounded-xl bg-slate-100 px-3 py-2 text-[11px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                View: <span className="font-semibold text-slate-800 dark:text-slate-100">
-                  {Array.isArray(settings.view) ? `${settings.view[0]}°, ${settings.view[1]}°` : (settings.view || "default")}
-                </span>
-                &nbsp;&nbsp;X: [{xl.map(fmtNum).join(", ")}]&nbsp;
-                Y: [{yl.map(fmtNum).join(", ")}]&nbsp;
-                Z: [{zl.map(fmtNum).join(", ")}]
-              </div>
-            </div>
-
-            {/* Help */}
-            <div className="border-t border-slate-200 bg-indigo-50/40 p-5 dark:border-slate-800 dark:bg-indigo-950/10">
-              <div className="flex items-start gap-3">
-                <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-400" />
-                <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  <span className="font-bold text-indigo-600 dark:text-indigo-400">Quick syntax: </span>
-                  <code>surf(X,Y,Z)</code> · <code>mesh(X,Y,Z)</code> · <code>plot3(x,y,z)</code> ·
-                  <code>scatter3(x,y,z)</code> · <code>colormap('jet')</code> · <code>view([-37.5 30])</code>
-                </p>
-              </div>
-            </div>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+          <h3 className="flex min-w-0 items-center gap-2 truncate text-sm font-bold text-slate-800 dark:text-slate-100">
+            <Box className="h-4 w-4 shrink-0 text-indigo-500" />
+            {launchConfig?.title || "OpenMAT 3D"}
+          </h3>
+          <div className="flex items-center gap-1">
+            {typeof onSwitchTo2D === "function" && <button onClick={onSwitchTo2D} title="Switch to 2D" className="rounded-lg p-2 text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/40"><Activity className="h-4 w-4" /></button>}
+            {typeof onSwitchToJSX === "function" && <button onClick={onSwitchToJSX} title="Open JSXGraph Pro" className="rounded-lg p-2 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/40"><Settings2 className="h-4 w-4" /></button>}
+            {!embedded && onClose && <button onClick={onClose} title="Close 3D viewer" className="rounded-lg p-2 text-slate-500 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/40"><X className="h-4 w-4" /></button>}
           </div>
-        )}
+        </div>
 
-        {/* ── Viewport ── */}
-        <div className="relative flex-1" style={{ background: canvasBg }}>
-          {/* Hide/show sidebar */}
-          <button onClick={() => setSidebarOpen((v) => !v)}
-            className="absolute left-4 top-4 z-20 inline-flex items-center gap-2 rounded-2xl border bg-white/80 px-3 py-2 text-xs font-semibold text-slate-700 shadow-xl backdrop-blur-md hover:bg-white dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-100 dark:hover:bg-slate-900">
-            <Layers className="h-4 w-4" />
-            {sidebarOpen ? "Hide" : "Controls"}
-          </button>
-
-          {!embedded && (
-            <button onClick={onClose}
-              className="absolute right-6 top-6 z-20 rounded-2xl border border-slate-200 bg-white/80 p-2 text-slate-500 shadow-xl backdrop-blur-md hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800">
-              <X className="h-6 w-6" />
-            </button>
-          )}
-
+        <div className="relative min-h-0 flex-1" style={{ background: canvasBg }}>
           <Canvas camera={{ position: [10, 8, 10], fov: 40 }}>
             <color attach="background" args={[canvasBg]} />
             <OpenMatScene functions={functions} settings={{ ...settings, isDark: C.isDark }} />
           </Canvas>
+          {showColorbar && <div className="pointer-events-none absolute right-3 top-3"><Colorbar colorMap={(settings.colormapOverride ? settings.colormap : null) || colorbarFn.colorMap || settings.colormap || "parula"} range={colorbarFn.colorRange} /></div>}
+          <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-bold shadow-lg dark:border-slate-700 dark:bg-slate-900">
+            {[["X","#e84040"],["Y","#22c55e"],["Z","#4d7cff"]].map(([axis,color]) => <div key={axis} className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} /><span className="uppercase text-slate-400">{axis}</span></div>)}
+          </div>
+        </div>
 
-          {/* Colorbar */}
-          {showColorbar && (
-            <div className="pointer-events-none absolute bottom-5 right-5 flex items-end">
-              <Colorbar
-                colorMap={(settings.colormapOverride ? settings.colormap : null) || colorbarFn.colorMap || settings.colormap || "parula"}
-                range={colorbarFn.colorRange}
-              />
+        <div className="shrink-0 border-t border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
+          <div className="flex items-center gap-1 overflow-x-auto px-2 py-2">
+            <span className="mr-1 hidden text-[10px] font-bold uppercase tracking-widest text-slate-400 sm:inline">3D controls</span>
+            {panels.map((panel) => {
+              const Icon = panel.icon;
+              const active = activePanel === panel.id;
+              return <button key={panel.id} type="button" onClick={() => setActivePanel(active ? null : panel.id)} aria-expanded={active} className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${active ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-200 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"}`}><Icon className="h-3.5 w-3.5" />{panel.label}</button>;
+            })}
+            <button type="button" onClick={() => { addFunction(); setActivePanel("objects"); }} className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-2 text-xs font-semibold text-white"><Plus className="h-3.5 w-3.5" />Add object</button>
+          </div>
+
+          {activePanel === "objects" && (
+            <div className="max-h-56 overflow-auto border-t border-slate-200 p-3 dark:border-slate-800">
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {functions.map((fn) => <div key={fn.id} className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center gap-2"><button onClick={() => updateFn(fn.id, { visible: !fn.visible })} aria-label={`Toggle ${fn.latex}`} className="h-4 w-4 shrink-0 rounded-full border-2" style={{ backgroundColor: fn.visible ? fn.color : undefined, borderColor: fn.color, opacity: fn.visible ? 1 : 0.4 }} /><input value={fn.latex} onChange={(event) => updateFn(fn.id, { latex: event.target.value })} className="min-w-0 flex-1 bg-transparent font-mono text-xs text-slate-700 outline-none dark:text-slate-200" /><button onClick={() => removeFn(fn.id)} aria-label={`Delete ${fn.latex}`} className="text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></div><div className="mt-2 flex items-center gap-2"><span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500 dark:bg-slate-800">{fn.plotType || "expr"}</span><button onClick={() => updateFn(fn.id, { wireframe: !fn.wireframe })} className={`rounded border px-2 py-1 text-[10px] font-bold ${fn.wireframe ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-200 text-slate-500 dark:border-slate-700"}`}>Wireframe</button><label className="ml-auto flex items-center gap-2 text-[10px] text-slate-500">Opacity<input type="range" min="0" max="1" step="0.05" value={fn.opacity} onChange={(event) => updateFn(fn.id, { opacity: parseFloat(event.target.value) })} className="h-1 w-20 accent-indigo-500" /></label></div></div>)}
+              </div>
             </div>
           )}
 
-          {/* Axis legend */}
-          <div className="pointer-events-none absolute bottom-5 left-5">
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-[10px] font-bold shadow-lg backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/80">
-              {[["X","#e84040"],["Y","#22c55e"],["Z","#4d7cff"]].map(([a,c]) => (
-                <div key={a} className="flex items-center gap-1.5">
-                  <div className="h-2 w-2 rounded-full" style={{ backgroundColor: c }} />
-                  <span className="uppercase text-slate-400">{a}</span>
-                </div>
-              ))}
+          {activePanel === "appearance" && (
+            <div className="grid max-h-56 gap-3 overflow-auto border-t border-slate-200 p-3 sm:grid-cols-2 lg:grid-cols-4 dark:border-slate-800">
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-800 dark:bg-slate-900"><span>Colormap</span><select value={settings.colormap || "parula"} onChange={(event) => setSetting("colormap", event.target.value)} className="rounded bg-slate-100 px-2 py-1 dark:bg-slate-800">{Object.keys(COLOR_MAPS).map((map) => <option key={map} value={map}>{map}</option>)}</select></label>
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-800 dark:bg-slate-900"><span>Resolution</span><select value={settings.resolution} onChange={(event) => setSetting("resolution", parseInt(event.target.value))} className="rounded bg-slate-100 px-2 py-1 dark:bg-slate-800"><option value="32">Low</option><option value="64">Medium</option><option value="128">High</option></select></label>
+              {[["showGrid","Axis box & grid"],["colorbar","Colorbar"],["autoRotate","Auto-rotate"],["flatShading","Smooth shading"]].map(([key,label]) => <label key={key} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-800 dark:bg-slate-900"><input type="checkbox" checked={!!settings[key]} onChange={(event) => setSetting(key, event.target.checked)} className="rounded text-indigo-500" />{label}</label>)}
             </div>
-          </div>
+          )}
+
+          {activePanel === "view" && (
+            <div className="grid max-h-56 gap-3 overflow-auto border-t border-slate-200 p-3 md:grid-cols-2 dark:border-slate-800">
+              <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs leading-5 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"><div className="font-semibold text-slate-800 dark:text-slate-100">Current view</div><div className="mt-1">View: {Array.isArray(settings.view) ? `${settings.view[0]}°, ${settings.view[1]}°` : (settings.view || "default")}</div><div>X: [{xl.map(fmtNum).join(", ")}] · Y: [{yl.map(fmtNum).join(", ")}] · Z: [{zl.map(fmtNum).join(", ")}]</div></div>
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs leading-5 text-slate-600 dark:border-indigo-900 dark:bg-indigo-950 dark:text-slate-300"><div className="font-semibold text-indigo-700 dark:text-indigo-300">Mouse controls</div><div className="mt-1">Drag to orbit · wheel to zoom · right-drag to pan.</div><div className="mt-1 font-mono text-[10px]">surf · mesh · plot3 · scatter3 · colormap · view</div></div>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -5321,10 +5321,10 @@ function OpenMatPlotWindow({
   if (!isOpen || (!figureJson && !showing3D)) return null;
 
   return (
-    <div className="fixed inset-0 z-[90] bg-slate-950/55 backdrop-blur-md">
+    <div className="fixed inset-0 z-[1800] bg-slate-950/55 backdrop-blur-md">
       <div
         className="flex h-full w-full flex-col"
-        style={{ background: C.pageBg }}
+        style={{ background: C.isDark ? "#020817" : "#f8fafc" }}
       >
         <div
           className="flex items-center justify-between border-b px-4 py-3"
@@ -5376,7 +5376,7 @@ function OpenMatPlotWindow({
               <OpenMatGrapher3D
                 embedded
                 isOpen
-                launchConfig={null}
+                launchConfig={surfaceConfig}
               />
             ) : (
               renderOpenMatFigure(figureJson, C, 280)
@@ -6324,43 +6324,7 @@ export default function OpenMatStudio() {
     `${displayWorkspaceItems.length} workspace variable${displayWorkspaceItems.length === 1 ? "" : "s"}`,
     `${commandHistory.length} console command${commandHistory.length === 1 ? "" : "s"} saved`,
   ];
-  const quickStartGuide = `## Quick start
-
-### Switching modes
-
-- Click **Script Mode** in the top header when you want the regular coding workspace.
-- Click **Simulation Mode** in the same place when you want guided labs and prompts.
-- Both modes use the **same session**, so the editor, figure, console, and workspace stay connected.
-
-### Example users can try
-
-1. Click **Simulation Mode**.
-2. In the left panel, choose **Pendulum**.
-3. OpenMAT loads the guided lab into a script tab.
-4. Press **Run** if it has not already run.
-5. In the **Figure** pane, move the sliders like \`length\`, \`gravity\`, or \`theta0\`.
-6. Watch the plot update, then open **Workspace** or **Console** to inspect the same session.
-7. Click **Script Mode** again if you want to edit the code directly.
-
-### Importing or replacing geometry
-
-1. In **Simulation Mode**, select a scene object first if you want to replace it.
-2. Open the **Geometry** rail and click **Open ScratchPad** or **Import Scratch Geometry**.
-3. ScratchPad opens directly in **Geo** mode with **Select** active when needed.
-4. In ScratchPad, click one shape and use **Send to OpenMAT**.
-5. If a simulation object was selected, the imported shape replaces it.
-6. If nothing was selected, the imported shape is centered into the simulation viewport.
-7. Use **Sync Linked Scratch Geometry** later if you keep editing that shape in ScratchPad.
-
-### Mental model
-
-- **Editor**: saved scripts and labs
-- **Run**: refreshes figure, workspace, and console from the active tab
-- **Console**: quick one-line experiments against the current workspace
-- **Workspace**: variables from the latest run
-- **Promote to Script**: moves a useful console command back into the active script
-`;
-  const helpMarkdown = `${quickStartGuide}\n\n---\n\n${openMatGuide}`;
+  const helpMarkdown = openMatGuide;
 
   const clearRunState = useCallback(() => {
     setOutput("");
@@ -7208,6 +7172,15 @@ export default function OpenMatStudio() {
   }, [isResizingSimCenter, setSimEditorWidth]);
 
   const isPlotFocused = plotPanelMode === "focus";
+  const togglePlotFocus = useCallback(() => {
+    if (isPlotFocused) {
+      setPlotPanelMode("pane");
+      setSidebarOpen(true);
+      return;
+    }
+    setPlotPanelMode("focus");
+    setSidebarOpen(false);
+  }, [isPlotFocused, setPlotPanelMode]);
   const rightPaneCssWidth = isPlotFocused
     ? "min(100%, max(56vw, 760px))"
     : `min(100%, ${rightPaneWidth}px)`;
@@ -9872,13 +9845,7 @@ export default function OpenMatStudio() {
                       <div className="mb-3 flex flex-wrap gap-2">
                         <button
                           type="button"
-                          onClick={() => {
-                            setPlotPanelMode((current) => {
-                              const next = current === "focus" ? "pane" : "focus";
-                              if (next === "focus") setSidebarOpen(false);
-                              return next;
-                            });
-                          }}
+                          onClick={togglePlotFocus}
                           className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold"
                           style={{ borderColor: isPlotFocused ? C.blue : C.border, background: C.surface2, color: isPlotFocused ? C.blue : C.text }}
                         >
@@ -10744,7 +10711,7 @@ export default function OpenMatStudio() {
         >
           <div
             className="flex h-full w-full max-w-[900px] flex-col border-l shadow-2xl"
-            style={{ borderColor: C.border, background: C.surface3 }}
+            style={{ borderColor: C.border, background: C.isDark ? "#07101d" : "#ffffff" }}
             onClick={(event) => event.stopPropagation()}
           >
             <div
@@ -10769,7 +10736,7 @@ export default function OpenMatStudio() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-auto px-5 py-5">
+            <div className="min-h-0 flex-1 overflow-auto px-5 py-5" style={{ background: C.isDark ? "#07101d" : "#ffffff" }}>
               <MarkdownProse
                 text={helpMarkdown}
                 className="[&_code]:rounded [&_code]:bg-slate-100 [&_code]:px-1.5 [&_code]:py-0.5 dark:[&_code]:bg-slate-800"

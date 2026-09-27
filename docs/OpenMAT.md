@@ -1,467 +1,250 @@
 # OpenMAT Guide
 
-OpenMAT is a matrix-computing workspace inside `open-calc`.
+OpenMAT is a browser-based MATLAB-style learning workspace. It combines editable scripts, figures, variables, a command console, interactive controls, three-dimensional plots, and guided engineering simulations in one local session.
 
-It is designed to feel familiar to MATLAB users, but it is not a MATLAB runtime. The current implementation is a custom MATLAB-like language layer built on top of a browser-side math engine and Open Calc's plotting stack.
+OpenMAT is designed for learning and compact numerical work. It accepts a broad MATLAB-like language, but it is not MathWorks MATLAB and does not provide MATLAB toolboxes, Simulink, desktop graphics handles, or full project compatibility.
 
-## What language is OpenMAT?
+## Start here
 
-OpenMAT is a hybrid:
+The default **Guided** interface keeps the first workflow small:
 
-- The app itself is written in JavaScript and React.
-- The execution engine is powered by `mathjs`.
-- The code users write is a MATLAB-like dialect that OpenMAT preprocesses before evaluation.
+1. Choose **Code**.
+2. Open **Learn** and select **Explore the example library**.
+3. Pick an example and read its explanation.
+4. Compare the code with its real OpenMAT output.
+5. Select **Load into editor**.
+6. Change one value and press **Run**.
+7. Inspect **Figure**, **Workspace**, and **Console**.
 
-That means OpenMAT is not:
+Examples always open in a new script tab. Your current work stays available.
 
-- raw browser JavaScript
-- Python
-- full MATLAB compatibility
+Choose **Simulations** when you want a guided model instead of a blank coding task:
 
-It is best understood as:
+1. Pick a model.
+2. Select **Load & Run**.
+3. Change one input.
+4. Compare the scene, plot, and numeric results.
 
-1. MATLAB-style syntax where possible
-2. browser-native execution
-3. Open Calc plotting, controls, and visualization features on top
+## Guided and Advanced interfaces
 
-## Current mental model
+**Guided** is intended for learners. It exposes the main path and hides configuration that is not needed for the current step.
 
-When a user runs a script:
+- **Code** contains Learn, Functions, the script editor, Figure, Console, and Workspace.
+- **Simulations** contains the model list, viewport, inputs, and results.
 
-1. OpenMAT reads the script as MATLAB-like code.
-2. It normalizes some syntax such as indexing, matrix behavior, anonymous functions, and control flow.
-3. The normalized expression is evaluated with the local math engine.
-4. Plot commands are converted into Open Calc figure data or 3D launch data.
-5. Interactive controls such as `slider(...)` and `animate(...)` are surfaced in the UI and fed back into reruns.
+**Advanced** exposes the complete workspace:
 
-## Interaction model
+- session and file import/export
+- MATLAB paste cleanup
+- benchmarks and notes
+- normalized-code inspection
+- simulation geometry, properties, assembly, presets, validation, and parameter studies
+- separate 3D handoff
 
-OpenMAT should be understood as one shared session with several views into it:
+Switching interface level does not erase scripts or variables.
 
-- `Editor` tabs hold saved scripts, examples, and labs.
-- `Run` executes the active script tab and refreshes the Figure, Workspace, and Console.
-- `Console` is for short one-line experiments against the current workspace state.
-- `Promote to Script` moves a useful console command back into the active script tab.
-- `Workspace` shows the live variables produced by the latest script run or console command.
+## The shared session
 
-This means the product model is:
+All OpenMAT panels describe the same current run:
 
-1. Write or load a script in the editor.
-2. Run it to create figures and variables.
-3. Probe or extend the result in the console.
-4. Promote good discoveries back into the script.
-5. Use the same session state as the basis for simulation workflows later.
+- **Editor** stores scripts in tabs.
+- **Run** executes the active script.
+- **Figure** displays the latest 2D or 3D plot.
+- **Workspace** lists variables created by the latest run.
+- **Console** displays output and runs short commands against the current workspace.
+- **Functions** searches the command reference generated from the engine help.
+- **Promote to Script** copies a useful Console command into the active script.
 
-## Getting started with the lab
+Running a script refreshes its figure, workspace, controls, and console output together.
 
-If someone is brand new to OpenMAT, the first lesson should be about workflow, not language syntax.
+## Working with examples
 
-Recommended beginner flow:
+The example library is a learning tool, not just a file picker. Each example includes:
 
-1. Enter `Simulation Mode`
-2. Pick a guided lab such as `Pendulum`
-3. Press `Run`
-4. Move the sliders and watch the viewport and plots respond
-5. Open `Workspace` to see what variables the lab produced
-6. Try a one-line console command
-7. Return to `Script Mode` only after the user understands the lab workflow
+- its main idea and concepts
+- explanations tied to the actual code blocks
+- the complete copyable script
+- live output from the same engine used by the editor
+- workspace and console results
+- **Load into editor** for experimentation
 
-For geometry authoring:
+Search by command, concept, difficulty, or topic. Topics currently include MATLAB foundations, plotting, linear algebra, data and statistics, programming, interactive models, and 3D surfaces.
 
-1. Open the `Geometry` rail in `Simulation Mode`
-2. Select a simulation object first if you want to replace it
-3. Click `Open ScratchPad`
-4. ScratchPad opens in `Geo` mode with `Select` active
-5. Click one shape and use `Send to OpenMAT`
-6. The shape either replaces the selected object or imports centered into the viewport
-7. Use `Sync Linked Scratch Geometry` after later ScratchPad edits
+## MATLAB-style language
 
-That is the best first chapter for a course because it teaches the interaction model before introducing OpenMAT's language layer.
+Common syntax includes:
 
-## MATLAB user quick start
+```matlab
+A = [4 -1 0; -1 4 -1; 0 -1 3];
+b = [15; 10; 10];
+x = A \ b;
 
-If someone already knows MATLAB, the fastest OpenMAT success path is:
+t = linspace(0, 2*pi, 300);
+y = sin(t);
+plot(t, y)
+grid on
+title('A sine wave')
+```
 
-1. run one simple 2D plot
-2. run one matrix example
-3. run one `plot3(...)` example
-4. run one `surf(...)` example
-5. only then try `slider(...)` and `animate(...)`
+OpenMAT supports scripts containing local functions, including calls that appear before the function declaration:
 
-Recommended first examples:
+```matlab
+result = square_value(5);
+disp(result)
 
-- `MATLAB First Plot`
-- `Matrix Quick Start`
-- `Gradient Descent Lab`
-- `G-Code Helix`
+function y = square_value(x)
+    y = x^2;
+end
+```
 
-That sequence matters because it establishes trust before it introduces OpenMAT-only interactivity.
+It also supports anonymous functions:
 
-## Challenge demo path
+```matlab
+f = @(x) x.^2 + 2*x + 1;
+y = f(0:0.1:4);
+plot(0:0.1:4, y)
+```
 
-For judges or first-time users, the strongest short demo order is:
+## Arrays and linear algebra
 
-1. `MATLAB First Plot`
-2. `G-Code Helix`
-3. `Lorenz Butterfly`
-4. `Gradient Descent Lab`
-5. `Torus Stress Test`
+Supported workflows include:
 
-Why this order works:
+- row and column vectors
+- matrix literals and concatenation
+- transpose and indexing
+- colon ranges
+- element-wise `.*`, `./`, and `.^`
+- linear solves with `A \ b`
+- `inv`, `det`, `trace`, `rank`, `cond`, and `rref`
+- `eig`, `svd`, `qr`, and `lu`
+- `orth` and `null`
+- `reshape`, `repmat`, `meshgrid`, `zeros`, `ones`, and `eye`
+- `rand` and `randn`
 
-- the first one proves ordinary MATLAB-like plotting
-- the next two create fast visual trust and engineering flavor
-- the optimization lab shows math, logic, 3D, and sliders together
-- the torus stress test shows the engine can survive a bigger 3D script
+The Workspace matrix inspector can show shape, rank, determinant, invertibility, conditioning, RREF, symmetry, and orthogonality when those properties apply.
 
-## What OpenMAT is strong at today
+## Math, statistics, and numerics
 
-- matrix algebra
-- vectorized numeric work
-- classroom linear algebra workflows
-- classroom and lab-style plotting
-- parameterized controls
-- simple animation and simulation templates
-- local browser execution with no required server
+Frequently used functions include:
 
-## What OpenMAT is not yet
+- `sin`, `cos`, `tan`, `asin`, `acos`, and `atan`
+- degree variants such as `sind`, `cosd`, `tand`, and `atan2d`
+- `sqrt`, `exp`, `log`, `log10`, `abs`, `round`, `floor`, and `ceil`
+- `sum`, `prod`, `min`, `max`, `mean`, `median`, `std`, and `var`
+- `sort`, `unique`, and `find`
+- `diff`, `gradient`, `trapz`, and `interp1`
+- `roots`, `polyfit`, and `polyval`
+- `fft`, `ifft`, and cumulative operations
 
-- full MATLAB compatibility
-- Simulink
-- a symbolic engine
-- a complete ODE / PDE toolbox
-- a full desktop project/file environment
+Use the searchable **Functions** tab for the current engine-generated list.
 
-## Supported language areas
+## Text and formatted output
 
-OpenMAT currently supports a growing subset of MATLAB-like behavior:
+Text values can be assigned, combined, displayed, and formatted:
 
-- matrices and vectors: `[1 2; 3 4]`, transpose, `A \ b`
-- array creation: `linspace`, `logspace`, `zeros`, `ones`, `eye`, `rand`, `randn`
-- math and numerics: `eig`, `qr`, `svd`, `rref`, `rank`, `det`, `lu`, `null`, `orth`, `cond`, `trapz`, `gradient`, `roots`, `interp1`
-- plots: `plot`, `scatter`, `bar`, `stem`, `area`, `hist`, `subplot`
-- axes and figure commands: `grid`, `title`, `xlabel`, `ylabel`, `xlim`, `ylim`, `axis`
-- control flow: `if`, `elseif`, `else`, `for`, `while`, `break`, `continue`
-- functions: `function ... end`, anonymous functions with `@(...)`
-- interactivity: `slider(...)`
-- animation: `animate(...)`
-- 3D handoff: `surf(...)`, `mesh(...)`
+```matlab
+label = ['Open', 'MAT'];
+disp(label)
+fprintf('value = %.3f\n', pi)
+message = sprintf('samples: %d', 200);
+```
 
-## MATLAB compatibility quick read
+Common display commands include `disp`, `fprintf`, `sprintf`, `num2str`, `who`, `whos`, `format`, and `clc`.
 
-OpenMAT has a real chance to feel familiar to MATLAB users, but the honest framing today is:
+## Control flow
 
-- strong for guided numeric work, teaching, and compact engineering scripts
-- partial for general-purpose MATLAB coding
-- not yet suitable as a drop-in runtime for workplace MATLAB projects
+OpenMAT supports:
 
-If someone pastes in production MATLAB from work, the right question is not "is OpenMAT broken?" but:
+- `if`, `elseif`, and `else`
+- `for` and `while`
+- `break` and `continue`
+- local and recursive functions
+- single and multiple function outputs
 
-1. is this script mostly matrix math and plotting
-2. or is it leaning on MATLAB desktop workflow, graphics handles, file I/O, classes, and toolboxes
+Long expressions and array literals may continue onto another line with MATLAB's `...` marker.
 
-The first category has a good chance.
-The second category usually needs rewriting.
+## Two-dimensional figures
 
-## Try this
+Available plot types include `plot`, `scatter`, `bar`, `stem`, `area`, `hist`, and `subplot`.
 
-These patterns are the best fit for OpenMAT right now:
+Figure commands include `hold on`, `hold off`, `clf`, `title`, `xlabel`, `ylabel`, `legend`, `grid`, `text`, `xlim`, `ylim`, and `axis` modes such as `tight`, `equal`, and `auto`.
 
-- matrix and vector scripts
-- classroom linear algebra and calculus labs
-- compact engineering calculations
-- parameter sweeps built around core numerics
-- plots and quick visual analysis
-- single-file or small multi-function experiments
+Select **Focus Plot** for a larger figure. **Exit Focus** returns the layout to its normal size and restores the Learn/Examples sidebar.
 
-Good examples:
+## Three-dimensional figures
 
-- `A = [1 2; 3 4]; x = A \ b`
-- `R = rref(A); rank(A); det(A)`
-- `[L, U, P] = lu(A)`
-- `Q = orth(A); N = null(A)`
-- `t = 0:0.01:10; y = sin(t); plot(t, y)`
-- `function y = f(x); y = x.^2; end`
-- `slider('k', 10, 200, 5, 50)`
+OpenMAT renders these commands in its integrated 3D viewer:
 
-## Linear algebra workflow
+- `surf(X, Y, Z)`
+- `mesh(X, Y, Z)`
+- `surfc(X, Y, Z)`
+- `plot3(x, y, z)`
+- `scatter3(x, y, z)`
+- `view(...)`
+- `colormap(...)`
+- `colorbar`
 
-If OpenMAT is being used for a linear algebra class, the strongest workflow is:
+The scene stays clear by default. Use the bottom menu when controls are needed:
 
-1. paste the textbook MATLAB code
-2. press `Fix MATLAB` if it came from ZyBooks or lecture notes
-3. run the script
-4. select the resulting matrix in `Workspace`
-5. inspect rank, determinant, invertibility, conditioning, and the RREF panel
+- **Objects** changes visibility, expressions, wireframe, and opacity.
+- **Appearance** changes the color map, resolution, grid, colorbar, rotation, and shading.
+- **View & Help** shows bounds, camera information, mouse controls, and quick syntax.
 
-The `Workspace` inspector is designed to answer the usual class questions quickly:
+Select an open tab again to collapse the controls and return maximum space to the scene.
 
-- is this matrix full rank
-- is it invertible
-- what are the pivot columns
-- what does the row-reduced form look like
-- is the matrix symmetric or orthogonal
+## Interactive scripts
 
-Recommended OpenMAT examples for a linear algebra term:
+OpenMAT adds two browser-native helpers:
 
-- `Matrix Quick Start`
-- `RREF / Rank`
-- `LU Factorization`
-- `Eigenvectors`
-- `Orthogonality`
-- `Least Squares`
-- `SVD Intuition`
+```matlab
+amplitude = slider('amplitude', 0.1, 3, 0.1, 1);
+phase = animate('phase', 0, 2*pi, 0.05, 0, 1, 1);
+```
 
-## Works, but differently
+Changing a slider reruns the current script with the new named value. An animation control advances its value repeatedly and reruns the script.
 
-These concepts exist, but not in full MATLAB form:
+## Guided simulations
 
-- plotting works through Open Calc rendering rather than MATLAB graphics handles
-- `surf(...)` and `mesh(...)` hand off to the integrated 3D grapher instead of MATLAB figure windows
-- the console, editor, workspace, and simulation benches all share one local browser session
-- OpenMAT-specific interactivity such as `slider(...)` and `animate(...)` is part of the language surface
+Built-in workbenches include Pendulum, Spring-Mass, Projectile, Merchant Circle, Beam / Cantilever, and Natural Frequency / Chatter.
 
-So a user can often keep the math while changing the workflow.
+Guided mode exposes the model, viewport, inputs, and results. Advanced mode adds editable geometry, assembly constraints, properties, material presets, solver assumptions, benchmarks, lessons, Console, Workspace, and reference information.
 
-## Optimization and color reality check
+Parameter Study controls remain disabled until the selected model has run and produced both adjustable controls and numeric outputs.
 
-OpenMAT can already support a compelling optimization demo:
+## Import and export
 
-- loops and finite-difference updates
-- sliders that rerun the same script with new parameters
-- `surf(...)` for a cost landscape
-- `plot3(...)` for the descent path on top
+Advanced mode provides:
 
-That is enough to build a strong gradient-descent lab today.
+- import and export of `.m` scripts
+- import of `.csv`, `.tsv`, and numeric `.txt` data
+- export of workspace tables and matrices to `.csv`
+- OpenMAT session import and export as JSON
+- recovery snapshots for destructive workspace actions
 
-What is still lighter than MATLAB:
+**Fix MATLAB** normalizes common courseware paste problems such as smart quotes, Unicode minus characters, spaced element-wise operators, and formatting artifacts.
 
-- no full `colormap(...)` workflow yet
-- no true `colorbar`
-- no full `shading interp` style parity
-- more limited figure styling and per-series color controls
+## Compatibility boundaries
 
-So the best current strategy is:
+OpenMAT is strongest for learning MATLAB-style numeric programming, matrix and vector calculations, compact engineering scripts, classroom linear algebra and statistics, plotting, and interactive single-file models.
 
-1. lead with geometry, motion, and overlaid paths
-2. use color as a bonus, not the core proof
-3. pitch the demo as a live engineering lab, not full MATLAB figure parity
+Expect rewriting for specialized MATLAB toolboxes, Simulink models, `classdef`, package folders, production multi-file projects, desktop GUI and graphics-handle workflows, operating-system file APIs, and toolbox-specific solvers and objects.
 
-## Won't work yet
+When a MATLAB script fails, isolate its numeric core, remove toolbox and GUI assumptions, and test one section at a time. The Console and normalized-code view can help distinguish a syntax issue from an unsupported workflow.
 
-These are the most important boundaries to state clearly:
+## Extension API
 
-- no toolbox compatibility promise for Control System, Signal Processing, Optimization, PDE, Symbolic Math, or Simulink
-- no desktop MATLAB environment parity
-- no drop-in support for multi-file production codebases, package folders, `classdef`, or app-style workflows
-- no MATLAB GUI/handle graphics ecosystem parity
-- no guarantee that workplace scripts with specialized toolbox dependencies will run unchanged
+An evolving browser API is available at `window.OpenMAT`:
 
-That means OpenMAT should currently be pitched as:
+- `registerExtension(name, extension)`
+- `unregisterExtension(name)`
+- `listExtensions()`
+- `run(source)`
+- `setCode(source)` and `appendCode(source)`
+- `createDocument(name, source)`
+- `listWorkbenches()`
+- `getWorkbench(id)` and `openWorkbench(id)`
+- `getState()`
+- `exportSession()`
+- `open3D(config)`
 
-- a browser-first MATLAB-like lab
-- an engineering intuition studio
-- a compact numeric runtime
-
-not as:
-
-- "MATLAB in the browser"
-
-## Rewrite guidance
-
-If a MATLAB script fails in OpenMAT, the recommended approach is:
-
-1. isolate the numeric core
-2. remove toolbox calls first
-3. replace file-system or GUI assumptions
-4. test one function or section at a time
-5. rebuild plotting and interactivity using OpenMAT's native workflow
-
-The shortest successful migration path is usually:
-
-- keep the math
-- simplify the environment assumptions
-- use OpenMAT's plotting, sliders, and workbench UI instead of trying to mirror MATLAB exactly
-
-For classroom code, OpenMAT now also includes a `Fix MATLAB` action that normalizes common pasted syntax issues such as:
-
-- smart quotes
-- Unicode minus/dash characters
-- spaced elementwise operators like `X .^ 2`
-- other copy/paste artifacts that show up in browser courseware
-
-## OpenMAT-specific features
-
-These are not MATLAB features, but part of OpenMAT's identity:
-
-- `slider(name, min, max, step, default)`
-- `animate(name, min, max, step, default, speed, loop)`
-- `window.OpenMAT` extension API
-- integrated Open Calc figure rendering
-- integrated Open Calc 3D workspace bridge
-
-## UI direction
-
-OpenMAT is being shaped as a shared foundation for two interfaces:
-
-- `Script Mode`
-  MATLAB-like editing, console work, workspace browsing, and plotting
-- `Simulation Mode`
-  A guided, more ANSYS-like workflow with project trees, setup panels, solver controls, and result dashboards
-
-These should not become two separate products. They should stay two layers on top of the same computational session so users can move between free-form scripting and structured simulation work.
-
-## First guided simulation layer
-
-The first `OpenMAT Sim` pass uses the same OpenMAT session model and adds a guided panel layer for:
-
-- `Pendulum`
-- `Spring-Mass`
-- `Projectile`
-
-Each guided model should:
-
-1. load a lab script into the editor without becoming a separate tool
-2. reuse the same figure pane, controls, workspace, and console
-3. add prompts and observation cues for learners
-4. keep script mode available for deeper editing and experimentation
-
-## Workbench model
-
-OpenMAT should grow through focused workbenches instead of one giant generic simulation UI.
-
-A workbench is:
-
-- one class of problem
-- one preferred set of primitives and panels
-- one set of outcomes and prompts
-- one attached lesson flow
-
-Current built-in workbenches include:
-
-- `Pendulum`
-- `Spring-Mass`
-- `Projectile`
-- `Merchant Circle`
-- `Beam / Cantilever`
-
-This is the beginning of the platform model:
-
-1. `OpenMAT Core`
-2. `Workbenches`
-3. `Lessons`
-
-The first good engineering workbench is `Beam / Cantilever` because it ties together geometry, load, section properties, deflection, stress, and strain.
-
-## Native plotting and 3D
-
-OpenMAT should compete in its own lane by being more visual and more immediate than a traditional numerical desktop tool.
-
-Current plotting direction:
-
-- native 2D figures inside the OpenMAT figure pane
-- subplot support inside the same session
-- local axis, grid, and view-state control
-- `surf(...)`, `mesh(...)`, and `surfc(...)` rendered in the integrated 3D viewport
-- `plot3(...)` and `scatter3(...)` rendered as native 3D curve / point-cloud views
-- one-click handoff from local 3D into the separate app grapher when a user wants a larger surface workspace
-
-The important product rule is:
-
-- 3D should feel like OpenMAT itself, not like leaving OpenMAT to find another tool
-
-That means the local 3D viewport matters a lot for credibility even if the app also has a bigger dedicated grapher.
-
-## Script and data workflow
-
-To feel MATLAB-like in real use, OpenMAT needs more than syntax. It needs file and data flow.
-
-Current direction:
-
-- import `.m` files into new OpenMAT script tabs
-- export the active script tab back out as `.m`
-- import `.csv`, `.tsv`, or plain-text numeric tables into generated OpenMAT starter scripts
-- export selected workspace tables or matrices to `.csv`
-- preserve full OpenMAT sessions as JSON for restore/share/debug workflows
-
-The honest framing is:
-
-- OpenMAT session export is native OpenMAT state
-- `.m` export is for script portability
-- CSV export/import is for data portability
-
-## Benchmark-backed workbenches
-
-The strongest proof that OpenMAT is worth trusting is not a claim of total MATLAB compatibility. It is benchmark-backed workbenches that make assumptions, outputs, and validation visible.
-
-The flagship benchmark path should emphasize:
-
-- `Projectile`
-  Classical drag-free kinematics benchmark
-- `Beam / Cantilever`
-  Closed-form end-loaded beam comparison
-- `Merchant Circle`
-  Force decomposition and resultant checks
-- `Spring-Mass`
-  Frequency and damping intuition with expected response bands
-- `Chatter / Tool Dynamics`
-  Directional engineering estimates with explicit assumptions
-
-These benches should always expose:
-
-- solver summary
-- assumptions
-- key outputs
-- benchmark checks
-- recommended presets
-
-## Professional-feeling workflow
-
-OpenMAT does not need to become all of MATLAB to become compelling. It does need to feel serious.
-
-That means:
-
-- editor, figure, workspace, console, and normalized-code views should all feel connected
-- the last run should be inspectable
-- errors should be readable and recoverable
-- imported scripts/data should land in obvious places
-- benchmark scripts should be easy to open from the browser
-- compatibility limits should be documented before the user hits them
-
-## Extension API direction
-
-OpenMAT is being opened to extension so custom scripts and eventually app-level integrations can register new functions.
-
-Current surface:
-
-- `window.OpenMAT.registerExtension(name, extension)`
-- `window.OpenMAT.unregisterExtension(name)`
-- `window.OpenMAT.listExtensions()`
-- `window.OpenMAT.listWorkbenches()`
-- `window.OpenMAT.getWorkbench(id)`
-- `window.OpenMAT.openWorkbench(id)`
-- `window.OpenMAT.run(source)`
-- `window.OpenMAT.getState()`
-- `window.OpenMAT.exportSession()`
-
-This should be treated as an evolving API until a more formal contract is published.
-
-## Documentation discipline
-
-As OpenMAT grows, these should stay updated together:
-
-1. This guide in `docs/OpenMAT.md`
-2. The in-app `Reference` tab
-3. The built-in `help` / `HELP_TEXT`
-4. Example scripts in the browser panel
-
-If a feature lands and only one of those gets updated, documentation is considered incomplete.
-
-## Next documentation targets
-
-- supported syntax matrix vs unsupported syntax matrix
-- extension author guide with worked example
-- simulation cookbook
-- plotting cookbook
-- indexing and array semantics guide
-- script mode vs simulation mode workflow guide
+Treat this as an evolving integration surface until a stable extension contract is published.
