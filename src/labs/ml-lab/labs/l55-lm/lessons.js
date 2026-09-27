@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l55-chain',
@@ -37,7 +39,7 @@ export const lessons = [
     paragraphs: [
       'Characters give a tiny vocabulary but long sequences; whole words give short sequences but a huge vocabulary with endless unknown words. Modern models use **subword** tokens in between.',
       '**Byte-pair encoding** (BPE) starts from characters (or bytes) and repeatedly merges the most frequent adjacent pair into a new token, recording each merge. Frequent words become single tokens; rare ones are spelled with smaller pieces, so any string can be encoded.',
-      'In the playground, 200 merges shrink the held-out text from 350 characters to roughly 210 tokens: about 1.7 characters per token. Real tokenizers learn 30,000–200,000 merges over bytes and average around four characters of English per token.',
+      'In the playground, asking for 200 merges yields 171 — after that no adjacent pair occurs twice in the training text — and they shrink the held-out text from 350 characters to 212 tokens: about 1.65 characters per token. Real tokenizers learn 30,000–200,000 merges over bytes and average around four characters of English per token.',
       'Tokenization shapes behaviour: models see “ strawberry” as a few opaque pieces, which is why counting letters or doing digit arithmetic is harder than it looks; languages under-represented in the tokenizer’s training data need more tokens per word, costing more and fitting less into the context window.',
       'Costs, context limits and rate limits are counted in tokens. Measure your texts with the tokenizer your model actually uses.',
     ],
@@ -66,8 +68,8 @@ export const lessons = [
     prerequisite: 'Lessons 55.1–55.2; naive Bayes smoothing (Lab 11); overfitting (Lab 07).',
     paragraphs: [
       'An **n-gram** model assumes the next token depends only on the previous n − 1: p(xₜ | x<ₜ) ≈ p(xₜ | xₜ₋ₙ₊₁…xₜ₋₁), estimated by counting how often each continuation followed each context in the training text.',
-      'Unsmoothed counts give probability 0 to anything unseen. One unseen character in the held-out text makes its probability — and the product — zero: infinite perplexity, as the playground’s first column shows.',
-      '**Add-k smoothing** adds k to every count (Laplace, Lab 11). It removes zeros but spreads mass over all continuations of every context, including absurd ones; with longer contexts most are unseen, so the model overfits: training bits fall, held-out bits rise.',
+      'Unsmoothed counts give probability 0 to anything unseen. A single held-out character that never followed its context in training makes its probability — and the product — zero: infinite perplexity. In the playground’s “no smoothing” column every order from n = 2 up is infinite; the bigram model already meets 16 such pairs in 350 held-out characters.',
+      '**Add-k smoothing** adds k to every count (Laplace, Lab 11). It removes zeros but spreads mass over all continuations of every context, including absurd ones; with longer contexts most are unseen, so the model overfits: in the playground, held-out bits rise from n = 4 on (3.12 at n = 3, 3.55 at n = 5) while training bits are still falling.',
       '**Interpolation** mixes orders: p = λₙpₙ + λₙ₋₁pₙ₋₁ + … + λ₁p₁, so an unseen long context falls back on shorter ones. In the playground the interpolated 5-gram is the best model, at about 2.71 held-out bits per character. Kneser–Ney smoothing refines this and was the state of the art before neural models.',
       'Counting cannot generalize between similar contexts (“the build” and “the builds” share nothing), and the number of possible contexts explodes with n. Neural models (next lesson) learn representations that share statistical strength across contexts.',
     ],
@@ -102,7 +104,7 @@ export const lessons = [
       'A neural language model maps the context to a vector and the vector to a softmax over the vocabulary. Similar contexts get similar vectors, so what is learned about one transfers to others — the key advantage over counting. The playground’s model sees the previous few characters through one hidden layer; transformers (Lab 26) attend over thousands of previous tokens.',
       'On a 2,000-character corpus, the small neural model overfits quickly with a long context, and a well-smoothed n-gram remains competitive. Neural models pull ahead with more data and capacity — the story of language modelling since about 2013.',
       'To generate, sample one token at a time from p(· | context) and append it. Always taking the most likely token (greedy decoding) produces repetitive loops.',
-      '**Temperature** T rescales probabilities as p^(1/T): T < 1 sharpens toward the most likely tokens (safer, blander, more copying), T > 1 flattens (more varied, more errors). **Top-k** keeps only the k most likely tokens; **top-p** (nucleus) keeps the smallest set whose probability sums to p. In the playground, low temperature reproduces long verbatim stretches of the training text; high temperature produces gibberish.',
+      '**Temperature** T rescales probabilities as p^(1/T): T < 1 sharpens toward the most likely tokens (safer, blander, more copying), T > 1 flattens (more varied, more errors). **Top-k** keeps only the k most likely tokens; **top-p** (nucleus) keeps the smallest set whose probability sums to p. In the playground, low temperature falls into loops of the commonest words (“the the the …”), much like greedy decoding, and high temperature produces gibberish. The longest stretch copied verbatim from the training text stays short at every temperature — roughly 5 to 20 characters — because a model this small cannot hold longer passages.',
       'Language models **memorize**: rare or repeated training sequences can be reproduced word for word, which matters for privacy, licensing and evaluation leakage (a benchmark in the training data is not a test).',
     ],
     formula: 'p_T(c) ∝ p(c)^(1/T)     top-k: keep the k largest     top-p: keep the smallest set with Σp ≥ p',
@@ -164,3 +166,6 @@ export const sources = [
   { title: 'Hu et al. (2021) · LoRA: low-rank adaptation of large language models', url: 'https://arxiv.org/abs/2106.09685' },
   { title: 'Rafailov et al. (2023) · Direct preference optimization', url: 'https://arxiv.org/abs/2305.18290' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

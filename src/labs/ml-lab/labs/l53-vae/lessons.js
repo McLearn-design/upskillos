@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l53-ae',
@@ -36,7 +38,7 @@ export const lessons = [
     prerequisite: 'Lesson 53.1; anomaly detection (Lab 17); monitoring (Lab 30).',
     paragraphs: [
       'Without a narrow bottleneck, an autoencoder can learn the identity and nothing else. One fix is to corrupt the input — add noise, mask pixels — and train the network to output the **clean** original. It can no longer copy; it must learn what typical data look like.',
-      'A **denoising autoencoder** therefore learns the shape of the data distribution: it pulls a corrupted point back toward the region of typical examples. In the playground, trained with noise, it cleans noisy test digits about 40% better (by squared error) than the same network trained without noise.',
+      'A **denoising autoencoder** therefore learns the shape of the data distribution: it pulls a corrupted point back toward the region of typical examples. In the playground, trained with noise, it cleans noisy test digits a third to a half better (by squared error) than the same network trained without noise: 51% better with a 2-number bottleneck, 32% with 4 and 39% with 8.',
       'Because the model reconstructs typical inputs well, a large **reconstruction error** signals an unusual input: a faulty sensor, a fraudulent pattern, a drifted data source (Lab 30). Set the alarm threshold on a clean validation set’s error distribution.',
       'Pitfalls: autoencoders can reconstruct some anomalies well (especially simple ones); errors depend on the input’s complexity; and a model trained on data containing anomalies learns to reconstruct them. Evaluate detection with labelled incidents where possible.',
       'Other regularizations of the code: sparsity penalties (few active units), contractive penalties (codes insensitive to small input changes), and — most influential — the probabilistic regularization of the VAE (next lessons).',
@@ -127,7 +129,7 @@ export const lessons = [
     skill: 'Use autoencoder representations downstream and evaluate generative models sensibly.',
     prerequisite: 'Lessons 53.1–53.4.',
     paragraphs: [
-      'The encoder is a learned feature extractor. Train it on plentiful unlabeled data, then fit a small classifier on the codes with few labels — often far better than training from scratch on the labels alone (more in Lab 56).',
+      'The encoder is a learned feature extractor. Train it on plentiful unlabeled data, then fit a small classifier on the codes with few labels. This can beat training from scratch on the labels alone — but not automatically: in this lesson’s cell, on scikit-learn’s real 8 × 8 digits, codes from a small VAE only match raw pixels with 20 labels and fall behind with 50 or 200 (0.77 against 0.84, 0.88 against 0.93), because a reconstruction objective keeps what redraws the image, not what separates the classes. Measure it against the raw-feature baseline; objectives built for discrimination often do better (Lab 56).',
       'VAEs model p(x) and can be combined with a label variable for semi-supervised learning: the unlabeled data shape the latent space, the few labels name its regions.',
       'Modern image generators first compress images with an autoencoder (a VAE-like model) into a smaller latent space and run a diffusion model there (**latent diffusion**, Lab 54) — cheaper and faster than working on pixels.',
       'Evaluating generators is hard: likelihood (or its ELBO bound) measures fit but not sample quality; sample-based metrics (FID, precision and recall of samples) compare distributions of features; and human inspection remains essential. Always check for memorized training examples.',
@@ -161,3 +163,6 @@ export const sources = [
   { title: 'Higgins et al. (2017) · β-VAE: learning basic visual concepts with a constrained variational framework', url: 'https://openreview.net/forum?id=Sy2fzU9gl' },
   { title: 'Goodfellow, Bengio & Courville · Deep Learning, ch. 14 and 20 (free online)', url: 'https://www.deeplearningbook.org/' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

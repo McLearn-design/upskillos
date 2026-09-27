@@ -1,13 +1,16 @@
 import { lazy } from 'react'
 import { lessons, sources } from './lessons.js'
 import python from './python.js'
+import { blocks } from './blocks.js'
+import { withBlocks } from '../../kit/blocks.js'
+import { uncertainty } from './ladder.js'
 
 export default {
   number: 60,
   short: 'Uncertainty & conformal prediction',
   question: 'How sure is the model — and can we promise how often its intervals are right?',
   intro: 'Aleatoric and epistemic uncertainty with deep ensembles, quantile regression with the pinball loss, split conformal prediction and its finite-sample guarantee, adaptive intervals and conditional coverage, and conformal prediction sets for classifiers.',
-  lessons, sources, python,
+  lessons: withBlocks(lessons, blocks), sources, python, figures: () => import('./figures.jsx'), ladders: { uncertainty },
   math: ['stat.percentiles', 'stat.normal', 'stat.spread', 'stat.ci'],
   lessonAware: true,
   Playground: lazy(() => import('./Playground.jsx')),

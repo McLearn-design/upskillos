@@ -40,7 +40,7 @@ function TrainView() {
     <CartPole states={states} t={t} />
     <Actions><button onClick={() => { if (t >= states.length - 1) setT(0); setRunning(r => !r) }}>{running ? 'Pause' : 'Play the learned policy'}</button><button onClick={() => { setRunning(false); setT(0) }}>Reset</button></Actions>
     <Caption>{`Current state: probability of pushing right = ${fmt(pRight(runs[watch][0].theta, states[Math.min(t, states.length - 1)]), 2)}.`}</Caption>
-    <Insight title="What to notice">REINFORCE nudges the policy toward actions that preceded high returns. Without a baseline its updates are very noisy — some seeds learn, some stall. Subtracting a learned baseline (how good the state already was) keeps the direction but removes much of the noise, and learning becomes reliable. The actor–critic updates after every step using a learned value estimate (the critic), and learns fastest — but only because its critic can represent “how close to falling” with squared terms; a purely linear critic fails completely.</Insight>
+    <Insight title="What to notice">REINFORCE nudges the policy toward actions that preceded high returns. Without a baseline its updates are very noisy — some seeds learn, some stall. Subtracting a learned baseline (how good the state already was) keeps the direction but removes much of the noise, and learning becomes reliable. The actor–critic updates after every step using a learned value estimate (the critic), and learns fastest — but only because its critic can represent “how close to falling” with squared terms; with a purely linear critic it ends no better than random pushing on most seeds.</Insight>
   </>
 }
 

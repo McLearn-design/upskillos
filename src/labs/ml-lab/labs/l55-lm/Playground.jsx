@@ -49,7 +49,7 @@ function NgramView() {
     <Metrics items={[['Training bits per character', fmt(tr, 3)], ['Held-out bits per character', Number.isFinite(te) ? fmt(te, 3) : '∞'], ['Held-out perplexity', Number.isFinite(te) ? fmt(perplexity(te), 2) : '∞'], ['Uniform guessing', `${fmt(Math.log2(VOCAB.length), 2)} bits`]]} />
     <Table head={['n', 'no smoothing', 'add-k 0.1', 'interpolated']} rows={rows} caption="Held-out bits per character for every order and smoothing method. Lower is better; ∞ means some held-out character had probability 0." />
     <Sampler model={model} label={`Sampled from the ${n}-gram model (${kind === 'interp' ? 'interpolated' : kind === 'addk' ? 'add-k' : 'unsmoothed'})`} />
-    <Insight title="What to notice">Without smoothing, a single unseen character in the held-out text has probability 0 and the perplexity is infinite. Add-k gives unseen events a little mass, but longer contexts are mostly unseen, so they overfit: training bits keep falling while held-out bits rise. Interpolating with shorter contexts fixes that and is the best model here. Low temperature produces fluent text — largely copied from the training data; high temperature invents gibberish.</Insight>
+    <Insight title="What to notice">Without smoothing, a single held-out character that never followed its context in training has probability 0 and the perplexity is infinite. Add-k gives unseen events a little mass, but longer contexts are mostly unseen, so they overfit: from n = 4 on, held-out bits rise even while training bits fall. Interpolating with shorter contexts fixes that and is the best model here. Low temperature falls into loops of the commonest words (“the the the”); high temperature invents gibberish.</Insight>
   </>
 }
 

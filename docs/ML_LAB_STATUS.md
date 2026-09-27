@@ -484,7 +484,123 @@ colors on a light page. That was a preview-only problem, not an app bug.
    at 0.25). 52.4’s batch-norm figure was 0.03 in Node but 0.043 in the browser — now “about 0.03–0.04”. Figures
    `RegCurves`, `DepthTrain` (log scale); five predictions; the `dlreg` sequence. Ladder 633/633 in both runtimes;
    549 tests.
-   Next: Lab 53.
+   *(Done: Lab 53.)* 5 cells with a small NumPy autoencoder and VAE on the playground’s 7 × 5 digits and, for 53.5,
+   scikit-learn’s real 8 × 8 digits: 2-number codes that group by digit; a denoising autoencoder cleaning noisy digits
+   36–46% better than a plain one (confirms the lesson’s “about 40%”); the Gaussian KL and reparameterization checked
+   numerically; β = 1 gives 93% clear samples (96% in the browser) covering all 10 digits, β = 4 collapses (KL 0.019
+   nats, every sample the same digit). Corrected: 53.5 said pretrained codes beat raw pixels with few labels; on the
+   real digits a small VAE’s codes only match pixels with 20 labels and fall behind with 50 (0.77 against 0.84) and
+   200 (0.88 against 0.93). Figures `LatentMap`, `BetaGrid`; three predictions; the `vae` sequence, whose probe shows an
+   anomaly detector trained on contaminated data catching 3% of anomalies against 100% when trained clean. Ladder
+   645/645 in both runtimes; 552 tests. Later (during Lab 56): the engine shuffled its training batches with
+   `sort(() => rng() - 0.5)`, whose result depends on the JavaScript engine’s sort — Chrome got β = 4 KL 0.26 and
+   three digits, not a collapse. It now uses the kit’s Fisher–Yates `shuffle`, so Node and Chrome agree (β = 1: 95%
+   clear, 10 digits; β = 4: KL 0.009, one digit; plain autoencoder 79.5%, 7 digits), and 53.2’s “about 40%” is now
+   the playground’s measured 51% / 32% / 39% for bottlenecks of 2 / 4 / 8.
+   *(Done: Lab 54.)* 5 cells with small NumPy networks on the playground’s ring of eight clusters: a trained 1-D
+   discriminator against D* (0.652 against 0.651 at x = 0) and the game’s value against 2·JS − log 4 (both −1.1877);
+   saturating against non-saturating gradients (403 times stronger at ℓ = −6) and balanced against generator-heavy
+   GAN training over six seeds (balanced: 7–8 modes every time; generator-heavy: two collapse onto one mode, two never
+   land on the ring, two cover it); the forward schedule (signal 0.064 at the last step, closed form against the
+   chain); a trained noise predictor whose samples cover all 8 modes (81% on a mode, as in the playground); four
+   stand-in generators showing that only a nearest-training-distance check exposes a memorizer. Corrected: 54.2 and the
+   playground note said the generator-heavy schedule puts nearly all samples on one cluster; in the engine that holds
+   for seed 2 only (over 99%), seed 1 collapses with half or more of its samples (47% in Node, 74% in Chrome), and seed 3
+   never settles (four modes, most samples between them) — the text now describes each seed. Figures `OptimalD`,
+   `CollapseFig`, `NoisingFig`; five predictions; the `gen` sequence. Ladder 657/657 in both runtimes; 555 tests.
+   *(Done: Lab 55.)* 6 cells on the playground’s own corpus and split: the chain rule on “the” and unigram perplexity
+   (16.09 held-out against 28 uniform); byte-pair encoding reproducing the playground exactly (same first merges; 212
+   tokens, 1.65 characters per token); the full smoothing table, identical to the playground’s to three decimals;
+   temperature, top-k and top-p on a real next-character distribution and generation at three temperatures; a NumPy
+   neural model (context 5 best at epoch 3, 2.81 bits, still behind the interpolated 5-gram’s 2.714); LoRA counts and a
+   rank-2 fit, and the DPO loss. Corrected: 55.2 said 200 merges were learned — the training text supplies only 171
+   before no pair repeats; 55.3 and the playground note said one unseen *character* gives infinite perplexity (it is a
+   character unseen after its context; unigrams stay finite) and that add-k’s training bits keep falling (they rise
+   again at n = 6; held-out bits rise from n = 4); 55.4 and the playground note said low temperature reproduces long
+   verbatim stretches — it loops on “the the the”, and copied runs stay about 5–20 characters at every temperature.
+   Figures `NextChar`, `SmoothingCurves`, `TemperatureBars`; five predictions; the `lm` sequence. Ladder 671/671 in
+   both runtimes; 558 tests.
+   *(Done: Lab 56.)* 5 cells on the playground’s moons and digits: the supervised baseline’s spread over 20 random
+   pairs of labels (0.52–0.79); label propagation (NumPy, with scikit-learn’s `LabelSpreading` alongside) and
+   self-training over five seeds with one and five labels per class; uncertainty against random sampling over eight
+   runs, with where each asks (median distance to the other class 0.30 against 0.54); InfoNCE with a finite-difference
+   gradient check, a NumPy encoder pretrained without labels (loss 4.63 → 3.33) and linear probes (one label per digit:
+   0.51 against 0.13 on raw pixels); weak supervision by three rules and Cohen’s κ. Engine: `pickLabels` and the
+   contrastive batches used a random-comparator sort, so Chrome labelled different points than Node (random labels at
+   12: 92.8% against 88.2%); both now use the kit’s `shuffle`, and the numbers below hold in both. Corrected: 56.2 said
+   propagation reaches far higher accuracy (now: higher on every seed, 75–86% against 53–84%) and that self-training
+   is worse for some seeds (now specific: collapses to 50% on seeds 1, 2 and 5 with one label per class, below the
+   baseline on three of five seeds with five); 56.3 said close to 99% against about 88% (now 97.5% against 84%); the
+   playground note no longer says propagation reaches “high accuracy”. The engine test now checks propagation wins on
+   every seed. Figures `PropagationSteps`, `ActiveCurves`, `InfoNceTemp`; five predictions; the `fewlabels` sequence.
+   Ladder 682/682 in both runtimes; 561 tests. Still using the engine-dependent sort: Labs 10 (a figure), 22, 55, 57 and
+   61. Lab 55’s claims were rechecked in Chrome and hold; 57 and 61 are fixed as they come up.
+   *(Done: Lab 57.)* 5 cells on a NumPy copy of the playground’s block-model graph (229 edges, 87% within
+   communities): permutation equivariance of Â X checked to 4e-16; aggregators and the receptive field (3 layers see
+   62% of the graph, half of it from other communities); features only, structure only and both, over five label
+   choices — MLP 0.53, label propagation 0.96 (with class-mass normalization), GCN 0.91, so structure alone wins on
+   this graph; over-smoothing (probe 0.57 → 0.97 at 4 steps → 0.72 at 32, the limit ∝ √(degree + 1) checked) and
+   GCN depth 1–6; link prediction with the test edges removed (AUC 0.68) and left in (0.83). Engine: `labeledIdx`
+   used the random-comparator sort; it now uses the kit’s `shuffle`. Corrected: 57.4 said accuracy rises to about
+   four layers (now: 55% → 80% → about 88% at three, then levels off and dips at six) and the probe peaked at 97% and
+   fell to 61% (now 96% and 62% from 49%). 57.3’s “about 80%” holds (mean 0.795 over five label choices). Figures
+   `ReceptiveField`, `GcnVsMlp`, `SmoothingFig`; five predictions; the `gnn` sequence. Ladder 697/697 in both
+   runtimes; 564 tests.
+   *(Done: Lab 58.)* 5 cells with a NumPy copy of the playground’s cart-pole, policy and learning rates: random
+   pushing (21.7 steps) against a hand-made policy (200); the log-derivative trick on a coin (2.997 against 3) and
+   REINFORCE over three seeds (85–181 steps); E[∇log π] = 0, gradient spreads with and without a baseline (pole
+   angle 19.8 → 13.7, means 6.52 and 6.80) and REINFORCE with a baseline (187–196 on every seed); actor–critic with a
+   quadratic and a linear critic; eight seeds of each REINFORCE variant with bootstrap intervals (plain 111–154,
+   with a baseline 186–194) and policy entropy. Engine claims checked on five seeds: plain REINFORCE stalls on seed 3
+   (23 steps), the baseline version reaches 186–195 on all, actor–critic’s 20-episode average reaches 195 within
+   61–115 episodes. Corrected: 58.4 and the playground note said a linear critic “fails completely”; with the same
+   settings it ends at 11–18 steps (random pushing: 22) on four of five seeds and 48 on the fifth — the text now says
+   so. Figures `PolicyCurve`, `SeedCurves`, `SpreadBars`; six predictions; the `pg` sequence, whose probe shows a
+   reward offset of 100 collapsing a policy without a baseline (0.50 correct) and not with one (0.91). Ladder
+   711/711 in both runtimes; 567 tests.
+   *(Done: Lab 59.)* 5 cells with scikit-learn’s `GradientBoostingRegressor` (the playground’s settings) on a NumPy copy
+   of the build data: permutation importance on training and test builds (build id 0.88 against −0.21), gain
+   importance, and a refit without size (test MSE 6.7 → 9.2, lines changed then worth 69.5); ICE and partial
+   dependence checked against scikit-learn’s `partial_dependence` to 0, centred ICE by cache status (miss 25.5, hit
+   16.1 minutes over 0–100 MB) and an off-manifold point; exact Shapley values over 64 coalitions with efficiency to the
+   cent and the cache’s value growing with size (−4.9 small, −8.0 large); LIME at three widths and seeds (narrow:
+   8.6–11.2, about 40 effective samples; wide: stable, fidelity 0.97); a brute-force counterfactual (cache on, or size
+   to about a third with the plausibility distance 0.24 → 0.81). Every playground number in the lessons was checked
+   against the engine and holds (134 importance, 7.4 → 9.7, ratio 1.92, 19 MB, 53,000 lines, 28.8); no corrections.
+   Figures `ImportanceBars`, `Waterfall`, `LimeStability`; five predictions; the `interpret` sequence (Banzhaf-style
+   unweighted averages and off-by-one Shapley weights are diagnosed). A cell title that repeated the lesson title broke
+   the smoke test’s heading lookup; cell titles are now distinct. Every paragraph and cell of Labs 53–59 is placed
+   (checked by script). Ladder 724/724 in both runtimes; 570 tests.
+   *(Done: Lab 60.)* 5 cells on NumPy copies of the playground’s data: a NumPy deep ensemble of 8 heteroscedastic
+   networks (aleatoric 0.36 against true 0.35 among the data; in the gap an error of −0.51 against a spread of 0.19;
+   at x = 4.5 an error 2.8 times the spread); the pinball minimizer against the empirical quantile (equal to three
+   decimals) and quantile-boosting bands (a nominal 90% band covers 73% of test points); split conformal with the
+   (n + 1) rank, one interval and 300 re-splits (mean 0.902, single draws 0.81–0.98); absolute, normalized and CQR
+   scores by region and under shift (absolute: 1.00 in the middle, 0.77–0.78 at the edges, 0.78 shifted); conformal
+   and naive prediction sets, including a calibration draw that under-covers at α = 0.05 (0.921) while 500 re-splits
+   average 0.951. Every playground number checked (gap error −0.29, bands 87% / 83% / 44%, edges 80%, shift 81%, naive
+   sets 0.958); corrected only 60.1’s “two to three times their spread” (it is 2.7 at x = 4.5 and 1.5–3.6 between
+   |x| = 4 and 4.5). Figures `PinballFig`, `RankFig`, `BinCoverage`; five predictions; the `uncertainty` sequence,
+   whose probe calibrates a 3-nearest-neighbour regression on its own training rows (79.7% coverage) and on held-out
+   rows (92.2%). Ladder 736/736 in both runtimes; 573 tests.
+   *(Done: Lab 61.)* 5 cells: a NumPy copy of the playground’s digit network under random noise, FGSM and PGD at three
+   budgets (ε = 0.1: 0.90, 0.26, 0.22) and the ε‖w‖₁ against ε‖w‖₂ growth with dimension; standard, FGSM- and
+   PGD-trained networks (PGD at ε = 0.15: 0.035, 0.275, 0.325; all 0 at 0.3; input-gradient L1 459 → 247); a
+   misspecified line under covariate shift with true, estimated (domain classifier, AUC 0.92) and flattened weights
+   (test MSE 0.486 → 0.115, effective sample 35 of 200); BBSE and EM estimates of a 10% share (0.132, 0.115) and the
+   corrected accuracy (0.868 → 0.935); CORAL at four rotations. Engine: the digit training used the random-comparator
+   sort; it now uses the kit’s `shuffle`, which moved the adversarial numbers. Corrected to the new, runtime-independent
+   values: random noise leaves 88% (was 89%), PGD training keeps about 40% at ε = 0.15 (was “about a third”), and the
+   input gradient roughly halves (was “more than half”; 434 → 225) — the engine test now checks < 0.6 instead of
+   < 0.5. Covariate (0.54 → 0.10), label shift (88% → 94%, log loss 0.278 → 0.158) and CORAL claims hold. Figures
+   `AttackCurve`, `WeightFig`, `LabelShiftFig`; five predictions; the `robust` sequence. Ladder 749/749 in both
+   runtimes; 576 tests.
+
+   **Item 7 is complete: every lab (01–61) now has verified lessons, notebooks run in CPython and Pyodide, formulas
+   that fit at 390 px, figures between paragraphs, predictions, and a practice sequence with a value test.**
+   Still using the engine-dependent `sort(() => rng() - 0.5)`: Lab 10 (one figure), Lab 22 and Lab 55. Their
+   claims were checked when those labs were done (Lab 55’s again in Chrome during Lab 56); switching them to the
+   kit’s `shuffle` would change their numbers, so it is left as a separate, deliberate change.
 
 (The assessment calls items 1–2 “Slice A”, 5 “Slice B”, 6 “Slice C” and 7 “Slices D–F”.)
 

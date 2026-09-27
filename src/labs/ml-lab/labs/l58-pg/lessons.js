@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l58-policy',
@@ -96,7 +98,7 @@ export const lessons = [
       'An **actor–critic** keeps two learners: the **actor** (the policy) and the **critic** (a value estimate V_w(s)). The critic replaces the Monte Carlo return with a bootstrapped one, as in Q-learning (Lab 37).',
       'After each step, the **TD error** δ = r + γV(s′) − V(s) estimates the advantage of the action just taken. The critic moves toward reducing δ; the actor moves its policy by δ·∇log π(a | s). Updates happen every step, not at the end of episodes.',
       'Bootstrapping trades variance for bias: δ depends on one reward and the critic’s estimate, so it is far less noisy than a full return — but only as accurate as the critic.',
-      'That is exactly what the playground shows. The value of a cart-pole state depends on how far the pole and cart are from failing in either direction, so the critic uses squared terms. With a purely linear critic the same actor–critic fails completely; with quadratic features it balances the pole for all 200 steps within about 100 episodes on every seed.',
+      'That is exactly what the playground shows. The value of a cart-pole state depends on how far the pole and cart are from failing in either direction, so the critic uses squared terms. With a purely linear critic the same actor–critic ends no better than random pushing (about 22 steps) on four of five seeds, and at 48 steps on the fifth; with quadratic features its 20-episode average reaches 195 of 200 steps within 60–115 episodes on all five seeds.',
       'Modern policy-gradient algorithms build on this: A2C/A3C (many parallel actors), generalized advantage estimation (blending one-step and Monte Carlo advantages), and **PPO**, which clips each update so the policy cannot change too much at once — the workhorse behind RLHF for language models (Lab 55).',
     ],
     formula: 'δ = r + γV_w(s′) − V_w(s)     w ← w + β δ ∇V_w(s)     θ ← θ + α δ ∇log π_θ(a|s)',
@@ -156,3 +158,6 @@ export const sources = [
   { title: 'Schulman et al. (2017) · Proximal policy optimization algorithms', url: 'https://arxiv.org/abs/1707.06347' },
   { title: 'OpenAI Spinning Up · Intro to policy optimization', url: 'https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

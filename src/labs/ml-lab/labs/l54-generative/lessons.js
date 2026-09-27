@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l54-gan',
@@ -38,7 +40,7 @@ export const lessons = [
     paragraphs: [
       'Early in training, generated samples are obviously fake, D(G(z)) ≈ 0, and log(1 − D) is flat there: the generator’s gradient vanishes. The **non-saturating** loss instead maximizes log D(G(z)) — same fixed point, strong gradients when the generator is losing. It is the standard choice.',
       'The two networks must stay balanced. If the discriminator becomes perfect, its gradients carry little information; if the generator is updated much faster, it exploits the discriminator’s current blind spot.',
-      'That exploitation is **mode collapse**: the generator maps most noise to one convincing region. In the playground, five generator steps per discriminator step at a higher learning rate put nearly all samples on one of the eight clusters, while balanced training covers all eight. When the discriminator adapts, a collapsed generator often hops to another mode instead of spreading out.',
+      'That exploitation is **mode collapse**: the generator maps most noise to one convincing region. In the playground, balanced training covers all eight clusters with every seed. Five generator steps per discriminator step at a higher learning rate collapse seeds 1 and 2 onto a single cluster (seed 2 puts over 99% of its samples there; seed 1 half or more, with the rest scattered off the ring), and the favoured cluster changes from one snapshot to the next: when the discriminator adapts, a collapsed generator hops to another mode instead of spreading out. Seed 3 fails differently: it reaches only four clusters, with most samples stranded between them.',
       'Stabilizers: Wasserstein GANs with gradient penalties (a smoother distance than JS), spectral normalization of the discriminator, two-time-scale learning rates, minibatch discrimination, and careful architectures. GAN training remains finicky; diffusion models (next lessons) sidestep the game entirely.',
       'Always evaluate diversity: count modes or classes produced, compare feature statistics (FID), and look for near-copies of training examples.',
     ],
@@ -163,3 +165,6 @@ export const sources = [
   { title: 'Arjovsky, Chintala & Bottou (2017) · Wasserstein GAN', url: 'https://arxiv.org/abs/1701.07875' },
   { title: 'Song et al. (2021) · Score-based generative modeling through stochastic differential equations', url: 'https://arxiv.org/abs/2011.13456' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l60-kinds',
@@ -11,7 +13,7 @@ export const lessons = [
       '**Epistemic uncertainty** is the model’s own ignorance: it had too little data to pin down the function. It shrinks as data accumulates and is largest where there was no data at all, in the gap between 0.4 and 1.8 and beyond ±3. A Gaussian process (Lab 42) and Bayesian linear regression (Lab 41) compute epistemic uncertainty exactly for their model classes; neural networks need approximations.',
       'A **heteroscedastic** network outputs both a mean μ(x) and a variance σ²(x), and is trained by the Gaussian negative log-likelihood ½[log σ²(x) + (y − μ(x))²/σ²(x)]. For a fixed residual, the loss is smallest when σ² equals the squared residual, so the variance head learns how big the errors are. In practice, fit the mean alone for a while first; otherwise the network can wave away hard points by inflating σ² early on.',
       'A **deep ensemble** (Lakshminarayanan et al. 2017) trains M such networks from different random starts and treats them as a mixture. By the law of total variance, the mixture’s variance is the mean of the members’ σ² (aleatoric) plus the variance of their means (epistemic). Members agree where data pins the function down and disagree where it does not. Other approximations include MC dropout (keep dropout on at test time and average), Laplace approximations and variational Bayesian networks; ensembles are simple and often the strongest.',
-      'The epistemic estimate only reflects disagreement that the members actually show. In the playground, all members bridge the gap with similar smooth curves, so they agree there and are all wrong by about 0.3. Far outside the data they disagree, but the error is still two to three times their spread. Treat ensemble spread as a warning signal, not a calibrated probability, and calibrate it on held-out data (Lessons 60.3–60.4).',
+      'The epistemic estimate only reflects disagreement that the members actually show. In the playground, all members bridge the gap with similar smooth curves, so they agree there and are all wrong by about 0.3. Far outside the data they disagree, but the error can still exceed their spread several times over: 2.7 times at x = 4.5, and anywhere from 1.5 to 3.6 times between |x| = 4 and 4.5. Treat ensemble spread as a warning signal, not a calibrated probability, and calibrate it on held-out data (Lessons 60.3–60.4).',
     ],
     formula: 'Var[y | x] = E_m[σ_m²(x)] + Var_m[μ_m(x)]     (aleatoric + epistemic)     NLL = ½[log σ²(x) + (y − μ(x))²/σ²(x)]',
     derivation: {
@@ -169,3 +171,6 @@ export const sources = [
   { title: 'Foygel Barber, Candès, Ramdas & Tibshirani (2021) · The limits of distribution-free conditional predictive inference', url: 'https://arxiv.org/abs/1903.04684' },
   { title: 'Romano, Sesia & Candès (2020) · Classification with valid and adaptive coverage (APS)', url: 'https://arxiv.org/abs/2006.02544' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

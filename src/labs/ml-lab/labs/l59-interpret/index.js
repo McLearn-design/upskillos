@@ -1,13 +1,16 @@
 import { lazy } from 'react'
 import { lessons, sources } from './lessons.js'
 import python from './python.js'
+import { blocks } from './blocks.js'
+import { withBlocks } from '../../kit/blocks.js'
+import { interpret } from './ladder.js'
 
 export default {
   number: 59,
   short: 'Interpretability',
   question: 'Which features does a model rely on, and why did it make this particular prediction?',
   intro: 'Permutation and gain importance, partial dependence and ICE curves, exact Shapley values, local surrogate models and counterfactual explanations — and what each one can and cannot tell you.',
-  lessons, sources, python,
+  lessons: withBlocks(lessons, blocks), sources, python, figures: () => import('./figures.jsx'), ladders: { interpret },
   math: ['dm.counting', 'stat.center', 'la.leastsq', 'stat.correlation'],
   lessonAware: true,
   Playground: lazy(() => import('./Playground.jsx')),

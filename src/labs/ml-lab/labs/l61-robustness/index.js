@@ -1,13 +1,16 @@
 import { lazy } from 'react'
 import { lessons, sources } from './lessons.js'
 import python from './python.js'
+import { blocks } from './blocks.js'
+import { withBlocks } from '../../kit/blocks.js'
+import { robust } from './ladder.js'
 
 export default {
   number: 61,
   short: 'Robustness & distribution shift',
   question: 'What happens when the data a model meets are not the data it learned from — by accident or by design?',
   intro: 'Adversarial examples with FGSM and PGD, adversarial training, covariate shift and importance weighting, label shift and prior correction, and domain adaptation by feature alignment.',
-  lessons, sources, python,
+  lessons: withBlocks(lessons, blocks), sources, python, figures: () => import('./figures.jsx'), ladders: { robust },
   math: ['ai.norms', 'calc.linapprox', 'ai.sampling', 'la.special', 'la.eigen'],
   lessonAware: true,
   Playground: lazy(() => import('./Playground.jsx')),

@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l57-graphs',
@@ -100,8 +102,8 @@ export const lessons = [
     skill: 'Diagnose over-smoothing and know the remedies and limits of message-passing GNNs.',
     prerequisite: 'Lessons 57.1–57.3; residual connections (Lab 52).',
     paragraphs: [
-      'Each layer extends the receptive field by one hop, so more layers let distant information in. In the playground, accuracy rises from one layer to about four.',
-      'But repeated averaging is a diffusion: apply Â many times and every node’s features converge toward the same (degree-weighted) global average. This **over-smoothing** erases the differences we need. With untrained propagation, a simple probe’s accuracy climbs to about 97% after 4 steps, then falls to about 61% after 32 as the feature spread collapses toward zero.',
+      'Each layer extends the receptive field by one hop, so more layers let distant information in. In the playground (2 labels per community, averaged over five choices of labelled nodes), accuracy rises from 55% with one layer to 80% with two and about 88% with three, then levels off and dips again at six.',
+      'But repeated averaging is a diffusion: apply Â many times and every node’s features converge toward the same (degree-weighted) global average. This **over-smoothing** erases the differences we need. With untrained propagation, a simple probe’s accuracy climbs from 49% to about 96% after 4 steps, then falls to about 62% after 32 as the feature spread collapses toward zero.',
       'Remedies: keep networks shallow (2–4 layers is common), add residual or skip connections (Lab 52), mix initial features back in at each layer, use normalization designed for graphs, or let attention weight neighbours unequally.',
       'Message passing also has an expressiveness ceiling: standard GNNs cannot distinguish some non-isomorphic graphs (they are at most as powerful as the Weisfeiler–Lehman graph isomorphism test). Adding node identifiers, positional encodings or higher-order structures lifts it.',
       'And information from far away must squeeze through a few edges (**over-squashing**). Graph transformers, rewiring and virtual “global” nodes address long-range dependencies.',
@@ -163,3 +165,6 @@ export const sources = [
   { title: 'Xu et al. (2019) · How powerful are graph neural networks?', url: 'https://arxiv.org/abs/1810.00826' },
   { title: 'Hamilton · Graph Representation Learning (free book)', url: 'https://www.cs.mcgill.ca/~wlh/grl_book/' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

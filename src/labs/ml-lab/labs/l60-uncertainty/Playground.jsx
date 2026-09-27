@@ -55,7 +55,7 @@ function KindsView() {
     </>}</Plot>
     <Legend items={[['━', 'aleatoric: √(mean of σ²)', 'var(--chart-train)'], ['━', 'epistemic: spread of the members’ means', 'var(--chart-val)'], ['┅', 'true noise', 'var(--text)']]} />
     <Metrics items={[['epistemic sd at x = −1 (data)', fmt(Math.sqrt(at(-1).epi), 3)], ['epistemic sd at x = 1.1 (gap)', fmt(Math.sqrt(at(1.1).epi), 3)], ['epistemic sd at x = 4.5 (beyond)', fmt(Math.sqrt(at(4.5).epi), 2)], ['error of the mean at x = 4.5', fmt(at(4.5).mu - truth(4.5), 2)]]} />
-    <Insight title="What to notice">Aleatoric uncertainty tracks the noise in the data and does not shrink with more members. Epistemic uncertainty, the members’ disagreement, stays small where there is data and grows quickly beyond ±3, where each ReLU network extrapolates with its own slope. But look at the gap: every member bridges it with a similar smooth curve, so they agree — and are all wrong by about 0.3 near x = 1.1. And far out, the ensemble’s error is two to three times its spread. Ensemble disagreement is a useful signal of ignorance, not a guarantee.</Insight>
+    <Insight title="What to notice">Aleatoric uncertainty tracks the noise in the data and does not shrink with more members. Epistemic uncertainty, the members’ disagreement, stays small where there is data and grows quickly beyond ±3, where each ReLU network extrapolates with its own slope. But look at the gap: every member bridges it with a similar smooth curve, so they agree — and are all wrong by about 0.3 near x = 1.1. And far out, the ensemble’s error is still several times its spread (2.7 times at x = 4.5). Ensemble disagreement is a useful signal of ignorance, not a guarantee.</Insight>
   </>
 }
 

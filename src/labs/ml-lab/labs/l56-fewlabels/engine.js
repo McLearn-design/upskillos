@@ -1,7 +1,7 @@
 // Learning from few labels: label propagation and self-training (semi-
 // supervised), uncertainty sampling (active learning), and contrastive
 // self-supervised pretraining evaluated with a linear probe.
-import { random, normal, range, mean } from '../../kit/math.js'
+import { random, normal, range, mean, shuffle } from '../../kit/math.js'
 import { Dense, ReLU, Sequential, softmaxCE, Adam } from '../../kit/nn.js'
 import { digit, D as PIX } from '../l53-vae/engine.js'
 
@@ -11,7 +11,7 @@ export function moons(n = 400, seed = 56, noise = 0.12) {
   return range(n).map(i => { const c = i % 2, t = Math.PI * rng(); return { x: c ? [1 - Math.cos(t) + noise * normal(rng), 0.5 - Math.sin(t) + noise * normal(rng)] : [Math.cos(t) + noise * normal(rng), Math.sin(t) + noise * normal(rng)], y: c } })
 }
 export const POOL = moons(400, 56), TESTSET = moons(600, 57)
-export function pickLabels(k, seed) { const rng = random(seed), idx = [[], []]; range(POOL.length).sort(() => rng() - 0.5).forEach(i => { if (idx[POOL[i].y].length < k / 2) idx[POOL[i].y].push(i) }); return [...idx[0], ...idx[1]] }
+export function pickLabels(k, seed) { const rng = random(seed), idx = [[], []]; shuffle(range(POOL.length), rng).forEach(i => { if (idx[POOL[i].y].length < k / 2) idx[POOL[i].y].push(i) }); return [...idx[0], ...idx[1]] }
 
 // Random Fourier features + logistic regression: a smooth probabilistic classifier.
 function rff(seed, m = 60, gamma = 2) { const rng = random(seed), W = range(m).map(() => [Math.sqrt(2 * gamma) * normal(rng), Math.sqrt(2 * gamma) * normal(rng)]), b = range(m).map(() => 2 * Math.PI * rng()); return x => W.map((w, j) => Math.sqrt(2 / m) * Math.cos(w[0] * x[0] + w[1] * x[1] + b[j])) }
@@ -86,7 +86,7 @@ export const UNLABELED = digitData(500, 71), DTEST = digitData(300, 72)
 export function trainContrastive({ epochs = 60, dim = 16, tau = 0.3, seed = 1, batch = 50 } = {}) {
   const rng = random(seed), enc = new Sequential([new Dense(PIX, 48, rng), ReLU(), new Dense(48, dim, rng)]), opt = new Adam(enc.params(), { lr: 5e-3 }), losses = []
   for (let e = 0; e < epochs; e++) {
-    const order = range(UNLABELED.length).sort(() => rng() - 0.5)
+    const order = shuffle(range(UNLABELED.length), rng)
     let tot = 0
     for (let b = 0; b + batch <= order.length; b += batch) {
       const imgs = order.slice(b, b + batch).map(i => UNLABELED[i].x), views = [...imgs.map(x => augment(x, rng)), ...imgs.map(x => augment(x, rng))], N = views.length

@@ -52,7 +52,7 @@ function FgsmView() {
       <line x1={X(eps)} x2={X(eps)} y1={Y(0)} y2={Y(1)} stroke="var(--text)" strokeDasharray="3 3" />
     </>}</Plot>
     <Legend items={[['┅', 'random ±ε noise', 'var(--muted)'], ['━', 'FGSM', 'var(--chart-val)'], ['━', 'PGD', '#ef4444']]} />
-    <Insight title="What to notice">Random noise of size 0.1 barely matters (accuracy stays near 89%), but the same budget aimed along the gradient drops accuracy to roughly a quarter to a third. At ε = 0.15 almost every image is misclassified, while the attacked image still looks like the same digit. The network’s decision depends on a weighted sum of all 35 pixels, and nudging every pixel a little in the worst direction adds up. PGD, which takes several small steps, is always at least as strong as FGSM — evaluate robustness with the strongest attack you can run.</Insight>
+    <Insight title="What to notice">Random noise of size 0.1 barely matters (accuracy stays near 88%), but the same budget aimed along the gradient drops accuracy to roughly a quarter to a third. At ε = 0.15 almost every image is misclassified, while the attacked image still looks like the same digit. The network’s decision depends on a weighted sum of all 35 pixels, and nudging every pixel a little in the worst direction adds up. PGD, which takes several small steps, is always at least as strong as FGSM — evaluate robustness with the strongest attack you can run.</Insight>
   </>
 }
 
@@ -77,7 +77,7 @@ function AdvTrainView() {
       <Pixels img={grads[k]} signed label="loss gradient, adversarially trained" />
     </Row>
     <Metrics items={[['average ‖∇ₓ loss‖₁, standard', fmt(gradL1('std'), 2)], ['average ‖∇ₓ loss‖₁, adversarially trained', fmt(gradL1(k), 2)]]} />
-    <Insight title="What to notice">Adversarial training buys a lot of robustness: at ε = 0.15 the PGD-trained model still classifies about a third of the images correctly, against almost none for the standard model. It is not free — training costs several times more, robustness still collapses beyond the ε it was trained for, and training on FGSM examples costs a few points of clean accuracy here. The mechanism shows in the gradient: to first order, an ε-step raises the loss by ε·‖∇ₓ loss‖₁, and adversarial training cuts that norm by more than half. The maps are scaled to their own maximum, so compare their patterns there and their sizes in the numbers.</Insight>
+    <Insight title="What to notice">Adversarial training buys a lot of robustness: at ε = 0.15 the PGD-trained model still classifies about 40% of the images correctly, against 3% for the standard model. It is not free — training costs several times more, robustness still collapses beyond the ε it was trained for, and training on FGSM examples costs a few points of clean accuracy here. The mechanism shows in the gradient: to first order, an ε-step raises the loss by ε·‖∇ₓ loss‖₁, and adversarial training roughly halves that norm. The maps are scaled to their own maximum, so compare their patterns there and their sizes in the numbers.</Insight>
   </>
 }
 

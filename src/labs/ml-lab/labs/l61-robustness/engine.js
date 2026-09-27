@@ -2,7 +2,7 @@
 // adversarial training on small digit images; covariate shift and importance
 // weighting; label shift and prior correction (BBSE); and domain adaptation by
 // aligning feature statistics (CORAL).
-import { random, normal, range, mean, sigmoid } from '../../kit/math.js'
+import { random, normal, range, mean, sigmoid, shuffle } from '../../kit/math.js'
 import { Dense, ReLU, Sequential, softmaxCE, Adam } from '../../kit/nn.js'
 import { digitData } from '../l56-fewlabels/engine.js'
 import { D as PIX } from '../l53-vae/engine.js'
@@ -40,7 +40,7 @@ export function randomSign(xs, eps, seed = 2) { const rng = random(seed); return
 export function trainDigits({ epochs = 25, advEps = 0, seed = 1, batch = 50, attack = 'fgsm' } = {}) {
   const rng = random(seed), net = new Sequential([new Dense(PIX, 48, rng), ReLU(), new Dense(48, 10, rng, { init: 'xavier' })]), opt = new Adam(net.params(), { lr: 0.005 })
   for (let e = 0; e < epochs; e++) {
-    const order = range(DTRAIN.length).sort(() => rng() - 0.5)
+    const order = shuffle(range(DTRAIN.length), rng)
     for (let b = 0; b + batch <= order.length; b += batch) {
       const rows = order.slice(b, b + batch).map(i => DTRAIN[i]), xs = rows.map(r => r.x), ys = rows.map(r => r.d)
       // Adversarial training: replace the batch by worst-case versions of itself (Madry et al.), made against the current weights.

@@ -10,7 +10,7 @@ describe('lab 61 robustness and shift', () => {
     expect(accuracyUnder(std, 'pgd', 0.1)).toBeLessThanOrEqual(accuracyUnder(std, 'fgsm', 0.1))
     expect(accuracyUnder(robust, 'pgd', 0.15)).toBeGreaterThan(accuracyUnder(std, 'pgd', 0.15) + 0.25)
     const l1 = net => DTEST.slice(0, 50).reduce((t, r) => t + inputGrad(net, [r.x], [r.d])[0].reduce((a, b) => a + Math.abs(b), 0), 0)
-    expect(l1(robust)).toBeLessThan(0.5 * l1(std))
+    expect(l1(robust)).toBeLessThan(0.6 * l1(std))
   })
   it('importance weighting fixes covariate shift; weights shrink the effective sample', () => {
     const r = covariateExperiment({ testMean: 1.5 })

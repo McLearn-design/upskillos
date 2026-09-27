@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l59-importance',
@@ -173,3 +175,6 @@ export const sources = [
   { title: 'Rudin (2019) · Stop explaining black box machine learning models for high stakes decisions', url: 'https://arxiv.org/abs/1811.10154' },
   { title: 'Strobl et al. (2007) · Bias in random forest variable importance measures', url: 'https://doi.org/10.1186/1471-2105-8-25' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

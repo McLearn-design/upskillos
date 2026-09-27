@@ -4,7 +4,8 @@ import { mean } from '../../kit/math.js'
 
 describe('lab 56 learning from few labels', () => {
   it('label propagation beats supervised learning with 1 label per class', () => {
-    const r = [1, 2, 3].map(s => { const L = pickLabels(2, s); return [acc(labelPropagation(L).predict, TESTSET), acc(fitLogistic(L.map(i => POOL[i].x), L.map(i => POOL[i].y)), TESTSET)] })
+    const r = [1, 2, 3, 4, 5].map(s => { const L = pickLabels(2, s); return [acc(labelPropagation(L).predict, TESTSET), acc(fitLogistic(L.map(i => POOL[i].x), L.map(i => POOL[i].y)), TESTSET)] })
+    r.forEach(([prop, sup]) => expect(prop).toBeGreaterThan(sup))
     expect(mean(r.map(x => x[0]))).toBeGreaterThan(mean(r.map(x => x[1])) + 0.1)
   })
   it('uncertainty sampling learns faster than random', { timeout: 60000 }, () => {

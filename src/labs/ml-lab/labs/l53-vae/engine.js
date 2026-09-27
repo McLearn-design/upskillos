@@ -1,7 +1,7 @@
 // Autoencoders and variational autoencoders on tiny 7×5 digit images:
 // a bottleneck that compresses, a denoising objective, and a VAE whose
 // latent space can be sampled to generate new digits.
-import { random, normal, range, mean } from '../../kit/math.js'
+import { random, normal, range, mean, shuffle } from '../../kit/math.js'
 import { Dense, ReLU, Sequential, bceLogits, Adam } from '../../kit/nn.js'
 
 const FONT = ['01110100011001110101110011000101110', '00100011000010000100001000010001110', '01110100010000100010001000100011111', '11111000100010000010000011000101110', '00010001100101010010111110001000010', '11111100001111000001000011000101110', '00110010001000011110100011000101110', '11111000010001000100010000100001000', '01110100011000101110100011000101110', '01110100011000101111000010001001100']
@@ -21,7 +21,7 @@ export function trainAE({ latent = 2, epochs = 60, noise = 0, seed = 1, batch = 
   const rng = random(seed), enc = mlp([D, 32, latent], rng), dec = mlp([latent, 32, D], rng)
   const opt = new Adam([...enc.params(), ...dec.params()], { lr: 0.01 }), curve = []
   for (let e = 0; e < epochs; e++) {
-    const order = range(TRAIN.length).sort(() => rng() - 0.5)
+    const order = shuffle(range(TRAIN.length), rng)
     for (let b = 0; b < order.length; b += batch) {
       const rows = order.slice(b, b + batch).map(i => TRAIN[i].x), inp = noise ? rows.map(x => x.map(v => Math.min(1, Math.max(0, v + noise * normal(rng))))) : rows
       enc.zeroGrad(); dec.zeroGrad()
@@ -37,7 +37,7 @@ export function trainVAE({ latent = 2, epochs = 60, beta = 1, seed = 1, batch = 
   const rng = random(seed), enc = mlp([D, 32, 2 * latent], rng), dec = mlp([latent, 32, D], rng)
   const opt = new Adam([...enc.params(), ...dec.params()], { lr: 0.01 }), curve = []
   for (let e = 0; e < epochs; e++) {
-    const order = range(TRAIN.length).sort(() => rng() - 0.5)
+    const order = shuffle(range(TRAIN.length), rng)
     let recS = 0, klS = 0
     for (let b = 0; b < order.length; b += batch) {
       const rows = order.slice(b, b + batch).map(i => TRAIN[i].x), n = rows.length

@@ -28,7 +28,7 @@ function SemiView() {
     </>}</Plot>
     <Legend items={[['●', 'unlabelled point (400 in the pool)', 'var(--muted)'], ['●', 'labelled class 0', 'var(--chart-train)'], ['●', 'labelled class 1', 'var(--chart-val)']]} />
     <Metrics items={Object.entries(models).map(([k, f]) => [names[k].split(' (')[0].split(' over')[0].split(' with')[0], pct(acc(f, TESTSET))])} />
-    <Insight title="What to notice">With one label per class, a supervised classifier can only draw a boundary between two points. The unlabelled points reveal the shape of the data: **label propagation** spreads each label along the dense moon it sits on, reaching high accuracy from two labels. **Self-training** labels its own confident predictions and retrains — useful when its first guesses are good, harmful when they are wrong, because it then trains on its own mistakes (confirmation bias). Try several seeds.</Insight>
+    <Insight title="What to notice">With one label per class, a supervised classifier can only draw a boundary between two points. The unlabelled points reveal the shape of the data: **label propagation** spreads each label along the dense moon it sits on, beating the supervised classifier on the same two labels for every seed. **Self-training** labels its own confident predictions and retrains — useful when its first guesses are good, harmful when they are wrong, because it then trains on its own mistakes (confirmation bias). Try several seeds.</Insight>
   </>
 }
 

@@ -1,3 +1,5 @@
+import { extras } from './notebooks.js'
+
 export const lessons = [
   {
     id: 'l56-scarce',
@@ -40,9 +42,9 @@ export const lessons = [
     prerequisite: 'Lesson 56.1; k-nearest neighbours (Lab 10); graphs (Lab 45).',
     paragraphs: [
       '**Label propagation** builds a graph connecting each point to its nearest neighbours (edge weights decay with distance), then repeatedly lets every point take a weighted average of its neighbours’ label scores while labelled points keep pulling toward their true labels. Labels flow along dense regions and stop at gaps.',
-      'On two moons with one label per class, the playground’s supervised classifier can only separate the two labelled points; label propagation follows each moon and reaches far higher accuracy from the same two labels.',
+      'On two moons with one label per class, the playground’s supervised classifier can only separate the two labelled points; label propagation follows each moon and is more accurate from the same two labels on every seed (75–86% against 53–84%, with gains from 3 to 26 points depending on which two points were labelled).',
       '**Self-training** fits a model on the labels, predicts the unlabelled pool, adds the most confident predictions as **pseudo-labels**, and retrains, repeatedly. It works with any classifier and is widely used in practice (e.g. with large pretrained models).',
-      'Its weakness is **confirmation bias**: if the first model is wrong about a region, it confidently pseudo-labels that region wrongly and then trains on its own mistake. With two labels it can end up worse than the supervised baseline — the playground shows this for some seeds.',
+      'Its weakness is **confirmation bias**: if the first model is wrong about a region, it confidently pseudo-labels that region wrongly and then trains on its own mistake. In the playground, with one label per class it pseudo-labels the whole pool as a single class on seeds 1, 2 and 5 and falls to 50% accuracy; it helps on seed 3 and adds nothing on seed 4, where no prediction clears 0.9. Even with five labels per class it ends below the supervised baseline on three of the five seeds.',
       'Modern methods add **consistency regularization**: the model should predict the same label for different augmentations of an unlabelled input (FixMatch combines this with confident pseudo-labels). All rely on the cluster and manifold assumptions.',
     ],
     formula: 'label propagation: F ← α S F + (1 − α) Y,  S = D^(−1/2) W D^(−1/2)     self-training: add {x : max p(y | x) > τ}',
@@ -69,7 +71,7 @@ export const lessons = [
     prerequisite: 'Lessons 56.1–56.2; calibration (Lab 09); bandits (Lab 50).',
     paragraphs: [
       'In **pool-based active learning**, the model is trained on the current labels, scores every unlabelled point, and asks an annotator to label the most useful one; then it retrains and repeats.',
-      '**Uncertainty sampling** queries the point the model is least sure about — probability closest to 0.5 for two classes, or the smallest margin between the top two classes. Those points sit near the current boundary, exactly where a label moves it most. In the playground, after 4 random labels plus 8 queries, uncertainty sampling reaches close to 99% accuracy while random labels reach about 88%.',
+      '**Uncertainty sampling** queries the point the model is least sure about — probability closest to 0.5 for two classes, or the smallest margin between the top two classes. Those points sit near the current boundary, exactly where a label moves it most. In the playground, after 4 random labels plus 8 queries, uncertainty sampling reaches about 97.5% accuracy while random labels reach about 84% (averages of 4 runs).',
       'Alternatives: query-by-committee (where an ensemble disagrees), expected model change, diversity or density weighting (avoid querying many near-duplicates or outliers), and batch-mode selection when labels are gathered in rounds.',
       'Pitfalls: a badly wrong initial model may never ask about regions it is confidently wrong about (a sampling bias similar to Lab 35’s feedback loops); uncertainty relies on reasonably calibrated probabilities; and the labelled set is not a random sample, so it cannot serve as a test set.',
       'Active learning resembles the bandit trade-off of Lab 50: exploit (label near the boundary) versus explore (label elsewhere to catch surprises). Mixing in a few random queries is a cheap safeguard.',
@@ -155,3 +157,6 @@ export const sources = [
   { title: 'Chen et al. (2020) · A simple framework for contrastive learning of visual representations (SimCLR)', url: 'https://arxiv.org/abs/2002.05709' },
   { title: 'Sohn et al. (2020) · FixMatch: simplifying semi-supervised learning with consistency and confidence', url: 'https://arxiv.org/abs/2001.07685' },
 ]
+
+// Runnable cells, typeset formulas and math ↔ code tables for each lesson live in notebooks.js.
+for (const lesson of lessons) Object.assign(lesson, extras[lesson.id])

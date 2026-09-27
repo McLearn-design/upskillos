@@ -1,7 +1,7 @@
 // Graph neural networks: message passing and graph convolution for semi-
 // supervised node classification on a graph with communities, compared with a
 // features-only network; plus over-smoothing as layers are stacked.
-import { random, normal, range, mean } from '../../kit/math.js'
+import { random, normal, range, mean, shuffle } from '../../kit/math.js'
 import { Dense, ReLU, Sequential, softmaxCE, Adam } from '../../kit/nn.js'
 
 // Stochastic block model: 3 communities; noisy node features weakly indicate the community.
@@ -30,7 +30,7 @@ class GraphConv {
 }
 export function labeledIdx(g, perClass, seed = 1) {
   const rng = random(seed), out = []
-  range(g.k).forEach(c => { const pool = range(g.n).filter(i => g.y[i] === c).sort(() => rng() - 0.5); out.push(...pool.slice(0, perClass)) })
+  range(g.k).forEach(c => { const pool = shuffle(range(g.n).filter(i => g.y[i] === c), rng); out.push(...pool.slice(0, perClass)) })
   return out
 }
 // Train on the labelled nodes only (the whole graph is visible — transductive setting).

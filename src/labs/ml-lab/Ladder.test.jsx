@@ -957,3 +957,97 @@ describe('Lab 52 ladder values', () => {
     expect(LN_CASES[0].expected[0].map(v => Math.round(v * 1e4) / 1e4)).toEqual([-1.2247, 0, 1.2247])
   })
 })
+
+// ---- Lab 53: Autoencoders & VAEs ------------------------------------------------------------------------
+import { vae as lab53, klOf as vaeKl, reparamOf, ELBO_CASES } from './labs/l53-vae/ladder.js'
+describe('Lab 53 ladder values', () => {
+  it('the trace follows from its numbers; the repair prompt, the KL and the ELBO example are as checked', () => {
+    expect(lab53.steps[0].fields.map(f => f.answer)).toEqual([784 / 32, vaeKl([1], [0]), reparamOf([2], [Math.log(0.25)], [-2])[0], 1])
+    expect(Math.round(0.5 * (Math.exp(-2) - 1) * 1000) / 1000).toBe(-0.432)
+    expect(Math.round(vaeKl([0], [-2]) * 1000) / 1000).toBe(0.568)
+    expect(Math.round(ELBO_CASES[0].expected * 1e4) / 1e4).toBe(0.3285)
+  })
+})
+
+// ---- Lab 54: GANs & diffusion -----------------------------------------------------------------------------
+import { gen as lab54, REV_CASES, D_CASES } from './labs/l54-generative/ladder.js'
+describe('Lab 54 ladder values', () => {
+  it('the trace follows from its numbers; the repair prompt and the loss example are as checked', () => {
+    expect(lab54.steps[0].fields.map(f => f.answer)).toEqual([2 / (2 + 6), Math.round(1000 / (1 + Math.exp(3))) / 1000, 0.72, 50 * 4])
+    expect(Math.round(REV_CASES[0].expected[0] * 1000) / 1000).toBe(0.98)
+    expect(Math.round((1 - 0.1 / Math.sqrt(0.5) * 0.5) / Math.sqrt(0.5) * 1000) / 1000).toBe(1.314)
+    expect(Math.round(D_CASES[0].expected * 1e4) / 1e4).toBe(1.3863)
+  })
+})
+
+// ---- Lab 55: Language models ---------------------------------------------------------------------------------
+import { lm as lab55, TOPP_CASES, DPO_CASES } from './labs/l55-lm/ladder.js'
+describe('Lab 55 ladder values', () => {
+  it('the trace follows from its numbers; the repair prompt and the DPO example are as checked', () => {
+    expect(lab55.steps[0].fields.map(f => f.answer)).toEqual([0.5 * 0.4, (1 + 3) / 2, 2 ** 2, 2 * 16 * 512])
+    expect(TOPP_CASES[0].expected.map(v => Math.round(v * 1e6) / 1e6)).toEqual([0.625, 0.375, 0])
+    expect(Math.round(DPO_CASES[0].expected * 1e4) / 1e4).toBe(0.4375)
+  })
+})
+
+// ---- Lab 56: Learning from few labels -------------------------------------------------------------------------
+import { fewlabels as lab56, NCE_CASES, kappaOf } from './labs/l56-fewlabels/ladder.js'
+describe('Lab 56 ladder values', () => {
+  it('the trace follows from its numbers; the repair prompt and the kappa example are as checked', () => {
+    expect(lab56.steps[0].fields.map(f => f.answer)).toEqual([0.5 * 1 + 0.3 * 0 + 0.2 * 1, 0.45, 2 * 32 - 1, (0.85 - 0.5) / (1 - 0.5)])
+    expect(Math.round(NCE_CASES[0].expected * 1000) / 1000).toBe(0.551)
+    expect(Math.round((Math.log(2 * Math.E + 2) - 1) * 1000) / 1000).toBe(1.006)
+    expect(Math.round(kappaOf([1, 1, 1, 1, 0], [1, 1, 1, 0, 0]) * 1e4) / 1e4).toBe(0.5455)
+  })
+})
+
+// ---- Lab 57: Graph neural networks ------------------------------------------------------------------------------
+import { gnn as lab57, AGG_CASES, gcnOf } from './labs/l57-gnn/ladder.js'
+describe('Lab 57 ladder values', () => {
+  it('the trace follows from its numbers; the repair prompt and the forward example are as checked', () => {
+    expect(lab57.steps[0].fields.map(f => f.answer)).toEqual([1 / Math.sqrt(4 * 4), (2 + 4 + 9) / 3, 8 * 16, 1 + 5])
+    expect(AGG_CASES[0].expected[0]).toEqual([0, 6, 0])
+    expect(gcnOf([[0, 1], [1, 0]], [[1], [3]], [[1]], [[1]]).map(r => r.map(v => Math.round(v * 1e9) / 1e9))).toEqual([[2], [2]])
+  })
+})
+
+// ---- Lab 58: Policy gradients ------------------------------------------------------------------------------------
+import { pg as lab58, RTG_CASES, reinforceGradOf } from './labs/l58-pg/ladder.js'
+describe('Lab 58 ladder values', () => {
+  it('the trace follows from its numbers; the repair prompt and the gradient example are as checked', () => {
+    expect(lab58.steps[0].fields.map(f => f.answer)).toEqual([1 / (1 + Math.exp(0)), (1 - 0.8) * 1 * 50, 1 + 0.9 * 1, 1 + 1 * 3 - 4].map(v => Math.round(v * 1e9) / 1e9))
+    expect(RTG_CASES[0].expected).toEqual([1.75, 1.5, 1])
+    expect(reinforceGradOf([[1, 0], [0, 1]], [1, 0], [0.5, 0.5], [1, 1], 1, [0, 0])).toEqual([1, -0.5])
+  })
+})
+
+// ---- Lab 59: Interpretability --------------------------------------------------------------------------------------
+import { interpret as lab59, SHAP_CASES, shapWeightOf, effNOf } from './labs/l59-interpret/ladder.js'
+describe('Lab 59 ladder values', () => {
+  it('the trace follows from its numbers; the repair prompt and the Shapley example are as checked', () => {
+    expect(lab59.steps[0].fields.map(f => f.answer)).toEqual([10.5 - 6, (10 + 14 + 18) / 3, 20 + 3 - 1 + 2, effNOf([1, 1, 1, 1])])
+    expect([shapWeightOf(0, 2), shapWeightOf(1, 2)]).toEqual([0.5, 0.5])
+    expect(SHAP_CASES[1].expected).toEqual([5, 5])
+    expect(SHAP_CASES[0].expected).toEqual([3, 5])
+  })
+})
+
+// ---- Lab 60: Uncertainty ---------------------------------------------------------------------------------------------
+import { uncertainty as lab60, CQR_CASES, PIN_CASES } from './labs/l60-uncertainty/ladder.js'
+describe('Lab 60 ladder values', () => {
+  it('the trace follows from its numbers; the repair prompt and the CQR example are as checked', () => {
+    expect(lab60.steps[0].fields.map(f => f.answer)).toEqual([Math.sqrt(0.16 + 0.09), (1 - 0.1) * 3, Math.ceil(50 * 0.9), [0.6, 0.3, 0.1].filter(p => p >= 1 - 0.5).length].map(v => Math.round(v * 1e9) / 1e9))
+    expect(PIN_CASES[0].expected.map(v => Math.round(v * 1e9) / 1e9)).toEqual([1.8])
+    expect(CQR_CASES[0].expected.map(r => r.map(v => Math.round(v * 1e9) / 1e9))).toEqual([[1.8], [3.2]])
+  })
+})
+
+// ---- Lab 61: Robustness and shift ------------------------------------------------------------------------------------
+import { robust as lab61, PGD_CASES, bbseOf } from './labs/l61-robustness/ladder.js'
+describe('Lab 61 ladder values', () => {
+  it('the trace follows from its numbers; the repair prompt and the BBSE example are as checked', () => {
+    expect(lab61.steps[0].fields.map(f => f.answer)).toEqual([0.05 * 10, 3 / 30, (3 + 1) ** 2 / (9 + 1), 0.25].map(v => Math.round(v * 1e9) / 1e9))
+    expect(PGD_CASES[0].expected.map(v => Math.round(v * 1e9) / 1e9)).toEqual([0.6])
+    expect(bbseOf([[0.9, 0.1], [0.1, 0.9]], [0.74, 0.26]).map(v => Math.round(v * 1e9) / 1e9)).toEqual([0.8, 0.2])
+  })
+})
