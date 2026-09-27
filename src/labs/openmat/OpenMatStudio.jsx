@@ -23,6 +23,10 @@ import {
   Scan,
   Grid3X3,
   Maximize2,
+  Search,
+  Copy,
+  Check,
+  BookOpen,
   X,
   CircleHelp,
 } from "lucide-react";
@@ -1304,13 +1308,6 @@ const HELP_TEXT = [
   "── Extensions ──",
   "window.OpenMAT.registerExtension(name, { functions, onRun })",
 ].join("\n");
-
-const MATLAB_QUICK_START_EXAMPLE_IDS = [
-  "matlab-first-plot",
-  "matlab-matrix-quickstart",
-  "helix-plot3",
-  "matlab-surface-demo",
-];
 
 const OPENMAT_SHOWCASE_EXAMPLE_IDS = [
   "gcode-helix",
@@ -4935,6 +4932,215 @@ function parseOpenMatHelpSections(helpText) {
 
 const OPENMAT_HELP_SECTIONS = parseOpenMatHelpSections(OPENMAT_ENGINE_HELP);
 
+function getOpenMatExampleLearningMeta(example) {
+  const code = String(example?.code || "");
+  const lower = code.toLowerCase();
+  let category = "MATLAB Foundations";
+  if (/slider\(|animate\(/.test(lower)) category = "Interactive Models";
+  else if (/surf\(|mesh\(|plot3\(|scatter3\(/.test(lower)) category = "3D & Surfaces";
+  else if (/\\|eig\(|svd\(|qr\(|lu\(|rref\(|rank\(|null\(|orth\(|sym2poly\(|\bbasis\b/.test(code)) category = "Linear Algebra";
+  else if (/\b(function|for|while|if)\b/.test(lower)) category = "Programming";
+  else if (/mean\(|median\(|std\(|hist\(|randn\(|polyfit\(/.test(lower)) category = "Data & Statistics";
+  else if (/plot\(|scatter\(|bar\(|stem\(|area\(|subplot\(/.test(lower)) category = "Plots & Figures";
+
+  const conceptRules = [
+    [/linspace|logspace|:\s*[-\d.]/i, "vectors and ranges"],
+    [/\[[\s\S]*?;[\s\S]*?\]/, "matrices"],
+    [/\.\*|\.\/|\.\^/, "element-wise operations"],
+    [/\\/, "linear systems"],
+    [/eig\(/i, "eigenvalues"],
+    [/svd\(/i, "singular value decomposition"],
+    [/qr\(|lu\(/i, "matrix factorization"],
+    [/function\s|@\(/i, "custom functions"],
+    [/\bfor\b|\bwhile\b/i, "loops"],
+    [/\bif\b|\belse\b/i, "decisions"],
+    [/plot\(|scatter\(|bar\(|stem\(|area\(/i, "2D plotting"],
+    [/subplot\(/i, "subplot layouts"],
+    [/surf\(|mesh\(/i, "3D surfaces"],
+    [/plot3\(|scatter3\(/i, "3D paths and points"],
+    [/slider\(/i, "interactive inputs"],
+    [/animate\(/i, "animation"],
+    [/fprintf\(|sprintf\(|disp\(/i, "formatted output"],
+  ];
+  const concepts = conceptRules.filter(([pattern]) => pattern.test(code)).map(([, label]) => label).slice(0, 6);
+  const level = /slider\(|animate\(|surf\(|mesh\(|plot3\(|scatter3\(|function\s|\bfor\b|\bwhile\b|svd\(|eig\(/i.test(code)
+    ? "Intermediate"
+    : "Beginner";
+
+  const lines = code.replace(/\s+$/, "").split("\n");
+  const groups = [];
+  let start = 0;
+  for (let index = 0; index <= lines.length; index += 1) {
+    if (index < lines.length && lines[index].trim()) continue;
+    if (index > start) groups.push({ start: start + 1, end: index, lines: lines.slice(start, index) });
+    start = index + 1;
+  }
+  const explainGroup = (group) => {
+    const text = group.lines.join("\n");
+    if (/slider\(|animate\(/i.test(text)) return { title: "Create learner-controlled inputs", detail: "These OpenMAT controls turn named values into sliders or animation parameters. Every change reruns the same script, so the math remains visible and editable." };
+    if (/meshgrid\(/i.test(text)) return { title: "Build a coordinate grid", detail: "meshgrid turns two one-dimensional ranges into X and Y coordinate matrices. The formula can then calculate one height Z for every point on that grid." };
+    if (/surf\(|mesh\(/i.test(text)) return { title: "Render the surface", detail: "The X, Y, and Z matrices become a three-dimensional surface. Titles, labels, color maps, and view commands describe how the result should be presented." };
+    if (/plot3\(|scatter3\(/i.test(text)) return { title: "Send three coordinates to the viewport", detail: "Each position needs matching x, y, and z values. OpenMAT connects them as a path with plot3 or displays them as independent points with scatter3." };
+    if (/subplot\(/i.test(text)) return { title: "Choose a subplot", detail: "subplot divides the figure into a row-by-column grid and makes one cell active. The following plot and label commands belong to that cell." };
+    if (/plot\(|scatter\(|bar\(|stem\(|area\(|hist\(/i.test(text)) return { title: "Turn the values into a figure", detail: "The plotting command maps calculated values to visual marks. The surrounding title, label, legend, and grid commands make the result readable." };
+    if (/\\/.test(text)) return { title: "Solve the linear system", detail: "MATLAB's backslash operator solves A·x = b directly. It is usually clearer and numerically safer than explicitly calculating inv(A) * b." };
+    if (/eig\(|svd\(|qr\(|lu\(|rref\(/i.test(text)) return { title: "Inspect the matrix structure", detail: "This decomposition rewrites the matrix into parts that expose directions, scale, rank, or factors. Multiple outputs capture each part for inspection." };
+    if (/^\s*function\b|@\(/im.test(text)) return { title: "Define reusable behavior", detail: "A function gives a calculation a name and separates its inputs from its outputs. Calls later in the script reuse the same logic with new values." };
+    if (/\bfor\b|\bwhile\b/i.test(text)) return { title: "Repeat the calculation", detail: "The loop updates values one step at a time. Preallocated arrays store each step so the complete result can be plotted or analyzed afterward." };
+    if (/\bif\b|\belse\b/i.test(text)) return { title: "Choose a path", detail: "The condition is evaluated as true or false, and only the matching branch runs. This is how a numeric script responds to different cases." };
+    if (/fprintf\(|sprintf\(|disp\(/i.test(text)) return { title: "Explain the result in the Console", detail: "Display functions make intermediate values and conclusions visible. fprintf and sprintf also let the script control labels, decimal precision, and line breaks." };
+    if (/title\(|xlabel\(|ylabel\(|legend\(|grid\s/i.test(text)) return { title: "Make the output readable", detail: "These commands add the context a learner needs to interpret the figure: what each axis measures, what each series means, and where values fall on the grid." };
+    return { title: "Prepare and calculate the data", detail: "Assignments name the inputs and intermediate results. Read each expression from right to left: OpenMAT calculates the right side, then stores it under the name on the left." };
+  };
+  const walkthrough = groups.map((group) => ({ ...group, ...explainGroup(group) }));
+  const coreIdea = category === "Linear Algebra"
+    ? "Translate a matrix problem into named arrays, apply the matching matrix operation, and inspect the result instead of treating the calculation as a black box."
+    : category === "3D & Surfaces"
+      ? "Build coordinates from ordinary vectors and matrices, then let the 3D viewport reveal the geometry those numbers describe."
+      : category === "Interactive Models"
+        ? "Keep the model in one readable script and expose only the inputs a learner should experiment with."
+        : category === "Programming"
+          ? "Use control flow and functions to express a repeatable numerical method, while keeping its intermediate values available for inspection."
+          : category === "Data & Statistics"
+            ? "Turn raw observations into summaries and plots so patterns and uncertainty can be seen together."
+            : "Calculate a small set of values, plot them, and label the result so the code and the figure tell the same story.";
+  return { category, concepts, level, coreIdea, walkthrough };
+}
+
+function OpenMatExampleLibraryModal({ examples, initialExampleId, C, onClose, onLoadExample }) {
+  const [selectedId, setSelectedId] = useState(initialExampleId || examples[0]?.id || "");
+  const [query, setQuery] = useState("");
+  const [copied, setCopied] = useState(false);
+  const closeRef = useRef(null);
+  const selected = examples.find((example) => example.id === selectedId) || examples[0];
+  const learning = useMemo(() => getOpenMatExampleLearningMeta(selected), [selected]);
+  const preview = useMemo(() => {
+    if (!selected) return { error: "No example selected." };
+    try {
+      return executeScript(selected.code);
+    } catch (error) {
+      return { error: error.message };
+    }
+  }, [selected]);
+  const categorized = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const groups = new Map();
+    examples.forEach((example) => {
+      const meta = getOpenMatExampleLearningMeta(example);
+      if (needle && ![example.label, example.description, meta.category, meta.level, ...meta.concepts].join(" ").toLowerCase().includes(needle)) return;
+      if (!groups.has(meta.category)) groups.set(meta.category, []);
+      groups.get(meta.category).push({ ...example, learning: meta });
+    });
+    return [...groups.entries()].map(([category, items]) => ({ category, items }));
+  }, [examples, query]);
+
+  useEffect(() => {
+    closeRef.current?.focus();
+    const handleKey = (event) => event.key === "Escape" && onClose();
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+  useEffect(() => setCopied(false), [selectedId]);
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(selected.code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  if (!selected) return null;
+  return (
+    <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/80 p-2 backdrop-blur-sm sm:p-4" role="dialog" aria-modal="true" aria-labelledby="openmat-example-library-title" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="flex h-full max-h-[95vh] w-full max-w-[1760px] flex-col overflow-hidden rounded-2xl border shadow-2xl" style={{ borderColor: C.border, background: C.surface3, color: C.text }}>
+        <header className="flex shrink-0 items-center gap-3 border-b px-4 py-3 sm:px-5" style={{ borderColor: C.border }}>
+          <BookOpen className="h-5 w-5 shrink-0" style={{ color: C.blue }} />
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em]" style={{ color: C.hint }}>OpenMAT example library</div>
+            <h2 id="openmat-example-library-title" className="truncate text-base font-semibold sm:text-lg">Read the explanation, inspect the code, then see its real output</h2>
+          </div>
+          <div className="hidden rounded-full border px-3 py-1 text-xs sm:block" style={{ borderColor: C.border, color: C.muted }}>{examples.length} working examples</div>
+          <button ref={closeRef} type="button" onClick={onClose} aria-label="Close example library" className="rounded-lg border p-2" style={{ borderColor: C.border, background: C.surface2 }}><X className="h-4 w-4" /></button>
+        </header>
+
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[250px_minmax(400px,1.1fr)_minmax(360px,0.9fr)] lg:overflow-hidden">
+          <aside className="max-h-72 overflow-y-auto border-b lg:max-h-none lg:border-b-0 lg:border-r" style={{ borderColor: C.border, background: C.surface2 }}>
+            <div className="sticky top-0 z-10 border-b p-3" style={{ borderColor: C.border, background: C.surface2 }}>
+              <label className="flex items-center gap-2 rounded-xl border px-3 py-2" style={{ borderColor: C.border, background: C.surface }}>
+                <Search className="h-4 w-4" style={{ color: C.muted }} />
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search examples…" aria-label="Search OpenMAT examples" className="min-w-0 flex-1 bg-transparent text-sm outline-none" />
+              </label>
+            </div>
+            <nav className="p-2.5" aria-label="OpenMAT examples">
+              {categorized.map((group) => (
+                <section key={group.category} className="mb-4">
+                  <div className="mb-1 flex items-center justify-between px-2 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: C.hint }}><span>{group.category}</span><span>{group.items.length}</span></div>
+                  <div className="grid gap-1">
+                    {group.items.map((example) => (
+                      <button key={example.id} type="button" onClick={() => setSelectedId(example.id)} className="rounded-lg border px-2.5 py-2 text-left" style={{ borderColor: selected.id === example.id ? C.blue : "transparent", background: selected.id === example.id ? C.surface : "transparent" }}>
+                        <span className="block truncate text-xs font-semibold">{example.label}</span>
+                        <span className="mt-0.5 block text-[10px]" style={{ color: C.muted }}>{example.learning.level}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ))}
+              {!categorized.length && <div className="p-4 text-center text-sm" style={{ color: C.muted }}>No examples match “{query}”.</div>}
+            </nav>
+          </aside>
+
+          <main className="border-b p-4 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r sm:p-5" style={{ borderColor: C.border }}>
+            <div className="mx-auto max-w-3xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: C.border, background: C.surface2, color: C.blue }}>{learning.level}</span>
+                <span className="text-xs" style={{ color: C.muted }}>{learning.category}</span>
+              </div>
+              <h3 className="mt-2 text-2xl font-semibold">{selected.label}</h3>
+              <p className="mt-2 text-sm leading-6" style={{ color: C.muted }}>{selected.description}</p>
+              <section className="mt-4 rounded-xl border p-4" style={{ borderColor: C.border, background: C.surface2 }}>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: C.blue }}>What this teaches</div>
+                <p className="mt-2 text-sm leading-6">{learning.coreIdea}</p>
+                <div className="mt-3 flex flex-wrap gap-1.5">{learning.concepts.map((concept) => <span key={concept} className="rounded-md border px-2 py-1 text-[10px]" style={{ borderColor: C.border, background: C.surface }}>{concept}</span>)}</div>
+              </section>
+              <section className="mt-5">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: C.purple }}>Code walkthrough</div>
+                <div className="mt-2 grid gap-3">
+                  {learning.walkthrough.map((step) => (
+                    <div key={`${step.start}-${step.end}`} className="overflow-hidden rounded-xl border" style={{ borderColor: C.border, background: C.surface2 }}>
+                      <div className="p-3.5"><div className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: C.purple }}>Lines {step.start}{step.end > step.start ? `–${step.end}` : ""}</div><div className="mt-1 text-sm font-semibold">{step.title}</div><p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>{step.detail}</p></div>
+                      <pre className="overflow-x-auto border-t bg-slate-950 p-3 text-[11px] leading-5 text-slate-200" style={{ borderColor: C.border }}>{step.lines.map((line, index) => <div key={step.start + index} className="flex"><span className="mr-3 w-5 shrink-0 select-none text-right text-slate-600">{step.start + index}</span><code>{line || " "}</code></div>)}</pre>
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section className="mt-5 overflow-hidden rounded-xl border" style={{ borderColor: C.border, background: "#020617" }}>
+                <div className="flex items-center justify-between border-b px-3 py-2" style={{ borderColor: C.border }}><span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Complete script</span><button type="button" onClick={copyCode} className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold text-white" style={{ background: copied ? C.green : C.blue }}>{copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copied ? "Copied" : "Copy code"}</button></div>
+                <pre className="max-h-80 overflow-auto p-4 text-[12px] leading-5 text-slate-200"><code>{selected.code}</code></pre>
+              </section>
+            </div>
+          </main>
+
+          <section className="flex min-h-[420px] flex-col p-4 lg:min-h-0 sm:p-5" style={{ background: C.surface2 }}>
+            <div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: C.green }}>Real OpenMAT output</div><p className="mt-1 text-xs" style={{ color: C.muted }}>This preview runs the selected script through the same engine as the editor.</p></div><button type="button" onClick={() => onLoadExample(selected.id)} className="shrink-0 rounded-lg px-3 py-2 text-xs font-semibold text-white" style={{ background: C.blue }}>Load into editor</button></div>
+            <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-xl border p-3" style={{ borderColor: C.border, background: C.surface }}>
+              {preview.error ? <div className="rounded-lg border p-3 text-sm" style={{ borderColor: C.red, color: C.red }}>Preview error: {preview.error}</div>
+                : preview.plot3DRequest ? <div className="h-[520px] overflow-hidden rounded-lg border" style={{ borderColor: C.border }}><OpenMatGrapher3D embedded isOpen launchConfig={preview.plot3DRequest} /></div>
+                  : preview.figureJson ? renderOpenMatFigure(preview.figureJson, C, 240)
+                    : <div className="flex min-h-48 items-center justify-center text-center text-sm" style={{ color: C.muted }}>This example produces workspace or Console output instead of a figure.</div>}
+              {preview.output && <div className="mt-3"><div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: C.hint }}>Console</div><pre className="max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-200">{preview.output}</pre></div>}
+              {preview.workspace?.length > 0 && <div className="mt-3"><div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: C.hint }}>Workspace</div><div className="grid gap-2 sm:grid-cols-2">{preview.workspace.slice(0, 8).map((item) => <div key={item.name} className="rounded-lg border px-3 py-2" style={{ borderColor: C.border, background: C.surface2 }}><div className="text-[10px]" style={{ color: C.hint }}>{item.name}</div><div className="mt-1 truncate font-mono text-xs">{item.preview}</div></div>)}</div></div>}
+            </div>
+            <p className="mt-3 text-[10px] leading-4" style={{ color: C.muted }}>Load into editor opens a new script tab, preserving the work already in your current tab.</p>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OpenMatGuidedSimulation({
   simulations,
   activeSimulation,
@@ -5240,6 +5446,8 @@ export default function OpenMatStudio() {
   const [isResizingBrowserPane, setIsResizingBrowserPane] = useState(false);
   const [isResizingSimCenter, setIsResizingSimCenter] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [exampleLibraryOpen, setExampleLibraryOpen] = useState(false);
+  const [exampleLibraryInitialId, setExampleLibraryInitialId] = useState("matlab-first-plot");
   const [commandInput, setCommandInput] = useState("");
   const [commandHistoryIndex, setCommandHistoryIndex] = useState(-1);
   const [lastConsoleCommand, setLastConsoleCommand] = useState("");
@@ -6089,10 +6297,6 @@ export default function OpenMatStudio() {
         })),
     [],
   );
-  const matlabQuickStartExamples = useMemo(
-    () => MATLAB_QUICK_START_EXAMPLE_IDS.map((id) => exampleMap[id]).filter(Boolean),
-    [exampleMap],
-  );
   const featuredExampleShowcase = useMemo(
     () => OPENMAT_SHOWCASE_EXAMPLE_IDS.map((id) => exampleMap[id]).filter(Boolean),
     [exampleMap],
@@ -6551,6 +6755,16 @@ export default function OpenMatStudio() {
     },
     [captureRecoverySnapshot, clearRunState, exampleMap, setActiveDocumentId, setDocuments],
   );
+  const openExampleLibrary = useCallback((exampleId = "matlab-first-plot") => {
+    setExampleLibraryInitialId(exampleId);
+    setExampleLibraryOpen(true);
+  }, []);
+  const loadExampleFromLibrary = useCallback((exampleId) => {
+    loadExample(exampleId);
+    setExampleLibraryOpen(false);
+    setWorkspaceMode("script");
+    setBrowserTab("examples");
+  }, [loadExample, setBrowserTab, setWorkspaceMode]);
 
   const handleTutorialAction = useCallback((card) => {
     if (!card?.action) return;
@@ -9175,23 +9389,21 @@ export default function OpenMatStudio() {
                   </div>
                   {interfaceLevel === "guided" && (
                     <div className="rounded-2xl border p-4" style={{ borderColor: C.border, background: C.surface }}>
-                      <div className="text-sm font-semibold">Beginner examples</div>
-                      <div className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-                        Each example opens in its own tab, so you can change it without losing your current script.
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ background: C.surface2, color: C.blue }}><BookOpen className="h-5 w-5" /></div>
+                        <div>
+                          <div className="text-sm font-semibold">Learn from working examples</div>
+                          <div className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+                            Browse plots, matrices, programming, statistics, interactive controls, and 3D models. Every example includes a line-by-line explanation and output from the real OpenMAT engine.
+                          </div>
+                        </div>
                       </div>
-                      <div className="mt-3 grid gap-2">
-                        {matlabQuickStartExamples.map((example) => {
-                          const Icon = example.icon;
-                          return (
-                            <button key={example.id} type="button" onClick={() => loadExample(example.id)} className="flex items-start gap-3 rounded-xl border px-3 py-3 text-left" style={{ borderColor: C.border, background: C.surface2 }}>
-                              <Icon className="mt-0.5 h-4 w-4 shrink-0" style={{ color: C.blue }} />
-                              <span>
-                                <span className="block text-sm font-semibold">{example.label}</span>
-                                <span className="mt-1 block text-xs leading-5" style={{ color: C.muted }}>{example.description}</span>
-                              </span>
-                            </button>
-                          );
-                        })}
+                      <button type="button" onClick={() => openExampleLibrary()} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold" style={{ borderColor: C.blue, background: C.surface2, color: C.blue }}>
+                        <BookOpen className="h-4 w-4" />
+                        Explore the example library
+                      </button>
+                      <div className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+                        Loading an example opens it in a new tab, so your current script stays intact.
                       </div>
                     </div>
                   )}
@@ -9243,7 +9455,7 @@ export default function OpenMatStudio() {
                           <button
                             key={example.id}
                             type="button"
-                            onClick={() => loadExample(example.id)}
+                            onClick={() => openExampleLibrary(example.id)}
                             className="flex items-start gap-3 rounded-xl border px-3 py-3 text-left"
                             style={{ borderColor: C.border, background: C.surface2 }}
                           >
@@ -9270,7 +9482,7 @@ export default function OpenMatStudio() {
                       <button
                         key={example.id}
                         type="button"
-                        onClick={() => loadExample(example.id)}
+                        onClick={() => openExampleLibrary(example.id)}
                         className="flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left"
                         style={{ borderColor: C.border, background: C.surface }}
                       >
@@ -10513,6 +10725,17 @@ export default function OpenMatStudio() {
         onOpenSeparate3D={() => surfaceConfig && openGrapher(surfaceConfig)}
         C={C}
       />
+
+      {exampleLibraryOpen && (
+        <OpenMatExampleLibraryModal
+          key={exampleLibraryInitialId}
+          examples={EXAMPLES}
+          initialExampleId={exampleLibraryInitialId}
+          C={C}
+          onClose={() => setExampleLibraryOpen(false)}
+          onLoadExample={loadExampleFromLibrary}
+        />
+      )}
 
       {helpOpen && (
         <div
