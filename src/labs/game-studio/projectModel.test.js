@@ -44,6 +44,17 @@ describe('Game Studio project model', () => {
     expect(() => normalizeProject({ version: 1 })).toThrow(/not a Game Studio/i);
   });
 
+  it('upgrades version 1 entities with current gameplay and script components', () => {
+    const legacy = createProject();
+    legacy.version = 1;
+    delete legacy.scenes[0].entities[0].gameplay;
+    delete legacy.scenes[0].entities[0].script;
+    const normalized = normalizeProject(JSON.parse(JSON.stringify(legacy)));
+    expect(normalized.version).toBe(2);
+    expect(normalized.scenes[0].entities[0].gameplay.role).toBe('none');
+    expect(normalized.scenes[0].entities[0].script.enabled).toBe(false);
+  });
+
   it('adds an entity to the requested scene', () => {
     const source = createProject();
     const scene = getActiveScene(source);
