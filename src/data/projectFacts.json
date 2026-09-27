@@ -10,8 +10,8 @@
   "counts": {
     "courses": 42,
     "chapters": 213,
-    "lessons": 1214,
-    "labs": 49,
+    "lessons": 1216,
+    "labs": 51,
     "games": 15
   },
   "courses": [
@@ -253,7 +253,7 @@
       "domain": "engineering",
       "description": "Computational geometry for a CAM application — meshes, surface queries, and comparing two models to find what was cut",
       "chapters": 1,
-      "lessons": 1
+      "lessons": 3
     },
     {
       "id": "native-languages",
@@ -462,6 +462,12 @@
       "path": "/five-axis"
     },
     {
+      "id": "game-studio",
+      "label": "Game Studio",
+      "kind": "builder",
+      "path": "/lab/game-studio"
+    },
+    {
       "id": "html-lab",
       "label": "HTML Lab",
       "kind": "builder",
@@ -612,6 +618,12 @@
       "path": "/lab/svg-studio"
     },
     {
+      "id": "mesh-lab",
+      "label": "3D Workshop",
+      "kind": "lab",
+      "path": "/mesh-lab"
+    },
+    {
       "id": "tile-mapper",
       "label": "Tile Mapper",
       "kind": "builder",
@@ -722,8 +734,14 @@
     }
   ],
   "issues": {
-    "lessonsWithoutId": [],
-    "lessonsWithoutTitle": [],
+    "lessonsWithoutId": [
+      "src/courses/mesh-engine/1-mesh-foundations/002-vectors-and-triangles.js",
+      "src/courses/mesh-engine/1-mesh-foundations/003-topology-and-welding.js"
+    ],
+    "lessonsWithoutTitle": [
+      "src/courses/mesh-engine/1-mesh-foundations/002-vectors-and-triangles.js",
+      "src/courses/mesh-engine/1-mesh-foundations/003-topology-and-welding.js"
+    ],
     "duplicateIds": [
       {
         "value": "ch3-002",
