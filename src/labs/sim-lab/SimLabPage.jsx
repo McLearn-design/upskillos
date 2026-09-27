@@ -3,225 +3,191 @@ import { useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
 import { setupOpenCalcMonaco } from '../../utils/monacoThemes.js'
 import { SIM_TEMPLATES } from './simTemplates.js'
-import { Play, RotateCcw, ChevronDown, Terminal, Code2, X, Sun, Moon, ArrowLeft } from 'lucide-react'
+import { DEFAULT_SIM_SNIPPET, SIM_SNIPPETS as SNIPPET_LIBRARY } from './simSnippets.js'
+import { Play, RotateCcw, ChevronDown, Terminal, Code2, X, Sun, Moon, ArrowLeft, Copy, Check } from 'lucide-react'
 import { buildSandbox } from '../../utils/simSandbox.js'
 
-// ── Snippet library ───────────────────────────────────────────────────────────
-const SNIPPETS = [
-  {
-    category: 'Physics',
-    color: 'text-sky-400',
-    items: [
-      { label: 'Euler step', code: `// Euler integration\nvx += ax * dt\nvy += ay * dt\nx  += vx * dt\ny  += vy * dt` },
-      { label: 'RK4 (1D)', code: `function rk4(y, v, accel, dt) {\n  const k1v = accel(y, v),         k1y = v\n  const k2v = accel(y+k1y*dt/2, v+k1v*dt/2), k2y = v+k1v*dt/2\n  const k3v = accel(y+k2y*dt/2, v+k2v*dt/2), k3y = v+k2v*dt/2\n  const k4v = accel(y+k3y*dt,   v+k3v*dt),   k4y = v+k3v*dt\n  return {\n    y: y + dt/6*(k1y+2*k2y+2*k3y+k4y),\n    v: v + dt/6*(k1v+2*k2v+2*k3v+k4v)\n  }\n}` },
-      { label: 'Spring force', code: `const k = 10, b = 0.4, rest = 0\nconst F = -k*(x - rest) - b*vx` },
-      { label: 'Gravity (2-body)', code: `const G = 6.674e-11\nfunction gravForce(p1, m1, p2, m2) {\n  const dx = p2.x-p1.x, dy = p2.y-p1.y\n  const r  = Math.hypot(dx, dy)\n  const f  = G*m1*m2 / (r*r)\n  return { fx: f*dx/r, fy: f*dy/r }\n}` },
-      { label: 'Bounce', code: `if (pos.y < 0.3) { pos.y = 0.3; vel.y *= -0.75 }` },
-    ],
-  },
-  {
-    category: 'Canvas 2D',
-    color: 'text-emerald-400',
-    items: [
-      { label: 'Clear', code: `ctx.fillStyle = '#02060f'\nctx.fillRect(0, 0, W, H)` },
-      { label: 'Circle', code: `ctx.beginPath()\nctx.arc(cx, cy, r, 0, Math.PI*2)\nctx.fillStyle = '#44aaff'\nctx.fill()` },
-      { label: 'Line', code: `ctx.beginPath()\nctx.moveTo(x1, y1)\nctx.lineTo(x2, y2)\nctx.strokeStyle = '#ffffff'\nctx.lineWidth = 2\nctx.stroke()` },
-      { label: 'Dashed line', code: `ctx.setLineDash([6, 4])\nctx.beginPath()\nctx.moveTo(x1, y1)\nctx.lineTo(x2, y2)\nctx.stroke()\nctx.setLineDash([])` },
-      { label: 'Grid', code: `const step = 50\nctx.strokeStyle = '#0a1825'; ctx.lineWidth = 1\nfor (let x = 0; x < W; x += step) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke() }\nfor (let y = 0; y < H; y += step) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke() }` },
-      { label: 'Axes', code: `const ox = W/2, oy = H/2\nctx.strokeStyle = '#1e3a50'; ctx.lineWidth = 2\nctx.beginPath(); ctx.moveTo(0, oy); ctx.lineTo(W, oy); ctx.stroke()\nctx.beginPath(); ctx.moveTo(ox, 0); ctx.lineTo(ox, H); ctx.stroke()` },
-    ],
-  },
-  {
-    category: 'Three.js',
-    color: 'text-violet-400',
-    items: [
-      { label: 'Sphere', code: `const mesh = new THREE.Mesh(\n  new THREE.SphereGeometry(0.5, 16, 16),\n  new THREE.MeshPhongMaterial({ color: 0x44aaff, emissive: 0x112233 })\n)\nscene.add(mesh)` },
-      { label: 'Box', code: `const box = new THREE.Mesh(\n  new THREE.BoxGeometry(1, 1, 1),\n  new THREE.MeshStandardMaterial({ color: 0xff8800 })\n)\nscene.add(box)` },
-      { label: 'Trail line', code: `// call inside update() to draw a trailing path\ntrail.push(new THREE.Vector3(x, y, z))\nif (trail.length > 300) trail.shift()\nif (trailLine) scene.remove(trailLine)\ntrailLine = new THREE.Line(\n  new THREE.BufferGeometry().setFromPoints(trail),\n  new THREE.LineBasicMaterial({ color: 0x00ffcc })\n)\nscene.add(trailLine)` },
-      { label: 'Point light', code: `const light = new THREE.PointLight(0xffffff, 1.5, 50)\nlight.position.set(5, 10, 5)\nscene.add(light)` },
-      { label: 'Grid', code: `scene.add(new THREE.GridHelper(40, 20, 0x1a2a44, 0x0d1122))` },
-    ],
-  },
-  {
-    category: 'Math',
-    color: 'text-amber-400',
-    items: [
-      { label: 'Clamp', code: `const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))` },
-      { label: 'Lerp', code: `const lerp = (a, b, t) => a + (b - a) * t` },
-      { label: 'Polar → XY', code: `const x = r * Math.cos(theta)\nconst y = r * Math.sin(theta)` },
-      { label: 'Normalize 2D', code: `function normalize(vx, vy) {\n  const len = Math.hypot(vx, vy) || 1\n  return { x: vx/len, y: vy/len }\n}` },
-      { label: 'Rotation matrix 2D', code: `function rotate2d(x, y, angle) {\n  const c = Math.cos(angle), s = Math.sin(angle)\n  return { x: c*x - s*y, y: s*x + c*y }\n}` },
-      { label: '4×4 identity', code: `const I = new THREE.Matrix4().identity()` },
-    ],
-  },
-]
+// ── Group templates ───────────────────────────────────────────────────────────
+function SnippetLibraryModal({ darkMode, onClose }) {
+  const [selected, setSelected] = useState(DEFAULT_SIM_SNIPPET)
+  const [previewReady, setPreviewReady] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const previewRef = useRef(null)
+  const previewSrcdoc = useRef(buildSandbox())
+  const closeRef = useRef(null)
 
-// ── (sandbox imported from src/utils/simSandbox.js) ─────────────────────────
-// Previously inlined — now shared with SimNotebook
-function _buildSandboxLEGACY() {
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  * { margin:0; padding:0; box-sizing:border-box }
-  body { background:#02060f; overflow:hidden; transition:background 0.25s }
-  body > canvas { position:absolute; top:0; left:0; display:block }
-  #c2d { position:absolute; top:0; left:0; display:none }
-  #err { position:fixed; bottom:0; left:0; right:0; padding:8px 14px;
-         background:rgba(20,4,4,0.95); color:#ff6b6b; font:11px/1.6 monospace;
-         white-space:pre-wrap; border-top:1px solid #ff4444; display:none;
-         z-index:9; max-height:7em; overflow-y:auto }
-</style>
-</head>
-<body>
-<div id="err"></div>
-<canvas id="c2d"></canvas>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script>
-let scene, camera, renderer, controls
-let animId = null, userUpdate = null, lastTs = 0
-let currentMode = '3d'
-const c2d = document.getElementById('c2d')
+  useEffect(() => {
+    closeRef.current?.focus()
+    function onKeyDown(event) {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
 
-// ── Three.js setup ────────────────────────────────────────────────────────────
-scene    = new THREE.Scene()
-scene.background = new THREE.Color(0x02060f)
-scene.fog = new THREE.FogExp2(0x02060f, 0.01)
-camera   = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000)
-camera.position.set(0, 8, 20)
-renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-renderer.setSize(innerWidth, innerHeight)
-renderer.shadowMap.enabled = true
-document.body.appendChild(renderer.domElement)
-controls = new THREE.OrbitControls(camera, renderer.domElement)
-controls.enableDamping = true
-controls.dampingFactor = 0.08
-
-window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
-  camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
-  if (currentMode === '2d') { c2d.width = innerWidth; c2d.height = innerHeight }
-})
-
-function addDefaultLights() {
-  scene.add(new THREE.AmbientLight(0xffffff, 0.35))
-  const sun = new THREE.DirectionalLight(0xffffff, 1.2)
-  sun.position.set(8, 16, 8)
-  sun.castShadow = true
-  scene.add(sun)
-}
-
-function clearScene() {
-  while (scene.children.length) scene.remove(scene.children[0])
-  addDefaultLights()
-}
-
-// ── Mode switching ─────────────────────────────────────────────────────────────
-function switchMode(mode) {
-  currentMode = mode
-  if (mode === '3d') {
-    renderer.domElement.style.display = 'block'
-    c2d.style.display = 'none'
-  } else {
-    renderer.domElement.style.display = 'none'
-    c2d.style.display = 'block'
-    c2d.width  = innerWidth
-    c2d.height = innerHeight
-  }
-}
-
-// ── Error / console helpers ────────────────────────────────────────────────────
-function showError(msg) { const el=document.getElementById('err'); el.textContent=msg; el.style.display='block' }
-function hideError()    { document.getElementById('err').style.display='none' }
-
-const _log  = console.log.bind(console)
-console.log = (...a) => { _log(...a);  parent.postMessage({ type:'log', level:'log',   args:a.map(String) },'*') }
-const _warn = console.warn.bind(console)
-console.warn= (...a) => { _warn(...a); parent.postMessage({ type:'log', level:'warn',  args:a.map(String) },'*') }
-const _err2 = console.error.bind(console)
-console.error=(...a)=> { _err2(...a); parent.postMessage({ type:'log', level:'error', args:a.map(String) },'*') }
-
-// ── Animation loops ───────────────────────────────────────────────────────────
-function loop3d(ts) {
-  animId = requestAnimationFrame(loop3d)
-  const dt = Math.min((ts-lastTs)/1000, 0.05); lastTs = ts
-  controls.update()
-  if (userUpdate) { try { userUpdate(dt) } catch(e) { showError(e.message); userUpdate=null } }
-}
-function loop2d(ts) {
-  animId = requestAnimationFrame(loop2d)
-  const dt = Math.min((ts-lastTs)/1000, 0.05); lastTs = ts
-  if (userUpdate) { try { userUpdate(dt) } catch(e) { showError(e.message); userUpdate=null } }
-}
-function stopLoop() { if (animId) { cancelAnimationFrame(animId); animId=null } userUpdate=null }
-
-// ── Message handler ────────────────────────────────────────────────────────────
-window.addEventListener('message', ({ data }) => {
-  if (!data) return
-
-  if (data.type === 'run') {
-    stopLoop(); hideError()
-    const mode = data.mode || '3d'
-    switchMode(mode)
-
-    if (mode === '2d') {
-      const ctx = c2d.getContext('2d')
-      const W   = c2d.width, H = c2d.height
-      try {
-        const fn = new Function('canvas','ctx','W','H', data.code + '\\nreturn { init, update }')
-        const { init, update } = fn(c2d, ctx, W, H)
-        init()
-        userUpdate = update
-        lastTs = performance.now()
-        animId = requestAnimationFrame(loop2d)
-      } catch(e) {
-        showError(e.toString())
-        parent.postMessage({ type:'error', message:e.toString() }, '*')
-      }
-    } else {
-      clearScene()
-      try {
-        const fn = new Function('scene','camera','renderer','controls','THREE', data.code + '\\nreturn { init, update }')
-        const { init, update } = fn(scene, camera, renderer, controls, THREE)
-        init()
-        userUpdate = update
-        lastTs = performance.now()
-        animId = requestAnimationFrame(loop3d)
-      } catch(e) {
-        showError(e.toString())
-        parent.postMessage({ type:'error', message:e.toString() }, '*')
+  useEffect(() => {
+    function onMessage({ data, source }) {
+      if (source === previewRef.current?.contentWindow && data?.type === 'sim_ready') {
+        setPreviewReady(true)
       }
     }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+
+  useEffect(() => {
+    if (!previewReady) return
+    const target = previewRef.current?.contentWindow
+    target?.postMessage({ type: 'theme', dark: darkMode }, '*')
+    target?.postMessage({ type: 'run', code: selected.previewCode, mode: selected.mode }, '*')
+  }, [selected, darkMode, previewReady])
+
+  async function copySnippet() {
+    try {
+      await navigator.clipboard.writeText(selected.code)
+    } catch {
+      const textarea = document.createElement('textarea')
+      textarea.value = selected.code
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      textarea.remove()
+    }
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1600)
   }
 
-  if (data.type === 'reset') {
-    stopLoop(); hideError()
-    if (currentMode === '3d') { clearScene(); renderer.render(scene, camera) }
-    else { const ctx=c2d.getContext('2d'); ctx.clearRect(0,0,c2d.width,c2d.height) }
-  }
+  const surface = darkMode ? 'bg-[#0b1423] border-white/10 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+  const panel = darkMode ? 'bg-[#07101d] border-white/10' : 'bg-slate-50 border-slate-200'
+  const muted = darkMode ? 'text-slate-400' : 'text-slate-500'
 
-  if (data.type === 'theme') {
-    const bg = data.dark ? '#02060f' : '#e8f0f8'
-    document.body.style.background = bg
-    if (scene) scene.background = new THREE.Color(data.dark ? 0x02060f : 0xe8f0f8)
-  }
-})
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 p-3 sm:p-6 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sim-snippet-title"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}
+    >
+      <div className={`flex h-full max-h-[92vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-2xl border shadow-2xl ${surface}`}>
+        <header className={`flex shrink-0 items-center gap-3 border-b px-4 py-3 sm:px-5 ${darkMode ? 'border-white/10' : 'border-slate-200'}`}>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-violet-400">Snippet library</p>
+            <h2 id="sim-snippet-title" className="truncate text-lg font-bold">Learn it, preview it, then copy it</h2>
+          </div>
+          <p className={`hidden max-w-xl text-right text-xs sm:block ${muted}`}>
+            Snippets never overwrite the editor. Copy one and paste it exactly where it belongs in your file.
+          </p>
+          <button
+            ref={closeRef}
+            type="button"
+            onClick={onClose}
+            aria-label="Close snippet library"
+            className={`rounded-lg p-2 transition-colors ${darkMode ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </header>
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
-addDefaultLights()
-renderer.render(scene, camera)
-parent.postMessage({ type: 'sim_ready' }, '*')
-</script>
-</body>
-</html>`
+        <div className={`shrink-0 overflow-x-auto border-b px-4 py-3 ${darkMode ? 'border-white/10 bg-[#08111f]' : 'border-slate-200 bg-slate-50'}`}>
+          <div className="flex min-w-max gap-5">
+            {SNIPPET_LIBRARY.map(category => (
+              <div key={category.category}>
+                <p className={`mb-1.5 text-[10px] font-black uppercase tracking-widest ${category.color}`}>{category.category}</p>
+                <div className="flex gap-1.5">
+                  {category.items.map(snippet => (
+                    <button
+                      key={snippet.key}
+                      type="button"
+                      onClick={() => { setSelected(snippet); setCopied(false) }}
+                      className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                        selected.key === snippet.key
+                          ? 'border-violet-400 bg-violet-600 text-white'
+                          : darkMode
+                            ? 'border-white/10 bg-slate-800 text-slate-300 hover:bg-slate-700'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-violet-300 hover:text-violet-700'
+                      }`}
+                    >
+                      {snippet.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1.05fr)_minmax(380px,0.95fr)] lg:overflow-hidden">
+          <section className={`border-b p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r ${darkMode ? 'border-white/10' : 'border-slate-200'}`}>
+            <div className="mx-auto max-w-3xl select-text">
+              <div className="mb-5">
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-violet-400">{selected.mode} preview</span>
+                  <span className={`text-xs ${muted}`}>{SNIPPET_LIBRARY.find(cat => cat.items.some(item => item.key === selected.key))?.category}</span>
+                </div>
+                <h3 className="text-2xl font-black">{selected.label}</h3>
+                <p className={`mt-2 text-sm leading-6 ${muted}`}>{selected.summary}</p>
+              </div>
+
+              <div className={`mb-5 rounded-xl border p-4 ${panel}`}>
+                <h4 className="mb-2 text-xs font-black uppercase tracking-widest text-sky-400">How it works</h4>
+                <ul className={`space-y-2 text-sm leading-6 ${muted}`}>
+                  {selected.explanation.map(point => (
+                    <li key={point} className="flex gap-2">
+                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className={`overflow-hidden rounded-xl border ${darkMode ? 'border-white/10 bg-[#02060f]' : 'border-slate-200 bg-slate-950'}`}>
+                <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">JavaScript snippet</span>
+                  <button
+                    type="button"
+                    onClick={copySnippet}
+                    className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold text-white transition-colors ${copied ? 'bg-emerald-600' : 'bg-violet-600 hover:bg-violet-500'}`}
+                  >
+                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copied ? 'Copied' : 'Copy code'}
+                  </button>
+                </div>
+                <pre className="max-h-[38vh] overflow-auto p-4 text-[12px] leading-5 text-slate-200"><code>{selected.code}</code></pre>
+              </div>
+            </div>
+          </section>
+
+          <section className={`flex min-h-[340px] flex-col p-4 sm:p-5 ${panel}`}>
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Live preview</p>
+                <p className={`mt-0.5 text-xs ${muted}`}>A runnable demonstration of the selected fragment</p>
+              </div>
+              <span className={`rounded-md px-2 py-1 font-mono text-[10px] uppercase ${darkMode ? 'bg-slate-800 text-slate-400' : 'bg-white text-slate-500'}`}>{selected.mode}</span>
+            </div>
+            <div className={`relative min-h-0 flex-1 overflow-hidden rounded-xl border ${darkMode ? 'border-white/10 bg-[#02060f]' : 'border-slate-300 bg-white'}`}>
+              {!previewReady && (
+                <div className={`absolute inset-0 z-10 flex items-center justify-center text-xs ${muted}`}>Loading preview…</div>
+              )}
+              <iframe
+                ref={previewRef}
+                srcDoc={previewSrcdoc.current}
+                sandbox="allow-scripts"
+                title={`${selected.label} snippet preview`}
+                className="h-full w-full border-0"
+              />
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  )
 }
 
-// ── Group templates ───────────────────────────────────────────────────────────
-const GROUPS = ['Applied', 'Physics']
+const GROUPS = ['Starter', 'Applied', 'Physics']
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function SimLabPage() {
@@ -236,7 +202,6 @@ export default function SimLabPage() {
   const [darkMode, setDarkMode]       = useState(true)
 
   const iframeRef  = useRef(null)
-  const editorRef  = useRef(null)
   const logsEndRef = useRef(null)
   const srcdoc     = useRef(buildSandbox())
 
@@ -296,14 +261,6 @@ export default function SimLabPage() {
         { type: 'run', code: t.code, mode: t.mode || '3d' }, '*'
       )
     }, 50)
-  }
-
-  function insertSnippet(snippetCode) {
-    const editor = editorRef.current
-    if (!editor) return
-    editor.executeEdits('snippet', [{ range: editor.getSelection(), text: snippetCode, forceMoveMarkers: true }])
-    editor.focus()
-    setSnippetOpen(false)
   }
 
   // Colours vary by dark/light mode
@@ -447,34 +404,7 @@ export default function SimLabPage() {
         </button>
       </div>
 
-      {/* ── Snippet drawer ──────────────────────────────────────────────────── */}
-      {snippetOpen && (
-        <div className={`shrink-0 border-b ${border} ${darkMode ? 'bg-[#0a1220]' : 'bg-[#e8eef6]'} overflow-x-auto`}>
-          <div className="flex gap-4 px-3 py-2 min-w-max">
-            {SNIPPETS.map(cat => (
-              <div key={cat.category} className="min-w-0">
-                <div className={`text-[10px] font-black uppercase tracking-widest mb-1 ${cat.color}`}>{cat.category}</div>
-                <div className="flex gap-1.5 flex-wrap">
-                  {cat.items.map(s => (
-                    <button
-                      key={s.label}
-                      onClick={() => insertSnippet(s.code)}
-                      title={s.code}
-                      className={`px-2 py-1 rounded text-xs font-mono transition-colors whitespace-nowrap ${
-                        darkMode
-                          ? 'bg-slate-700/80 hover:bg-slate-600 text-slate-200'
-                          : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
-                      }`}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {snippetOpen && <SnippetLibraryModal darkMode={darkMode} onClose={() => setSnippetOpen(false)} />}
 
       {/* ── Main split ─────────────────────────────────────────────────────── */}
       <div className="flex flex-1 min-h-0">
@@ -489,7 +419,6 @@ export default function SimLabPage() {
               onChange={v => setCode(v ?? '')}
               theme={darkMode ? 'open-calc-dark' : 'open-calc-light'}
               beforeMount={setupOpenCalcMonaco}
-              onMount={editor => { editorRef.current = editor }}
               options={{
                 fontSize: 13,
                 lineHeight: 20,

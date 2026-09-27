@@ -10,7 +10,9 @@ function chapterNumOf(lesson) {
 }
 
 export function VideoPlayerProvider({ children }) {
-  const [isOpen, setIsOpen] = useState(true);
+  // Closed until the learner opens it (the Video Player button, or a lesson's video link).
+  // It used to start open-but-minimized, which put a player bar over every page on load.
+  const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(true);
   const [currentVideo, setCurrentVideo] = useState(null);
   const [lessonId, setLessonId] = useState(null);

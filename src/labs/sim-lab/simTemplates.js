@@ -3,6 +3,31 @@
 // mode: '2d' → Canvas2D globals: canvas, ctx, W, H
 
 export const SIM_TEMPLATES = [
+  {
+    key: 'blank-3d',
+    label: 'Blank 3D simulation',
+    icon: '✦',
+    group: 'Starter',
+    mode: '3d',
+    desc: 'Minimal init/update boilerplate — build the scene yourself',
+    code: `// Sim Lab calls init() once, then update(dt) every animation frame.
+// Available globals: scene, camera, renderer, controls, THREE
+
+function init() {
+  camera.position.set(0, 5, 12)
+  camera.lookAt(0, 0, 0)
+
+  // Add your meshes, lights, and starting state here.
+  renderer.render(scene, camera)
+}
+
+function update(dt) {
+  // Advance your simulation state here.
+
+  renderer.render(scene, camera)
+}`,
+  },
+
   // ── Applied ───────────────────────────────────────────────────────────────
 
   {
