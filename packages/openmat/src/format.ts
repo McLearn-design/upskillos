@@ -82,14 +82,27 @@ export function inferClass(value: unknown): string {
   if (typeof plain === "string") return "char"
   if (typeof plain === "boolean") return "logical"
   if (isComplexLike(plain)) return "complex double"
-  if (Array.isArray(plain)) return "double array"
+  if (Array.isArray(plain)) {
+    const values = plain.flat(Infinity)
+    if (values.length > 0 && values.every(item => typeof item === "string")) return "string array"
+    if (values.length > 0 && values.every(item => typeof item === "boolean")) return "logical array"
+    return "double array"
+  }
   if (plain && typeof plain === "object" && "__multi" in plain) return "tuple"
   return typeof plain
 }
 
 export function estimateBytes(value: unknown): number {
   const plain = toPlain(value)
-  try { return new Blob([JSON.stringify(plain)]).size }
+  try {
+    const serialized = JSON.stringify(plain)
+    let bytes = 0
+    for (const char of serialized) {
+      const codePoint = char.codePointAt(0) ?? 0
+      bytes += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4
+    }
+    return bytes
+  }
   catch { return 0 }
 }
 

@@ -32,6 +32,20 @@ describe('executeScript — arithmetic', () => {
     expect(r.output).toContain('00003.50 FF 1.20e+3 %')
   })
 
+  it('concatenates MATLAB character vectors without numeric coercion', () => {
+    const r = executeScript("name = ['Open', 'MAT']; rows = ['Open'; 'Calc']; disp(name); message = strcat(name, ' works');")
+    expect(r.workspace.find((entry: any) => entry.name === 'name')).toMatchObject({
+      className: 'char',
+      value: 'OpenMAT',
+    })
+    expect(r.workspace.find((entry: any) => entry.name === 'rows')).toMatchObject({
+      className: 'string array',
+      value: ['Open', 'Calc'],
+    })
+    expect(r.workspace.find((entry: any) => entry.name === 'message')?.value).toBe('OpenMAT works')
+    expect(r.output).toContain('OpenMAT')
+  })
+
   it('supports MATLAB degree-based trigonometry for scalars and arrays', () => {
     const r = executeScript(`theta = 30;
 v0 = 20;

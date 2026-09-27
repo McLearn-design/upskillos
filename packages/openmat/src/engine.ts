@@ -377,16 +377,23 @@ export function createExecutionEngine(options: EngineOptions = {}): {
   parser.set("tril",     (A: any, k?: any) => toPlain(math.map(A, (_: any, i: any, j: any) => j <= i + (k??0) ? _ : 0)))
   parser.set("triu",     (A: any, k?: any) => toPlain(math.map(A, (_: any, i: any, j: any) => j >= i + (k??0) ? _ : 0)))
   parser.set("horzcat",  (...args: any[]) => {
+    const plainArgs = args.map(toPlain)
+    const textParts = plainArgs.flatMap(value => Array.isArray(value) ? (value as any[]).flat(Infinity) : [value])
+    if (textParts.length > 0 && textParts.every(value => typeof value === "string")) return textParts.join("")
     const rows = (toNumericMatrix(args[0]) ?? [normalizeVector(args[0])]).length
     return Array.from({length: rows}, (_, r) => args.flatMap((a: any) => {
       const m = toNumericMatrix(a)
       return m ? m[r] ?? [] : [realValue(a)]
     }))
   })
-  parser.set("vertcat",  (...args: any[]) => args.flatMap((a: any) => {
-    const m = toNumericMatrix(a)
-    return m ?? [normalizeVector(a)]
-  }))
+  parser.set("vertcat",  (...args: any[]) => {
+    const plainArgs = args.map(toPlain)
+    if (plainArgs.length > 0 && plainArgs.every(value => typeof value === "string")) return plainArgs
+    return args.flatMap((a: any) => {
+      const m = toNumericMatrix(a)
+      return m ?? [normalizeVector(a)]
+    })
+  })
   parser.set("kron",     (A: any, B: any) => {
     const Am = toNumericMatrix(A)!, Bm = toNumericMatrix(B)!
     const [ma,na] = [Am.length, Am[0].length], [mb,nb] = [Bm.length, Bm[0].length]
@@ -407,6 +414,10 @@ export function createExecutionEngine(options: EngineOptions = {}): {
   parser.set("ismatrix", (A: any) => isMatrix(toPlain(A)) ? 1 : 0)
   parser.set("isnumeric",(A: any) => typeof toPlain(A) === "number" || isMatrix(toPlain(A)) ? 1 : 0)
   parser.set("ischar",   (A: any) => typeof toPlain(A) === "string" ? 1 : 0)
+  parser.set("isstring", (A: any) => {
+    const plain = toPlain(A)
+    return typeof plain === "string" || (Array.isArray(plain) && plain.flat(Infinity).every(value => typeof value === "string")) ? 1 : 0
+  })
   parser.set("islogical",(A: any) => typeof toPlain(A) === "boolean" ? 1 : 0)
   parser.set("isa",      (A: any, t: any) => typeof toPlain(A) === String(t) ? 1 : 0)
   parser.set("class",    (A: any) => typeof toPlain(A))
@@ -574,6 +585,7 @@ export function createExecutionEngine(options: EngineOptions = {}): {
   parser.set("str2double", (s: any) => Number(String(s).trim()))
   parser.set("int2str", (v: any) => String(Math.round(Number(v))))
   parser.set("char",    (v: any) => String.fromCharCode(Number(v)))
+  parser.set("string",  (v: any) => String(toPlain(v)))
   parser.set("strtrim", (s: any) => String(s).trim())
   parser.set("strsplit",(s: any, d?: any) => String(s).split(d ? String(d) : /\s+/))
   parser.set("strjoin", (c: any, d?: any) => (Array.isArray(c) ? c : [c]).map(String).join(d ? String(d) : " "))
