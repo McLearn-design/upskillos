@@ -13,6 +13,8 @@ import { EditMesh } from './core/EditMesh';
 import { Viewport, type GizmoMode, type ViewOptions } from './render/Viewport';
 import { exportGLB, importGLTF } from './render/io';
 import { Btn, C, useEditorVersion } from './ui/kit';
+import { FieldLegend } from './ui/FieldLegend';
+import { Timeline } from './ui/Timeline';
 import { Outliner } from './ui/Outliner';
 import { Inspector } from './ui/Inspector';
 import { TracePanel } from './ui/TracePanel';
@@ -49,7 +51,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
   const [snap, setSnap] = useState(false);
   const [opts, setOpts] = useState<ViewOptions>({ grid: true, axes: true, localAxes: true, normals: false, wire: false, xray: false });
   const [boxArmed, setBoxArmed] = useState(false);
-  const [tab, setTab] = useState<'trace' | 'script' | 'log'>('trace');
+  const [tab, setTab] = useState<'trace' | 'script' | 'timeline' | 'log'>('trace');
   const [bottomH, setBottomH] = useState(270);
   const [menu, setMenu] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
@@ -81,9 +83,27 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     const off = editor.subscribe((k) => {
       if (k !== 'scene') return;
       clearTimeout(t);
-      t = window.setTimeout(() => { try { localStorage.setItem(AUTOSAVE, JSON.stringify(editor.scene.toJSON())); } catch { /* full or unavailable */ } }, 700);
+      t = window.setTimeout(() => { try { localStorage.setItem(AUTOSAVE, JSON.stringify(editor.modelScene.toJSON())); } catch { /* full or unavailable */ } }, 700);
     });
     return () => { off(); clearTimeout(t); };
+  }, [editor]);
+
+  // Animation playback: advance at the timeline's fps, looping over the frame range.
+  useEffect(() => {
+    let raf = 0, last = 0, acc = 0;
+    const tick = (now: number) => {
+      raf = requestAnimationFrame(tick);
+      if (!editor.playing) { last = 0; return; }
+      if (!last) { last = now; return; }
+      const t = editor.scene.timeline;
+      acc += ((now - last) / 1000) * t.fps; last = now;
+      if (acc < 1) return;
+      const n = Math.floor(acc); acc -= n;
+      const span = t.end - t.start + 1;
+      editor.setFrame(t.start + ((((t.frame - t.start + n) % span) + span) % span));
+    };
+    raf = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(raf); editor.playing = false; };
   }, [editor]);
 
   // A new trace: bring the trace tab forward.
@@ -121,6 +141,10 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       if (k === 'x' || e.key === 'Delete') return act(() => (edit ? ed.deleteElements() : ed.deleteObjects()));
       if (edit && k === 'e') return act(() => { ed.extrude(0.5); setGizmo('translate'); });
       if (edit && k === 'i') return act(() => ed.inset(0.25));
+      if (!edit && k === 'i') return act(() => { ed.insertKey(); setTab('timeline'); });
+      if (e.key === ' ') return act(() => { ed.setPlaying(!ed.playing); setTab('timeline'); });
+      if (e.key === 'ArrowRight' && !e.shiftKey) return act(() => ed.setFrame(Math.min(ed.scene.timeline.end, ed.frame + 1)));
+      if (e.key === 'ArrowLeft' && !e.shiftKey) return act(() => ed.setFrame(Math.max(ed.scene.timeline.start, ed.frame - 1)));
       if (edit && k === 'm') return act(() => ed.merge());
       if (!edit && e.shiftKey && k === 'd') return act(() => ed.duplicate());
       if (!edit && k === 'h') return act(() => ed.active && ed.setVisible(ed.active, false));
@@ -130,7 +154,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
   });
 
   // ── files ─────────────────────────────────────────────────────────────
-  const saveFile = () => download('scene.meshlab.json', JSON.stringify(editor.scene.toJSON(), null, 1), 'application/json');
+  const saveFile = () => download('scene.meshlab.json', JSON.stringify(editor.modelScene.toJSON(), null, 1), 'application/json');
   const openFile = async (f: File) => {
     try { editor.load(JSON.parse(await f.text()) as SceneJSON); vp?.frameAll(); }
     catch (err) { editor.say(`Could not open ${f.name}: ${err instanceof Error ? err.message : err}`); }
@@ -149,7 +173,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     } catch (err) { editor.say(`Could not import ${f.name}: ${err instanceof Error ? err.message : err}`); }
   };
   const exportGlb = async () => {
-    try { download('scene.glb', await exportGLB(editor.scene), 'model/gltf-binary'); }
+    try { download('scene.glb', await exportGLB(editor.modelScene), 'model/gltf-binary'); }
     catch (err) { editor.say(`GLB export failed: ${err instanceof Error ? err.message : err}`); }
   };
 
@@ -161,7 +185,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       ['Open… (.meshlab.json)', () => fileRef.current?.click()],
       ['Save (download)', saveFile, 'Ctrl+S'],
       ['Import OBJ / glTF / GLB…', () => importRef.current?.click()],
-      ['Export OBJ (keeps quads, for Blender)', () => download('scene.obj', exportOBJ(editor.scene), 'text/plain')],
+      ['Export OBJ (keeps quads, for Blender)', () => download('scene.obj', exportOBJ(editor.modelScene), 'text/plain')],
       ['Export GLB', exportGlb],
     ],
     Edit: [['Undo', () => editor.undo(), 'Ctrl+Z'], ['Redo', () => editor.redo(), 'Ctrl+Shift+Z'], ['Duplicate', () => editor.duplicate(), 'Shift+D'], ['Delete', () => (edit ? editor.deleteElements() : editor.deleteObjects()), 'X'], ['Select all', () => (edit ? editor.selectAllElements() : editor.selectAllObjects()), 'A'], ['Select linked', () => editor.selectLinked(), 'Ctrl+L']],
@@ -169,13 +193,21 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     Mesh: [
       ['Extrude', () => editor.extrude(0.5), 'E'], ['Inset', () => editor.inset(0.25), 'I'], ['Loop cut', loopCut, 'Ctrl+R'],
       ['Subdivide faces', () => editor.split()], ['Subdivide smooth (Catmull–Clark)', () => editor.smoothSubdivide()],
-      ['Merge at centre', () => editor.merge(), 'M'], ['Flip normals', () => editor.flip()], ['Delete', () => editor.deleteElements(), 'X'],
+      ['Merge at centre', () => editor.merge(), 'M'], ['Smooth vertices', () => editor.smoothVerts(5, 0.5)], ['Flip normals', () => editor.flip()], ['Delete', () => editor.deleteElements(), 'X'],
+    ],
+    'Heat map': [
+      ['Distance from selected vertices', () => editor.showDistanceFromSelection()],
+      ['Mean curvature (H)', () => editor.showField({ kind: 'mean' })], ['Gaussian curvature (K)', () => editor.showField({ kind: 'gaussian' })],
+      ['Height (y)', () => editor.showField({ kind: 'coord', axis: 1 })],
+      [editor.showContours ? 'Hide iso-lines' : 'Show iso-lines', () => { editor.showContours = !editor.showContours; editor.emit('select'); }],
+      ['Hide heat map', () => editor.clearField()],
     ],
     Object: [
       ['Edit mode', () => editor.toggleEdit(), 'Tab'],
       ['Shade smooth', () => o && editor.setSmooth(o.id, true)], ['Shade flat', () => o && editor.setSmooth(o.id, false)],
       ['Add mirror modifier', () => o && editor.addModifier(o.id, 'mirror')], ['Add subdivision modifier', () => o && editor.addModifier(o.id, 'subsurf')],
       ['Apply modifiers', () => o && editor.applyModifiers(o.id)], ['Clear parent', () => o && editor.setParent(o.id, null)],
+      ['Insert keyframe', () => { editor.insertKey(); setTab('timeline'); }, 'I'], ['Clear animation', () => o && editor.clearAnimation(o.id)],
     ],
     View: [['Frame selected', () => vp?.frameSelected(), 'F'], ['Frame all', () => vp?.frameAll(), 'Home'], ['Front', () => vp?.view('front')], ['Right', () => vp?.view('right')], ['Top', () => vp?.view('top')], ['Perspective', () => vp?.view('persp')]],
     Script: [['Open script panel', () => setTab('script')], ['Show the GUI → code log', () => setTab('log')]],
@@ -248,6 +280,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
           <div style={{ color: edit ? C.accent : C.text, fontWeight: 600 }}>{edit ? `Edit mode · ${editor.selectMode === 'vert' ? 'vertices' : editor.selectMode === 'edge' ? 'edges' : 'faces'}` : 'Object mode'}</div>
           <div>Left-drag orbit · right-drag pan · wheel zoom · click select</div>
         </div>
+        <FieldLegend editor={editor} />
       </div>
       <div style={{ gridColumn: 3, gridRow: 3, borderLeft: `1px solid ${C.border}`, minHeight: 0 }}><Inspector editor={editor} /></div>
 
@@ -260,12 +293,13 @@ export default function MeshLab({ onBack }: MeshLabProps) {
           window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
         }} style={{ position: 'absolute', top: -3, left: 0, right: 0, height: 6, cursor: 'ns-resize', zIndex: 5 }} />
         <div style={{ display: 'flex', gap: 2, padding: '3px 6px 0', background: C.panel2, borderBottom: `1px solid ${C.border}` }}>
-          {([['trace', 'Algorithm trace'], ['script', 'Script'], ['log', `GUI → code (${editor.log.length})`]] as const).map(([k, label]) => (
+          {([['trace', 'Algorithm trace'], ['script', 'Script'], ['timeline', `Timeline · ${editor.scene.timeline.frame}`], ['log', `GUI → code (${editor.log.length})`]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)} style={{ background: tab === k ? C.panel : 'transparent', color: tab === k ? C.text : C.dim, borderTop: `1px solid ${tab === k ? C.border : 'transparent'}`, borderLeft: `1px solid ${tab === k ? C.border : 'transparent'}`, borderRight: `1px solid ${tab === k ? C.border : 'transparent'}`, borderBottom: 'none', borderRadius: '4px 4px 0 0', padding: '4px 12px', fontSize: 12, cursor: 'pointer' }}>{label}</button>
           ))}
         </div>
         <div style={{ flex: 1, minHeight: 0, display: tab === 'trace' ? 'block' : 'none' }}><TracePanel editor={editor} viewport={vp} /></div>
         <div style={{ flex: 1, minHeight: 0, display: tab === 'script' ? 'block' : 'none' }}>{scriptSeen ? <ScriptPanel editor={editor} onRun={() => vp?.sync()} /> : null}</div>
+        <div style={{ flex: 1, minHeight: 0, display: tab === 'timeline' ? 'block' : 'none' }}>{tab === 'timeline' ? <Timeline editor={editor} /> : null}</div>
         <div style={{ flex: 1, minHeight: 0, display: tab === 'log' ? 'block' : 'none' }}><LogPanel editor={editor} /></div>
       </div>
 
@@ -286,7 +320,7 @@ function Help({ onClose }: { onClose: () => void }) {
   const keys: [string, string][] = [
     ['Tab', 'Object / Edit mode'], ['1 2 3', 'Vertex / edge / face select (edit mode)'], ['Click, Shift+click', 'Select, add to selection'],
     ['B then drag', 'Box select'], ['A, Alt+A', 'Select all, none'], ['Ctrl+L', 'Select linked'], ['G R S', 'Move / rotate / scale gizmo'],
-    ['E', 'Extrude faces'], ['I', 'Inset faces'], ['Ctrl+R', 'Loop cut at the edge under the pointer'], ['M', 'Merge vertices at centre'],
+    ['E', 'Extrude faces'], ['I', 'Inset faces (edit mode); insert keyframe (object mode)'], ['Space', 'Play / pause the animation'], ['← →', 'Previous / next frame'], ['Ctrl+R', 'Loop cut at the edge under the pointer'], ['M', 'Merge vertices at centre'],
     ['X, Delete', 'Delete'], ['Shift+D', 'Duplicate object'], ['H', 'Hide object'], ['F, Home', 'Frame selected, frame all'],
     ['Ctrl+Z, Ctrl+Shift+Z', 'Undo, redo'], ['Ctrl+S', 'Save the scene file'], ['Ctrl+Enter', 'Run the script'],
   ];

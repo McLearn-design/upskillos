@@ -41,6 +41,13 @@ describe('example scripts', () => {
     const r = runScript(fresh(), EXAMPLES.find((x) => x.id === 'buffers')!.code);
     expect(r.output.at(-1)).toBe('so the GPU draws 2 triangles');
   });
+
+  it('the curvature example prints Gauss–Bonnet exactly and shows a heat map', () => {
+    const e = fresh();
+    const r = runScript(e, EXAMPLES.find((x) => x.id === 'curvature')!.code);
+    expect(r.output[2]).toBe('Σ K·area = 12.566371  4π = 12.566371  Euler 2');
+    expect(e.field?.spec.kind).toBe('geodesic');
+  });
 });
 
 describe('OBJ', () => {

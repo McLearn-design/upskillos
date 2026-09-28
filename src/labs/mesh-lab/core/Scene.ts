@@ -8,6 +8,7 @@
 import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
 import { EditMesh, type MeshSnapshot, type Vec3 } from './EditMesh';
 import type { Modifier } from './modifiers';
+import { DEFAULT_TIMELINE, cloneAnimation, transformAt, type Animation, type Timeline } from './animation';
 
 export type ObjectKind = 'mesh' | 'empty' | 'light';
 export interface Material { color: string; roughness: number; metalness: number }
@@ -28,6 +29,8 @@ export interface SceneObject {
   /** Smooth shading (averaged vertex normals) instead of flat faces. */
   smooth: boolean;
   light?: { type: 'point' | 'sun'; intensity: number; color: string };
+  /** Keyframes on the transform channels, if the object is animated. */
+  anim?: Animation;
 }
 
 export interface SceneJSON {
@@ -35,6 +38,8 @@ export interface SceneJSON {
   version: 1;
   nextId: number;
   objects: (Omit<SceneObject, 'mesh'> & { mesh: MeshSnapshot | null })[];
+  /** Frame range, speed and current frame. Missing in files written before animation existed. */
+  timeline?: Timeline;
 }
 
 const v3 = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
@@ -42,6 +47,7 @@ const v3 = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
 export class Scene {
   objects: SceneObject[] = [];
   nextId = 1;
+  timeline: Timeline = { ...DEFAULT_TIMELINE };
 
   get(idOrName: string): SceneObject | undefined {
     return this.objects.find((o) => o.id === idOrName) ?? this.objects.find((o) => o.name === idOrName);
@@ -74,6 +80,7 @@ export class Scene {
       modifiers: init.modifiers ?? [],
       smooth: init.smooth ?? false,
       light: init.light,
+      anim: cloneAnimation(init.anim),
     };
     if (o.parent && !this.get(o.parent)) o.parent = null;
     this.objects.push(o);
@@ -98,6 +105,19 @@ export class Scene {
     const m = this.localMatrix(o);
     let p = o.parent ? this.get(o.parent) : undefined;
     while (p) { m.premultiply(this.localMatrix(p)); p = p.parent ? this.get(p.parent) : undefined; }
+    return m;
+  }
+
+  /** The world matrix an object will have at a frame, its parents' animation included. Changes nothing. */
+  worldMatrixAt(o: SceneObject, frame: number): Matrix4 {
+    const local = (x: SceneObject) => {
+      const t = transformAt(x, frame);
+      const q = new Quaternion().setFromEuler(new Euler(t.rotation[0], t.rotation[1], t.rotation[2], 'XYZ'));
+      return new Matrix4().compose(new Vector3(...t.position), q, new Vector3(...t.scale));
+    };
+    const m = local(o);
+    let p = o.parent ? this.get(o.parent) : undefined;
+    while (p) { m.premultiply(local(p)); p = p.parent ? this.get(p.parent) : undefined; }
     return m;
   }
 
@@ -138,11 +158,11 @@ export class Scene {
 
   toJSON(): SceneJSON {
     return {
-      format: 'meshlab-scene', version: 1, nextId: this.nextId,
+      format: 'meshlab-scene', version: 1, nextId: this.nextId, timeline: { ...this.timeline },
       objects: this.objects.map((o) => ({
         ...o, position: v3(o.position), rotation: v3(o.rotation), scale: v3(o.scale),
         material: { ...o.material }, modifiers: o.modifiers.map((m) => ({ ...m })), light: o.light ? { ...o.light } : undefined,
-        mesh: o.mesh ? o.mesh.toSnapshot() : null,
+        mesh: o.mesh ? o.mesh.toSnapshot() : null, anim: cloneAnimation(o.anim),
       })),
     };
   }
@@ -151,10 +171,11 @@ export class Scene {
     if (j?.format !== 'meshlab-scene') throw new Error('Not a MeshLab scene file');
     const s = new Scene();
     s.nextId = j.nextId;
+    s.timeline = { ...DEFAULT_TIMELINE, ...j.timeline };
     s.objects = j.objects.map((o) => ({
       ...o, position: v3(o.position), rotation: v3(o.rotation), scale: v3(o.scale),
       material: { ...o.material }, modifiers: o.modifiers.map((m) => ({ ...m })), light: o.light ? { ...o.light } : undefined,
-      mesh: o.mesh ? EditMesh.fromSnapshot(o.mesh) : null,
+      mesh: o.mesh ? EditMesh.fromSnapshot(o.mesh) : null, anim: cloneAnimation(o.anim),
     }));
     return s;
   }

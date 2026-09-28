@@ -8,6 +8,10 @@
 //                 gizmo at the centre of the selection that moves those vertices
 //   trace         a recorded algorithm step drawn over the object: the mesh as it
 //                 stood at that step, the elements involved, points and arrows
+//   motion path   where an animated object's origin goes, frame by frame, with its
+//                 keyframes marked (its parents' animation included)
+//   heat map      a per-vertex field (distance, curvature, ...) coloured over the
+//                 object in place of its material, with iso-lines
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -17,6 +21,9 @@ import { EditMesh, type MeshSnapshot, type Vec3 } from '../core/EditMesh';
 import { evaluate } from '../core/modifiers';
 import type { SceneObject } from '../core/Scene';
 import type { Trace, TraceStep } from '../core/trace';
+import { fieldRange, vertexColors } from '../core/fields';
+import { contours, levelsFor } from '../core/geometry';
+import { hasKeys, keyFrames } from '../core/animation';
 
 export type GizmoMode = 'translate' | 'rotate' | 'scale';
 export interface ViewOptions { grid: boolean; axes: boolean; localAxes: boolean; normals: boolean; wire: boolean; xray: boolean }
@@ -84,6 +91,10 @@ export class Viewport {
   private proxy = new THREE.Object3D();
   private drag: { kind: 'object' | 'verts'; start: Vec3[]; startMatrix: THREE.Matrix4; verts: number[] } | null = null;
   private traceView: { trace: Trace; step: number } | null = null;
+  private fieldGroup = new THREE.Group();
+  private pathGroup = new THREE.Group();
+  private pathKey = '';
+  private fieldDrawn: { field: unknown; contours: boolean } = { field: null, contours: true };
   private raf = 0;
   private resize: ResizeObserver;
   private unsub: () => void;
@@ -191,7 +202,92 @@ export class Viewport {
     this.worldAxes.visible = this.options.axes;
     this.syncCage();
     this.syncGizmo();
+    this.syncField();
+    this.syncPath();
     this.syncTrace();
+  }
+
+  /** The active object's motion path in world space: a line through every frame, dots at its keys. */
+  private syncPath(): void {
+    const sc = this.editor.scene, o = this.editor.activeObject;
+    const chain = o ? sc.ancestry(o) : [];
+    const animated = chain.filter((x) => hasKeys(x.anim));
+    const t = sc.timeline;
+    const key = o && animated.length ? `${o.id}|${t.start}|${t.end}|${t.frame}|${JSON.stringify(chain.map((x) => [x.anim ?? null, x.position, x.rotation, x.scale, x.parent]))}` : '';
+    if (key === this.pathKey) return;
+    this.pathKey = key;
+    this.disposeGroup(this.pathGroup);
+    if (!o || !key) return;
+    const at = (f: number) => new THREE.Vector3().setFromMatrixPosition(sc.worldMatrixAt(o, f));
+    const pts: number[] = [];
+    for (let f = t.start; f <= t.end; f++) pts.push(...at(f).toArray());
+    const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0x5aa9ff, transparent: true, opacity: 0.8, depthTest: false }));
+    const frames = new THREE.Points(lg.clone(), new THREE.PointsMaterial({ color: 0x9cc9ff, size: 3, sizeAttenuation: false, depthTest: false, transparent: true }));
+    const keys = [...new Set(animated.flatMap((x) => keyFrames(x.anim)))].filter((f) => f >= t.start && f <= t.end);
+    const kg = new THREE.BufferGeometry(); kg.setAttribute('position', new THREE.Float32BufferAttribute(keys.flatMap((f) => at(f).toArray()), 3));
+    const keyDots = new THREE.Points(kg, new THREE.PointsMaterial({ color: 0xff9f1c, size: 9, sizeAttenuation: false, depthTest: false, transparent: true }));
+    const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(at(t.frame).toArray(), 3));
+    const now = new THREE.Points(cg, new THREE.PointsMaterial({ color: 0xffffff, size: 7, sizeAttenuation: false, depthTest: false, transparent: true }));
+    for (const x of [line, frames, keyDots, now]) { x.renderOrder = 7; this.pathGroup.add(x); }
+    this.scene.add(this.pathGroup);
+  }
+
+  /** The heat map: the field's mesh with a colour per vertex, iso-lines, and its source vertices. */
+  private syncField(): void {
+    const f = this.editor.field;
+    const v = f ? this.views.get(f.objectId) : undefined;
+    const hidden = !!(this.traceView && f && this.traceTargetId() === f.objectId);
+    if (f === this.fieldDrawn.field && this.editor.showContours === this.fieldDrawn.contours && (!v || this.fieldGroup.parent === v.group)) {
+      this.fieldGroup.visible = !hidden;
+      return;
+    }
+    this.fieldDrawn = { field: f, contours: this.editor.showContours };
+    this.disposeGroup(this.fieldGroup);
+    if (!f || !v) return;
+    const o = this.editor.scene.get(f.objectId);
+    const { values, range, diverging, contours: count } = f.result;
+    this.fieldGroup.add(...this.fieldMeshes(f.mesh, values, { range, diverging, contours: this.editor.showContours ? count : 0, flat: !o?.smooth }));
+    if (f.spec.kind === 'geodesic') {
+      const pos: number[] = [];
+      for (const s of f.spec.sources) if (f.mesh.verts[s]) pos.push(...f.mesh.verts[s]);
+      const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      const pts = new THREE.Points(pg, new THREE.PointsMaterial({ color: 0xffffff, size: 10, sizeAttenuation: false, depthTest: false, transparent: true }));
+      pts.renderOrder = 5; this.fieldGroup.add(pts);
+    }
+    this.fieldGroup.visible = !hidden;
+    v.group.add(this.fieldGroup);
+  }
+
+  /** A mesh coloured by a per-vertex field, plus iso-lines of the field. */
+  private fieldMeshes(m: EditMesh, values: ArrayLike<number>, o: { range?: [number, number]; diverging?: boolean; log?: boolean; contours?: number; flat?: boolean; opacity?: number }): THREE.Object3D[] {
+    const { geo } = toGeometry(m);
+    const range = o.range ?? fieldRange(values, !!o.diverging, !!o.diverging);
+    const rgb = vertexColors(values, range, !!o.diverging, o.log);
+    // The colour maps are defined in sRGB; three.js blends in linear light.
+    const c = new THREE.Color();
+    for (let i = 0; i < rgb.length; i += 3) { c.setRGB(rgb[i], rgb[i + 1], rgb[i + 2], THREE.SRGBColorSpace); rgb[i] = c.r; rgb[i + 1] = c.g; rgb[i + 2] = c.b; }
+    geo.setAttribute('color', new THREE.BufferAttribute(rgb, 3));
+    const translucent = (o.opacity ?? 1) < 1;
+    const body = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.9, metalness: 0, flatShading: !!o.flat, side: THREE.DoubleSide,
+      transparent: translucent, opacity: o.opacity ?? 1, depthWrite: !translucent, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+    }));
+    const out: THREE.Object3D[] = [body];
+    if (o.contours) {
+      const segs = contours(m, values, levelsFor(values, o.contours));
+      const pos = new Float32Array(segs.length * 6);
+      segs.forEach(([a, b], i) => pos.set([...a, ...b], i * 6));
+      const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      out.push(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x0b0d10, transparent: true, opacity: 0.75 })));
+    }
+    return out;
+  }
+
+  private disposeGroup(g: THREE.Group): void {
+    g.traverse((o) => { const m = o as THREE.Mesh; if (m !== (g as unknown)) { m.geometry?.dispose?.(); (m.material as THREE.Material | undefined)?.dispose?.(); } });
+    g.clear();
+    g.removeFromParent();
   }
 
   private disposeView(v: ObjView): void {
@@ -245,7 +341,7 @@ export class Viewport {
       if (mat.flatShading !== !o.smooth) { mat.flatShading = !o.smooth; mat.needsUpdate = true; }
       mat.transparent = this.options.xray || editing; mat.opacity = this.options.xray ? 0.45 : editing ? 0.85 : 1;
       mat.depthWrite = !mat.transparent;
-      v.body.visible = !(this.traceView && this.traceTargetId() === o.id);
+      v.body.visible = !(this.traceView && this.traceTargetId() === o.id) && this.editor.field?.objectId !== o.id;
       v.outline!.visible = selected && !editing && v.body.visible;
       (v.outline!.material as THREE.LineBasicMaterial).color.set(active ? COL.active : COL.select);
       v.wire!.visible = this.options.wire && v.body.visible;
@@ -605,10 +701,13 @@ export class Viewport {
     const G = this.traceGroup;
     if (snap) {
       const m = EditMesh.fromSnapshot(snap);
-      const ghost = new THREE.Mesh(toGeometry(m).geo, new THREE.MeshStandardMaterial({ color: 0x8792a6, roughness: 0.7, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, flatShading: true }));
-      const ghostWire = new THREE.LineSegments(edgeLines(m), new THREE.LineBasicMaterial({ color: 0xe5e9f0, transparent: true, opacity: 0.55 }));
-      ghost.userData.ghost = ghostWire.userData.ghost = true;
-      G.add(ghost, ghostWire);
+      // A step that carries a field shows it on the ghost, so the numbers are seen on the surface.
+      const hasField = !!s.field && s.field.length === m.verts.length;
+      const ghosts: THREE.Object3D[] = hasField
+        ? this.fieldMeshes(m, s.field!, { diverging: s.fieldDiverging, log: s.fieldLog, contours: s.contours, flat: true, opacity: 0.92 })
+        : [new THREE.Mesh(toGeometry(m).geo, new THREE.MeshStandardMaterial({ color: 0x8792a6, roughness: 0.7, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, flatShading: true }))];
+      const ghostWire = new THREE.LineSegments(edgeLines(m), new THREE.LineBasicMaterial({ color: 0xe5e9f0, transparent: true, opacity: hasField ? 0.18 : 0.55 }));
+      for (const g of [...ghosts, ghostWire]) { g.userData.ghost = true; G.add(g); }
       if (s.faces?.length) {
         const sub = new EditMesh(m.verts, s.faces.filter((f) => f < m.faces.length).map((f) => m.faces[f]));
         G.add(new THREE.Mesh(toGeometry(sub).geo, new THREE.MeshBasicMaterial({ color: COL.traceFace, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })));

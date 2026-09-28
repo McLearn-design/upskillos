@@ -13,11 +13,15 @@
 
 import { EditMesh, type Vec3 } from './EditMesh';
 import type { Editor, ScriptResult } from './Editor';
-import { Scene, type SceneObject } from './Scene';
+import { Scene, type SceneJSON, type SceneObject } from './Scene';
 import { makePrimitive, type PrimitiveParams, type PrimitiveType } from './primitives';
 import { defaultModifier, evaluate, onMirrorPlane, type Modifier } from './modifiers';
 import { catmullClark } from './subdivision';
 import { Trace } from './trace';
+import { Recorder, brief, instrument, type Recording } from './recorder';
+import { gaussianCurvature, heatGeodesic, meanCurvature, operators, smooth as smoothMesh } from './geometry';
+import type { FieldSpec } from './fields';
+import { CHANNELS, cloneAnimation, hasKeys, removeKey, setKey, transformAt, type Interp } from './animation';
 
 type Vec3Handle = { x: number; y: number; z: number; set(x: number, y: number, z: number): Vec3Handle; toArray(): Vec3 };
 
@@ -31,6 +35,24 @@ function vecHandle(get: () => Vec3): Vec3Handle {
     toString: () => `(${get().map((c) => +c.toFixed(4)).join(', ')})`,
   };
   return h;
+}
+
+function vec(v: ArrayLike<number> | Vec3Handle): Vec3 {
+  const a = 'toArray' in v ? v.toArray() : Array.from(v as ArrayLike<number>);
+  if (a.length !== 3 || a.some((x) => typeof x !== 'number' || !Number.isFinite(x))) throw new Error(`Expected three numbers, got ${JSON.stringify(a)}`);
+  return [a[0], a[1], a[2]];
+}
+
+function assign(target: Vec3, v: ArrayLike<number> | Vec3Handle): void {
+  const a = vec(v);
+  target[0] = a[0]; target[1] = a[1]; target[2] = a[2];
+}
+
+const INTERPS: Interp[] = ['constant', 'linear', 'ease'];
+function interpOf(x: unknown): Interp | undefined {
+  if (x === undefined) return undefined;
+  if (!INTERPS.includes(x as Interp)) throw new Error(`Interpolation must be "constant", "linear" or "ease", not ${JSON.stringify(x)}`);
+  return x as Interp;
 }
 
 const PRIMS: PrimitiveType[] = ['cube', 'plane', 'grid', 'circle', 'cylinder', 'cone', 'uvSphere', 'torus'];
@@ -99,6 +121,23 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       weld(tol = 0) { m().weld(tol); return api; },
       translate(verts: number[], d: Vec3) { m().translateVerts(verts, d); return api; },
       setVerts(map: Record<number, Vec3>) { for (const [i, p] of Object.entries(map)) m().verts[Number(i)] = [p[0], p[1], p[2]]; m().touch(); return api; },
+      // Geometry processing: one number per vertex, as a plain array.
+      curvature(kind: 'mean' | 'gaussian' = 'mean') { return Array.from(kind === 'gaussian' ? gaussianCurvature(m()) : meanCurvature(m())); },
+      geodesic(from: number | number[]) { return Array.from(heatGeodesic(m(), Array.isArray(from) ? from : [from], trace('Heat method'))); },
+      smooth(opts: { verts?: number[]; iterations?: number; lambda?: number; method?: 'uniform' | 'cotan' } = {}) { smoothMesh(m(), { iterations: opts.iterations ?? 5, lambda: opts.lambda ?? 0.5, method: opts.method ?? 'uniform', only: opts.verts }, trace('Smooth')); return api; },
+      /** The cotan Laplacian as rows of [neighbour, weight] pairs, and each vertex's area (mass). */
+      laplacian() { const { C, mass } = operators(m()); return { rows: C.rows.map((r) => [...r.entries()]), mass: Array.from(mass) }; },
+      /** Colour the mesh by a field: "geodesic" (with from), "mean", "gaussian", "x", "y", "z", or your own values. */
+      showField(what: string | number[], opts: { from?: number | number[]; source?: number | number[]; label?: string } = {}) {
+        const from = opts.from ?? opts.source;
+        const spec: FieldSpec = Array.isArray(what) ? { kind: 'custom', values: what.map(Number), label: opts.label }
+          : what === 'geodesic' ? { kind: 'geodesic', sources: from === undefined ? [] : Array.isArray(from) ? from : [from] }
+          : what === 'mean' || what === 'gaussian' ? { kind: what }
+          : what === 'x' || what === 'y' || what === 'z' ? { kind: 'coord', axis: 'xyz'.indexOf(what) as 0 | 1 | 2 }
+          : (() => { throw new Error(`showField: unknown field "${what}". Use "geodesic", "mean", "gaussian", "x", "y", "z" or an array of numbers`); })();
+        if (!editor.showField(spec, o.id)) throw new Error(editor.message);
+        return api;
+      },
       toString: () => { const s = m().stats(); return `Mesh(${s.verts} verts, ${s.edges} edges, ${s.faces} faces)`; },
     };
     return api;
@@ -106,13 +145,15 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
 
   function objHandle(o: SceneObject) {
     const mesh = o.mesh || o.kind === 'mesh' ? meshHandle(o) : null;
+    const pos = vecHandle(() => o.position), rot = vecHandle(() => o.rotation), scl = vecHandle(() => o.scale);
     const h = {
       get id() { return o.id; },
       get name() { return o.name; }, set name(v: string) { o.name = scene().uniqueName(String(v), o.id); },
       get kind() { return o.kind; },
-      position: vecHandle(() => o.position),
-      rotation: vecHandle(() => o.rotation),
-      scale: vecHandle(() => o.scale),
+      // Read a handle and change one axis (cube.position.x = 2), or assign all three: cube.position = [1, 2, 3].
+      get position() { return pos; }, set position(v: ArrayLike<number> | Vec3Handle) { assign(o.position, v); },
+      get rotation() { return rot; }, set rotation(v: ArrayLike<number> | Vec3Handle) { assign(o.rotation, v); },
+      get scale() { return scl; }, set scale(v: ArrayLike<number> | Vec3Handle) { assign(o.scale, v); },
       get visible() { return o.visible; }, set visible(v: boolean) { o.visible = !!v; },
       get smooth() { return o.smooth; }, set smooth(v: boolean) { o.smooth = !!v; },
       material: {
@@ -138,6 +179,23 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       },
       delete() { scene().remove(o.id); },
       duplicate() { return objHandle(editor.duplicateOne(o)); },
+      // Animation: keys pin a channel to a value at a frame; frames in between are interpolated.
+      keyframe(frame: number, values: { position?: Vec3 | Vec3Handle; rotation?: Vec3 | Vec3Handle; scale?: Vec3 | Vec3Handle; interp?: Interp } = {}) {
+        if (!Number.isFinite(frame)) throw new Error('keyframe: the frame must be a number');
+        const given = CHANNELS.filter((c) => values[c] !== undefined);
+        o.anim ??= {};
+        for (const c of given.length ? given : CHANNELS) setKey(o.anim, c, Math.round(frame), values[c] !== undefined ? vec(values[c]!) : o[c], interpOf(values.interp));
+        return h;
+      },
+      deleteKeyframe(frame: number) { if (o.anim) { for (const c of CHANNELS) removeKey(o.anim, c, frame); if (!hasKeys(o.anim)) o.anim = undefined; } return h; },
+      setInterpolation(frame: number, interp: Interp) { const i = interpOf(interp)!; for (const c of CHANNELS) for (const k of o.anim?.[c] ?? []) if (k.frame === frame) k.interp = i; return h; },
+      get rotationMode() { return o.anim?.rotationMode ?? 'euler'; },
+      set rotationMode(m: 'euler' | 'quaternion') { if (m !== 'euler' && m !== 'quaternion') throw new Error('rotationMode is "euler" or "quaternion"'); (o.anim ??= {}).rotationMode = m; },
+      /** The keys, per channel. */
+      get animation() { return cloneAnimation(o.anim) ?? null; },
+      clearAnimation() { o.anim = undefined; return h; },
+      /** The transform at a frame, without going there. */
+      sample(frame: number) { const t = transformAt(o, frame); return { position: [...t.position], rotation: [...t.rotation], scale: [...t.scale] }; },
       toString: () => `${o.kind === 'mesh' ? 'Mesh' : o.kind === 'light' ? 'Light' : 'Empty'} "${o.name}"`,
     };
     return h;
@@ -165,6 +223,18 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
     get selected() { return [...editor.selected].map((id) => scene().get(id)).filter(Boolean).map((o) => objHandle(o!)); },
     get active() { const o = editor.activeObject; return o ? objHandle(o) : null; },
     delete(h: { id: string }) { scene().remove(h.id); },
+    /** Stop showing a heat map. */
+    hideField() { editor.clearField(); },
+    /** The current frame. Setting it moves every animated object to its keyed transform. */
+    get frame() { return scene().timeline.frame; },
+    set frame(f: number) { scene().timeline.frame = Math.round(f); editor.applyFrame(); },
+    get timeline() { const t = scene().timeline; return { start: t.start, end: t.end, fps: t.fps }; },
+    setTimeline(t: { start?: number; end?: number; fps?: number }) {
+      const cur = scene().timeline;
+      const start = Math.round(t.start ?? cur.start), end = Math.round(t.end ?? cur.end), fps = Math.round(t.fps ?? cur.fps);
+      if (!(end > start) || !(fps >= 1)) throw new Error('setTimeline: need end > start and fps ≥ 1');
+      scene().timeline = { start, end, fps, frame: Math.min(end, Math.max(start, cur.frame)) };
+    },
     clear() { scene().objects = []; },
   };
 
@@ -178,27 +248,63 @@ function show(x: unknown): string {
   try { return JSON.stringify(x, (_k, v) => (typeof v === 'number' ? +v.toFixed(6) : v instanceof Float32Array || v instanceof Uint32Array ? Array.from(v) : v)); } catch { return String(x); }
 }
 
-/** Run a script as one undoable step. On any error the scene is left exactly as it was. */
-export function runScript(editor: Editor, code: string, label = 'Run script'): ScriptResult {
+/** Keep a script's changes as one undo step, unless it left a mesh that cannot be drawn. */
+export function finishScript(editor: Editor, before: SceneJSON, label: string, code: string): void {
+  // Objects whose keys the script changed take their transform for the current frame. Others keep
+  // what the script set, even if animated, until the next frame change (as in Blender).
+  const was = new Map(before.objects.map((o) => [o.id, JSON.stringify(o.anim ?? null)]));
+  editor.applyFrame(new Set(editor.scene.objects.filter((o) => o.anim && was.get(o.id) !== JSON.stringify(o.anim)).map((o) => o.id)));
+  const bad = editor.scene.objects.flatMap((o) => (o.mesh ? o.mesh.touch().validate().map((m) => `${o.name}: ${m}`) : []));
+  if (bad.length) throw new Error(`The script left an invalid mesh:\n${bad.slice(0, 5).join('\n')}`);
+  editor.scripting = false;
+  editor.commitChange(label, before, code);
+}
+
+/** Put the scene back exactly as it was before the script. */
+export function rollbackScript(editor: Editor, before: SceneJSON): void {
+  editor.scripting = false;
+  const s = Scene.fromJSON(before);
+  editor.scene.objects = s.objects;
+  editor.scene.nextId = s.nextId;
+  editor.emit('scene');
+}
+
+/**
+ * Run a script as one undoable step. On any error the scene is left exactly as it was.
+ * With `record`, every statement reports its line and the variables in scope, and
+ * the result carries a recording the step player can replay.
+ */
+export function runScript(editor: Editor, code: string, label = 'Run script', opts: { record?: boolean } = {}): ScriptResult & { recording?: Recording } {
+  editor.endPreview();
   const output: string[] = [];
   const before = editor.scene.toJSON();
   const api = makeApi(editor, (s) => output.push(s));
+  const rec = opts.record ? new Recorder(editor, () => output.length) : null;
+  let line: number | null = null;
+  const step = (l: number, vars: () => [string, unknown][]) => {
+    line = l;
+    if (rec && !rec.truncated) rec.event(l, vars().map(([k, v]) => [k, brief(v)]));
+  };
+  const recording = (error: { line: number | null; message: string } | null): Recording | undefined => rec
+    ? { lang: 'js', code, events: rec.events, scenes: rec.scenes, truncated: rec.truncated, scenesCapped: rec.scenesCapped, output, error }
+    : undefined;
   editor.scripting = true;
   try {
-    const fn = new Function('scene', 'log', 'print', 'console', `"use strict";\n${code}`);
-    const r = fn(api.scene, api.log, api.print, api.console);
+    let src = code;
+    if (rec) {
+      try { src = instrument(code); }
+      catch (e) { const m = e instanceof Error ? e.message : String(e); throw new Error(`Syntax error: ${m}`); }
+    }
+    const fn = new Function('scene', 'log', 'print', 'console', '__step', `"use strict";\n${src}`);
+    const r = fn(api.scene, api.log, api.print, api.console, step);
     if (r !== undefined) output.push(show(r));
-    const bad = editor.scene.objects.flatMap((o) => (o.mesh ? o.mesh.touch().validate().map((m) => `${o.name}: ${m}`) : []));
-    if (bad.length) throw new Error(`The script left an invalid mesh:\n${bad.slice(0, 5).join('\n')}`);
-    editor.scripting = false;
-    editor.commitChange(label, before, code);
-    return { output, error: null };
+    rec?.end();
+    finishScript(editor, before, label, code);
+    return { output, error: null, recording: recording(null) };
   } catch (e) {
-    editor.scripting = false;
-    const s = Scene.fromJSON(before);
-    editor.scene.objects = s.objects;
-    editor.scene.nextId = s.nextId;
-    editor.emit('scene');
-    return { output, error: e instanceof Error ? e.message : String(e) };
+    const message = e instanceof Error ? e.message : String(e);
+    rec?.end();
+    rollbackScript(editor, before);
+    return { output, error: message, recording: recording({ line, message }) };
   }
 }

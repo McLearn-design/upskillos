@@ -17,7 +17,7 @@ export function useEditorVersion(editor: Editor): number {
     (cb) => {
       let raf = 0;
       return editor.subscribe((k) => {
-        if (k === 'live') { if (!raf) raf = requestAnimationFrame(() => { raf = 0; snap.current = editor.version; cb(); }); return; }
+        if (k === 'live' || k === 'frame') { if (!raf) raf = requestAnimationFrame(() => { raf = 0; snap.current = editor.version; cb(); }); return; }
         snap.current = editor.version; cb();
       });
     },

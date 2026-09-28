@@ -142,4 +142,104 @@ moon.position.set(0.55, 0, 0)
 orbit.rotation.y = 1.0                    // move the planet along its orbit; the moon comes too
 log('moon world matrix (column-major):', moon.worldMatrix.map(x => +x.toFixed(3)))`,
   },
+  {
+    id: 'curvature',
+    title: 'Curvature you can check',
+    about: 'Measure curvature and distance along the surface, compare them with the exact answers, then colour the mesh by them.',
+    code: `// A sphere of radius r bends by 1/r in every direction:
+// mean curvature H = 1/r, Gaussian curvature K = 1/r².
+const r = 2
+const ball = scene.add.uvSphere({ name: 'Ball', radius: r, segments: 48, rings: 24, position: [0, 2, 0] })
+const H = ball.mesh.curvature('mean'), K = ball.mesh.curvature('gaussian')
+const eq = ball.mesh.nearest([r, 0, 0])            // a vertex on the equator
+log('H at the equator', H[eq].toFixed(4), ' exact', 1 / r)
+log('K at the equator', K[eq].toFixed(4), ' exact', 1 / (r * r))
+
+// Gauss–Bonnet: K × area, summed over any closed surface, is 2π × (V − E + F).
+const { mass } = ball.mesh.laplacian()             // the area each vertex stands for
+const total = K.reduce((s, k, i) => s + k * mass[i], 0)
+log('Σ K·area =', total.toFixed(6), ' 4π =', (4 * Math.PI).toFixed(6), ' Euler', ball.mesh.stats().euler)
+
+// Walking distance from the north pole is r × (the angle from the pole).
+const pole = ball.mesh.nearest([0, r, 0])
+const d = ball.mesh.geodesic(pole)
+log('pole to equator', d[eq].toFixed(4), ' exact πr/2 =', (Math.PI * r / 2).toFixed(4))
+
+ball.mesh.showField('geodesic', { from: pole })    // try 'mean', 'gaussian', or your own numbers`,
+  },
+  {
+    id: 'euler-vs-slerp',
+    title: 'Euler vs quaternion rotation',
+    about: 'Two boxes, the same two rotation keys. One interpolates Euler angles, the other slerps quaternions. Press Space and watch them part.',
+    code: `scene.setTimeline({ start: 1, end: 72, fps: 24 })
+const make = (name, x, mode) => {
+  const b = scene.add.cube({ name, size: 1, position: [x, 1, -3] })
+  b.scale = [1.6, 0.3, 0.8]                       // a flat box, so its orientation is easy to read
+  b.keyframe(1, { rotation: [0, 0, 0], interp: 'linear' })
+  b.keyframe(72, { rotation: [Math.PI / 2, Math.PI / 2, 0] })   // a quarter turn about x, then about y
+  b.rotationMode = mode
+  return b
+}
+const e = make('Euler', -1.5, 'euler'), q = make('Slerp', 1.5, 'quaternion')
+e.material.color = '#5aa9ff'; q.material.color = '#ff9f1c'
+
+// Both start and end in the same pose. In between they differ:
+const mid = 36
+log('Euler angles at frame 36:', e.sample(mid).rotation.map(a => +(a * 180 / Math.PI).toFixed(1)))
+log('Slerp angles at frame 36:', q.sample(mid).rotation.map(a => +(a * 180 / Math.PI).toFixed(1)))
+log('The two quarter turns combine into one 120° turn; slerp takes it along the shortest arc, at even speed.')`,
+  },
+];
+
+/** The same ideas in Python (run through Pyodide). Keyword arguments are the options object: size=2 is { size: 2 }. */
+export const PY_EXAMPLES: Example[] = [
+  {
+    id: 'py-vertices-are-data',
+    title: 'Vertices are data',
+    about: 'Make a cube, move it, then bend it by changing its vertex coordinates. Try Step through and watch each line.',
+    code: `# A cube is eight points and six faces. Change the numbers, change the shape.
+cube = scene.add.cube(size=4, name='Wavy')
+cube.position = (3, 0, 0)
+cube.rotation.y = pi / 4                # radians: a quarter of a half turn
+
+cube.mesh.split()                       # more vertices to bend: each face into four
+cube.mesh.split()
+for v in cube.mesh.verts:
+    v.y += 0.4 * math.sin(2 * v.x)      # each vertex moves by a function of where it is
+
+print(cube.mesh)`,
+  },
+  {
+    id: 'py-stairs',
+    title: 'A staircase, step by step',
+    about: 'A loop that adds one step per pass. Step through it to see the loop variable and the scene change together.',
+    code: `steps = 6
+for i in range(steps):
+    s = scene.add.cube(name=f'Step {i}', size=1)
+    s.scale = (2, 0.3, 0.8)
+    s.position = (4, 0.15 + 0.3 * i, -2 + 0.8 * i)
+    s.material.color = f'hsl({30 + 20 * i}, 70%, 55%)'
+print(steps, 'steps, total height', round(0.3 * steps, 2))`,
+  },
+  {
+    id: 'py-curvature',
+    title: 'Curvature you can check',
+    about: 'Mean and Gaussian curvature of a sphere against 1/r and 1/r², Gauss–Bonnet, and distance along the surface.',
+    code: `r = 2
+ball = scene.add.uvSphere(name='Ball', radius=r, segments=48, rings=24, position=[0, 2, 0])
+H = ball.mesh.curvature('mean')
+K = ball.mesh.curvature('gaussian')
+eq = ball.mesh.nearest([r, 0, 0])       # a vertex on the equator
+print('H at the equator', round(H[eq], 4), ' exact', 1 / r)
+print('K at the equator', round(K[eq], 4), ' exact', 1 / r**2)
+
+mass = ball.mesh.laplacian().mass       # the area each vertex stands for
+total = sum(k * a for k, a in zip(K, mass))
+print('sum of K * area', round(total, 6), ' 4 pi =', round(4 * pi, 6))
+
+pole = ball.mesh.nearest([0, r, 0])
+d = ball.mesh.geodesic(pole)
+print('pole to equator', round(d[eq], 4), ' exact', round(pi * r / 2, 4))
+ball.mesh.showField('geodesic', source=pole)   # 'from' is a Python keyword, so: source`,
+  },
 ];

@@ -16,12 +16,17 @@ import { makePrimitive, type PrimitiveParams, type PrimitiveType } from './primi
 import { defaultModifier, evaluate, onMirrorPlane, type Modifier } from './modifiers';
 import { catmullClark } from './subdivision';
 import { Trace } from './trace';
+import { computeField, type FieldResult, type FieldSpec } from './fields';
+import { smooth as smoothMesh } from './geometry';
+import { CHANNELS, hasKeys, removeKey, setKey, transformAt, type Channel, type Interp } from './animation';
 
 export type Mode = 'object' | 'edit';
 export type SelectMode = 'vert' | 'edge' | 'face';
-export type ChangeKind = 'scene' | 'live' | 'select' | 'mode' | 'trace';
+export type ChangeKind = 'scene' | 'live' | 'select' | 'mode' | 'trace' | 'frame';
 export interface LogEntry { label: string; code: string | null }
 export interface ScriptResult { output: string[]; error: string | null }
+/** A heat map shown on one object: what was asked for, the mesh it was computed on, and the values. */
+export interface FieldView { objectId: string; spec: FieldSpec; mesh: EditMesh; result: FieldResult }
 
 /** A value as source code: numbers trimmed to 6 decimals, everything else as JSON. */
 export function lit(x: unknown): string {
@@ -54,10 +59,43 @@ export class Editor {
   private liveBefore: SceneJSON | null = null;
   /** Set by the script API so a script's own operations do not also log lines. */
   scripting = false;
+  /** The heat map being shown, if any. It is a view, not part of the scene: not saved, not undone. */
+  field: FieldView | null = null;
+  showContours = true;
+  /** Animation playback is running (the loop lives in the UI; this is the switch). */
+  playing = false;
+  /** While a past state of a script is shown: the real scene, kept aside. */
+  private realScene: Scene | null = null;
 
   subscribe(fn: (k: ChangeKind) => void): () => void { this.listeners.add(fn); return () => this.listeners.delete(fn); }
-  emit(k: ChangeKind): void { this.version++; for (const fn of this.listeners) fn(k); }
+  emit(k: ChangeKind): void {
+    if (this.field && (k === 'scene' || (k === 'live' && this.field.mesh.verts.length <= 3000))) this.refreshField();
+    this.version++; for (const fn of this.listeners) fn(k);
+  }
   say(msg: string): void { this.message = msg; this.emit('select'); }
+
+  // ── showing a past state (the script step player) ──────────────────────
+
+  get previewing(): boolean { return this.realScene !== null; }
+  /** The scene to save: the real one, even while a past state is shown. */
+  get modelScene(): Scene { return this.realScene ?? this.scene; }
+
+  /** Show a recorded state of the scene. Nothing is changed or undone; any real edit ends the preview first. */
+  preview(j: SceneJSON): void {
+    if (!this.realScene) {
+      this.realScene = this.scene;
+      if (this.mode === 'edit') { this.mode = 'object'; this.clearElements(false); }
+    }
+    this.scene = Scene.fromJSON(j);
+    this.emit('scene');
+  }
+
+  endPreview(): void {
+    if (!this.realScene) return;
+    this.scene = this.realScene;
+    this.realScene = null;
+    this.emit('scene');
+  }
 
   get activeObject(): SceneObject | undefined { return this.active ? this.scene.get(this.active) : undefined; }
   get editObject(): SceneObject | undefined { return this.mode === 'edit' ? this.activeObject : undefined; }
@@ -65,6 +103,7 @@ export class Editor {
   // ── the one path for changes ───────────────────────────────────────────
 
   run<T>(label: string, code: string | null, fn: (trace?: Trace) => T, traceOp?: string): T {
+    this.endPreview();
     const before = this.scene.toJSON();
     const trace = this.traceEnabled && traceOp ? new Trace(traceOp) : undefined;
     const result = fn(trace);
@@ -88,7 +127,7 @@ export class Editor {
   }
 
   /** Start a continuous change (a gizmo drag). Call liveUpdate while it runs and endLive at the end. */
-  beginLive(): void { this.liveBefore = this.scene.toJSON(); }
+  beginLive(): void { this.endPreview(); this.liveBefore = this.scene.toJSON(); }
   liveUpdate(): void { this.emit('live'); }
   endLive(label: string, code: string | null): void {
     if (!this.liveBefore) return;
@@ -99,6 +138,7 @@ export class Editor {
   get isLive(): boolean { return this.liveBefore !== null; }
 
   undo(): void {
+    this.endPreview();
     const e = this.undoStack.pop();
     if (!e) return;
     this.redoStack.push(e);
@@ -108,6 +148,7 @@ export class Editor {
   }
 
   redo(): void {
+    this.endPreview();
     const e = this.redoStack.pop();
     if (!e) return;
     this.undoStack.push(e);
@@ -127,6 +168,7 @@ export class Editor {
   // ── files ──────────────────────────────────────────────────────────────
 
   newScene(): void {
+    this.realScene = null;
     this.scene = new Scene();
     this.mode = 'object';
     this.selected.clear(); this.active = null; this.clearElements(false);
@@ -289,6 +331,7 @@ export class Editor {
   // ── edit mode ──────────────────────────────────────────────────────────
 
   enterEdit(): boolean {
+    this.endPreview();
     const o = this.activeObject;
     if (!o?.mesh) { this.say('Select a mesh object to edit'); return false; }
     this.mode = 'edit';
@@ -399,6 +442,7 @@ export class Editor {
 
   private meshOp(label: string, needs: 'faces' | 'verts' | 'edges' | 'none', make: (o: SceneObject, mesh: EditMesh, items: number[] | [number, number][], trace?: Trace) => string | null, traceOp?: string): boolean {
     const o = this.editObject;
+    this.endPreview();
     if (!o?.mesh) { this.say('Enter edit mode (Tab) on a mesh first'); return false; }
     const items = needs === 'faces' ? this.selectedFaces() : needs === 'verts' ? this.selectedVerts() : needs === 'edges' ? this.selectedEdges() : [];
     if (needs !== 'none' && !items.length) { this.say(`${label}: select some ${needs === 'faces' ? 'faces' : needs === 'edges' ? 'edges' : 'vertices'} first`); return false; }
@@ -530,5 +574,150 @@ export class Editor {
     if (!mir || mir.type !== 'mirror' || !o.mesh) return;
     const k = { x: 0, y: 1, z: 2 }[mir.axis];
     for (const v of verts) if (Math.abs(start[v][k]) <= mir.merge) o.mesh.verts[v][k] = 0;
+  }
+
+  // ── heat maps ──────────────────────────────────────────────────────────
+
+  /** The mesh a field is computed on: what the viewport draws (modifiers applied), or the cage for script values. */
+  private fieldMesh(o: SceneObject, spec: FieldSpec): EditMesh {
+    return spec.kind === 'custom' || !o.modifiers.length ? o.mesh!.clone() : evaluate(o.mesh!, o.modifiers, 3);
+  }
+
+  /** Show a per-vertex field on an object. Returns false (with a message) when it cannot. */
+  showField(spec: FieldSpec, objectId = this.active): boolean {
+    const o = objectId ? this.scene.get(objectId) : undefined;
+    if (!o?.mesh) { this.say('Select a mesh object to show a heat map on'); return false; }
+    if (spec.kind === 'geodesic' && !spec.sources.length) { this.say('Distance: select one or more vertices in edit mode to measure from'); return false; }
+    if (spec.kind === 'custom' && spec.values.length !== o.mesh.verts.length) { this.say(`Script values: need ${o.mesh.verts.length} values, one per vertex, got ${spec.values.length}`); return false; }
+    const mesh = this.fieldMesh(o, spec);
+    const trace = this.traceEnabled && spec.kind === 'geodesic' ? new Trace('Heat method') : undefined;
+    if (trace && mesh.verts.length <= trace.snapshotLimit) trace.before = mesh.toSnapshot();
+    this.field = { objectId: o.id, spec, mesh, result: computeField(mesh, spec, trace) };
+    if (trace && trace.steps.length) { this.trace = trace; this.traceTarget = o.id; this.emit('trace'); }
+    if (!this.scripting && spec.kind !== 'custom') {
+      const args = spec.kind === 'geodesic' ? `"geodesic", { from: ${lit(spec.sources)} }` : spec.kind === 'coord' ? `"${'xyz'[spec.axis]}"` : `"${spec.kind}"`;
+      this.log.push({ label: `Show ${this.field.result.label}`, code: `${ref(o)}.mesh.showField(${args})` });
+    }
+    this.message = this.field.result.label;
+    this.emit('select');
+    return true;
+  }
+
+  /** Distance along the surface from the selected vertices (edit mode). */
+  showDistanceFromSelection(): boolean {
+    const sources = this.mode === 'edit' ? this.selectedVerts() : [];
+    return this.showField({ kind: 'geodesic', sources });
+  }
+
+  clearField(): void { if (!this.field) return; this.field = null; this.emit('select'); }
+
+  /** Recompute the field after the mesh changed; drop it when it no longer applies. */
+  private refreshField(): void {
+    const f = this.field!;
+    const o = this.scene.get(f.objectId);
+    // A past state shown by the step player may not have the object yet: keep the field for when it returns.
+    if (!o?.mesh && this.previewing) return;
+    if (!o?.mesh || (f.spec.kind === 'custom' && f.spec.values.length !== o.mesh.verts.length)) { this.field = null; return; }
+    const mesh = this.fieldMesh(o, f.spec);
+    let spec = f.spec;
+    if (spec.kind === 'geodesic') {
+      spec = { kind: 'geodesic', sources: spec.sources.filter((s) => s < mesh.verts.length) };
+      if (!spec.sources.length) { this.field = null; return; }
+    }
+    try { this.field = { objectId: o.id, spec, mesh, result: computeField(mesh, spec) }; } catch { this.field = null; }
+  }
+
+  /** Laplacian smoothing of the selected vertices: each moves toward the average of its neighbours. */
+  smoothVerts(iterations = 5, lambda = 0.5): boolean {
+    const n = Math.max(1, Math.min(200, Math.round(iterations))), l = Math.max(0, Math.min(1, lambda));
+    const ok = this.meshOp('Smooth vertices', 'verts', (o, m, verts, t) => {
+      smoothMesh(m, { iterations: n, lambda: l, only: verts as number[] }, t);
+      return `${ref(o)}.mesh.smooth({ verts: ${lit(verts)}, iterations: ${n}, lambda: ${lit(l)} })`;
+    }, 'Smooth');
+    if (ok) this.remember('Smooth vertices', { iterations: n, lambda: l }, (p) => this.smoothVerts(p.iterations, p.lambda));
+    return ok;
+  }
+
+  // ── animation ──────────────────────────────────────────────────────────
+
+  get frame(): number { return this.scene.timeline.frame; }
+
+  /**
+   * Go to a frame: every animated object takes its keyed transform. As in Blender,
+   * changing frame is not an undo step, and an unkeyed change to an animated
+   * channel is overwritten at the next frame change: insert a key (I) to keep it.
+   */
+  setFrame(f: number): void {
+    const t = this.scene.timeline;
+    t.frame = Math.round(f);
+    this.applyFrame();
+    this.emit('frame');
+  }
+
+  /** Put animated objects (all, or those listed) at their transform for the current frame. */
+  applyFrame(only?: Set<string>): void {
+    for (const o of this.scene.objects) {
+      if (!hasKeys(o.anim) || (only && !only.has(o.id))) continue;
+      const x = transformAt(o, this.scene.timeline.frame);
+      o.position = [...x.position] as Vec3; o.rotation = [...x.rotation] as Vec3; o.scale = [...x.scale] as Vec3;
+    }
+  }
+
+  setPlaying(on: boolean): void { this.playing = on; this.emit('select'); }
+
+  private keyTargets(): SceneObject[] {
+    const ids = this.selected.size ? [...this.selected] : this.active ? [this.active] : [];
+    return ids.map((id) => this.scene.get(id)).filter((o): o is SceneObject => !!o);
+  }
+
+  /** Key the selected objects' current transforms at the current frame (Blender: I). */
+  insertKey(channels: Channel[] = CHANNELS): boolean {
+    const objs = this.keyTargets();
+    if (!objs.length) { this.say('Insert keyframe: select an object first'); return false; }
+    const f = this.frame;
+    const code = objs.map((o) => `${ref(o)}.keyframe(${f}, { ${channels.map((c) => `${c}: ${lit(o[c])}`).join(', ')} })`).join('\n');
+    this.run(`Insert keyframe at frame ${f}`, code, () => { for (const o of objs) { o.anim ??= {}; for (const c of channels) setKey(o.anim, c, f, o[c]); } });
+    return true;
+  }
+
+  /** Remove the selected objects' keys at the current frame. */
+  deleteKey(): boolean {
+    const f = this.frame;
+    const objs = this.keyTargets().filter((o) => CHANNELS.some((c) => o.anim?.[c]?.some((k) => k.frame === f)));
+    if (!objs.length) { this.say(`No keyframe at frame ${f} on the selection`); return false; }
+    this.run(`Delete keyframe at frame ${f}`, objs.map((o) => `${ref(o)}.deleteKeyframe(${f})`).join('\n'), () => {
+      for (const o of objs) { for (const c of CHANNELS) removeKey(o.anim!, c, f); if (!hasKeys(o.anim)) o.anim = undefined; }
+    });
+    return true;
+  }
+
+  /** How the value leaves the keys at the current frame: constant, linear or eased. */
+  setInterpolation(interp: Interp): boolean {
+    const f = this.frame;
+    const objs = this.keyTargets().filter((o) => CHANNELS.some((c) => o.anim?.[c]?.some((k) => k.frame === f)));
+    if (!objs.length) { this.say(`Interpolation: go to a frame with a keyframe (frame ${f} has none)`); return false; }
+    this.run(`Interpolation ${interp}`, objs.map((o) => `${ref(o)}.setInterpolation(${f}, ${lit(interp)})`).join('\n'), () => {
+      for (const o of objs) for (const c of CHANNELS) for (const k of o.anim?.[c] ?? []) if (k.frame === f) k.interp = interp;
+      this.applyFrame();
+    });
+    return true;
+  }
+
+  setRotationMode(id: string, mode: 'euler' | 'quaternion'): void {
+    const o = this.scene.get(id);
+    if (!o) return;
+    this.run(mode === 'quaternion' ? 'Rotation: quaternion slerp' : 'Rotation: Euler', `${ref(o)}.rotationMode = ${lit(mode)}`, () => { (o.anim ??= {}).rotationMode = mode; this.applyFrame(); });
+  }
+
+  setTimeline(patch: Partial<{ start: number; end: number; fps: number }>): void {
+    const t = { ...this.scene.timeline, ...patch };
+    t.start = Math.round(t.start); t.end = Math.max(t.start + 1, Math.round(t.end)); t.fps = Math.max(1, Math.min(240, Math.round(t.fps)));
+    this.run('Timeline', `scene.setTimeline(${lit({ start: t.start, end: t.end, fps: t.fps })})`, () => { this.scene.timeline = { ...t, frame: Math.min(t.end, Math.max(t.start, t.frame)) }; this.applyFrame(); });
+  }
+
+  clearAnimation(id: string): void {
+    const o = this.scene.get(id);
+    if (!o?.anim) return;
+    this.run('Clear animation', `${ref(o)}.clearAnimation()`, () => { o.anim = undefined; });
   }
 }

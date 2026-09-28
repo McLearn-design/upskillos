@@ -32,6 +32,15 @@ export interface TraceStep {
   values?: [string, string][];
   /** The mesh as it stands after this step (small meshes only). */
   mesh?: MeshSnapshot;
+  /** A value per vertex, drawn as a heat map while this step is shown. */
+  field?: number[];
+  fieldLabel?: string;
+  /** Colour by log(value): for fields spanning many orders of magnitude, like heat. */
+  fieldLog?: boolean;
+  /** Colour around zero (blue negative, red positive) instead of low to high. */
+  fieldDiverging?: boolean;
+  /** Draw this many iso-lines of the field. */
+  contours?: number;
 }
 
 export interface MeshLike { toSnapshot(): MeshSnapshot; verts: Vec3[] }
