@@ -396,7 +396,7 @@ function generateThreeJsExample(): SinglePageData {
   camera.position.set(0, 28, 60); camera.lookAt(0, 0, 0);
   var renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(W, H); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.domElement.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;display:block;';
   container.appendChild(renderer.domElement);
   scene.add(new THREE.AmbientLight(0x0a0a22, 3));

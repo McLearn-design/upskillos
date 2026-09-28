@@ -2933,7 +2933,7 @@ function Arm3DCanvas({ angles, waypoints, highlightWpIdx, target3d, target3dTol,
     renderer.setSize(W, H);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.setClearColor(0x060e1a);
     mount.appendChild(renderer.domElement);
 

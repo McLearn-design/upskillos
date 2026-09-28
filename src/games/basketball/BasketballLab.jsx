@@ -84,7 +84,8 @@ export default function BasketballLab({ onClose }) {
   const arcLineRef     = useRef(null)
   const basketGroupRef = useRef(null)
   const rafRef         = useRef(null)
-  const clockRef       = useRef(new THREE.Clock(false))
+  const timerRef       = useRef(null)
+  if (timerRef.current === null) timerRef.current = new THREE.Timer()
   const hudRef         = useRef(null)
   const sideCanvasRef  = useRef(null)
   const arrowRef       = useRef(null)
@@ -186,7 +187,7 @@ export default function BasketballLab({ onClose }) {
     renderer.setSize(W, H)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.shadowMap.type = THREE.PCFShadowMap
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 0.95
     mount.appendChild(renderer.domElement)
@@ -537,11 +538,14 @@ export default function BasketballLab({ onClose }) {
     resizeObserver.observe(mount)
 
     // ── Animation loop ────────────────────────────────────────────────────────
-    const clock = clockRef.current; clock.start()
+    const timer = timerRef.current
+    timer.connect(document)
+    timer.reset()
 
     function loop() {
       rafRef.current = requestAnimationFrame(loop)
-      const rawDt = clamp(clock.getDelta(), 0, 0.05)
+      timer.update()
+      const rawDt = clamp(timer.getDelta(), 0, 0.05)
       const g  = gs.current
       const effDt = rawDt * (g.slowMo ? 0.2 : 1)  // physics run at 0.2× in slo-mo
 
@@ -808,6 +812,7 @@ export default function BasketballLab({ onClose }) {
       dom.removeEventListener('touchend', onTouchEnd)
       window.removeEventListener('resize', onResize)
       resizeObserver.disconnect()
+      timer.disconnect()
       if (document.pointerLockElement === dom) document.exitPointerLock()
       renderer.dispose()
       if (mount.contains(dom)) mount.removeChild(dom)

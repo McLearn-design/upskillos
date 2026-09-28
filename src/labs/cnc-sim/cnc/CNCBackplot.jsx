@@ -176,7 +176,13 @@ export default function CNCBackplot({
         });
       }
     });
-    scene.add(tc);
+    // TransformControls stopped extending Object3D in three r169. Add its
+    // visual helper on newer releases while retaining compatibility with r168.
+    const tcWithHelper = tc;
+    const tcHelper = typeof tcWithHelper.getHelper === "function"
+      ? tcWithHelper.getHelper()
+      : tc;
+    scene.add(tcHelper);
     transformControlsRef.current = tc;
 
     // ── Fixture click-to-select + face-pick ───────────────────────────────

@@ -224,7 +224,7 @@ export default function MiniGolfGame({ params = {}, height: rootHeight = 640, on
     const qq = cls => root.querySelectorAll('.' + cls);
 
     // ── Game state ─────────────────────────────────────────────
-    let scene, camera, renderer, clock, controls;
+    let scene, camera, renderer, timer, controls;
     let ball3d, arrowMeshes = {}, trailPoints = [], trailLine;
     let obstacles3d = [];
     let pos, vel;
@@ -487,7 +487,7 @@ export default function MiniGolfGame({ params = {}, height: rootHeight = 640, on
       renderer.setSize(W, H);
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
       renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.shadowMap.type = THREE.PCFShadowMap;
 
       controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
@@ -509,7 +509,8 @@ export default function MiniGolfGame({ params = {}, height: rootHeight = 640, on
       scene.add(dir);
       scene.add(new THREE.AmbientLight(0x223344, 0.5));
 
-      clock = new THREE.Clock();
+      timer = new THREE.Timer();
+      timer.connect(document);
     }
 
     function onResize() {
@@ -1348,7 +1349,7 @@ export default function MiniGolfGame({ params = {}, height: rootHeight = 640, on
 
         // Hole 8: Dynamic Pulsing Green
         if (lv.dynamicGreen) {
-          const t = clock.getElapsedTime();
+          const t = timer.getElapsed();
           const pulse = Math.sin(t * 3);
           const ground = obstacles3d.find(o => o.geometry.type === 'PlaneGeometry');
           if (ground) ground.scale.set(1 + pulse * 0.05, 1 + pulse * 0.05, 1);
@@ -1921,7 +1922,8 @@ export default function MiniGolfGame({ params = {}, height: rootHeight = 640, on
     function animate() {
       if (stopped) return;
       requestAnimationFrame(animate);
-      const raw = clock.getDelta();
+      timer.update();
+      const raw = timer.getDelta();
       const dt  = slowMo ? raw * 0.2 : raw;
 
       updateSceneObjects(dt);   // spinners always rotate, even pre-putt
@@ -2002,6 +2004,7 @@ export default function MiniGolfGame({ params = {}, height: rootHeight = 640, on
       window.removeEventListener('resize', onResize);
       window.removeEventListener('keydown', onKey);
       resizeObserver.disconnect();
+      if (timer) timer.disconnect();
       if (renderer) { renderer.dispose(); }
     };
   }, []);

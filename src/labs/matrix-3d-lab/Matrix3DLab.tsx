@@ -739,7 +739,7 @@ export default function Matrix3DLab({ onBack }: Matrix3DLabProps) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(W, H);
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     el.appendChild(renderer.domElement);
 
     // Grid + floor

@@ -99,7 +99,7 @@
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
-    "three": "^0.168.0",
+    "three": "0.186.0",
     "tone": "^15.1.22",
     "trystero": "^0.23.1",
     "ts-fsrs": "^5.4.2"
