@@ -46,16 +46,21 @@ export function mergeProgress(local: ProgressMap | null | undefined, remote: Pro
       continue
     }
     const r = merged[id]
+    const quiz = ((localLesson.quiz?.attemptedAt ?? 0) > (r.quiz?.attemptedAt ?? 0))
+      ? localLesson.quiz
+      : r.quiz
+    // Do not materialize `quiz: undefined`. Firestore rejects undefined at
+    // any depth, and entries that only contain reading/checkpoint progress
+    // legitimately have no quiz field at all.
+    const { quiz: _oldQuiz, ...remoteWithoutQuiz } = r
     merged[id] = {
-      ...r,
+      ...remoteWithoutQuiz,
       completedCheckpoints: [
         ...new Set([...(r.completedCheckpoints ?? []), ...(localLesson.completedCheckpoints ?? [])]),
       ],
       readingProgress: Math.max(r.readingProgress ?? 0, localLesson.readingProgress ?? 0),
       // Keep whichever quiz attempt is more recent
-      quiz: ((localLesson.quiz?.attemptedAt ?? 0) > (r.quiz?.attemptedAt ?? 0))
-        ? localLesson.quiz
-        : r.quiz,
+      ...(quiz ? { quiz } : {}),
     }
   }
   return merged

@@ -4,7 +4,7 @@ import { buildProgressKey } from '../../context/progressMigration.ts'
 
 const TAG = 'text-xs font-bold tracking-wide uppercase px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 shadow-sm'
 
-function ModalContent({ item, onLaunch, getLessonStatus }) {
+function ModalContent({ item, onLaunch, getLessonProgress }) {
   const card = item.cardItem
   const meta = GLASS_META[card.color] ?? GLASS_META.slate
   const isCourse = item.kind === 'course'
@@ -20,7 +20,7 @@ function ModalContent({ item, onLaunch, getLessonStatus }) {
     const total = item.chapters.reduce((s, ch) => s + ch.lessons.length, 0)
     if (total > 0) {
       const done = item.chapters.reduce((s, ch) =>
-        s + ch.lessons.filter(l => getLessonStatus(buildProgressKey(item.key, l), 1) === 'complete').length, 0)
+        s + ch.lessons.filter(l => getLessonProgress(buildProgressKey(item.key, l)).status === 'complete').length, 0)
       pct = done / total
     } else {
       pct = 0
@@ -97,7 +97,7 @@ function ModalContent({ item, onLaunch, getLessonStatus }) {
   )
 }
 
-export default function ItemInfoModal({ item, onClose, onLaunch, getLessonStatus }) {
+export default function ItemInfoModal({ item, onClose, onLaunch, getLessonProgress }) {
   if (!item) return null
 
   // Use a portal to escape the backdrop-blur container of the TopicTable
@@ -119,7 +119,7 @@ export default function ItemInfoModal({ item, onClose, onLaunch, getLessonStatus
           ✕
         </button>
 
-        <ModalContent item={item} onLaunch={onLaunch} getLessonStatus={getLessonStatus} />
+        <ModalContent item={item} onLaunch={onLaunch} getLessonProgress={getLessonProgress} />
       </div>
     </div>
   )

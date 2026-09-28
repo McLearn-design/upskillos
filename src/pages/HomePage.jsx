@@ -88,7 +88,7 @@ const COURSE_ENTRIES = ALL_COURSES
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function HomePage() {
-  const { getLessonStatus } = useProgress()
+  const { getLessonProgress } = useProgress()
   const [searchQuery, setSearchQuery] = useState('')
   const [activeTopicId, setActiveTopicId] = useState('all')
   const [activeSubtopicId, setActiveSubtopicId] = useState(firstSubtopicId('all'))
@@ -103,7 +103,7 @@ export default function HomePage() {
     const total = chapters.reduce((n, ch) => n + ch.lessons.length, 0)
     if (total === 0) return acc
     const completed = chapters.reduce((n, ch) =>
-      n + ch.lessons.filter(l => getLessonStatus(buildProgressKey(course.key, l), 1) === 'complete').length, 0)
+      n + ch.lessons.filter(l => getLessonProgress(buildProgressKey(course.key, l)).status === 'complete').length, 0)
     if (completed > 0 && completed < total) {
       acc.push({ kind: 'course', key: course.key, differentiator: `${completed} of ${total} lessons complete — continue where you left off.` })
     }

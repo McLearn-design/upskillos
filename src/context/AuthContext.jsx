@@ -100,6 +100,22 @@ function snapshotLocalStorage() {
   return data
 }
 
+// Firestore rejects `undefined` anywhere in a document. LocalStorage values
+// are normally JSON-safe, but merge/migration code can produce optional
+// object properties with an explicit undefined value. Strip those properties
+// at the sync boundary so one malformed field cannot block every backup.
+function firestoreSafe(value) {
+  if (Array.isArray(value)) return value.map(item => item === undefined ? null : firestoreSafe(item))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== undefined)
+        .map(([key, item]) => [key, firestoreSafe(item)]),
+    )
+  }
+  return value
+}
+
 function restoreToLocalStorage(data) {
   for (const [key, value] of Object.entries(data)) {
     if (key.startsWith('_')) continue // skip metadata fields like _syncedAt
@@ -118,7 +134,7 @@ async function pushToFirestore(uid) {
   if (data['oc-progress']) data['oc-progress'] = normalizeProgress(data['oc-progress'])
   if (Object.keys(data).length === 0) return
   const ref = doc(db, 'users', uid, 'appData', 'snapshot')
-  await setDoc(ref, { ...data, _syncedAt: Date.now() }, { merge: true })
+  await setDoc(ref, firestoreSafe({ ...data, _syncedAt: Date.now() }), { merge: true })
 }
 
 async function syncOnSignIn(uid) {
@@ -180,7 +196,7 @@ async function syncOnSignIn(uid) {
     localStorage.setItem(TS_KEY, String(remoteTs))
 
     if (Object.keys(toPushUp).length > 0) {
-      await setDoc(ref, { ...toPushUp, _syncedAt: Date.now() }, { merge: true })
+      await setDoc(ref, firestoreSafe({ ...toPushUp, _syncedAt: Date.now() }), { merge: true })
     }
 
   } else {
@@ -188,7 +204,7 @@ async function syncOnSignIn(uid) {
     const local = snapshotLocalStorage()
     if (local['oc-progress']) local['oc-progress'] = normalizeProgress(local['oc-progress'])
     if (Object.keys(local).length > 0) {
-      await setDoc(ref, { ...local, _syncedAt: Date.now() })
+      await setDoc(ref, firestoreSafe({ ...local, _syncedAt: Date.now() }))
       localStorage.setItem(TS_KEY, String(Date.now()))
     }
   }

@@ -9,6 +9,13 @@ export function useContributorMode() {
   useEffect(() => {
     let cancelled = false
 
+    // The file API only exists in Vite development or the desktop app. A
+    // production-site probe can only return 404 and adds noise to every page.
+    if (!isElectron && !import.meta.env.DEV) {
+      setLoading(false)
+      return () => { cancelled = true }
+    }
+
     async function probe() {
       try {
         const [pingRes, statusRes] = await Promise.all([

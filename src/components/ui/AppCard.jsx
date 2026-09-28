@@ -75,10 +75,10 @@ function GameBody({ item }) {
   )
 }
 
-function CourseCard({ item, chapters, getLessonStatus, meta, innerRef, compact }) {
+function CourseCard({ item, chapters, getLessonProgress, meta, innerRef, compact }) {
   const total = chapters.reduce((s, ch) => s + ch.lessons.length, 0)
   const done  = chapters.reduce((s, ch) =>
-    s + ch.lessons.filter(l => getLessonStatus(buildProgressKey(item.key, l), 1) === 'complete').length, 0)
+    s + ch.lessons.filter(l => getLessonProgress(buildProgressKey(item.key, l)).status === 'complete').length, 0)
   const pct = total > 0 ? done / total : 0
   
   return (
@@ -132,7 +132,7 @@ function CourseCard({ item, chapters, getLessonStatus, meta, innerRef, compact }
   )
 }
 
-export default function AppCard({ item, variant = 'course', chapters, getLessonStatus, compact = false }) {
+export default function AppCard({ item, variant = 'course', chapters, getLessonProgress, compact = false }) {
   const ref = useRef(null)
   const meta = GLASS_META[item.color] ?? GLASS_META.slate
 
@@ -144,7 +144,7 @@ export default function AppCard({ item, variant = 'course', chapters, getLessonS
         onMouseEnter={() => { if (!compact && ref.current && document.documentElement.classList.contains('dark')) ref.current.style.boxShadow = meta.glow }}
         onMouseLeave={() => { if (!compact && ref.current && document.documentElement.classList.contains('dark')) ref.current.style.boxShadow = '' }}
       >
-        <CourseCard innerRef={ref} item={item} chapters={chapters} getLessonStatus={getLessonStatus} meta={meta} compact={compact} />
+        <CourseCard innerRef={ref} item={item} chapters={chapters} getLessonProgress={getLessonProgress} meta={meta} compact={compact} />
       </Link>
     )
   }

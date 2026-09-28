@@ -8,6 +8,7 @@ import {
   Maximize2, Minimize2,
 } from 'lucide-react'
 import { buildSvgDocument, parseSvgToShapes } from './shapesToSvg.js'
+import { useContributorMode } from '../../hooks/useContributorMode.js'
 
 const DEV_FS_API = '/api/dev-fs'
 const DEFAULT_DIAGRAMS_DIR = 'src/courses/geometry/diagrams'
@@ -866,6 +867,7 @@ function ShapePanel({type, form, setForm, onCreate, onUpdate, selectedId, onClea
 // ─── Main ScratchPad ────────────────────────────────────────────────────────
 
 export default function ScratchPad({isOpen,onClose,onSnap,openFile}) {
+  const { available: canEditProjectFiles } = useContributorMode()
   // ── draw state
   const [lines,    setLines]    = useState(()=>load(LINES_KEY,[]))
   const [tool,     setTool]     = useState('brush')
@@ -1087,15 +1089,21 @@ export default function ScratchPad({isOpen,onClose,onSnap,openFile}) {
 
   // File list for the current course's diagrams folder
   useEffect(()=>{
+    if(!isOpen||!canEditProjectFiles){
+      setFileList([])
+      setFilesLoaded(true)
+      return
+    }
     setFilesLoaded(false)
     fetch(`${DEV_FS_API}/list?dir=${encodeURIComponent(currentDir)}`)
       .then(r=>r.json())
       .then(data=>setFileList(Array.isArray(data)?data:[]))
       .catch(()=>setFileList([]))
       .finally(()=>setFilesLoaded(true))
-  },[currentDir])
+  },[currentDir,isOpen,canEditProjectFiles])
 
   const saveToProject=useCallback(()=>{
+    if(!canEditProjectFiles) { setFileSaveMsg('Project saving is available in local contributor mode.'); setTimeout(()=>setFileSaveMsg(''),4000); return }
     if(!currentFilePath) { setFileSaveMsg('Name a file first (use "+ New")'); setTimeout(()=>setFileSaveMsg(''),4000); return }
     setFileSaveMsg('Saving…')
     const xml=buildSvgDocument(shapes,currentViewBox)
@@ -1119,7 +1127,7 @@ export default function ScratchPad({isOpen,onClose,onSnap,openFile}) {
       })
       .catch(e=>setFileSaveMsg('Error: '+e.message))
       .finally(()=>setTimeout(()=>setFileSaveMsg(''),3000))
-  },[currentFilePath,currentViewBox,shapes,fileList])
+  },[currentFilePath,currentViewBox,shapes,fileList,canEditProjectFiles])
 
   const createNewFile=useCallback(()=>{
     const name=newFileName.trim().replace(/\.svg$/i,'')+'.svg'

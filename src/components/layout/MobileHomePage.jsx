@@ -3,6 +3,7 @@ import { COURSES, ALL_LESSONS } from "../../courses/index.js";
 import { useProgress } from "../../hooks/useProgress.js";
 import TopicTable from '../ui/TopicTable.jsx';
 import { LABS } from '../../labs/labRegistryLoader.js';
+import { buildProgressKey } from '../../context/progressMigration.ts';
 
 const FEATURED = [
   {
@@ -28,14 +29,13 @@ const FEATURED = [
 // so this can't drift out of sync with the real course list the way a
 // hand-written nav array would.
 export default function MobileHomePage() {
-  const { progress } = useProgress();
+  const { progress, getLessonProgress } = useProgress();
 
   const inProgress = Object.entries(progress ?? {})
-    .filter(([, entry]) => (entry?.completedCheckpoints?.length ?? 0) > 0 || (entry?.readingProgress ?? 0) > 0)
-    .filter(([, entry]) => !(entry?.quiz?.total > 0 && entry.quiz.correct >= entry.quiz.total))
+    .filter(([key]) => getLessonProgress(key).status === 'in-progress')
     .slice(-3)
     .reverse()
-    .map(([slug]) => ALL_LESSONS.find(l => l.slug === slug))
+    .map(([key]) => ALL_LESSONS.find(l => buildProgressKey(l.course, l) === key))
     .filter(Boolean);
 
   return (

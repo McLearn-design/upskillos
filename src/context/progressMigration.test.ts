@@ -68,6 +68,18 @@ describe('migrateOldProgressKeys', () => {
     expect(migrated!['ai-engineering/dev-environment']).toBeUndefined()
   })
 
+  it('does not create an undefined quiz field when merging reading-only progress', () => {
+    const merged = mergeProgress(
+      { lesson1: { completedCheckpoints: ['read-intuition'] } },
+      { lesson1: { readingProgress: 60 } },
+    )
+    expect(merged?.lesson1).toEqual({
+      completedCheckpoints: ['read-intuition'],
+      readingProgress: 60,
+    })
+    expect(Object.hasOwn(merged?.lesson1 ?? {}, 'quiz')).toBe(false)
+  })
+
   it('leaves an unresolvable old-format entry untouched rather than dropping it', () => {
     const progress = {
       'some-course/some-lesson-that-no-longer-exists': { completedCheckpoints: ['x'] },

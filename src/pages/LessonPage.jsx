@@ -85,7 +85,6 @@ export default function LessonPage() {
     markCheckpoint,
     markVisited,
     getActiveTab,
-    getLessonStatus,
     setReadingProgress,
     getReadingProgress,
   } = useProgress();

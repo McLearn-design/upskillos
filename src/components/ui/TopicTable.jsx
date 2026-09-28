@@ -15,12 +15,12 @@ const ALL_COURSES = getAllCourses()
 // Real progress only exists for courses right now (see HomePage.jsx's
 // in-progress computation for why) — null for anything else, including
 // courses with 0% or 100% (nothing useful to show either way).
-function courseProgressPct(r, getLessonStatus) {
+function courseProgressPct(r, getLessonProgress) {
   if (r.kind !== 'course' || !r.chapters) return null
   const total = r.chapters.reduce((n, ch) => n + ch.lessons.length, 0)
   if (total === 0) return null
   const completed = r.chapters.reduce((n, ch) =>
-    n + ch.lessons.filter(l => getLessonStatus(buildProgressKey(r.key, l), 1) === 'complete').length, 0)
+    n + ch.lessons.filter(l => getLessonProgress(buildProgressKey(r.key, l)).status === 'complete').length, 0)
   const pct = completed / total
   return pct > 0 && pct < 1 ? { pct, completed, total } : null
 }
@@ -84,7 +84,7 @@ const KIND_LABEL = { course: 'COURSE', lesson: 'LESSON', lab: 'LAB', builder: 'B
 // (SubGroup removed for flat grid rendering)
 
 export default function TopicTable({ group, query, matchItem }) {
-  const { getLessonStatus } = useProgress()
+  const { getLessonProgress } = useProgress()
   const { openPin } = usePinLauncher()
   const navigate = useNavigate()
   const [openItem, setOpenItem] = useState(null)
@@ -133,7 +133,7 @@ export default function TopicTable({ group, query, matchItem }) {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 relative z-10 mt-2">
           {filtered.map((r) => {
             const meta = GLASS_META[r.cardItem.color] ?? GLASS_META.slate;
-            const progressPct = courseProgressPct(r, getLessonStatus)
+            const progressPct = courseProgressPct(r, getLessonProgress)
             return (
               <div
                 key={`${r.kind}-${r.key}`}
@@ -191,7 +191,7 @@ export default function TopicTable({ group, query, matchItem }) {
         </div>
       )}
 
-      <ItemInfoModal item={openItem} onClose={() => setOpenItem(null)} onLaunch={() => launch(openItem)} getLessonStatus={getLessonStatus} />
+      <ItemInfoModal item={openItem} onClose={() => setOpenItem(null)} onLaunch={() => launch(openItem)} getLessonProgress={getLessonProgress} />
     </fieldset>
   )
 }

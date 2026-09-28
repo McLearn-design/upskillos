@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import "./styles/index.css";
 import "./styles/proof.css";
+import "./utils/configureMonaco.js";
 
 // Apply saved theme before first paint (avoids flash)
 const saved = localStorage.getItem("oc-theme");
