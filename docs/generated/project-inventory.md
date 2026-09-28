@@ -2,7 +2,7 @@
 
 # Project inventory
 
-42 courses · 213 chapters · 1216 lessons · 51 labs · 15 games
+42 courses · 213 chapters · 1219 lessons · 51 labs · 15 games
 
 ## How things are counted
 
@@ -45,7 +45,7 @@
 | Linear Algebra | `linear-algebra` | math | 10 | 68 |
 | Logic | `logic` | cs | 1 | 8 |
 | Machine Learning | `machine-learning` | cs | 1 | 1 |
-| Mesh Engine | `mesh-engine` | engineering | 1 | 3 |
+| Mesh Engine | `mesh-engine` | engineering | 1 | 6 |
 | Native Languages | `native-languages` | cs | 1 | 3 |
 | NoSQL | `nosql` | data | 1 | 4 |
 | Physics | `physics` | science | 9 | 80 |
@@ -92,6 +92,7 @@
 | Logic Suite | `logic-sim` | lab | `/logic-sim` |
 | Matrix 3D Lab | `matrix-3d-lab` | lab | `/matrix-3d-lab` |
 | Matrix Lab | `matrix-lab` | lab | `/matrix-lab` |
+| MeshLab | `mesh-lab` | lab | `/mesh-lab` |
 | Machine Learning Lab | `ml-lab` | lab | `/lab/ml-lab` |
 | Music Lab | `music-lab` | builder | `/music-lab` |
 | Notebook Lab | `notebook-lab` | lab | `/notebook-lab` |
@@ -107,7 +108,6 @@
 | Sim Lab | `sim-lab` | lab | `/sim-lab` |
 | Sprite Forge | `sprite-forge` | builder | `/lab/sprite-forge` |
 | SVG Studio | `svg-studio` | builder | `/lab/svg-studio` |
-| 3D Workshop | `three-workshop` | lab | `/three-workshop` |
 | Tile Mapper | `tile-mapper` | builder | `/lab/tile-mapper` |
 | OpenSocial — TypeScript Lab | `ts-lab` | lesson | `/lab/ts-lab` |
 | Universal Calc | `universal-calc` | lab | `/universal-calc` |
@@ -136,20 +136,6 @@
 | Football Calculus | `football` | `undefined` |
 
 ## Problems found
-
-### lessonsWithoutId (2)
-
-Lesson files whose lesson object has no `id`, or that could not be loaded (see the warnings from scripts/build-lesson-ids.mjs). Progress for these falls back to a route-derived key, which breaks if the file is renamed.
-
-- `src/courses/mesh-engine/1-mesh-foundations/002-vectors-and-triangles.js`
-- `src/courses/mesh-engine/1-mesh-foundations/003-topology-and-welding.js`
-
-### lessonsWithoutTitle (2)
-
-Lesson files missing from src/data/lessonTitles.json. They show a title made from the filename. Run `node src/scripts/build-lesson-titles.js` and read its warnings.
-
-- `src/courses/mesh-engine/1-mesh-foundations/002-vectors-and-triangles.js`
-- `src/courses/mesh-engine/1-mesh-foundations/003-topology-and-welding.js`
 
 ### duplicateIds (14)
 
