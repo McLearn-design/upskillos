@@ -12,6 +12,7 @@ Start with [docs/contributing/repository-tour.md](docs/contributing/repository-t
 
 - **Lessons:** a file at `src/courses/<course>/<N>-<chapter>/<NNN>-<slug>.js` is a lesson. `src/courses/courseLoader.js` finds it. Nothing else needs to be edited. Its route is `#/chapter/<course>-<N>/<slug>`.
 - **Courses:** a folder in `src/courses/` with a `meta.json` (label, description, icon, domain, color).
+- **Course authoring:** for a new course, copy `docs/templates/course-template.yaml` and run `npm run course:create -- <file> --dry-run`; see `docs/contributing/course-from-yaml.md`.
 - **Labs:** a folder in `src/labs/` with a `meta.js` and an `index.jsx` or `index.tsx`. See [docs/catalog-discovery.md](docs/catalog-discovery.md).
 - **Games:** an entry in `GAMES` in `src/games/registry.js`.
 

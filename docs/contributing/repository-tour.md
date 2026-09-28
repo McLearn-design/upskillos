@@ -30,6 +30,8 @@ Where things live, and how the app finds them. How many courses, lessons, labs a
 
 A lesson file exports one object: title, prose, checks, notebooks and so on. [docs/lesson-writing-standard.md](../lesson-writing-standard.md) covers how to write one well; the in-app Lesson Builder (`#/lesson-builder`) can open, edit and export them.
 
+For a new course, contributors can start from the [commented YAML course template](../templates/course-template.yaml). The [YAML course guide](course-from-yaml.md) explains how to validate it and generate the normal discovered lesson files.
+
 ## Code
 
 | Folder | What's in it |

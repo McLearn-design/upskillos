@@ -1,0 +1,242 @@
+# UpSkillOS course source template
+#
+# Copy this file to course-sources/<course-id>.yaml, replace every placeholder,
+# then run:
+#   npm run course:create -- course-sources/<course-id>.yaml --dry-run
+#   npm run course:create -- course-sources/<course-id>.yaml
+#
+# The converter creates src/courses/<course id>/meta.json and one JavaScript
+# file per lesson. Keep this YAML file as the easy-to-edit source for the course.
+# Run the command with --force when intentionally regenerating an existing copy,
+# then review the Git diff. Never change a published lesson id.
+
+schemaVersion: 1
+
+course:
+  # Lowercase kebab-case. This becomes the folder and #/course/<id> route.
+  id: replace-with-course-id
+  label: Replace with Course Name
+  description: >-
+    Replace this with one sentence explaining what the learner will be able to do.
+  # One visible emoji works well in the catalog.
+  icon: "📘"
+  # Options: indigo, blue, emerald, red, purple, orange, teal, amber, sky,
+  # cyan, rose, violet, lime, slate, fuchsia, green, pink, yellow
+  color: blue
+  # Options: math, cs, science, engineering, creative, data, other
+  domain: other
+
+chapters:
+  - number: 1
+    # Lowercase kebab-case. The folder will be 1-replace-with-chapter-slug.
+    slug: replace-with-chapter-slug
+    lessons:
+      - order: 1
+        # Permanent progress key. It must be unique across the entire app.
+        # Pick it once and never change it after publishing the lesson.
+        id: replace-with-course-id-1-001
+        # Lowercase kebab-case. This becomes part of the lesson URL.
+        slug: replace-with-lesson-slug
+        title: Replace with Lesson Title
+        subtitle: Replace with a short promise to the learner.
+        tags:
+          - replace-me
+        aliases: replace with useful search words and alternate names
+        timeToComplete: 25
+        coreConcept: >-
+          State the one idea this lesson teaches and why the learner needs it.
+        # Use permanent lesson ids. Leave [] when this is the first lesson.
+        prerequisites: []
+        # Use the next lesson's permanent id, or null at the end of a path.
+        nextLesson: null
+
+        # Begin with a concrete situation that makes the learner curious.
+        hook:
+          question: >-
+            Replace this with a question the learner can understand before the lesson.
+          realWorldContext: >-
+            Explain where this problem appears and why solving it matters.
+
+        # Start with concrete numbers, ask for a prediction, then name the pattern.
+        intuition:
+          prose:
+            - >-
+              Start with a small, specific example using real values. Walk through
+              what happens before introducing a general rule.
+            - >-
+              Before reading on, predict what will happen when one input changes.
+            - >-
+              Name the pattern the learner just observed and connect it to the technique.
+          callouts:
+            - type: procedure
+              title: "Procedure: Replace with the technique name"
+              body: |-
+                Step 1. Replace this with a concrete action.
+                Step 2. Explain what to inspect or calculate next.
+                Step 3. State how to check the result.
+            - type: warning
+              title: A common mistake
+              body: Explain the mistake, its visible symptom, and how to correct it.
+          # Add registered visualizations here. Leave [] until one is ready.
+          visualizations: []
+
+        # Use only symbols and ideas already introduced in intuition.
+        math:
+          prose:
+            - >-
+              Derive the rule step by step and explain why each step is valid.
+          equations: []
+          callouts: []
+          visualizations: []
+
+        # Advanced framing, edge cases, invariants, and future connections.
+        rigor:
+          prose:
+            - >-
+              State the formal result and every condition it requires.
+            - >-
+              Explain what stays unchanged and why that invariant matters.
+            - >-
+              Give a geometric, visual, or system-level interpretation.
+            - >-
+              Connect this result to a later abstraction without requiring it now.
+          callouts: []
+          visualizations: []
+
+        # Keep at least three: easy, medium, and hard. Show all reasoning steps.
+        examples:
+          - id: replace-with-course-id-1-001-ex1
+            title: Smallest useful case
+            difficulty: easy
+            problem: Replace with the problem statement.
+            steps:
+              - expression: Replace with the first calculation or action.
+                annotation: Explain this step in plain language.
+                strategyTitle: "Step 1: Replace with the action"
+            answer: Replace with a complete-sentence answer.
+          - id: replace-with-course-id-1-001-ex2
+            title: One added complication
+            difficulty: medium
+            problem: Replace with the problem statement.
+            steps:
+              - expression: Replace with the work.
+                annotation: Explain why this works.
+                strategyTitle: "Step 1: Replace with the action"
+            answer: Replace with a complete-sentence answer.
+          - id: replace-with-course-id-1-001-ex3
+            title: Transfer to a new setting
+            difficulty: hard
+            problem: Replace with a less familiar problem.
+            steps:
+              - expression: Replace with the work.
+                annotation: Explain how the learner recognizes the same pattern.
+                strategyTitle: "Step 1: Recognize the pattern"
+            answer: Replace with a complete-sentence answer.
+
+        # Keep at least three. Include an easy, medium, and hard task.
+        challenges:
+          - id: replace-with-course-id-1-001-ch1
+            title: Guided practice
+            difficulty: easy
+            problem: Replace with a practice problem.
+            hint: Point toward the first step without giving away the answer.
+            answer: Replace with a complete-sentence answer.
+            walkthrough:
+              - expression: Replace with the work.
+                annotation: Explain the reasoning.
+          - id: replace-with-course-id-1-001-ch2
+            title: Independent practice
+            difficulty: medium
+            problem: Replace with a practice problem.
+            hint: Give a useful strategy.
+            answer: Replace with a complete-sentence answer.
+            walkthrough: []
+          - id: replace-with-course-id-1-001-ch3
+            title: Transfer challenge
+            difficulty: hard
+            problem: Replace with a novel or debugging problem.
+            hint: Name what the learner should inspect.
+            answer: Replace with a complete-sentence answer.
+            walkthrough: []
+
+        semantics:
+          core:
+            - symbol: replace-me
+              meaning: Explain in plain language what this symbol does.
+          rulesOfThumb:
+            - Replace with a practical decision rule the learner can reuse.
+
+        misconceptions:
+          - falseBelief: State a believable but incorrect idea as a full sentence.
+            whyStudentsThinkIt: Explain why the mistake feels reasonable.
+            correctionExample: Correct it with a small numerical or concrete example.
+            contrastCase: Show a case where the false belief gives the wrong result.
+
+        transferPrompts:
+          - situation: Describe a new situation without naming the technique to use.
+            competingTechniques:
+              - Replace with this lesson's technique
+              - Replace with a plausible alternative
+            whyThisTechniqueWins: Explain why the lesson's technique fits this situation.
+
+        debugging:
+          - commonError: State a mistake learners actually make.
+            symptom: Describe what the learner observes when it happens.
+            whyItHappened: Explain the underlying misunderstanding.
+            repairStrategy: Give a specific action that fixes it.
+
+        mastery:
+          # 1=Compute, 2=Explain, 3=Detect, 4=Transfer
+          targetLevel: 2
+          solveIndependently: State what the learner can calculate or build unaided.
+          explainVerbally: State what the learner can explain and justify.
+          detectIncorrectApplication: State what misuse the learner can recognize.
+          transferToUnfamiliar: State how the learner applies it in a new setting.
+
+        assessment:
+          questions:
+            - id: replace-with-course-id-1-001-assess-1
+              type: choice
+              text: Replace with a short understanding check.
+              options:
+                - Correct option
+                - Plausible distractor
+                - Another distractor
+              # Must exactly match one item in options.
+              answer: Correct option
+              hint: Explain the reasoning without merely repeating the answer.
+
+        quiz:
+          - id: replace-with-course-id-1-001-quiz-1
+            type: choice
+            text: Replace with a question that tests the lesson goal.
+            options:
+              - Correct option
+              - Near-miss distractor
+              - Another distractor
+            # Must exactly match one item in options.
+            answer: Correct option
+            hints:
+              - Point the learner back to the relevant idea.
+            reviewSection: "Intuition — Procedure: Replace with the technique name"
+
+        # Optional runnable Python. Delete this entire key if it does not fit.
+        python:
+          cells:
+            - id: replace-with-course-id-1-001-cell-1
+              type: python
+              cellTitle: Explore the idea
+              prose: Explain what the learner will change and observe.
+              instructions: Run the cell, change one value, and explain the result.
+              code: |-
+                value = 2
+                print(value)
+
+        # Progress actions shown by the lesson. Add more as content grows.
+        checkpoints:
+          - id: cp-replace-with-course-id-1-001-1
+            label: Read the concrete example
+            type: read
+          - id: cp-replace-with-course-id-1-001-2
+            label: Complete the first worked example
+            type: example

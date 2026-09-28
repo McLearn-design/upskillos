@@ -23,6 +23,7 @@ Open the address it prints (http://localhost:5173). Edit a file under `src/` and
 | Find where something lives in the code | [docs/contributing/repository-tour.md](docs/contributing/repository-tour.md) |
 | Fix a mistake in a lesson | Find the lesson file (the tour explains how), edit it, and check it as in [the lesson checks](#checks) below |
 | Write a new lesson | Add a file to a course folder, as in [docs/catalog-discovery.md](docs/catalog-discovery.md); write it to [docs/lesson-writing-standard.md](docs/lesson-writing-standard.md) |
+| Create a course from a guided template | Copy the [commented YAML course template](docs/templates/course-template.yaml), then follow [Create a course from YAML](docs/contributing/course-from-yaml.md) |
 | Add a lab or a game | [docs/catalog-discovery.md](docs/catalog-discovery.md) |
 | Report a bug or a content error | [Open an issue](https://github.com/g4m3rm1k3/upskillos/issues/new/choose) |
 | Ask a question | [Discussions](https://github.com/g4m3rm1k3/upskillos/discussions) |
