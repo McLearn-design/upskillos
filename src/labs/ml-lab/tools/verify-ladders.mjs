@@ -1,7 +1,7 @@
 // Runs every coding ladder's checks through a real Python (the same harness the app sends to
 // Pyodide): accepted solutions must pass and each planted mistake must fail with its diagnosis.
 // Usage: node verify-ladders.mjs /path/to/python-with-numpy
-//    or: node verify-ladders.mjs /path/to/pyodide@0.26.4/pyodide.mjs   (the release the app loads)
+//    or: node verify-ladders.mjs /path/to/node_modules/pyodide/pyodide.mjs
 import { spawnSync } from 'node:child_process'
 import { readdirSync, existsSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
@@ -15,7 +15,7 @@ let failures = 0, count = 0
 let py = null
 if (python.endsWith('.mjs')) {
   const { loadPyodide } = await import(pathToFileURL(resolve(python)))
-  py = await loadPyodide({ packageBaseUrl: 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/' })
+  py = await loadPyodide()
   await py.loadPackage(['numpy'], { messageCallback: () => {} })
   console.log(`Pyodide ${py.version}`)
 }

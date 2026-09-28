@@ -13,8 +13,8 @@ import {
   solveBasis, solveLinearIndependence, solveSimilarity, solveSpan,
   simplifyExpr, expandExpr,
 } from '../mathEngines.js'
-// @ts-expect-error — no types for openmat engine
 import { executeScript as openmatExec } from '../../../engines/openmat/openmatEngine.js'
+import { createPyodide as createBundledPyodide } from '../../../utils/pyodideRuntime.js'
 import {
   loadVars, saveVars, loadFormulas, saveFormulas,
   loadScripts, saveScripts, loadHistory, saveHistory,
@@ -667,16 +667,7 @@ window.parent.postMessage({type:'script-output',log:__log,err:__err},'*');
     setPyodideStatus('loading')
     setScriptOutput('⏳ Loading Python runtime (first run ~5–15 s, downloads once)...')
     try {
-      if (!(window as Window & { loadPyodide?: unknown }).loadPyodide) {
-        await new Promise<void>((res, rej) => {
-          const s = document.createElement('script')
-          s.src = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js'
-          s.onload = () => res(); s.onerror = () => rej(new Error('Failed to load Pyodide CDN'))
-          document.head.appendChild(s)
-        })
-      }
-      const pyLoader = (window as Window & { loadPyodide?: (opts: { indexURL: string }) => Promise<unknown> }).loadPyodide
-      const py = await pyLoader!({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/' })
+      const py = await createBundledPyodide()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (py as any).loadPackage(['numpy', 'matplotlib'])
       pyodideRef.current = py
@@ -685,7 +676,7 @@ window.parent.postMessage({type:'script-output',log:__log,err:__err},'*');
     } catch(e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       setPyodideStatus('error')
-      setScriptOutput('[Pyodide Error] ' + msg + '\n\nCheck your internet connection. Pyodide requires CDN access.')
+      setScriptOutput('[Pyodide Error] ' + msg + '\n\nReload the page and try starting Python again.')
       throw e
     }
   }

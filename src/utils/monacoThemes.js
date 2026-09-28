@@ -19,6 +19,7 @@ const OPENMAT_BUILTINS = [
 ];
 
 const OPENMAT_CONSTANTS = ["pi", "inf", "NaN", "true", "false", "i", "j"];
+const configuredMonacoInstances = new WeakSet();
 
 // Monaco's built-in Python mode indents after def/if/for/etc. but never
 // dedents after return/break/continue/pass/raise — confirmed live: typing a
@@ -66,8 +67,8 @@ export function applyPythonIndentRules(monaco) {
 }
 
 export function setupOpenCalcMonaco(monaco) {
-  if (!monaco || monaco.__openCalcConfigured) return;
-  monaco.__openCalcConfigured = true;
+  if (!monaco || configuredMonacoInstances.has(monaco)) return;
+  configuredMonacoInstances.add(monaco);
 
   monaco.editor.defineTheme("open-calc-dark", {
     base: "vs-dark",

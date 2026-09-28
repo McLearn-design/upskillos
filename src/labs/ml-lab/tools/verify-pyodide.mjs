@@ -1,18 +1,16 @@
 // Runs every lab's reference solution and starter against its checks inside
-// the same Pyodide release the browser worker loads (0.26.4), so version
-// differences (older numpy/pandas/scikit-learn) are caught. Usage:
-//   node src/labs/ml-lab/tools/verify-pyodide.mjs <path to pyodide@0.26.4/pyodide.mjs> [lab numbers...]
-// Install that release anywhere outside the app, e.g. `npm install pyodide@0.26.4`
-// in a scratch folder. Packages download from the jsDelivr CDN on first use.
+// the same installed Pyodide release the browser worker loads, so version
+// differences in numpy/pandas/scikit-learn are caught. Usage:
+//   node src/labs/ml-lab/tools/verify-pyodide.mjs node_modules/pyodide/pyodide.mjs [lab numbers...]
 import { readdirSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const labsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'labs')
 const [pyodidePath, ...only] = process.argv.slice(2)
-if (!pyodidePath) { console.error('Pass the path to pyodide.mjs from pyodide@0.26.4.'); process.exit(2) }
+if (!pyodidePath) { console.error('Pass the path to the installed pyodide.mjs.'); process.exit(2) }
 const { loadPyodide } = await import(pathToFileURL(resolve(pyodidePath)))
-const py = await loadPyodide({ packageBaseUrl: 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/' })
+const py = await loadPyodide()
 console.log(`Pyodide ${py.version}`)
 let failures = 0
 for (const folder of readdirSync(labsDir).filter(f => /^l\d\d-/.test(f)).sort()) {

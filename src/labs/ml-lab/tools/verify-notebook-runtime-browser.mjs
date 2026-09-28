@@ -3,7 +3,7 @@
 // stopping an infinite loop while the page stays responsive, and drafts surviving a reload.
 // Start the dev server first (npx vite), then:
 //   node src/labs/ml-lab/tools/verify-notebook-runtime-browser.mjs [http://localhost:5173/scratch/ml-preview.html] [screenshot-prefix]
-// Needs network access for Pyodide 0.26.4 from jsDelivr, and a fresh browser profile (it edits drafts).
+// Use a fresh browser profile because this check edits saved notebook drafts.
 import { chromium } from 'playwright'
 const URL = process.argv[2] || 'http://localhost:5173/scratch/ml-preview.html'
 const OUT = process.argv[3] || 'notebook-runtime'

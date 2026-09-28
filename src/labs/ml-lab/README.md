@@ -64,7 +64,7 @@ The curriculum has **33 core labs**, **five optional specializations** (Labs 34�
   - `nn.js`: a small neural-network library with explicit forward and backward passes: Dense, ReLU/LeakyReLU/Tanh/Sigmoid, Dropout, BatchNorm, LayerNorm, Sequential and Residual; MSE, softmax cross-entropy and BCE-with-logits losses; AdamW with gradient clipping. `nn.test.js` gradient-checks every layer.
   - `linalg.js`: Cholesky factorization with jitter, triangular solves, log-determinants and Gaussian sampling (Labs 41–42).
   - `expr.js`: a safe expression parser for derivation answers (implicit multiplication, Unicode operators and superscripts, Greek letters typed as words, common functions) and `equivalent()`, which compares two expressions at deterministic random points.
-- `notebook/`: the lesson notebooks. `LessonNotebook.jsx` (cells, Run cell / Run all / Stop / Restart, per-cell run numbers, “edited since it ran”, tracebacks with plain-language hints, figures, `.ipynb` download — nbformat 4.4 with printed text, final-expression values, figures and errors, each only for cells unchanged since they ran — and Copy to Notebook Lab, both exporting the learner’s edited cells); `runtime.js` (one shared worker, runs executed in order, Stop — and a worker crash — terminate the worker and bump a generation so each notebook knows its variables are gone; `run(ns, code, { timeoutMs })` stops a run that exceeds its limit, counted from when it starts running, not while Python downloads); `notebook.worker.js` (Pyodide 0.26.4, one globals dict per notebook — cells of a notebook share state, notebooks are isolated — imports loaded on demand, Agg matplotlib captured as PNG, tracebacks trimmed to the learner’s cell); `drafts.js` (edits saved per lesson under `upskillos.ml-lab.notebooks.v1` with a fingerprint of the original cells, so a course update is reported and the learner chooses; outputs kept for the page session). Stop discards every notebook’s variables but never code.
+- `notebook/`: the lesson notebooks. `LessonNotebook.jsx` (cells, Run cell / Run all / Stop / Restart, per-cell run numbers, “edited since it ran”, tracebacks with plain-language hints, figures, `.ipynb` download — nbformat 4.4 with printed text, final-expression values, figures and errors, each only for cells unchanged since they ran — and Copy to Notebook Lab, both exporting the learner’s edited cells); `runtime.js` (one shared worker, runs executed in order, Stop — and a worker crash — terminate the worker and bump a generation so each notebook knows its variables are gone; `run(ns, code, { timeoutMs })` stops a run that exceeds its limit, counted from when it starts running, not while Python starts); `notebook.worker.js` (the locally bundled Pyodide runtime, one globals dict per notebook — cells of a notebook share state, notebooks are isolated — imports loaded on demand, Agg matplotlib captured as PNG, tracebacks trimmed to the learner’s cell); `drafts.js` (edits saved per lesson under `upskillos.ml-lab.notebooks.v1` with a fingerprint of the original cells, so a course update is reported and the learner chooses; outputs kept for the page session). Stop discards every notebook’s variables but never code.
 - `Derivation.jsx`: renders a lesson's `derivation` (`{ title, steps, result }`); each step is either `{ prompt, answer, vars, show, why?, hint? }` for an expression or `{ prompt, number, tolerance, show }` for a number.
 - Lab 01 keeps its original engine, lessons and storage keys at the folder root.
 
@@ -74,7 +74,7 @@ The lab consumes `useGlobalTheme`: heading, emphasis, inline-code and callout co
 
 ## Execution and data
 
-Playgrounds run in the browser from seeded generators, so every figure is reproducible. Python challenges execute in a dedicated worker with Pyodide 0.26.4 from the jsDelivr CDN (first use needs network access); each lab declares the packages it loads (numpy, pandas, scikit-learn) and may raise the default 90-second limit. Lab 23 also provides an optional real-PyTorch script to run locally.
+Playgrounds run in the browser from seeded generators, so every figure is reproducible. Python challenges execute in a dedicated worker with the app's bundled Pyodide 0.29.3 runtime; jsDelivr is used only as a fallback if a deployment is missing those assets. Each lab declares the packages it loads (numpy, pandas, scikit-learn) and may raise the default 90-second limit. Lab 23 also provides an optional real-PyTorch script to run locally.
 
 Code, checkpoint results, derivation progress, explanations and notebooks are stored per lab under `upskillos.ml-lab.v1` (Lab 01 keeps its original keys). The Lab 33 project workbench and the Lab 38 replication report save separately on the device. Nothing is uploaded; pasted CSV data stays in the browser.
 
@@ -105,12 +105,12 @@ node src/labs/ml-lab/tools/verify-python.mjs /path/to/python [lab numbers...]
 # Every lesson notebook, run top to bottom with a local Python (numpy, pandas, scikit-learn, scipy)
 node src/labs/ml-lab/tools/verify-notebooks.mjs /path/to/python [lab numbers...]
 
-# The same notebooks through “Run all” in a real browser (dev server running; needs network for Pyodide)
+# The same notebooks through “Run all” in a real browser (dev server running)
 node src/labs/ml-lab/tools/verify-notebooks-browser.mjs [1,2,37] [preview URL]
 # The notebook runtime's behaviour in a real browser: imports, shared vs isolated state, errors, plots, Stop, reload
 node src/labs/ml-lab/tools/verify-notebook-runtime-browser.mjs [preview URL]
 
-# The same in the exact Pyodide release the browser uses (install pyodide@0.26.4 outside the app)
+# The same in the exact installed Pyodide release the browser uses
 node src/labs/ml-lab/tools/verify-pyodide.mjs /path/to/node_modules/pyodide/pyodide.mjs [lab numbers...]
 
 # Every inline figure of one lab at desktop and phone width, with overflow and page-error checks
@@ -119,7 +119,7 @@ node src/labs/ml-lab/tools/screenshot-lab-figures.mjs <lab number> [output dir] 
 node src/labs/ml-lab/tools/check-formula-widths.mjs [width] [lab numbers] [preview URL]
 
 # Practice-ladder checks through the real harness: accepted solutions pass, each planted mistake
-# fails with its diagnosis (labs/*/ladder.verify.js). Pass a Python with numpy, or pyodide.mjs 0.26.4
+# fails with its diagnosis (labs/*/ladder.verify.js). Pass a Python with numpy, or the installed pyodide.mjs
 node src/labs/ml-lab/tools/verify-ladders.mjs /path/to/python-or-pyodide.mjs
 # The Lab 03 ladder in a real browser: Pyodide checks, feedback, saved progress, 390 px layout
 node src/labs/ml-lab/tools/verify-ladder-browser.mjs [preview URL]

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { getLocalPyodideIndexURL } from '../../utils/pyodideRuntime.js';
 
 const FLAG_INFO = [
   { flag: 'g', label: 'g — global', hint: 'find every match, not just the first', pyEquivalent: 'finditer() vs. search()' },
@@ -11,7 +12,8 @@ const FLAG_INFO = [
 
 const JS_TIMEOUT_MS = 500;
 const PY_TIMEOUT_MS = 2500;
-const PYODIDE_VERSION = 'v0.26.4';
+const PYODIDE_INDEX_URL = getLocalPyodideIndexURL();
+const PYODIDE_FALLBACK_URL = 'https://cdn.jsdelivr.net/pyodide/v0.29.3/full/';
 
 // Runs entirely inside a Web Worker so a pathological pattern (this reference
 // literally has a lesson on catastrophic backtracking — learners WILL type
@@ -49,13 +51,19 @@ self.onmessage = function (e) {
 // capable of catastrophic backtracking, and this reference has a demo that
 // deliberately triggers it.
 const PY_WORKER_SRC = `
-importScripts('https://cdn.jsdelivr.net/pyodide/${PYODIDE_VERSION}/full/pyodide.js');
-
 const pyodideReady = (async () => {
-  self.pyodide = await loadPyodide({
-    indexURL: 'https://cdn.jsdelivr.net/pyodide/${PYODIDE_VERSION}/full/',
-    fullStdLib: false,
-  });
+  const sources = ${JSON.stringify([PYODIDE_INDEX_URL, PYODIDE_FALLBACK_URL])};
+  let lastError;
+  for (const indexURL of sources) {
+    try {
+      if (!self.loadPyodide) importScripts(indexURL + 'pyodide.js');
+      self.pyodide = await loadPyodide({ indexURL, fullStdLib: false });
+      break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (!self.pyodide) throw lastError || new Error('Python runtime unavailable');
   self.postMessage({ type: 'ready' });
 })().catch((err) => {
   self.postMessage({ type: 'load-error', error: String(err) });

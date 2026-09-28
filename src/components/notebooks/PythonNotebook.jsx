@@ -13,6 +13,7 @@ import { parseProse } from "../math/parseProse.jsx";
 import { setupOpenCalcMonaco, applyPythonIndentRules } from "../../utils/monacoThemes.js";
 import { OPENCALC_LIB_SOURCE } from "./opencalcLibSource.js";
 import { useReportBug } from "../../hooks/useReportBug.js";
+import { createPyodide as createBundledPyodide } from "../../utils/pyodideRuntime.js";
 
 import { useThemeColors, withAlpha } from '../../hooks/useThemeColors';
 import { useGlobalTheme } from '../../context/ThemeContext.jsx';
@@ -217,20 +218,7 @@ async function getPyodide() {
   if (pyodidePromise) return pyodidePromise;
 
   pyodidePromise = (async () => {
-    // 1. Load the script strictly once
-    if (!window.loadPyodide) {
-      await new Promise((resolve, reject) => {
-        const script = document.createElement("script");
-        script.src = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js";
-        script.onload = resolve;
-        script.onerror = () => reject(new Error("Failed to load Pyodide CDN"));
-        document.head.appendChild(script);
-      });
-    }
-
-    // 2. Initialize
-    const py = await window.loadPyodide({
-      indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/",
+    const py = await createBundledPyodide({
       fullStdLib: false,
     });
 
@@ -285,7 +273,7 @@ def _capture_matplotlib_figs():
     // defines afterwards is cleared by it.
     await py.runPythonAsync("_oc_base_names = set(globals()) | {'_oc_base_names'}");
     return py;
-  })();
+  })().catch(error => { pyodidePromise = null; throw error });
 
   return pyodidePromise;
 }

@@ -42,6 +42,6 @@ for (const lab of (process.argv[2] ? process.argv[2].split(',').map(Number) : [1
   }
 }
 if (!count) { console.log('No lesson notebooks were found: the page layout may have changed. Treating as a failure.'); process.exit(1) }
-console.log(`\n${count - failures.length}/${count} lesson notebooks ran cleanly in ${browser.version()} with Pyodide 0.26.4`)
+console.log(`\n${count - failures.length}/${count} lesson notebooks ran cleanly in ${browser.version()} with the bundled Pyodide runtime`)
 await browser.close()
 process.exit(failures.length ? 1 : 0)

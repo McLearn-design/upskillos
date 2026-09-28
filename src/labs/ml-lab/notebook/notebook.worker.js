@@ -1,7 +1,8 @@
 // Lesson-notebook runtime. One Pyodide per worker; each notebook gets its own globals dict, so
 // cells in one notebook share variables while different notebooks cannot see each other's.
 // The page stops runaway code by terminating this worker, which discards every namespace.
-const PYODIDE = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/'
+import { createPyodide } from '../../../utils/pyodideRuntime.js'
+
 let py, ready, helpers
 const namespaces = new Map()
 // Limits per run, so a runaway print loop or a huge figure cannot exhaust the page's memory.
@@ -102,9 +103,8 @@ def _ml_figures():
 `
 
 async function boot() {
-  post({ type: 'status', state: 'loading', text: 'Downloading Python (about 10 MB, cached after the first time)…' })
-  importScripts(PYODIDE + 'pyodide.js')
-  py = await self.loadPyodide({ indexURL: PYODIDE })
+  post({ type: 'status', state: 'loading', text: 'Starting the bundled Python runtime…' })
+  py = await createPyodide()
   // A worker has no page to draw on: matplotlib must render to images.
   py.runPython("import os; os.environ['MPLBACKEND'] = 'Agg'")
   helpers = py.toPy({ VALUE_LIMIT, FIGURE_LIMIT, FIGURE_PX })

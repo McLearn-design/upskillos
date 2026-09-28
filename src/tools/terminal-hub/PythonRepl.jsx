@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPyodide } from '../../utils/pyodideRuntime.js'
 
 // Separate Pyodide instance for the terminal (isolated from lesson notebooks)
 let _boot = null
@@ -30,26 +31,10 @@ def _run(code):
 async function getPy() {
   if (_boot) return _boot
   _boot = (async () => {
-    if (!window.loadPyodide) {
-      await new Promise((res, rej) => {
-        const existing = document.querySelector('script[src*="pyodide.js"]')
-        if (existing) {
-          const t = setInterval(() => { if (window.loadPyodide) { clearInterval(t); res() } }, 50)
-          return
-        }
-        const s = document.createElement('script')
-        s.src = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js'
-        s.onload = res; s.onerror = rej
-        document.head.appendChild(s)
-      })
-    }
-    const py = await window.loadPyodide({
-      indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/',
-      fullStdLib: false,
-    })
+    const py = await createPyodide({ fullStdLib: false })
     await py.runPythonAsync(SETUP_PY)
     return py
-  })()
+  })().catch(error => { _boot = null; throw error })
   return _boot
 }
 

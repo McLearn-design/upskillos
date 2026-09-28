@@ -17,6 +17,46 @@ function emitVersionJson() {
   };
 }
 
+// Serve Pyodide from the installed npm package in development and copy the
+// runtime into production builds. This keeps Python lessons working when a CDN
+// is blocked or unavailable without committing ~65 MB of generated binaries.
+function localPyodidePlugin() {
+  const sourceDir = path.resolve(process.cwd(), "node_modules/pyodide");
+  const included = file => /\.(?:js|mjs|wasm|zip|whl|json)$/.test(file);
+  const contentTypes = {
+    ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8",
+    ".wasm": "application/wasm",
+    ".json": "application/json; charset=utf-8",
+    ".zip": "application/zip",
+    ".whl": "application/octet-stream",
+  };
+
+  return {
+    name: "local-pyodide-runtime",
+    configureServer(server) {
+      server.middlewares.use("/pyodide/", (req, res, next) => {
+        const requested = decodeURIComponent((req.url || "").split("?")[0]).replace(/^\/+/, "");
+        if (!requested || path.basename(requested) !== requested || !included(requested)) return next();
+        const file = path.join(sourceDir, requested);
+        if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return next();
+        res.statusCode = 200;
+        res.setHeader("Content-Type", contentTypes[path.extname(file)] || "application/octet-stream");
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        fs.createReadStream(file).pipe(res);
+      });
+    },
+    writeBundle(options) {
+      const outputDir = path.resolve(options.dir || "dist", "pyodide");
+      fs.mkdirSync(outputDir, { recursive: true });
+      for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+        if (!entry.isFile() || !included(entry.name)) continue;
+        fs.copyFileSync(path.join(sourceDir, entry.name), path.join(outputDir, entry.name));
+      }
+    },
+  };
+}
+
 // Dev-only: file system API so the in-browser editors can read/write src files
 function devFsPlugin() {
   return {
@@ -150,7 +190,7 @@ function devFsPlugin() {
 }
 
 export default defineConfig({
-  plugins: [rawGlobAssets(), react(), emitVersionJson(), devFsPlugin()],
+  plugins: [rawGlobAssets(), react(), emitVersionJson(), localPyodidePlugin(), devFsPlugin()],
   resolve: {
     alias: {
       '@opencalc/openmat': path.resolve(process.cwd(), 'packages/openmat/src/index.ts'),

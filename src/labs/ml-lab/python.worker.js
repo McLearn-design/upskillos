@@ -1,12 +1,13 @@
 // Dedicated worker: a runaway exercise can be terminated without freezing the app.
+import { createPyodide } from '../../utils/pyodideRuntime.js'
+
 let runtime
 const loaded = new Set()
 self.onmessage = async ({ data }) => {
   try {
-    self.postMessage({ type: 'status', text: 'Loading Python… First run needs an internet connection.' })
+    self.postMessage({ type: 'status', text: 'Starting the bundled Python runtime…' })
     if (!runtime) {
-      importScripts('https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js')
-      runtime = await self.loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/' })
+      runtime = await createPyodide()
     }
     const missing = (data.packages || ['numpy']).filter(name => !loaded.has(name))
     if (missing.length) {
