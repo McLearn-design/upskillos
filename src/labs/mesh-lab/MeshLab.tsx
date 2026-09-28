@@ -1,928 +1,302 @@
-import React, { useEffect, useRef, useState } from 'react';
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { useThemeColors } from '../../hooks/useThemeColors';
+// MeshLab: a small 3D modelling application and graphics laboratory.
+//
+// Layers (see docs/meshlab.md §35):
+//   core/    the scene model, mesh operations, traces, scripting: plain TypeScript, tested headlessly
+//   render/  the three.js viewport, built from the model and never the source of truth
+//   ui/      panels that read the editor and send it commands
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Editor } from './core/Editor';
+import type { SceneJSON } from './core/Scene';
+import type { PrimitiveType } from './core/primitives';
+import { exportOBJ, parseOBJ } from './core/formats';
+import { EditMesh } from './core/EditMesh';
+import { Viewport, type GizmoMode, type ViewOptions } from './render/Viewport';
+import { exportGLB, importGLTF } from './render/io';
+import { Btn, C, useEditorVersion } from './ui/kit';
+import { Outliner } from './ui/Outliner';
+import { Inspector } from './ui/Inspector';
+import { TracePanel } from './ui/TracePanel';
+import { LogPanel, ScriptPanel } from './ui/ScriptPanel';
 
-interface MeshLabProps {
-  onBack?: () => void;
+interface MeshLabProps { onBack?: () => void }
+
+const AUTOSAVE = 'meshlab.autosave';
+const PRIMS: [PrimitiveType, string][] = [['cube', 'Cube'], ['plane', 'Plane'], ['grid', 'Grid'], ['circle', 'Circle'], ['cylinder', 'Cylinder'], ['cone', 'Cone'], ['uvSphere', 'UV sphere'], ['torus', 'Torus']];
+
+function download(name: string, data: BlobPart, type: string) {
+  const url = URL.createObjectURL(new Blob([data], { type }));
+  const a = document.createElement('a'); a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-
-type TransformMode = 'translate' | 'rotate' | 'scale';
-
-interface OutlinerItem {
-  id: string;
-  name: string;
-  type: string;
-  meshRef: THREE.Object3D;
-  isLight?: boolean;
-}
-
-interface CommandHistory {
-  input: string;
-  output: string;
-  isError: boolean;
-}
-
-const COLLAPSED_SECTIONS_INITIAL = {
-  matrix: true,
-  derivation: true,
-  geometry: false,
-  material: false,
-};
 
 export default function MeshLab({ onBack }: MeshLabProps) {
-  const colors = useThemeColors();
-  
-  const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const consoleBottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  
-  const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const orbitControlsRef = useRef<OrbitControls | null>(null);
-  const transformControlsRef = useRef<TransformControls | null>(null);
-  const outlineRef = useRef<THREE.LineSegments | null>(null);
-  const raycasterRef = useRef(new THREE.Raycaster());
-  const mouseRef = useRef(new THREE.Vector2());
-  const rafRef = useRef<number>(0);
-  
-  const [objects, setObjects] = useState<OutlinerItem[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [transformMode, setTransformMode] = useState<TransformMode>('translate');
-  const [frameCount, setFrameCount] = useState(0);
-  
-  const [collapsedSections, setCollapsedSections] = useState(COLLAPSED_SECTIONS_INITIAL);
-  const [consoleInput, setConsoleInput] = useState('');
-  const [consoleHistory, setConsoleHistory] = useState<CommandHistory[]>([
-    { input: '', output: '// MeshLab. Select an object and try: selected.rotation.y = Math.PI/4', isError: false }
-  ]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const [showAddMenu, setShowAddMenu] = useState(false);
-
-  // Throttled state for inspector
-  const selectedMesh = objects.find(o => o.id === selectedId)?.meshRef as THREE.Mesh | undefined;
-  
-  // Create Scene
-  useEffect(() => {
-    if (!canvasRef.current || !containerRef.current) return;
-    
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(colors.background || '#1a1a1a');
-    sceneRef.current = scene;
-    
-    const aspect = containerRef.current.clientWidth / containerRef.current.clientHeight;
-    const camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 1000);
-    camera.position.set(5, 4, 7);
-    camera.lookAt(0, 0, 0);
-    cameraRef.current = camera;
-    
-    const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: canvasRef.current });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    rendererRef.current = renderer;
-    
-    const orbit = new OrbitControls(camera, renderer.domElement);
-    orbit.enableDamping = true;
-    orbitControlsRef.current = orbit;
-    
-    const transform = new TransformControls(camera, renderer.domElement);
-    transform.addEventListener('dragging-changed', (event) => {
-      if (orbitControlsRef.current) {
-        orbitControlsRef.current.enabled = !event.value;
-      }
-    });
-    // TransformControls was itself an Object3D up to three r168, so it went
-    // into the scene directly. In r169 it became a Controls subclass and the
-    // visible gizmo moved to a separate object returned by getHelper().
-    //
-    // This project is on 0.168.0, where calling getHelper() throws and the lab
-    // does not load at all. Support both, so neither an upgrade nor a rollback
-    // silently breaks the viewport again.
-    const withHelper = transform as unknown as { getHelper?: () => THREE.Object3D };
-    const gizmo: THREE.Object3D = typeof withHelper.getHelper === 'function'
-      ? withHelper.getHelper()
-      : (transform as unknown as THREE.Object3D);
-    scene.add(gizmo);
-    transformControlsRef.current = transform;
-    
-    // Lights
-    const ambientLight = new THREE.AmbientLight(0x404060, 0.8);
-    scene.add(ambientLight);
-    
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-    dirLight.position.set(5, 8, 5);
-    dirLight.castShadow = true;
-    scene.add(dirLight);
-    
-    // Helpers
-    const gridHelper = new THREE.GridHelper(10, 10);
-    scene.add(gridHelper);
-    
-    const axesHelper = new THREE.AxesHelper(2);
-    scene.add(axesHelper);
-    
-    // Initial Objects
-    const initialObjects: OutlinerItem[] = [];
-    
-    const cubeGeo = new THREE.BoxGeometry(2, 2, 2);
-    const cubeMat = new THREE.MeshStandardMaterial({ color: 0x4488ff, roughness: 0.4, metalness: 0.3 });
-    const cube = new THREE.Mesh(cubeGeo, cubeMat);
-    cube.position.set(0, 0, 0);
-    cube.castShadow = true;
-    cube.receiveShadow = true;
-    scene.add(cube);
-    initialObjects.push({ id: cube.uuid, name: 'Cube', type: 'BoxGeometry', meshRef: cube });
-    
-    const sphereGeo = new THREE.SphereGeometry(1, 32, 32);
-    const sphereMat = new THREE.MeshStandardMaterial({ color: 0xff6644, roughness: 0.6 });
-    const sphere = new THREE.Mesh(sphereGeo, sphereMat);
-    sphere.position.set(3, 1, 0);
-    sphere.castShadow = true;
-    sphere.receiveShadow = true;
-    scene.add(sphere);
-    initialObjects.push({ id: sphere.uuid, name: 'Sphere', type: 'SphereGeometry', meshRef: sphere });
-    
-    const planeGeo = new THREE.PlaneGeometry(4, 4);
-    const planeMat = new THREE.MeshStandardMaterial({ color: 0x44cc88, roughness: 0.8, side: THREE.DoubleSide });
-    const plane = new THREE.Mesh(planeGeo, planeMat);
-    plane.rotation.x = -Math.PI / 2;
-    plane.position.set(-2, 0, 1);
-    plane.receiveShadow = true;
-    scene.add(plane);
-    initialObjects.push({ id: plane.uuid, name: 'Plane', type: 'PlaneGeometry', meshRef: plane });
-    
-    const pointLight = new THREE.PointLight(0xffffff, 1, 10);
-    pointLight.position.set(0, 2, 0);
-    scene.add(pointLight);
-    const pointLightHelper = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffff00 }));
-    pointLight.add(pointLightHelper);
-    initialObjects.push({ id: pointLight.uuid, name: 'Point Light', type: 'PointLight', meshRef: pointLight, isLight: true });
-    
-    setObjects(initialObjects);
-    
-    // Animation Loop
-    let fCount = 0;
-    const animate = () => {
-      rafRef.current = requestAnimationFrame(animate);
-      if (orbitControlsRef.current) orbitControlsRef.current.update();
-      if (rendererRef.current && sceneRef.current && cameraRef.current) {
-        rendererRef.current.render(sceneRef.current, cameraRef.current);
-      }
-      fCount++;
-      if (fCount % 6 === 0) {
-        setFrameCount(fCount);
-      }
-    };
-    animate();
-    
-    // Resize Observer
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (let entry of entries) {
-        if (entry.target === containerRef.current) {
-          const w = entry.contentRect.width;
-          const h = entry.contentRect.height;
-          if (rendererRef.current && cameraRef.current) {
-            rendererRef.current.setSize(w, h, false);
-            cameraRef.current.aspect = w / h;
-            cameraRef.current.updateProjectionMatrix();
-          }
-        }
-      }
-    });
-    if (containerRef.current) resizeObserver.observe(containerRef.current);
-    
-    return () => {
-      cancelAnimationFrame(rafRef.current);
-      resizeObserver.disconnect();
-      if (rendererRef.current) rendererRef.current.dispose();
-      if (orbitControlsRef.current) orbitControlsRef.current.dispose();
-      if (transformControlsRef.current) transformControlsRef.current.dispose();
-      
-      scene.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          if (obj.geometry) obj.geometry.dispose();
-          if (obj.material) {
-            if (Array.isArray(obj.material)) {
-              obj.material.forEach(m => m.dispose());
-            } else {
-              obj.material.dispose();
-            }
-          }
-        }
-      });
-      if (outlineRef.current) {
-        outlineRef.current.geometry.dispose();
-        (outlineRef.current.material as THREE.Material).dispose();
-      }
-    };
-  }, []);
-
-  // Update selection outline and transform controls
-  useEffect(() => {
-    if (!sceneRef.current || !transformControlsRef.current) return;
-    
-    const selected = objects.find(o => o.id === selectedId)?.meshRef;
-    
-    if (outlineRef.current && outlineRef.current.parent) {
-      outlineRef.current.parent.remove(outlineRef.current);
-      outlineRef.current.geometry.dispose();
-      (outlineRef.current.material as THREE.Material).dispose();
-      outlineRef.current = null;
-    }
-    
-    if (selected) {
-      transformControlsRef.current.attach(selected);
-      
-      if (selected instanceof THREE.Mesh) {
-        const edges = new THREE.EdgesGeometry(selected.geometry);
-        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffff00 }));
-        selected.add(line);
-        outlineRef.current = line;
-      }
-    } else {
-      transformControlsRef.current.detach();
-    }
-  }, [selectedId, objects]);
-
-  // Transform Mode
-  useEffect(() => {
-    if (transformControlsRef.current) {
-      transformControlsRef.current.setMode(transformMode);
-    }
-  }, [transformMode]);
-
-  // Raycaster click
-  useEffect(() => {
-    const handlePointerDown = (e: PointerEvent) => {
-      if (!canvasRef.current || !cameraRef.current || !sceneRef.current) return;
-      if (transformControlsRef.current?.dragging) return;
-      
-      const rect = canvasRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      
-      mouseRef.current.x = (x / rect.width) * 2 - 1;
-      mouseRef.current.y = -(y / rect.height) * 2 + 1;
-      
-      raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
-      
-      const meshes = objects.map(o => o.meshRef);
-      const intersects = raycasterRef.current.intersectObjects(meshes, false);
-      
-      if (intersects.length > 0) {
-        setSelectedId(intersects[0].object.uuid);
-      } else {
-        setSelectedId(null);
-      }
-    };
-    
-    const canvas = canvasRef.current;
-    if (canvas) {
-      canvas.addEventListener('pointerdown', handlePointerDown);
-    }
-    
-    return () => {
-      if (canvas) {
-        canvas.removeEventListener('pointerdown', handlePointerDown);
-      }
-    };
-  }, [objects]);
-
-  // Keyboard Shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      
-      switch (e.key.toLowerCase()) {
-        case 'g':
-          setTransformMode('translate');
-          break;
-        case 'r':
-          setTransformMode('rotate');
-          break;
-        case 's':
-          setTransformMode('scale');
-          break;
-        case 'escape':
-          setSelectedId(null);
-          break;
-        case 'delete':
-        case 'backspace':
-          if (selectedId) {
-            const obj = objects.find(o => o.id === selectedId);
-            if (obj && !obj.isLight) {
-              if (sceneRef.current) {
-                sceneRef.current.remove(obj.meshRef);
-                if (obj.meshRef instanceof THREE.Mesh) {
-                  obj.meshRef.geometry.dispose();
-                  if (Array.isArray(obj.meshRef.material)) {
-                    obj.meshRef.material.forEach(m => m.dispose());
-                  } else {
-                    obj.meshRef.material.dispose();
-                  }
-                }
-              }
-              setObjects(prev => prev.filter(o => o.id !== selectedId));
-              setSelectedId(null);
-            }
-          }
-          break;
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, objects]);
-
-  // Console scroll
-  useEffect(() => {
-    if (consoleBottomRef.current) {
-      consoleBottomRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [consoleHistory]);
-
-  const toggleSection = (section: keyof typeof COLLAPSED_SECTIONS_INITIAL) => {
-    setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
-  };
-
-  const handleConsoleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!consoleInput.trim()) return;
-    
-    let output = '';
-    let isError = false;
-    
+  const editor = useMemo(() => {
+    const e = new Editor();
+    e.traceEnabled = true;
+    let restored = false;
     try {
-      const selected = objects.find(o => o.id === selectedId)?.meshRef || null;
-      const fn = new Function('scene', 'selected', 'add', 'THREE', 'Math', `
-        return (function() {
-          ${consoleInput}
-        })();
-      `);
-      const result = fn(sceneRef.current, selected, handleAddObject, THREE, Math);
-      output = result !== undefined ? String(result) : 'undefined';
-    } catch (err: any) {
-      output = err.toString();
-      isError = true;
-    }
-    
-    setConsoleHistory(prev => [...prev, { input: `> ${consoleInput}`, output, isError }]);
-    setConsoleInput('');
-    setHistoryIndex(-1);
-  };
+      const saved = localStorage.getItem(AUTOSAVE);
+      if (saved) { e.newScene(); e.load(JSON.parse(saved) as SceneJSON, 'Restore last session'); e.undoStack = []; e.log = []; e.message = 'Restored your last session (File › New for a fresh scene)'; restored = true; }
+    } catch { /* ignore a damaged autosave */ }
+    if (!restored) e.newScene();
+    return e;
+  }, []);
+  useEditorVersion(editor);
+  const viewRef = useRef<HTMLDivElement>(null);
+  const [vp, setVp] = useState<Viewport | null>(null);
+  const [gizmo, setGizmo] = useState<GizmoMode>('translate');
+  const [space, setSpace] = useState<'local' | 'world'>('local');
+  const [snap, setSnap] = useState(false);
+  const [opts, setOpts] = useState<ViewOptions>({ grid: true, axes: true, localAxes: true, normals: false, wire: false, xray: false });
+  const [boxArmed, setBoxArmed] = useState(false);
+  const [tab, setTab] = useState<'trace' | 'script' | 'log'>('trace');
+  const [bottomH, setBottomH] = useState(270);
+  const [menu, setMenu] = useState<string | null>(null);
+  const [help, setHelp] = useState(false);
+  const [scriptSeen, setScriptSeen] = useState(false);
+  useEffect(() => { if (tab === 'script') setScriptSeen(true); }, [tab]);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const importRef = useRef<HTMLInputElement>(null);
 
-  const handleConsoleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      const inputs = consoleHistory.filter(h => h.input.startsWith('> ')).map(h => h.input.substring(2));
-      if (inputs.length > 0) {
-        const newIndex = historyIndex < inputs.length - 1 ? historyIndex + 1 : historyIndex;
-        setHistoryIndex(newIndex);
-        setConsoleInput(inputs[inputs.length - 1 - newIndex]);
-      }
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      const inputs = consoleHistory.filter(h => h.input.startsWith('> ')).map(h => h.input.substring(2));
-      if (historyIndex > 0) {
-        const newIndex = historyIndex - 1;
-        setHistoryIndex(newIndex);
-        setConsoleInput(inputs[inputs.length - 1 - newIndex]);
-      } else if (historyIndex === 0) {
-        setHistoryIndex(-1);
-        setConsoleInput('');
-      }
-    }
-  };
+  // The viewport lives as long as the component.
+  useEffect(() => {
+    if (!viewRef.current) return;
+    let v: Viewport;
+    try { v = new Viewport(viewRef.current, editor); }
+    catch (e) { editor.say(`3D view unavailable: ${e instanceof Error ? e.message : e}`); return; }
+    v.onBoxChange = setBoxArmed;
+    setVp(v);
+    // A handle for debugging and browser tests, in development only.
+    if (import.meta.env?.DEV) (window as unknown as { __meshlab?: unknown }).__meshlab = { editor, viewport: v };
+    return () => { v.dispose(); setVp(null); };
+  }, [editor]);
+  useEffect(() => { vp?.setGizmoMode(gizmo); }, [vp, gizmo]);
+  useEffect(() => { vp?.setSpace(space); }, [vp, space]);
+  useEffect(() => { vp?.setSnap(snap); }, [vp, snap]);
+  useEffect(() => { vp?.setOptions(opts); }, [vp, opts]);
 
-  const handleAddObject = (type: string) => {
-    if (!sceneRef.current) return;
-    
-    const x = (Math.random() - 0.5) * 6;
-    const z = (Math.random() - 0.5) * 6;
-    
-    let geo: THREE.BufferGeometry;
-    let name: string;
-    
-    switch (type.toLowerCase()) {
-      case 'box':
-        geo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
-        name = 'Box';
-        break;
-      case 'sphere':
-        geo = new THREE.SphereGeometry(1, 32, 32);
-        name = 'Sphere';
-        break;
-      case 'cylinder':
-        geo = new THREE.CylinderGeometry(1, 1, 2, 32);
-        name = 'Cylinder';
-        break;
-      case 'cone':
-        geo = new THREE.ConeGeometry(1, 2, 32);
-        name = 'Cone';
-        break;
-      case 'torus':
-        geo = new THREE.TorusGeometry(1, 0.4, 16, 50);
-        name = 'Torus';
-        break;
-      default:
-        geo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
-        name = 'Box';
-    }
-    
-    const mat = new THREE.MeshStandardMaterial({ 
-      color: Math.random() * 0xffffff, 
-      roughness: Math.random(), 
-      metalness: Math.random() * 0.5 
+  // Autosave, a moment after each change.
+  useEffect(() => {
+    let t = 0;
+    const off = editor.subscribe((k) => {
+      if (k !== 'scene') return;
+      clearTimeout(t);
+      t = window.setTimeout(() => { try { localStorage.setItem(AUTOSAVE, JSON.stringify(editor.scene.toJSON())); } catch { /* full or unavailable */ } }, 700);
     });
-    
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, 0, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    
-    sceneRef.current.add(mesh);
-    
-    const newItem = { id: mesh.uuid, name: `${name} ${objects.length}`, type: name + 'Geometry', meshRef: mesh };
-    setObjects(prev => [...prev, newItem]);
-    setSelectedId(mesh.uuid);
-    setShowAddMenu(false);
-    return mesh;
+    return () => { off(); clearTimeout(t); };
+  }, [editor]);
+
+  // A new trace: bring the trace tab forward.
+  useEffect(() => editor.subscribe((k) => { if (k === 'trace') setTab('trace'); }), [editor]);
+
+  const loopCut = useCallback(() => {
+    const e = vp?.hoveredEdge() ?? editor.selectedEdges()[0];
+    if (e) editor.loopCut(e[0], e[1]); else editor.say('Loop cut: point at an edge (or select one) that crosses the ring of quads to cut');
+  }, [vp, editor]);
+
+  // Blender-style keys.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (typeof t?.closest === 'function' && t.closest('input, textarea, select, .monaco-editor, [contenteditable="true"]')) return;
+      const k = e.key.toLowerCase(), mod = e.ctrlKey || e.metaKey, ed = editor, edit = ed.mode === 'edit';
+      const act = (fn: () => void) => { e.preventDefault(); fn(); };
+      if (mod && k === 'z') return act(() => (e.shiftKey ? ed.redo() : ed.undo()));
+      if (mod && k === 'y') return act(() => ed.redo());
+      if (mod && k === 's') return act(() => saveFile());
+      if (mod && k === 'r') return act(() => loopCut());
+      if (mod && k === 'l') return act(() => ed.selectLinked());
+      if (mod) return;
+      if (e.key === 'Tab') return act(() => ed.toggleEdit());
+      if (e.key === '?') return act(() => setHelp((h) => !h));
+      if (e.key === 'Escape') { setHelp(false); setMenu(null); return; }
+      if (edit && ['1', '2', '3'].includes(k)) return act(() => ed.setSelectMode((['vert', 'edge', 'face'] as const)[+k - 1]));
+      if (k === 'g') return act(() => setGizmo('translate'));
+      if (k === 'r') return act(() => setGizmo('rotate'));
+      if (k === 's') return act(() => setGizmo('scale'));
+      if (k === 'a') return act(() => (edit ? ed.selectAllElements(!e.altKey) : ed.selectAllObjects(!e.altKey)));
+      if (k === 'b') return act(() => vp?.armBoxSelect());
+      if (k === 'f' || k === '.') return act(() => vp?.frameSelected());
+      if (e.key === 'Home') return act(() => vp?.frameAll());
+      if (k === 'x' || e.key === 'Delete') return act(() => (edit ? ed.deleteElements() : ed.deleteObjects()));
+      if (edit && k === 'e') return act(() => { ed.extrude(0.5); setGizmo('translate'); });
+      if (edit && k === 'i') return act(() => ed.inset(0.25));
+      if (edit && k === 'm') return act(() => ed.merge());
+      if (!edit && e.shiftKey && k === 'd') return act(() => ed.duplicate());
+      if (!edit && k === 'h') return act(() => ed.active && ed.setVisible(ed.active, false));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  // ── files ─────────────────────────────────────────────────────────────
+  const saveFile = () => download('scene.meshlab.json', JSON.stringify(editor.scene.toJSON(), null, 1), 'application/json');
+  const openFile = async (f: File) => {
+    try { editor.load(JSON.parse(await f.text()) as SceneJSON); vp?.frameAll(); }
+    catch (err) { editor.say(`Could not open ${f.name}: ${err instanceof Error ? err.message : err}`); }
+  };
+  const importFile = async (f: File) => {
+    try {
+      const ext = f.name.split('.').pop()?.toLowerCase();
+      const items = ext === 'obj'
+        ? parseOBJ(await f.text()).map((o) => ({ name: o.name, mesh: new EditMesh(o.verts, o.faces) }))
+        : await importGLTF(await f.arrayBuffer());
+      if (!items.length) { editor.say(`${f.name}: no meshes found`); return; }
+      editor.exitEdit();
+      editor.run(`Import ${f.name}`, null, () => { for (const it of items) editor.scene.add({ name: it.name, mesh: it.mesh }); });
+      editor.say(`Imported ${items.length} object${items.length > 1 ? 's' : ''} from ${f.name}${ext === 'obj' ? '' : ' (triangles, welded)'}`);
+      vp?.frameAll();
+    } catch (err) { editor.say(`Could not import ${f.name}: ${err instanceof Error ? err.message : err}`); }
+  };
+  const exportGlb = async () => {
+    try { download('scene.glb', await exportGLB(editor.scene), 'model/gltf-binary'); }
+    catch (err) { editor.say(`GLB export failed: ${err instanceof Error ? err.message : err}`); }
   };
 
-  const renderMatrix = (matrix: THREE.Matrix4) => {
-    const e = matrix.elements;
-    return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', color: '#00d4ff', fontFamily: "'Space Mono', monospace", fontSize: '11px', textAlign: 'right' }}>
-        {[
-          e[0], e[4], e[8], e[12],
-          e[1], e[5], e[9], e[13],
-          e[2], e[6], e[10], e[14],
-          e[3], e[7], e[11], e[15]
-        ].map((val, i) => (
-          <div key={i}>{(val || 0).toFixed(4)}</div>
-        ))}
-      </div>
-    );
+  const edit = editor.mode === 'edit';
+  const o = editor.activeObject;
+  const menus: Record<string, [string, (() => void) | null, string?][]> = {
+    File: [
+      ['New scene', () => { if (confirm('Start a new scene? (Undo history is cleared; save first if you want to keep this one.)')) { editor.newScene(); vp?.frameAll(); } }],
+      ['Open… (.meshlab.json)', () => fileRef.current?.click()],
+      ['Save (download)', saveFile, 'Ctrl+S'],
+      ['Import OBJ / glTF / GLB…', () => importRef.current?.click()],
+      ['Export OBJ (keeps quads, for Blender)', () => download('scene.obj', exportOBJ(editor.scene), 'text/plain')],
+      ['Export GLB', exportGlb],
+    ],
+    Edit: [['Undo', () => editor.undo(), 'Ctrl+Z'], ['Redo', () => editor.redo(), 'Ctrl+Shift+Z'], ['Duplicate', () => editor.duplicate(), 'Shift+D'], ['Delete', () => (edit ? editor.deleteElements() : editor.deleteObjects()), 'X'], ['Select all', () => (edit ? editor.selectAllElements() : editor.selectAllObjects()), 'A'], ['Select linked', () => editor.selectLinked(), 'Ctrl+L']],
+    Add: [...PRIMS.map(([t, label]) => [label, () => editor.addPrimitive(t)] as [string, () => void]), ['Empty', () => editor.addEmpty()]],
+    Mesh: [
+      ['Extrude', () => editor.extrude(0.5), 'E'], ['Inset', () => editor.inset(0.25), 'I'], ['Loop cut', loopCut, 'Ctrl+R'],
+      ['Subdivide faces', () => editor.split()], ['Subdivide smooth (Catmull–Clark)', () => editor.smoothSubdivide()],
+      ['Merge at centre', () => editor.merge(), 'M'], ['Flip normals', () => editor.flip()], ['Delete', () => editor.deleteElements(), 'X'],
+    ],
+    Object: [
+      ['Edit mode', () => editor.toggleEdit(), 'Tab'],
+      ['Shade smooth', () => o && editor.setSmooth(o.id, true)], ['Shade flat', () => o && editor.setSmooth(o.id, false)],
+      ['Add mirror modifier', () => o && editor.addModifier(o.id, 'mirror')], ['Add subdivision modifier', () => o && editor.addModifier(o.id, 'subsurf')],
+      ['Apply modifiers', () => o && editor.applyModifiers(o.id)], ['Clear parent', () => o && editor.setParent(o.id, null)],
+    ],
+    View: [['Frame selected', () => vp?.frameSelected(), 'F'], ['Frame all', () => vp?.frameAll(), 'Home'], ['Front', () => vp?.view('front')], ['Right', () => vp?.view('right')], ['Top', () => vp?.view('top')], ['Perspective', () => vp?.view('persp')]],
+    Script: [['Open script panel', () => setTab('script')], ['Show the GUI → code log', () => setTab('log')]],
+    Help: [['Keyboard shortcuts', () => setHelp(true), '?']],
   };
 
-  const renderDerivation = (mesh: THREE.Mesh) => {
-    const rx = mesh.rotation.x;
-    const ry = mesh.rotation.y;
-    const rz = mesh.rotation.z;
-    const tx = mesh.position.x;
-    const ty = mesh.position.y;
-    const tz = mesh.position.z;
-    const sx = mesh.scale.x;
-    const sy = mesh.scale.y;
-    const sz = mesh.scale.z;
-    
-    const hasRx = Math.abs(rx) > 0.001;
-    const hasRy = Math.abs(ry) > 0.001;
-    const hasRz = Math.abs(rz) > 0.001;
-    
-    const count = (hasRx ? 1 : 0) + (hasRy ? 1 : 0) + (hasRz ? 1 : 0);
-    
-    return (
-      <div style={{ color: 'white', fontSize: '11px', fontFamily: "'Space Mono', monospace", display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {count > 1 && (
-          <div>
-            <div style={{ color: '#ffb300', marginBottom: '4px' }}>M = Rx · Ry · Rz</div>
-            <div>(rotation order: XYZ)</div>
-          </div>
-        )}
-        
-        {hasRy && count <= 1 && (
-          <div>
-            <div style={{ color: '#ffb300', marginBottom: '4px' }}>ROTATION MATRIX (Y axis)</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', textAlign: 'right', marginBottom: '8px' }}>
-              <div>{Math.cos(ry).toFixed(4)}</div><div>0</div><div>{Math.sin(ry).toFixed(4)}</div><div>0</div>
-              <div>0</div><div>1</div><div>0</div><div>0</div>
-              <div>{(-Math.sin(ry)).toFixed(4)}</div><div>0</div><div>{Math.cos(ry).toFixed(4)}</div><div>0</div>
-              <div>0</div><div>0</div><div>0</div><div>1</div>
-            </div>
-            <div>θ = {(ry * 180 / Math.PI).toFixed(2)}°</div>
-            <div>cos(θ) = {Math.cos(ry).toFixed(4)}</div>
-            <div>sin(θ) = {Math.sin(ry).toFixed(4)}</div>
-          </div>
-        )}
-        
-        {hasRx && count <= 1 && (
-          <div>
-            <div style={{ color: '#ffb300', marginBottom: '4px' }}>ROTATION MATRIX (X axis)</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', textAlign: 'right', marginBottom: '8px' }}>
-              <div>1</div><div>0</div><div>0</div><div>0</div>
-              <div>0</div><div>{Math.cos(rx).toFixed(4)}</div><div>{(-Math.sin(rx)).toFixed(4)}</div><div>0</div>
-              <div>0</div><div>{Math.sin(rx).toFixed(4)}</div><div>{Math.cos(rx).toFixed(4)}</div><div>0</div>
-              <div>0</div><div>0</div><div>0</div><div>1</div>
-            </div>
-            <div>θ = {(rx * 180 / Math.PI).toFixed(2)}°</div>
-            <div>cos(θ) = {Math.cos(rx).toFixed(4)}</div>
-            <div>sin(θ) = {Math.sin(rx).toFixed(4)}</div>
-          </div>
-        )}
+  const stats = (() => {
+    let v = 0, f = 0;
+    for (const x of editor.scene.objects) if (x.mesh) { v += x.mesh.verts.length; f += x.mesh.faces.length; }
+    return `${editor.scene.objects.length} objects · ${v} verts · ${f} faces`;
+  })();
 
-        {hasRz && count <= 1 && (
-          <div>
-            <div style={{ color: '#ffb300', marginBottom: '4px' }}>ROTATION MATRIX (Z axis)</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', textAlign: 'right', marginBottom: '8px' }}>
-              <div>{Math.cos(rz).toFixed(4)}</div><div>{(-Math.sin(rz)).toFixed(4)}</div><div>0</div><div>0</div>
-              <div>{Math.sin(rz).toFixed(4)}</div><div>{Math.cos(rz).toFixed(4)}</div><div>0</div><div>0</div>
-              <div>0</div><div>0</div><div>1</div><div>0</div>
-              <div>0</div><div>0</div><div>0</div><div>1</div>
-            </div>
-            <div>θ = {(rz * 180 / Math.PI).toFixed(2)}°</div>
-            <div>cos(θ) = {Math.cos(rz).toFixed(4)}</div>
-            <div>sin(θ) = {Math.sin(rz).toFixed(4)}</div>
-          </div>
-        )}
-
-        {(tx !== 0 || ty !== 0 || tz !== 0) && (
-          <div>
-            <div style={{ color: '#ffb300', marginBottom: '4px' }}>TRANSLATION</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', textAlign: 'right' }}>
-              <div>1</div><div>0</div><div>0</div><div>{tx.toFixed(2)}</div>
-              <div>0</div><div>1</div><div>0</div><div>{ty.toFixed(2)}</div>
-              <div>0</div><div>0</div><div>1</div><div>{tz.toFixed(2)}</div>
-              <div>0</div><div>0</div><div>0</div><div>1</div>
-            </div>
-          </div>
-        )}
-
-        {(sx !== 1 || sy !== 1 || sz !== 1) && (
-          <div>
-            <div style={{ color: '#ffb300', marginBottom: '4px' }}>SCALE</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', textAlign: 'right' }}>
-              <div>{sx.toFixed(2)}</div><div>0</div><div>0</div><div>0</div>
-              <div>0</div><div>{sy.toFixed(2)}</div><div>0</div><div>0</div>
-              <div>0</div><div>0</div><div>{sz.toFixed(2)}</div><div>0</div>
-              <div>0</div><div>0</div><div>0</div><div>1</div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const handleTransformChange = (axis: 'x' | 'y' | 'z', type: 'position' | 'rotation' | 'scale', value: string) => {
-    if (!selectedMesh) return;
-    const num = parseFloat(value);
-    if (isNaN(num)) return;
-    
-    if (type === 'position') {
-      selectedMesh.position[axis] = num;
-    } else if (type === 'rotation') {
-      selectedMesh.rotation[axis] = num * Math.PI / 180;
-    } else if (type === 'scale') {
-      selectedMesh.scale[axis] = num;
-    }
-    
-    selectedMesh.updateMatrix();
-    selectedMesh.updateMatrixWorld(true);
-  };
+  const toggle = (k: keyof ViewOptions) => setOpts((p) => ({ ...p, [k]: !p[k] }));
+  const sep = <span style={{ width: 1, height: 18, background: C.border, margin: '0 4px' }} />;
 
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateRows: '44px 1fr 160px',
-      gridTemplateColumns: '200px 1fr 280px',
-      width: '100%',
-      height: '100%',
-      backgroundColor: '#111',
-      color: '#fff',
-      fontFamily: 'system-ui, -apple-system, sans-serif'
-    }}>
-      {/* Header */}
-      <div style={{
-        gridColumn: '1 / -1',
-        borderBottom: '1px solid #333',
-        display: 'flex',
-        alignItems: 'center',
-        padding: '0 16px',
-        justifyContent: 'space-between',
-        backgroundColor: '#1a1a1a'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          {onBack && (
-            <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding: '4px' }}>
-              ←
-            </button>
-          )}
-          <div style={{ fontWeight: 'bold', fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' }}>
-            3D Workshop
+    <div style={{ display: 'grid', gridTemplateRows: `30px 36px 1fr ${bottomH}px 22px`, gridTemplateColumns: '220px 1fr 310px', height: '100%', width: '100%', background: C.bg, color: C.text, fontFamily: 'system-ui, -apple-system, Segoe UI, sans-serif', overflow: 'hidden' }} onClick={() => menu && setMenu(null)}>
+      <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) openFile(f); e.target.value = ''; }} />
+      <input ref={importRef} type="file" accept=".obj,.glb,.gltf" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ''; }} />
+
+      {/* Menu bar */}
+      <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 2, padding: '0 8px', background: C.panel2, borderBottom: `1px solid ${C.border}`, fontSize: 12, position: 'relative', zIndex: 20 }}>
+        {onBack && <button onClick={onBack} title="Back" style={{ background: 'none', border: 'none', color: C.dim, cursor: 'pointer', fontSize: 14, marginRight: 4 }}>←</button>}
+        <b style={{ marginRight: 10, letterSpacing: 0.5 }}>MeshLab</b>
+        {Object.entries(menus).map(([name, items]) => (
+          <div key={name} style={{ position: 'relative' }}>
+            <button onClick={(e) => { e.stopPropagation(); setMenu(menu === name ? null : name); }} onMouseEnter={() => menu && setMenu(name)}
+              style={{ background: menu === name ? C.raised : 'none', border: 'none', color: C.text, padding: '4px 9px', cursor: 'pointer', fontSize: 12, borderRadius: 3 }}>{name}</button>
+            {menu === name && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, minWidth: 250, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, boxShadow: '0 8px 24px #0008', padding: 4 }}>
+                {items.map(([label, fn, key]) => (
+                  <div key={label} onClick={() => { setMenu(null); fn?.(); }} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: '5px 10px', cursor: 'pointer', borderRadius: 3 }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = C.raised)} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                    <span>{label}</span>{key && <span style={{ color: C.faint }}>{key}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button 
-            onClick={() => setTransformMode('translate')} 
-            style={{ 
-              background: transformMode === 'translate' ? '#333' : 'transparent',
-              border: '1px solid #444', 
-              color: '#fff', 
-              padding: '4px 8px', 
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '12px'
-            }}
-          >
-            Move (G)
-          </button>
-          <button 
-            onClick={() => setTransformMode('rotate')} 
-            style={{ 
-              background: transformMode === 'rotate' ? '#333' : 'transparent',
-              border: '1px solid #444', 
-              color: '#fff', 
-              padding: '4px 8px', 
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '12px'
-            }}
-          >
-            Rotate (R)
-          </button>
-          <button 
-            onClick={() => setTransformMode('scale')} 
-            style={{ 
-              background: transformMode === 'scale' ? '#333' : 'transparent',
-              border: '1px solid #444', 
-              color: '#fff', 
-              padding: '4px 8px', 
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '12px'
-            }}
-          >
-            Scale (S)
-          </button>
-        </div>
+        ))}
+        <span style={{ flex: 1 }} />
+        <span style={{ color: C.faint, fontSize: 11 }}>Press ? for shortcuts</span>
       </div>
 
-      {/* Outliner (Left Panel) */}
-      <div style={{
-        gridColumn: '1',
-        borderRight: '1px solid #333',
-        backgroundColor: '#1a1a1a',
-        display: 'flex',
-        flexDirection: 'column',
-        overflowY: 'auto'
-      }}>
-        <div style={{ fontSize: '9px', letterSpacing: '2px', textTransform: 'uppercase', padding: '12px 16px', color: '#888' }}>
-          Scene Outliner
+      {/* Toolbar */}
+      <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', background: C.panel, borderBottom: `1px solid ${C.border}`, overflowX: 'auto' }}>
+        <Btn small active={!edit} onClick={() => editor.exitEdit()} title="Object mode (Tab)">Object</Btn>
+        <Btn small active={edit} onClick={() => editor.enterEdit()} title="Edit mode (Tab)">Edit</Btn>
+        {edit && <>{sep}{(['vert', 'edge', 'face'] as const).map((m, i) => <Btn key={m} small active={editor.selectMode === m} onClick={() => editor.setSelectMode(m)} title={`${m} select (${i + 1})`}>{['Vertex', 'Edge', 'Face'][i]}</Btn>)}</>}
+        {sep}
+        <Btn small active={gizmo === 'translate'} onClick={() => setGizmo('translate')} title="Move (G)">Move</Btn>
+        <Btn small active={gizmo === 'rotate'} onClick={() => setGizmo('rotate')} title="Rotate (R)">Rotate</Btn>
+        <Btn small active={gizmo === 'scale'} onClick={() => setGizmo('scale')} title="Scale (S)">Scale</Btn>
+        <Btn small active={space === 'world'} onClick={() => setSpace(space === 'local' ? 'world' : 'local')} title="Gizmo axes: the object's own (local) or the world's">{space === 'local' ? 'Local axes' : 'World axes'}</Btn>
+        <Btn small active={snap} onClick={() => setSnap(!snap)} title="Snap: 0.25 units, 15°, 0.1 scale">Snap</Btn>
+        <Btn small active={boxArmed} onClick={() => vp?.armBoxSelect()} title="Box select (B), then drag">Box</Btn>
+        {edit && <>{sep}<Btn small onClick={() => { editor.extrude(0.5); setGizmo('translate'); }} title="Extrude (E)">Extrude</Btn><Btn small onClick={() => editor.inset(0.25)} title="Inset (I)">Inset</Btn><Btn small onClick={loopCut} title="Loop cut (Ctrl+R): point at an edge">Loop cut</Btn><Btn small onClick={() => editor.smoothSubdivide()} title="Catmull–Clark">Smooth ×1</Btn></>}
+        {sep}
+        {(['grid', 'axes', 'normals', 'wire', 'xray'] as const).map((k) => <Btn key={k} small active={opts[k]} onClick={() => toggle(k)} title={k === 'xray' ? 'See through surfaces' : `Show ${k}`}>{k === 'xray' ? 'X-ray' : k[0].toUpperCase() + k.slice(1)}</Btn>)}
+        {sep}
+        <Btn small active={editor.traceEnabled} onClick={() => { editor.traceEnabled = !editor.traceEnabled; editor.emit('select'); }} title="Record a step-by-step trace of each mesh operation">● Record traces</Btn>
+        {sep}
+        <Btn small disabled={!editor.undoStack.length} onClick={() => editor.undo()} title={`Undo ${editor.undoStack.at(-1)?.label ?? ''} (Ctrl+Z)`}>↶</Btn>
+        <Btn small disabled={!editor.redoStack.length} onClick={() => editor.redo()} title="Redo (Ctrl+Shift+Z)">↷</Btn>
+      </div>
+
+      <div style={{ gridColumn: 1, gridRow: 3, borderRight: `1px solid ${C.border}`, minHeight: 0 }}><Outliner editor={editor} /></div>
+      <div ref={viewRef} style={{ gridColumn: 2, gridRow: 3, position: 'relative', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', left: 10, top: 8, fontSize: 11, color: C.dim, pointerEvents: 'none', zIndex: 1, lineHeight: 1.5, textShadow: '0 1px 2px #000' }}>
+          <div style={{ color: edit ? C.accent : C.text, fontWeight: 600 }}>{edit ? `Edit mode · ${editor.selectMode === 'vert' ? 'vertices' : editor.selectMode === 'edge' ? 'edges' : 'faces'}` : 'Object mode'}</div>
+          <div>Left-drag orbit · right-drag pan · wheel zoom · click select</div>
         </div>
-        <div style={{ flex: 1 }}>
-          {objects.map(obj => (
-            <div 
-              key={obj.id}
-              onClick={() => setSelectedId(obj.id)}
-              style={{
-                padding: '8px 16px',
-                cursor: 'pointer',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                backgroundColor: selectedId === obj.id ? '#4488ff22' : 'transparent',
-                borderLeft: `2px solid ${selectedId === obj.id ? '#4488ff' : 'transparent'}`,
-                fontSize: '13px'
-              }}
-            >
-              <span>{obj.name}</span>
-              {!obj.isLight && (
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (sceneRef.current) {
-                      sceneRef.current.remove(obj.meshRef);
-                      if (obj.meshRef instanceof THREE.Mesh) {
-                        obj.meshRef.geometry.dispose();
-                        if (Array.isArray(obj.meshRef.material)) {
-                          obj.meshRef.material.forEach(m => m.dispose());
-                        } else {
-                          obj.meshRef.material.dispose();
-                        }
-                      }
-                    }
-                    setObjects(prev => prev.filter(o => o.id !== obj.id));
-                    if (selectedId === obj.id) setSelectedId(null);
-                  }}
-                  style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding: '0' }}
-                >
-                  🗑
-                </button>
-              )}
-            </div>
+      </div>
+      <div style={{ gridColumn: 3, gridRow: 3, borderLeft: `1px solid ${C.border}`, minHeight: 0 }}><Inspector editor={editor} /></div>
+
+      {/* Bottom panel */}
+      <div style={{ gridColumn: '1 / -1', gridRow: 4, display: 'flex', flexDirection: 'column', borderTop: `1px solid ${C.border}`, background: C.panel, minHeight: 0, position: 'relative' }}>
+        <div onPointerDown={(e) => {
+          const y0 = e.clientY, h0 = bottomH;
+          const move = (ev: PointerEvent) => setBottomH(Math.max(120, Math.min(window.innerHeight - 200, h0 - (ev.clientY - y0))));
+          const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+          window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+        }} style={{ position: 'absolute', top: -3, left: 0, right: 0, height: 6, cursor: 'ns-resize', zIndex: 5 }} />
+        <div style={{ display: 'flex', gap: 2, padding: '3px 6px 0', background: C.panel2, borderBottom: `1px solid ${C.border}` }}>
+          {([['trace', 'Algorithm trace'], ['script', 'Script'], ['log', `GUI → code (${editor.log.length})`]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)} style={{ background: tab === k ? C.panel : 'transparent', color: tab === k ? C.text : C.dim, borderTop: `1px solid ${tab === k ? C.border : 'transparent'}`, borderLeft: `1px solid ${tab === k ? C.border : 'transparent'}`, borderRight: `1px solid ${tab === k ? C.border : 'transparent'}`, borderBottom: 'none', borderRadius: '4px 4px 0 0', padding: '4px 12px', fontSize: 12, cursor: 'pointer' }}>{label}</button>
           ))}
         </div>
-        <div style={{ padding: '16px', position: 'relative' }}>
-          <button 
-            onClick={() => setShowAddMenu(!showAddMenu)}
-            style={{ width: '100%', padding: '8px', background: '#333', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer' }}
-          >
-            + Add
-          </button>
-          {showAddMenu && (
-            <div style={{ position: 'absolute', bottom: '100%', left: '16px', right: '16px', marginBottom: '8px', background: '#222', border: '1px solid #444', borderRadius: '4px', overflow: 'hidden' }}>
-              {['Box', 'Sphere', 'Cylinder', 'Cone', 'Torus'].map(type => (
-                <div 
-                  key={type}
-                  onClick={() => handleAddObject(type)}
-                  style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '13px', borderBottom: '1px solid #333' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                >
-                  {type}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <div style={{ flex: 1, minHeight: 0, display: tab === 'trace' ? 'block' : 'none' }}><TracePanel editor={editor} viewport={vp} /></div>
+        <div style={{ flex: 1, minHeight: 0, display: tab === 'script' ? 'block' : 'none' }}>{scriptSeen ? <ScriptPanel editor={editor} onRun={() => vp?.sync()} /> : null}</div>
+        <div style={{ flex: 1, minHeight: 0, display: tab === 'log' ? 'block' : 'none' }}><LogPanel editor={editor} /></div>
       </div>
 
-      {/* 3D Viewport (Center) */}
-      <div ref={containerRef} style={{ gridColumn: '2', position: 'relative', overflow: 'hidden' }}>
-        <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+      {/* Status bar */}
+      <div style={{ gridColumn: '1 / -1', gridRow: 5, display: 'flex', alignItems: 'center', gap: 12, padding: '0 10px', background: C.panel2, borderTop: `1px solid ${C.border}`, fontSize: 11, color: C.dim }}>
+        <span style={{ color: C.text }}>{editor.message}</span>
+        <span style={{ flex: 1 }} />
+        {boxArmed && <span style={{ color: C.accent }}>Drag a box to select</span>}
+        <span>{stats}</span>
       </div>
 
-      {/* Inspector (Right Panel) */}
-      <div style={{
-        gridColumn: '3',
-        borderLeft: '1px solid #333',
-        backgroundColor: '#1a1a1a',
-        overflowY: 'auto'
-      }}>
-        {!selectedMesh ? (
-          <div style={{ padding: '24px', color: '#888', textAlign: 'center', fontSize: '13px' }}>
-            Select an object to inspect
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            {/* Transform Section */}
-            <div style={{ padding: '16px', backgroundColor: '#222' }}>
-              <div style={{ fontSize: '9px', letterSpacing: '2px', textTransform: 'uppercase', color: '#888', marginBottom: '12px' }}>
-                Transform
-              </div>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', fontSize: '11px', fontFamily: "'Space Mono', monospace" }}>
-                  <span style={{ width: '60px', color: '#aaa' }}>Position</span>
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    X <input type="number" step="0.1" value={selectedMesh.position.x.toFixed(2)} onChange={e => handleTransformChange('x', 'position', e.target.value)} style={{ width: '48px', background: '#111', color: '#fff', border: '1px solid #333', padding: '2px 4px', fontFamily: "'Space Mono', monospace", fontSize: '11px' }} />
-                    Y <input type="number" step="0.1" value={selectedMesh.position.y.toFixed(2)} onChange={e => handleTransformChange('y', 'position', e.target.value)} style={{ width: '48px', background: '#111', color: '#fff', border: '1px solid #333', padding: '2px 4px', fontFamily: "'Space Mono', monospace", fontSize: '11px' }} />
-                    Z <input type="number" step="0.1" value={selectedMesh.position.z.toFixed(2)} onChange={e => handleTransformChange('z', 'position', e.target.value)} style={{ width: '48px', background: '#111', color: '#fff', border: '1px solid #333', padding: '2px 4px', fontFamily: "'Space Mono', monospace", fontSize: '11px' }} />
-                  </div>
-                </div>
+      {help && <Help onClose={() => setHelp(false)} />}
+    </div>
+  );
+}
 
-                <div style={{ display: 'flex', alignItems: 'center', fontSize: '11px', fontFamily: "'Space Mono', monospace" }}>
-                  <span style={{ width: '60px', color: '#aaa' }}>Rotation</span>
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    X <input type="number" step="1" value={(selectedMesh.rotation.x * 180 / Math.PI).toFixed(0)} onChange={e => handleTransformChange('x', 'rotation', e.target.value)} style={{ width: '48px', background: '#111', color: '#fff', border: '1px solid #333', padding: '2px 4px', fontFamily: "'Space Mono', monospace", fontSize: '11px' }} />
-                    Y <input type="number" step="1" value={(selectedMesh.rotation.y * 180 / Math.PI).toFixed(0)} onChange={e => handleTransformChange('y', 'rotation', e.target.value)} style={{ width: '48px', background: '#111', color: '#fff', border: '1px solid #333', padding: '2px 4px', fontFamily: "'Space Mono', monospace", fontSize: '11px' }} />
-                    Z <input type="number" step="1" value={(selectedMesh.rotation.z * 180 / Math.PI).toFixed(0)} onChange={e => handleTransformChange('z', 'rotation', e.target.value)} style={{ width: '48px', background: '#111', color: '#fff', border: '1px solid #333', padding: '2px 4px', fontFamily: "'Space Mono', monospace", fontSize: '11px' }} />
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', fontSize: '11px', fontFamily: "'Space Mono', monospace" }}>
-                  <span style={{ width: '60px', color: '#aaa' }}>Scale</span>
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    X <input type="number" step="0.1" value={selectedMesh.scale.x.toFixed(2)} onChange={e => handleTransformChange('x', 'scale', e.target.value)} style={{ width: '48px', background: '#111', color: '#fff', border: '1px solid #333', padding: '2px 4px', fontFamily: "'Space Mono', monospace", fontSize: '11px' }} />
-                    Y <input type="number" step="0.1" value={selectedMesh.scale.y.toFixed(2)} onChange={e => handleTransformChange('y', 'scale', e.target.value)} style={{ width: '48px', background: '#111', color: '#fff', border: '1px solid #333', padding: '2px 4px', fontFamily: "'Space Mono', monospace", fontSize: '11px' }} />
-                    Z <input type="number" step="0.1" value={selectedMesh.scale.z.toFixed(2)} onChange={e => handleTransformChange('z', 'scale', e.target.value)} style={{ width: '48px', background: '#111', color: '#fff', border: '1px solid #333', padding: '2px 4px', fontFamily: "'Space Mono', monospace", fontSize: '11px' }} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Matrix Section */}
-            <div style={{ backgroundColor: '#222' }}>
-              <div 
-                onClick={() => toggleSection('matrix')}
-                style={{ padding: '12px 16px', fontSize: '9px', letterSpacing: '2px', textTransform: 'uppercase', color: '#888', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-              >
-                <span>World Matrix</span>
-                <span>{collapsedSections.matrix ? '▶' : '▼'}</span>
-              </div>
-              {!collapsedSections.matrix && (
-                <div style={{ padding: '0 16px 16px 16px' }}>
-                  {(() => {
-                    selectedMesh.updateMatrixWorld(true);
-                    return renderMatrix(selectedMesh.matrixWorld);
-                  })()}
-                </div>
-              )}
-            </div>
-
-            {/* Derivation Section */}
-            <div style={{ backgroundColor: '#222' }}>
-              <div 
-                onClick={() => toggleSection('derivation')}
-                style={{ padding: '12px 16px', fontSize: '9px', letterSpacing: '2px', textTransform: 'uppercase', color: '#888', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-              >
-                <span>Derivation</span>
-                <span>{collapsedSections.derivation ? '▶' : '▼'}</span>
-              </div>
-              {!collapsedSections.derivation && (
-                <div style={{ padding: '0 16px 16px 16px' }}>
-                  {renderDerivation(selectedMesh)}
-                </div>
-              )}
-            </div>
-
-            {/* Geometry Section */}
-            <div style={{ backgroundColor: '#222' }}>
-              <div 
-                onClick={() => toggleSection('geometry')}
-                style={{ padding: '12px 16px', fontSize: '9px', letterSpacing: '2px', textTransform: 'uppercase', color: '#888', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-              >
-                <span>Geometry</span>
-                <span>{collapsedSections.geometry ? '▶' : '▼'}</span>
-              </div>
-              {!collapsedSections.geometry && selectedMesh.geometry && (
-                <div style={{ padding: '0 16px 16px 16px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div>Type: {selectedMesh.geometry.type}</div>
-                  <div>Vertices: {selectedMesh.geometry.attributes.position.count}</div>
-                  <div>Triangles: {selectedMesh.geometry.index ? Math.floor(selectedMesh.geometry.index.count / 3) : Math.floor(selectedMesh.geometry.attributes.position.count / 3)}</div>
-                </div>
-              )}
-            </div>
-
-            {/* Material Section */}
-            <div style={{ backgroundColor: '#222' }}>
-              <div 
-                onClick={() => toggleSection('material')}
-                style={{ padding: '12px 16px', fontSize: '9px', letterSpacing: '2px', textTransform: 'uppercase', color: '#888', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-              >
-                <span>Material</span>
-                <span>{collapsedSections.material ? '▶' : '▼'}</span>
-              </div>
-              {!collapsedSections.material && selectedMesh.material && (
-                <div style={{ padding: '0 16px 16px 16px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {(() => {
-                    const mat = Array.isArray(selectedMesh.material) ? selectedMesh.material[0] : selectedMesh.material;
-                    return (
-                      <>
-                        <div>Type: {mat.type}</div>
-                        {'color' in mat && <div>Color: #{(mat as any).color.getHexString()}</div>}
-                        {'roughness' in mat && <div>Roughness: {(mat as any).roughness.toFixed(2)}</div>}
-                        {'metalness' in mat && <div>Metalness: {(mat as any).metalness.toFixed(2)}</div>}
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
-            </div>
-
-          </div>
-        )}
+function Help({ onClose }: { onClose: () => void }) {
+  const keys: [string, string][] = [
+    ['Tab', 'Object / Edit mode'], ['1 2 3', 'Vertex / edge / face select (edit mode)'], ['Click, Shift+click', 'Select, add to selection'],
+    ['B then drag', 'Box select'], ['A, Alt+A', 'Select all, none'], ['Ctrl+L', 'Select linked'], ['G R S', 'Move / rotate / scale gizmo'],
+    ['E', 'Extrude faces'], ['I', 'Inset faces'], ['Ctrl+R', 'Loop cut at the edge under the pointer'], ['M', 'Merge vertices at centre'],
+    ['X, Delete', 'Delete'], ['Shift+D', 'Duplicate object'], ['H', 'Hide object'], ['F, Home', 'Frame selected, frame all'],
+    ['Ctrl+Z, Ctrl+Shift+Z', 'Undo, redo'], ['Ctrl+S', 'Save the scene file'], ['Ctrl+Enter', 'Run the script'],
+  ];
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: '#0009', display: 'grid', placeItems: 'center', zIndex: 100 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: 20, width: 460, maxWidth: '90vw', fontSize: 13 }}>
+        <div style={{ display: 'flex', marginBottom: 12 }}><b style={{ flex: 1 }}>Keyboard shortcuts</b><Btn small onClick={onClose}>Close</Btn></div>
+        {keys.map(([k, d]) => <div key={k} style={{ display: 'flex', padding: '4px 0', borderBottom: `1px solid ${C.panel2}` }}><span style={{ width: 170, fontFamily: C.mono, color: C.accent }}>{k}</span><span style={{ color: C.text }}>{d}</span></div>)}
+        <div style={{ color: C.faint, fontSize: 12, marginTop: 10, lineHeight: 1.5 }}>Keys follow Blender where they can. G, R and S pick the gizmo rather than starting a free move.</div>
       </div>
-
-      {/* Console (Bottom Panel) */}
-      <div style={{
-        gridColumn: '1 / -1',
-        borderTop: '1px solid #333',
-        backgroundColor: '#0a0a0a',
-        display: 'flex',
-        flexDirection: 'column',
-        fontFamily: "'Space Mono', monospace",
-        fontSize: '12px'
-      }}>
-        <div style={{ fontSize: '9px', letterSpacing: '2px', textTransform: 'uppercase', padding: '8px 16px', color: '#888', borderBottom: '1px solid #222' }}>
-          Console
-        </div>
-        
-        <div style={{ flex: 1, padding: '8px 16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          {consoleHistory.slice(-8).map((hist, i) => (
-            <div key={i}>
-              {hist.input && <div style={{ color: '#aaa' }}>{hist.input}</div>}
-              {hist.output && <div style={{ color: hist.isError ? '#ff4444' : '#fff' }}>{hist.output}</div>}
-            </div>
-          ))}
-          <div ref={consoleBottomRef} />
-        </div>
-        
-        <form onSubmit={handleConsoleSubmit} style={{ display: 'flex', padding: '8px 16px', borderTop: '1px solid #222', alignItems: 'center' }}>
-          <span style={{ color: '#4488ff', marginRight: '8px' }}>{'>'}</span>
-          <input
-            ref={inputRef}
-            type="text"
-            value={consoleInput}
-            onChange={e => setConsoleInput(e.target.value)}
-            onKeyDown={handleConsoleKeyDown}
-            style={{
-              flex: 1,
-              background: 'transparent',
-              border: 'none',
-              color: '#fff',
-              outline: 'none',
-              fontFamily: "'Space Mono', monospace",
-              fontSize: '12px'
-            }}
-            placeholder="scene.background = new THREE.Color('red')"
-          />
-        </form>
-      </div>
-
     </div>
   );
 }

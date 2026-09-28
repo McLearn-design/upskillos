@@ -32,6 +32,8 @@
 // The invariant to hold on to: `verts` and `faces` are the truth. Everything
 // else is a cache, rebuilt when they change.
 
+import { Trace, fmt, fmtV } from './trace';
+
 export type Vec3 = [number, number, number];
 
 /** The serialisable form. This is what gets saved, exported, and handed over. */
@@ -74,6 +76,7 @@ const cross = (u: Vec3, v: Vec3): Vec3 => [
 ];
 const dot = (u: Vec3, v: Vec3) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
 const len = (v: Vec3) => Math.hypot(v[0], v[1], v[2]);
+const add3 = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 
 function norm(v: Vec3): Vec3 {
   const l = len(v);
@@ -409,7 +412,7 @@ export class EditMesh {
    * selected face - because those are the ones that get a wall, and the
    * interior ones must not. Without connectivity there is no way to ask.
    */
-  extrudeFaces(faceIdxs: number[], distance: number): this {
+  extrudeFaces(faceIdxs: number[], distance: number, trace?: Trace, opts: { skipWall?: (a: number, b: number) => boolean } = {}): this {
     if (!faceIdxs.length) return this;
     const region = new Set(faceIdxs);
 
@@ -420,8 +423,26 @@ export class EditMesh {
       const fn = this.faceNormal(fi);
       const a = this.faceArea(fi);
       n = [n[0] + fn[0] * a, n[1] + fn[1] * a, n[2] + fn[2] * a];
+      if (trace && trace.detailed(region.size)) {
+        trace.step({
+          phase: 'Average normal', label: `Face ${fi}: normal ${fmtV(fn)}, area ${fmt(a)}`,
+          detail: 'Each face votes for the direction with its normal, weighted by its area.',
+          faces: [fi], arrows: [{ from: this.faceCenter(fi), to: add3(this.faceCenter(fi), fn), label: 'n', color: '#38bdf8' }],
+        });
+      }
     }
     n = norm(n);
+    if (trace) {
+      let c: Vec3 = [0, 0, 0];
+      for (const fi of region) c = add3(c, this.faceCenter(fi));
+      c = [c[0] / region.size, c[1] / region.size, c[2] / region.size];
+      trace.step({
+        phase: 'Average normal', label: `Direction n = ${fmtV(n)}`,
+        detail: 'n = normalize(Σ area·normal). Every new vertex moves along n by the distance.',
+        faces: [...region], arrows: [{ from: c, to: add3(c, [n[0] * distance, n[1] * distance, n[2] * distance]), label: `d = ${fmt(distance)}`, color: '#f59e0b' }],
+        values: [['n', fmtV(n)], ['distance', fmt(distance)]],
+      });
+    }
 
     // Keep the original rings: the walls are built from them, and the region
     // faces are about to be rewritten.
@@ -439,6 +460,15 @@ export class EditMesh {
       }
     }
 
+    if (trace) {
+      trace.step({
+        phase: 'Copy vertices', label: `${moved.size} new vertices, each v' = v + d·n`,
+        detail: 'The originals stay where they are: they become the bottom of the walls.',
+        verts: [...moved.values()],
+        points: [...moved.values()].slice(0, 60).map((v) => ({ p: this.verts[v], label: `v${v}`, color: '#f59e0b' })),
+      }, this);
+    }
+
     // How many selected faces use each edge. One means it is on the border.
     const useCount = new Map<string, number>();
     for (const ring of originals.values()) {
@@ -447,24 +477,262 @@ export class EditMesh {
         useCount.set(key, (useCount.get(key) ?? 0) + 1);
       }
     }
+    if (trace) {
+      const border: [number, number][] = [], inner: [number, number][] = [];
+      for (const [key, c] of useCount) { const [a, b] = key.split('-').map(Number); (c === 1 ? border : inner).push([a, b]); }
+      trace.step({
+        phase: 'Border edges', label: `${border.length} border edges, ${inner.length} inner edges`,
+        detail: 'An edge used by exactly one selected face is on the border of the region and gets a wall. An edge shared by two selected faces is inside the region and does not.',
+        edges: border, values: [['border', String(border.length)], ['inside', String(inner.length)]],
+      });
+    }
 
     // The region's faces lift to the offset copies, keeping their ring order so
     // they keep facing the same way.
     for (const [fi, ring] of originals) {
       this.faces[fi] = ring.map((v) => moved.get(v)!);
     }
+    this.touch();
+    trace?.step({ phase: 'Lift faces', label: `${region.size} face(s) moved to the new vertices`, faces: [...region] }, this);
 
     // A wall per border edge. Taking the edge in the direction its own face
     // walks it, then going up, keeps the wall's winding agreeing with the cap.
+    let walls = 0;
     for (const ring of originals.values()) {
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i];
         const b = ring[(i + 1) % ring.length];
         if (useCount.get(EditMesh.edgeKey(a, b)) !== 1) continue;
+        // With a clipped mirror, a border edge lying on the mirror plane gets no
+        // wall: that wall would sit in the plane, inside the mirrored solid.
+        if (opts.skipWall?.(a, b)) continue;
         this.faces.push([a, b, moved.get(b)!, moved.get(a)!]);
+        walls++;
+        if (trace && trace.detailed(1)) {
+          this.touch();
+          trace.step({
+            phase: 'Walls', label: `Wall ${walls}: [${a}, ${b}, ${moved.get(b)}, ${moved.get(a)}]`,
+            detail: 'Walk the border edge in its own face\'s direction, then up: the wall faces outward, the same way as its neighbours.',
+            faces: [this.faces.length - 1], edges: [[a, b]],
+          }, this);
+        }
       }
     }
 
+    return this.touch();
+  }
+
+  // ── more operations ─────────────────────────────────────────────────────
+
+  /** Area-weighted average of the normals of the faces around a vertex. */
+  vertexNormal(v: number): Vec3 {
+    let n: Vec3 = [0, 0, 0];
+    this.faces.forEach((f, fi) => {
+      if (!f.includes(v)) return;
+      const fn = this.faceNormal(fi), a = this.faceArea(fi);
+      n = [n[0] + fn[0] * a, n[1] + fn[1] * a, n[2] + fn[2] * a];
+    });
+    return norm(n);
+  }
+
+  /** Vertices joined to v by an edge. */
+  neighbourVerts(v: number): number[] {
+    const out = new Set<number>();
+    for (const e of this.edges().values()) { if (e.a === v) out.add(e.b); else if (e.b === v) out.add(e.a); }
+    return [...out];
+  }
+
+  /**
+   * Inset each given face on its own: a smaller copy of the face inside it,
+   * joined to the original outline by a ring of quads. `amount` is the fraction
+   * of the way from each corner to the face's centre (0 to 1).
+   */
+  insetFaces(faceIdxs: number[], amount: number, trace?: Trace): this {
+    const t = Math.min(0.999, Math.max(0.001, amount));
+    for (const fi of faceIdxs) {
+      const ring = this.faces[fi];
+      const c = this.faceCenter(fi);
+      const inner = ring.map((v) => {
+        const p = this.verts[v];
+        this.verts.push([p[0] + (c[0] - p[0]) * t, p[1] + (c[1] - p[1]) * t, p[2] + (c[2] - p[2]) * t]);
+        return this.verts.length - 1;
+      });
+      if (trace && trace.detailed(2)) {
+        trace.step({
+          phase: 'Inner ring', label: `Face ${fi}: ${ring.length} inner corners`,
+          detail: `Each inner corner = corner + t·(centre − corner), t = ${fmt(t)}.`,
+          faces: [fi], points: [{ p: c, label: 'centre', color: '#38bdf8' }, ...inner.map((v) => ({ p: this.verts[v], color: '#f59e0b' }))],
+          values: [['centre', fmtV(c)], ['t', fmt(t)]],
+        }, this);
+      }
+      this.faces[fi] = inner;
+      for (let i = 0; i < ring.length; i++) {
+        const j = (i + 1) % ring.length;
+        this.faces.push([ring[i], ring[j], inner[j], inner[i]]);
+      }
+      this.touch();
+      if (trace && trace.detailed(1)) {
+        trace.step({ phase: 'Bridge', label: `Face ${fi}: ${ring.length} quads join the outline to the inner face`, faces: [fi, ...ring.map((_, i) => this.faces.length - ring.length + i)] }, this);
+      }
+    }
+    return this.touch();
+  }
+
+  /** Remove faces. Vertices no longer used by any face are removed too. */
+  deleteFaces(faceIdxs: number[]): this {
+    const drop = new Set(faceIdxs);
+    const touched = new Set<number>();
+    faceIdxs.forEach((fi) => this.faces[fi]?.forEach((v) => touched.add(v)));
+    this.faces = this.faces.filter((_, i) => !drop.has(i));
+    const used = new Set<number>();
+    for (const f of this.faces) for (const v of f) used.add(v);
+    return this.removeVerts([...touched].filter((v) => !used.has(v)));
+  }
+
+  /** Remove vertices and every face that uses any of them. */
+  deleteVerts(vertIdxs: number[]): this {
+    const drop = new Set(vertIdxs);
+    this.faces = this.faces.filter((f) => !f.some((v) => drop.has(v)));
+    return this.removeVerts(vertIdxs);
+  }
+
+  /** Remove every face using one of the edges; drop the edges' vertices if nothing uses them any more. */
+  deleteEdges(edges: [number, number][]): this {
+    const keys = new Set(edges.map(([a, b]) => EditMesh.edgeKey(a, b)));
+    const touched = new Set(edges.flat());
+    this.faces = this.faces.filter((f) => !f.some((v, i) => keys.has(EditMesh.edgeKey(v, f[(i + 1) % f.length]))));
+    const used = new Set<number>();
+    for (const f of this.faces) for (const v of f) used.add(v);
+    return this.removeVerts([...touched].filter((v) => !used.has(v)));
+  }
+
+  /** Remove exactly these vertices (faces must not use them) and renumber the rest. */
+  private removeVerts(vertIdxs: number[]): this {
+    const drop = new Set(vertIdxs);
+    const remap = new Array<number>(this.verts.length);
+    const kept: Vec3[] = [];
+    this.verts.forEach((p, i) => { if (!drop.has(i)) { remap[i] = kept.length; kept.push(p); } });
+    this.verts = kept;
+    this.faces = this.faces.map((f) => f.map((v) => remap[v]));
+    return this.touch();
+  }
+
+  /**
+   * Merge vertices into one at their centroid (or at `at`). Faces that lose a
+   * corner become smaller faces; faces that fall below three corners go.
+   */
+  mergeVerts(vertIdxs: number[], at?: Vec3, trace?: Trace): this {
+    if (vertIdxs.length < 2) return this;
+    const target = vertIdxs[0];
+    const pos: Vec3 = at ?? vertIdxs.reduce<Vec3>((s, v) => add3(s, this.verts[v]), [0, 0, 0]).map((x) => x / vertIdxs.length) as Vec3;
+    trace?.step({ phase: 'Merge', label: `${vertIdxs.length} vertices → one at ${fmtV(pos)}`, verts: vertIdxs, points: [{ p: pos, label: 'merged', color: '#f59e0b' }], detail: 'The centroid is the average of the merged positions.' }, this);
+    const into = new Set(vertIdxs);
+    this.verts[target] = pos;
+    this.faces = this.faces
+      .map((f) => f.map((v) => (into.has(v) ? target : v)).filter((v, i, arr) => v !== arr[(i + 1) % arr.length]))
+      .filter((f) => f.length >= 3 && new Set(f).size === f.length);
+    this.removeVerts(vertIdxs.slice(1));
+    trace?.step({ phase: 'Merge', label: `${this.faces.length} faces remain`, verts: [target] }, this);
+    return this;
+  }
+
+  /**
+   * The ring of quads crossed by walking from an edge to the opposite edge of
+   * each quad in turn. Returns the edges crossed, each oriented so that its
+   * first vertex is on the same side of the ring, and the quads in order.
+   */
+  edgeRing(a: number, b: number): { edges: [number, number][]; faces: number[]; closed: boolean } {
+    const map = this.edges();
+    const start = map.get(EditMesh.edgeKey(a, b));
+    if (!start) return { edges: [], faces: [], closed: false };
+    const startKey = EditMesh.edgeKey(a, b);
+    const seen = new Set<number>();
+    // Walk from the starting edge through `face`, quad by quad. In a quad the
+    // opposite edge joins the two corners not on the current edge; the corner
+    // next to cur[0] stays on cur[0]'s side, which keeps the ring oriented.
+    const walk = (face: number | undefined) => {
+      const out: { e: [number, number]; f: number }[] = [];
+      let cur: [number, number] = [a, b];
+      let closed = false;
+      while (face !== undefined && !seen.has(face) && this.faces[face].length === 4) {
+        const ring = this.faces[face];
+        const nextTo = (x: number, not: number) => { const k = ring.indexOf(x); const l = ring[(k + 1) % 4]; return l === not ? ring[(k + 3) % 4] : l; };
+        seen.add(face);
+        const opp: [number, number] = [nextTo(cur[0], cur[1]), nextTo(cur[1], cur[0])];
+        const key = EditMesh.edgeKey(opp[0], opp[1]);
+        if (key === startKey) { out.push({ e: opp, f: face }); closed = true; break; }
+        out.push({ e: opp, f: face });
+        const others = map.get(key)!.faces.filter((f) => f !== face);
+        face = others.length === 1 ? others[0] : undefined;
+        cur = opp;
+      }
+      return { out, closed };
+    };
+    // More than two faces on the start edge: follow only the first.
+    const fwd = walk(start.faces[0]);
+    if (fwd.closed) {
+      return { edges: [[a, b], ...fwd.out.slice(0, -1).map((o) => o.e)], faces: fwd.out.map((o) => o.f), closed: true };
+    }
+    const back = start.faces.length === 2 ? walk(start.faces[1]) : { out: [], closed: false };
+    return {
+      edges: [...back.out.map((o) => o.e).reverse(), [a, b], ...fwd.out.map((o) => o.e)],
+      faces: [...back.out.map((o) => o.f).reverse(), ...fwd.out.map((o) => o.f)],
+      closed: false,
+    };
+  }
+
+  /**
+   * Loop cut: split every quad of the edge ring through (a, b) in two, with a
+   * new vertex part-way along each ring edge. Faces at an open end of the ring
+   * that are not split get the new vertex added to their outline, so the mesh
+   * stays connected.
+   */
+  loopCut(a: number, b: number, t = 0.5, trace?: Trace): this {
+    const ring = this.edgeRing(a, b);
+    if (!ring.faces.length) return this;
+    trace?.step({
+      phase: 'Find the ring', label: `${ring.faces.length} quads, ${ring.closed ? 'closed loop' : 'open strip'}`,
+      detail: 'From the chosen edge, cross each quad to its opposite edge and continue into the next quad, until the ring closes or reaches a face that is not a quad.',
+      faces: ring.faces, edges: ring.edges,
+    });
+    const mid = new Map<string, number>();
+    for (const [p, q] of ring.edges) {
+      const P = this.verts[p], Q = this.verts[q];
+      this.verts.push([P[0] + (Q[0] - P[0]) * t, P[1] + (Q[1] - P[1]) * t, P[2] + (Q[2] - P[2]) * t]);
+      mid.set(`${p}>${q}`, this.verts.length - 1);
+      mid.set(`${q}>${p}`, this.verts.length - 1);
+    }
+    trace?.step({
+      phase: 'New vertices', label: `${ring.edges.length} vertices at t = ${fmt(t)} along each ring edge`,
+      detail: 'p + t·(q − p), with p on the same side of the ring every time so the cut runs parallel.',
+      points: ring.edges.slice(0, 80).map(([p, q]) => ({ p: this.verts[mid.get(`${p}>${q}`)!], color: '#f59e0b' })),
+    }, this);
+    const ringFaces = new Set(ring.faces);
+    const midOf = (x: number, y: number) => mid.get(`${x}>${y}`);
+    const out: number[][] = [];
+    this.faces.forEach((f, fi) => {
+      if (ringFaces.has(fi)) {
+        // Rotate so the ring edges are f[0]-f[1] and f[2]-f[3].
+        let k = 0;
+        while (k < 4 && midOf(f[k], f[(k + 1) % 4]) === undefined) k++;
+        const [p, q, r, s] = [0, 1, 2, 3].map((i) => f[(k + i) % 4]);
+        const m1 = midOf(p, q)!, m2 = midOf(r, s)!;
+        out.push([p, m1, m2, s], [m1, q, r, m2]);
+      } else {
+        const rebuilt: number[] = [];
+        f.forEach((v, i) => { rebuilt.push(v); const m = midOf(v, f[(i + 1) % f.length]); if (m !== undefined) rebuilt.push(m); });
+        out.push(rebuilt);
+      }
+    });
+    this.faces = out;
+    this.touch();
+    trace?.step({ phase: 'Split quads', label: `${ring.faces.length} quads became ${ring.faces.length * 2}`, detail: 'Each quad [p, q, r, s] becomes [p, m₁, m₂, s] and [m₁, q, r, m₂]: same winding, so both still face outward.' }, this);
+    return this;
+  }
+
+  /** Move vertices by an offset. */
+  translateVerts(vertIdxs: number[], d: Vec3): this {
+    for (const v of new Set(vertIdxs)) this.verts[v] = add3(this.verts[v], d);
     return this.touch();
   }
 

@@ -27,7 +27,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(resolve(here, 'MeshLab.tsx'), 'utf8');
+// The three.js code lives in the viewport and the file exporters now.
+const source = ['render/Viewport.ts', 'render/io.ts'].map((f) => readFileSync(resolve(here, f), 'utf8')).join('\n');
 
 describe('the installed three.js has everything MeshLab names', () => {
   it('exposes every THREE.X the component refers to', () => {

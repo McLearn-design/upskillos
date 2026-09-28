@@ -15,8 +15,8 @@
 // If this passes, "MeshLab failed to load" cannot happen for a reason that
 // lives in the component's own logic.
 
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 
 // Replace only the renderer. importActual keeps every other export real, so the
 // component still constructs genuine geometries, materials, controls and a
@@ -56,6 +56,7 @@ beforeAll(() => {
 });
 
 afterEach(() => cleanup());
+beforeEach(() => localStorage.clear());
 
 describe('MeshLab mounts', () => {
   it('renders without throwing', async () => {
@@ -76,12 +77,27 @@ describe('MeshLab mounts', () => {
   it('shows the starting scene in the outliner', async () => {
     const { default: MeshLab } = await import('./MeshLab');
     render(<MeshLab />);
-
-    // The four objects the component seeds the scene with. If an effect threw
-    // part way through, some of these would be missing.
-    for (const name of ['Cube', 'Sphere', 'Plane', 'Point Light']) {
+    // The default scene: a cube and a sun, like Blender's.
+    for (const name of ['Cube', 'Light']) {
       expect(screen.getAllByText(name).length, `outliner is missing ${name}`).toBeGreaterThan(0);
     }
+  });
+
+  it('Tab enters edit mode and the inspector shows the mesh being edited', async () => {
+    const { default: MeshLab } = await import('./MeshLab');
+    render(<MeshLab />);
+    await act(async () => { fireEvent.keyDown(window, { key: 'Tab' }); });
+    expect(screen.getAllByText(/Edit mode/).length).toBeGreaterThan(0);
+    expect(screen.getByText('EDITING CUBE')).toBeTruthy();
+  });
+
+  it('adding a primitive from the menu puts it in the scene', async () => {
+    const { default: MeshLab } = await import('./MeshLab');
+    render(<MeshLab />);
+    await act(async () => { fireEvent.click(screen.getByText('Add')); });
+    await act(async () => { fireEvent.click(screen.getByText('Torus')); });
+    expect(screen.getAllByText('Torus').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/GUI → code \(1\)/).length).toBe(1);
   });
 
   it('unmounts cleanly', async () => {

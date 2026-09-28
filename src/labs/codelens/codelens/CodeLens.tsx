@@ -16,6 +16,7 @@ import { SNIPPET_CATEGORIES } from './snippets'
 import { setupOpenCalcMonaco } from '../../../utils/monacoThemes.js'
 import { CodeLensThemeProvider, useCodeLensTheme } from './ThemeContext'
 import { CODELENS_THEMES } from './theme'
+import { CODE_SPEEDS, usePlaybackTicker } from '../../../utils/playback'
 import type { CodeLensUiPalette } from './theme'
 import type {
   Lang, TraceEvent, StackFrame, ExecutionResult, HeapObjectEntry, HeapSnapshot,
@@ -75,13 +76,8 @@ function stripTypeScript(src: string): string {
   return s
 }
 
-const SPEED_CONFIG: Record<string, { interval: number; steps: number }> = {
-  '0.5x': { interval: 1200, steps: 1 },
-  '1x':   { interval: 600,  steps: 1 },
-  '2x':   { interval: 250,  steps: 1 },
-  '5x':   { interval: 100,  steps: 1 },
-  '10x':  { interval: 60,   steps: 2 },
-}
+// Playback speeds are shared with MeshLab's algorithm traces (utils/playback).
+const SPEED_CONFIG = CODE_SPEEDS
 
 // ── Theme config ──────────────────────────────────────────────────────────────
 // The full CODELENS_THEMES list (theme.ts) now drives both the Monaco editor
@@ -831,18 +827,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
   })
 
   // Auto-play
-  useEffect(() => {
-    if (!playing || !execution) return
-    const { interval, steps } = SPEED_CONFIG[playSpeed] ?? SPEED_CONFIG['1x']
-    const id = setInterval(() => {
-      setStep(s => {
-        const next = s + steps
-        if (next >= totalSteps - 1) { setPlaying(false); return totalSteps - 1 }
-        return next
-      })
-    }, interval)
-    return () => clearInterval(id)
-  }, [playing, playSpeed, execution, totalSteps])
+  usePlaybackTicker(playing && !!execution, SPEED_CONFIG[playSpeed] ?? SPEED_CONFIG['1x'], totalSteps, setStep, setPlaying)
 
   // Breakpoint gutter decorations
   useEffect(() => {
