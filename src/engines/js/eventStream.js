@@ -21,6 +21,15 @@ export const EventType = {
   PROGRAM_END:        'program_end',
 }
 
+function formatEventValue(value) {
+  if (value !== null && typeof value === 'object') {
+    if ('$ref' in value) return `Object #${value.$ref}`
+    if (value.__kind === 'reference') return `Object #${value.objectId}`
+  }
+  const serialized = JSON.stringify(value)
+  return serialized === undefined ? String(value) : serialized
+}
+
 // Every event has this envelope. Specific event types extend it via `payload`.
 export function makeEvent(type, stepId, sourceLocation, stackSnapshot, heapDelta, payload = {}) {
   return {
@@ -127,8 +136,8 @@ export const EXPLAIN = {
     const argStr = argc === 0
       ? 'no arguments'
       : argc === 1
-        ? `1 argument${e.args?.[0] !== undefined ? ` (${JSON.stringify(e.args[0])})` : ''}`
-        : `${argc} arguments (${e.args?.map(a => JSON.stringify(a)).join(', ')})`
+        ? `1 argument${e.args?.[0] !== undefined ? ` (${formatEventValue(e.args[0])})` : ''}`
+        : `${argc} arguments (${e.args?.map(formatEventValue).join(', ')})`
     return {
       summary: `Calling \`${e.functionName}\` with ${argStr}`,
       why: `A new stack frame is pushed for \`${e.functionName}\`. Its local variables (parameters + any \`let\`/\`const\`/\`var\` inside it) will live in this frame. When \`${e.functionName}\` returns, the frame is destroyed and those variables are gone.`,
@@ -137,7 +146,7 @@ export const EXPLAIN = {
   },
 
   [EventType.FUNCTION_RETURN]: (e) => {
-    const retStr = JSON.stringify(e.returnValue)
+    const retStr = formatEventValue(e.returnValue)
     const isUndef = e.returnValue === undefined
     return {
       summary: `\`${e.functionName}\` returns ${isUndef ? 'undefined (no explicit return)' : retStr}`,
@@ -147,7 +156,7 @@ export const EXPLAIN = {
   },
 
   [EventType.VARIABLE_DECLARE]: (e) => ({
-    summary: `Declare \`${e.name}\` = ${JSON.stringify(e.value)}`,
+    summary: `Declare \`${e.name}\` = ${formatEventValue(e.value)}`,
     why: e.kind === 'var'
       ? '`var` is hoisted to the nearest **function** scope — it already existed (as `undefined`) from the very top of the function. This line just assigns the value. Hoisting is a common source of surprising bugs; prefer `let` or `const`.'
       : `\`${e.kind}\` is **block-scoped** — it only exists inside the nearest \`{ }\` block. If this is inside a loop, each iteration gets its own fresh binding.`,
@@ -155,7 +164,7 @@ export const EXPLAIN = {
   }),
 
   [EventType.VARIABLE_ASSIGN]: (e) => ({
-    summary: `\`${e.name}\` changes from ${JSON.stringify(e.oldValue)} → ${JSON.stringify(e.newValue)}`,
+    summary: `\`${e.name}\` changes from ${formatEventValue(e.oldValue)} → ${formatEventValue(e.newValue)}`,
     why: `JavaScript walks the scope chain outward to find the nearest scope that owns \`${e.name}\`, then updates it there. Every other variable or closure referencing \`${e.name}\` in that scope will now see the new value.`,
     concept: 'Scope / Mutation',
   }),
@@ -167,7 +176,7 @@ export const EXPLAIN = {
   }),
 
   [EventType.OBJECT_MUTATE]: (e) => ({
-    summary: `Heap object ${e.objectId}: \`${e.property}\` ${JSON.stringify(e.oldValue)} → ${JSON.stringify(e.newValue)}`,
+    summary: `Heap object ${e.objectId}: \`${e.property}\` ${formatEventValue(e.oldValue)} → ${formatEventValue(e.newValue)}`,
     why: `All variables holding a reference to object #${e.objectId} see this change immediately — there is only one copy on the heap. This is why mutating an object that was "passed" to a function also changes it in the caller.`,
     concept: 'Shared References',
   }),
@@ -180,7 +189,7 @@ export const EXPLAIN = {
 
   [EventType.CONDITIONAL_BRANCH]: (e) => {
     const condPart = e.conditionResult !== undefined && e.condition
-      ? `\`${e.condition}\` → \`${JSON.stringify(e.conditionResult)}\` → ${e.result}`
+      ? `\`${e.condition}\` → \`${formatEventValue(e.conditionResult)}\` → ${e.result}`
       : `\`${e.condition}\` is ${e.result}`
     return {
       summary: `${condPart} → taking the ${e.branch} branch`,

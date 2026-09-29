@@ -449,7 +449,7 @@ function buildNarration(event: TraceEvent | null, prevEvent: TraceEvent | null):
 
   if (t === 'function_call') {
     const argc = event.args?.length ?? 0
-    const argPart = argc === 0 ? '' : ` with ${event.args?.map((a: unknown) => JSON.stringify(a)).join(', ')}`
+    const argPart = argc === 0 ? '' : ` with ${event.args?.map(formatValue).join(', ')}`
     const wasReturn = pt === 'function_return'
     return wasReturn
       ? `\`${prevEvent!.functionName}\` just returned — now calling \`${event.functionName}\`${argPart}. A new stack frame is being pushed.`
@@ -457,7 +457,7 @@ function buildNarration(event: TraceEvent | null, prevEvent: TraceEvent | null):
   }
 
   if (t === 'function_return') {
-    const retStr = JSON.stringify(event.returnValue)
+    const retStr = formatValue(event.returnValue)
     const isBase = event.args?.length === 1 && (event.returnValue === event.args?.[0])
     return isBase
       ? `\`${event.functionName}\` hits its base case and returns ${retStr}. This frame is popped — the result travels back up the call stack.`
@@ -465,11 +465,11 @@ function buildNarration(event: TraceEvent | null, prevEvent: TraceEvent | null):
   }
 
   if (t === 'variable_declare') {
-    return `\`${event.name}\` is declared and set to ${JSON.stringify(event.value)}. This binding lives in the current scope frame until the block closes.`
+    return `\`${event.name}\` is declared and set to ${formatValue(event.value)}. This binding lives in the current scope frame until the block closes.`
   }
 
   if (t === 'variable_assign') {
-    return `\`${event.name}\` just changed: ${JSON.stringify(event.oldValue)} → ${JSON.stringify(event.newValue)}. JavaScript found the binding in the scope chain and updated it there.`
+    return `\`${event.name}\` just changed: ${formatValue(event.oldValue)} → ${formatValue(event.newValue)}. JavaScript found the binding in the scope chain and updated it there.`
   }
 
   if (t === 'conditional_branch') {
@@ -697,7 +697,7 @@ function StackFrame({ frame, depth }: { frame: StackFrame; depth: number }) {
               fontFamily: 'JetBrains Mono, monospace', marginBottom: 2,
             }}>
               <span style={{ color: ui.cyan, minWidth: 80 }}>{name}</span>
-              <span style={{ color: ui.green }}>{JSON.stringify(value)}</span>
+              <span style={{ color: ui.green }}>{formatValue(value)}</span>
             </div>
           ))}
         </div>
@@ -1501,7 +1501,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
                         </span>
                         {d.op === 'mutate' && (
                           <span style={{ color: ui.textDim }}>
-                            {' '}{JSON.stringify((d as { oldValue?: unknown }).oldValue)} → {JSON.stringify((d as { newValue?: unknown }).newValue)}
+                            {' '}{formatValue((d as { oldValue?: unknown }).oldValue)} → {formatValue((d as { newValue?: unknown }).newValue)}
                           </span>
                         )}
                       </div>
@@ -3152,7 +3152,7 @@ function valueColor(v: unknown, ui: CodeLensUiPalette): string {
   if (typeof v === 'number') return ui.green
   if (typeof v === 'string') return ui.amber
   if (typeof v === 'boolean') return ui.pink
-  if (typeof v === 'object' && v !== null && (v as { __kind?: string }).__kind === 'reference') return ui.accent
+  if (isDisplayedReference(v)) return ui.accent
   if (typeof v === 'function' || (typeof v === 'object' && v !== null && (v as { type?: string }).type === 'function')) return ui.purple
   return ui.textDim
 }
@@ -3161,9 +3161,19 @@ function formatValue(v: unknown): string {
   if (v === null)      return 'null'
   if (v === undefined) return 'undefined'
   if (typeof v === 'function') return '[Function]'
-  if (typeof v === 'object' && v !== null && (v as { __kind?: string }).__kind === 'reference') return `[Object #${(v as { objectId?: number }).objectId}]`
+  if (isDisplayedReference(v)) return `Object #${referenceId(v)}`
   if (typeof v === 'object' && v !== null && (v as { type?: string }).type === 'function') return `[Function ${(v as { name?: string }).name ?? ''}]`
   if (typeof v === 'object') return JSON.stringify(v).slice(0, 30)
   if (typeof v === 'string') return `"${v.length > 20 ? v.slice(0, 20) + '…' : v}"`
   return String(v)
+}
+
+function isDisplayedReference(v: unknown): v is { $ref?: number; __kind?: string; objectId?: number } {
+  return typeof v === 'object' && v !== null && (
+    '$ref' in v || (v as { __kind?: string }).__kind === 'reference'
+  )
+}
+
+function referenceId(v: { $ref?: number; objectId?: number }): number | '?' {
+  return v.$ref ?? v.objectId ?? '?'
 }
