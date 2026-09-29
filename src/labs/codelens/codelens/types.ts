@@ -56,12 +56,45 @@ export interface RuntimeError {
   type: string
   message: string
   line?: number | null
+  limitKind?: ExecutionLimitKind
+}
+
+export type ExecutionStatus =
+  | 'completed'
+  | 'stopped'
+  | 'limit'
+  | 'syntax-error'
+  | 'runtime-error'
+
+export type ExecutionLimitKind =
+  | 'timeout'
+  | 'steps'
+  | 'events'
+  | 'trace-size'
+  | 'output'
+  | 'recursion'
+  | 'memory'
+
+export interface ExecutionLimits {
+  maxRuntimeMs: number
+  maxSteps: number
+  maxEvents: number
+  maxTraceChars: number
+  maxOutputLines: number
+  maxOutputChars: number
+  maxRecursionDepth: number
+  maxHeapObjects: number
+  maxHeapProperties: number
+  maxSnapshotItems: number
+  maxSnapshotChars: number
 }
 
 export interface ExecutionResult {
   events: TraceEvent[]
   output: string[]
   error: RuntimeError | null
+  status?: ExecutionStatus
+  limit?: { kind: ExecutionLimitKind; message: string }
 }
 
 export interface HeapObjectEntry {

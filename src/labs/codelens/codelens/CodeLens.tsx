@@ -1,9 +1,13 @@
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode, type CSSProperties } from 'react'
 import Editor, { useMonaco } from '@monaco-editor/react'
 import { buildProgramModel } from '../../../engines/js/parser/jsParser.js'
-import { run as runInterpreter } from '../../../engines/js/interpreter/interpreter.js'
 import { runPython } from './interpreter/pythonTracer'
 import { runNative } from './interpreter/nativeTracer'
+import {
+  startJavaScriptExecution,
+  withExecutionStatus,
+  type JavaScriptExecutionHandle,
+} from './interpreter/jsExecutionClient'
 import { EXPLAIN, CONCEPT_GLOSSARY } from '../../../engines/js/eventStream.js'
 import { buildHeapSnapshot } from './renderer/heapSnapshot'
 import HeapGraph from './renderer/HeapGraph'
@@ -25,7 +29,7 @@ import type {
 import {
   ChevronRight, ChevronDown, Code2, Boxes, Braces, ArrowLeft,
   Zap, Play, Pause, StepForward, StepBack, SkipForward, Terminal,
-  Palette, Info, Network, Layers, GitBranch, X, Eye,
+  Palette, Info, Network, Layers, GitBranch, X, Eye, Square,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -805,6 +809,8 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
   const bpDecorRef                  = useRef<string[]>([])
   const shadowDecorRef              = useRef<string[]>([])
   const editorColRef                = useRef<HTMLDivElement>(null)
+  const activeExecutionRef         = useRef<JavaScriptExecutionHandle | null>(null)
+  const runGenerationRef           = useRef(0)
   // Tracks the source that produced `execution` — editing the code without
   // re-running previously left the OLD run's current-line highlight/shadow
   // decorations sitting on the NEW, unrelated text (looked broken/stuck, so
@@ -815,6 +821,12 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
   const totalSteps   = execution?.events?.length ?? 0
   const currentEvent: TraceEvent | null = execution?.events?.[step]      ?? null
   const prevEvent: TraceEvent | null    = execution?.events?.[step - 1]  ?? null
+
+  useEffect(() => () => {
+    runGenerationRef.current += 1
+    activeExecutionRef.current?.stop()
+    activeExecutionRef.current = null
+  }, [])
 
   // Parse live as we type (JS + TS; not Python)
   useEffect(() => { if (lang !== 'py') setModel(buildProgramModel(source) as ProgramModel) }, [])
@@ -945,28 +957,58 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
   }, [])
 
   const handleRun = useCallback(async () => {
+    const generation = ++runGenerationRef.current
     setRunning(true)
     lastRunSourceRef.current = source
     try {
       let result: ExecutionResult
       if (lang === 'py') {
-        result = await runPython(source)
+        result = withExecutionStatus(await runPython(source))
       } else if (lang === 'go') {
-        result = await runNative(source, 'go')
+        result = withExecutionStatus(await runNative(source, 'go'))
       } else {
         const jsSource = lang === 'ts' ? stripTypeScript(source) : source
-        result = await new Promise<ExecutionResult>((resolve) => {
-          setTimeout(() => resolve(runInterpreter(jsSource) as ExecutionResult), 0)
-        })
+        const handle = startJavaScriptExecution(jsSource)
+        activeExecutionRef.current = handle
+        result = await handle.promise
       }
+      if (generation !== runGenerationRef.current) return
       setExecution(result)
       setStep(0)
       setPlaying(false)
       setRunTab('explain')
+    } catch (error) {
+      if (generation !== runGenerationRef.current) return
+      setExecution({
+        events: [],
+        output: [],
+        status: 'runtime-error',
+        error: {
+          type: error instanceof Error ? error.name : 'Error',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      })
+      setStep(0)
+      setPlaying(false)
+      setRunTab('explain')
     } finally {
-      setRunning(false)
+      if (generation === runGenerationRef.current) {
+        activeExecutionRef.current = null
+        setRunning(false)
+      }
     }
   }, [source, lang])
+
+  const handleStop = useCallback(() => {
+    activeExecutionRef.current?.stop()
+  }, [])
+
+  const abandonActiveRun = useCallback(() => {
+    runGenerationRef.current += 1
+    activeExecutionRef.current?.stop()
+    activeExecutionRef.current = null
+    setRunning(false)
+  }, [])
 
   const handleContinue = useCallback(() => {
     if (!execution) return
@@ -1104,6 +1146,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
           ).map(l => (
             <button key={l.id} onClick={() => {
               if (l.id === lang) return
+              abandonActiveRun()
               setLang(l.id)
               const starters: Record<string, string> = { py: STARTER_PY, ts: STARTER_TS, go: STARTER_GO }
               setSource(starters[l.id] ?? STARTER)
@@ -1137,6 +1180,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
           }}
           onChange={(e) => {
             if (!e.target.value) return
+            abandonActiveRun()
             const [catIdx, itemIdx] = e.target.value.split('-').map(Number)
             const snippet = SNIPPET_CATEGORIES[catIdx].items[itemIdx]
             setLang('js')
@@ -1210,10 +1254,18 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
           </div>
 
           {/* Run button */}
-          <PrimaryRunBtn onClick={handleRun} disabled={running}>
-            <Play size={14} fill="currentColor" />
-            {running ? (lang === 'py' ? 'Loading Python…' : lang === 'go' ? 'Building Go…' : 'Running…') : 'Run'}
-          </PrimaryRunBtn>
+          {running && (lang === 'js' || lang === 'ts') ? (
+            <Btn onClick={handleStop} title="Stop this run and keep the trace collected so far">
+              <Square size={12} fill="currentColor" /> Stop
+            </Btn>
+          ) : (
+            <PrimaryRunBtn onClick={handleRun} disabled={running}>
+              <Play size={14} fill="currentColor" />
+              {running
+                ? (lang === 'py' ? 'Loading Python…' : 'Building Go…')
+                : execution && source === lastRunSourceRef.current ? 'Run again' : 'Run'}
+            </PrimaryRunBtn>
+          )}
         </div>
 
         {model?.error && (
@@ -1233,6 +1285,26 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
           padding: '5px 12px', borderBottom: `1px solid ${ui.border}`,
           background: ui.bg, flexShrink: 0, flexWrap: 'wrap',
         }}>
+          <span style={{
+            fontSize: 10,
+            fontWeight: 700,
+            borderRadius: 99,
+            padding: '2px 7px',
+            color: execution.status === 'completed' ? ui.green
+              : execution.status === 'limit' ? ui.amber
+                : execution.status === 'stopped' ? ui.textSoft
+                  : ui.red,
+            border: `1px solid ${execution.status === 'completed' ? ui.green
+              : execution.status === 'limit' ? ui.amber
+                : execution.status === 'stopped' ? ui.borderStrong
+                  : ui.red}66`,
+          }}>
+            {execution.status === 'completed' ? 'Completed'
+              : execution.status === 'limit' ? 'Limit reached'
+                : execution.status === 'stopped' ? 'Stopped'
+                  : execution.status === 'syntax-error' ? 'Syntax error'
+                    : 'Runtime error'}
+          </span>
           {/* Step controls */}
           <Btn onClick={() => { setPlaying(false); setStep(0) }} disabled={step === 0} title="Jump to start">
             <SkipForward size={11} style={{ transform: 'scaleX(-1)' }} />
@@ -1274,12 +1346,13 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
 
           {/* Scrubber */}
           <input
-            type="range" min={0} max={totalSteps - 1} value={step}
+            type="range" min={0} max={Math.max(0, totalSteps - 1)} value={step}
             onChange={e => { setPlaying(false); setStep(Number(e.target.value)) }}
+            disabled={totalSteps === 0}
             style={{ flex: 1, minWidth: 80, accentColor: ui.accentSolid }}
           />
           <span style={{ fontSize: 10, color: ui.textFaint, whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace' }}>
-            {step + 1}/{totalSteps}
+            {totalSteps === 0 ? '0/0' : `${step + 1}/${totalSteps}`}
           </span>
 
           {/* Speed */}
@@ -1295,9 +1368,9 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
             ))}
           </div>
 
-          {execution.error && (
-            <span style={{ fontSize: 10, color: ui.red }}>
-              {execution.error.type}: {execution.error.message}
+          {(execution.limit || execution.error) && (
+            <span style={{ fontSize: 10, color: execution.limit ? ui.amber : ui.red }}>
+              {execution.limit?.message ?? `${execution.error?.type}: ${execution.error?.message}`}
             </span>
           )}
         </div>

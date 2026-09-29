@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { JAVASCRIPT_EXECUTION_LIMITS } from '../../../labs/codelens/codelens/interpreter/executionLimits'
 import { SNIPPET_CATEGORIES } from '../../../labs/codelens/codelens/snippets'
 import { buildProgramModel } from '../parser/jsParser.js'
 import { run } from './interpreter.js'
@@ -20,7 +21,7 @@ describe('CodeLens JavaScript compatibility', () => {
   it('runs every example in the CodeLens library', () => {
     const failures = SNIPPET_CATEGORIES.flatMap(category =>
       category.items.flatMap(example => {
-        const result = run(example.code)
+        const result = run(example.code, { limits: JAVASCRIPT_EXECUTION_LIMITS })
         return result.error
           ? [`${category.group} / ${example.name}: ${result.error.message}`]
           : []
@@ -33,7 +34,7 @@ describe('CodeLens JavaScript compatibility', () => {
   it('runs every DSA course handoff', () => {
     const activities = codelensActivities()
     const failures = activities.flatMap(activity => {
-      const result = run(activity.code ?? '')
+      const result = run(activity.code ?? '', { limits: JAVASCRIPT_EXECUTION_LIMITS })
       return result.error
         ? [`${activity.path} / ${activity.id}: ${result.error.message}`]
         : []
@@ -87,5 +88,72 @@ function binarySearch(values, target) {
 `)
 
     expect(model.callGraph.nodes[0].complexity).toBeUndefined()
+  })
+
+  it.each([
+    {
+      name: 'steps',
+      source: 'let n = 0; while (true) n++',
+      limits: { maxSteps: 20 },
+      kind: 'steps',
+    },
+    {
+      name: 'runtime',
+      source: 'let n = 0; while (n < 1000) n++',
+      limits: { maxRuntimeMs: -1 },
+      kind: 'timeout',
+    },
+    {
+      name: 'trace events',
+      source: 'let total = 0; for (let i = 0; i < 20; i++) total += i',
+      limits: { maxEvents: 12 },
+      kind: 'events',
+    },
+    {
+      name: 'trace size',
+      source: 'const values = [1, 2, 3, 4, 5]',
+      limits: { maxTraceChars: 100 },
+      kind: 'trace-size',
+    },
+    {
+      name: 'console output',
+      source: "console.log('one'); console.log('two'); console.log('three')",
+      limits: { maxOutputLines: 2 },
+      kind: 'output',
+    },
+    {
+      name: 'recursion',
+      source: 'function recurse() { return recurse() } recurse()',
+      limits: { maxRecursionDepth: 8 },
+      kind: 'recursion',
+    },
+    {
+      name: 'heap growth',
+      source: 'const values = []; values.push(1); values.push(2); values.push(3)',
+      limits: { maxHeapProperties: 3 },
+      kind: 'memory',
+    },
+  ])('stops execution at the $name limit', ({ source, limits, kind }) => {
+    const result = run(source, { limits })
+
+    expect(result.error?.type).toBe('ExecutionLimitError')
+    expect(result.error?.limitKind).toBe(kind)
+  })
+
+  it('streams bounded progress before a run is stopped by a limit', () => {
+    const streamedEvents = []
+    const streamedOutput = []
+    const result = run(
+      "console.log('started'); let n = 0; while (true) n++",
+      {
+        limits: { maxSteps: 25 },
+        onEvent: event => streamedEvents.push(event),
+        onOutput: line => streamedOutput.push(line),
+      },
+    )
+
+    expect(result.error?.limitKind).toBe('steps')
+    expect(streamedEvents.length).toBeGreaterThan(0)
+    expect(streamedOutput).toEqual(['started'])
   })
 })

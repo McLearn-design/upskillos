@@ -3,22 +3,33 @@ import { serializeValue } from './environment.js'
 let _objId = 0
 
 export class Heap {
-  constructor() {
+  constructor({ maxObjects = Infinity, maxProperties = Infinity } = {}) {
     this.objects  = new Map()  // objectId -> descriptor
     this.deltas   = []         // pending delta for current event
+    this.maxObjects = maxObjects
+    this.maxProperties = maxProperties
+    this.propertyCount = 0
   }
 
   // Allocate a new object. Returns a reference value { __kind, objectId }.
   allocate(type, properties = {}, prototype = null) {
+    if (this.objects.size >= this.maxObjects) {
+      throw executionLimitError('memory', `Heap object limit (${this.maxObjects}) reached`)
+    }
+    const initialProperties = Object.entries(properties)
+    if (this.propertyCount + initialProperties.length > this.maxProperties) {
+      throw executionLimitError('memory', `Heap property limit (${this.maxProperties}) reached`)
+    }
     const id  = ++_objId
     const obj = {
       id,
       type,
-      properties: new Map(Object.entries(properties)),
+      properties: new Map(initialProperties),
       prototype,
       createdAtStep: null,  // filled in by interpreter
     }
     this.objects.set(id, obj)
+    this.propertyCount += initialProperties.length
     this.deltas.push({ op: 'create', objectId: id, objectType: type,
       properties: serializeProps(obj.properties) })
     return mkRef(id)
@@ -37,7 +48,11 @@ export class Heap {
   set(ref, prop, value, stepId = null) {
     const obj = this._resolve(ref)
     if (!obj) throw new TypeError(`Cannot set property '${prop}' on non-object`)
+    if (!obj.properties.has(prop) && this.propertyCount >= this.maxProperties) {
+      throw executionLimitError('memory', `Heap property limit (${this.maxProperties}) reached`)
+    }
     const oldValue = obj.properties.get(prop)
+    if (!obj.properties.has(prop)) this.propertyCount += 1
     obj.properties.set(prop, value)
     this.deltas.push({
       op: 'mutate', objectId: obj.id, property: prop,
@@ -51,6 +66,7 @@ export class Heap {
     if (!obj) return
     if (!obj.properties.has(prop)) return
     obj.properties.delete(prop)
+    this.propertyCount -= 1
     this.deltas.push({ op: 'delete', objectId: obj.id, property: prop })
   }
 
@@ -103,6 +119,13 @@ export class Heap {
     if (ref?.__kind !== 'reference') return null
     return this.objects.get(ref.objectId) ?? null
   }
+}
+
+function executionLimitError(limitKind, message) {
+  const error = new Error(message)
+  error.name = 'ExecutionLimitError'
+  error.limitKind = limitKind
+  return error
 }
 
 export function mkRef(objectId) {

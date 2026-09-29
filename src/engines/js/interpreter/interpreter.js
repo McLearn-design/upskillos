@@ -3,7 +3,27 @@ import { Environment, serializeValue } from './environment.js'
 import { Heap, mkRef, isRef } from './heap.js'
 import { EventType, makeEvent } from '../eventStream.js'
 
-const MAX_STEPS = 100_000
+const DEFAULT_LIMITS = Object.freeze({
+  maxSteps: 100_000,
+  maxEvents: Infinity,
+  maxTraceChars: Infinity,
+  maxOutputLines: Infinity,
+  maxOutputChars: Infinity,
+  maxRecursionDepth: Infinity,
+  maxHeapObjects: Infinity,
+  maxHeapProperties: Infinity,
+  maxSnapshotItems: Infinity,
+  maxSnapshotChars: Infinity,
+  maxRuntimeMs: Infinity,
+})
+
+class ExecutionLimitError extends Error {
+  constructor(limitKind, message) {
+    super(message)
+    this.name = 'ExecutionLimitError'
+    this.limitKind = limitKind
+  }
+}
 
 // ── Control-flow sentinels ────────────────────────────────────────────────────
 
@@ -19,24 +39,38 @@ export function run(source, options = {}) {
   try {
     ast = acorn.parse(source, { ecmaVersion: 2022, sourceType: 'module', locations: true })
   } catch (e) {
-    return { events: [], error: { message: e.message, line: e.loc?.line ?? null } }
+    return {
+      events: [],
+      output: [],
+      error: { type: 'SyntaxError', message: e.message, line: e.loc?.line ?? null },
+    }
   }
 
-  const interp = new Interpreter(source, ast)
+  const interp = new Interpreter(source, ast, options)
   return interp.execute(options.extraGlobals ?? null)
 }
 
 // ── Interpreter ───────────────────────────────────────────────────────────────
 
 class Interpreter {
-  constructor(source, ast) {
+  constructor(source, ast, options = {}) {
     this.source   = source
     this.ast      = ast
+    this.limits   = { ...DEFAULT_LIMITS, ...(options.limits ?? {}) }
+    this.onEvent  = typeof options.onEvent === 'function' ? options.onEvent : null
+    this.onOutput = typeof options.onOutput === 'function' ? options.onOutput : null
+    this.startedAt = Date.now()
+    this.outputChars = 0
+    this.traceChars = 0
     this.events   = []
     this.stepId   = 0
-    this.heap     = new Heap()
+    this.heap     = new Heap({
+      maxObjects: this.limits.maxHeapObjects,
+      maxProperties: this.limits.maxHeapProperties,
+    })
     this.callStack= []   // [{ name, env, returnLine }]
     this.globalEnv= null // set during execute(), included in every stackSnapshot
+    this.builtinNames = new Set()
     this.output   = []   // console.log lines
     this.labels   = new Map()
   }
@@ -47,6 +81,7 @@ class Interpreter {
     const globalEnv = new Environment(null, 'global')
     this.globalEnv = globalEnv
     this._installGlobals(globalEnv)
+    this.builtinNames = new Set(globalEnv.bindings.keys())
     if (extraGlobals) {
       for (const [name, fn] of Object.entries(extraGlobals)) {
         // A plain function becomes a single callable native (e.g. __sendResponse).
@@ -63,26 +98,33 @@ class Interpreter {
       }
     }
 
-    this._emit(EventType.PROGRAM_START, null, globalEnv, {
-      source: this.source,
-    })
-
     let error = null
     try {
+      this._emit(EventType.PROGRAM_START, null, globalEnv, {
+        source: this.source,
+      })
       this._hoistDeclarations(this.ast.body, globalEnv)
       const result = this._evalBody(this.ast.body, globalEnv)
       if (result instanceof ThrowSignal) throw result.value
     } catch (e) {
-      error = { message: e?.message ?? String(e), type: e?.constructor?.name ?? 'Error' }
-      this._emit(EventType.ERROR_THROWN, null, globalEnv, {
-        errorType: error.type, message: error.message,
-      })
+      error = {
+        message: e?.message ?? String(e),
+        type: e?.name ?? e?.constructor?.name ?? 'Error',
+        ...(e?.limitKind ? { limitKind: e.limitKind } : {}),
+      }
+      try {
+        this._emit(EventType.ERROR_THROWN, null, globalEnv, {
+          errorType: error.type, message: error.message,
+        })
+      } catch {}
     }
 
-    this._emit(EventType.PROGRAM_END, null, globalEnv, {
-      totalSteps: this.stepId,
-      output: this.output,
-    })
+    try {
+      this._emit(EventType.PROGRAM_END, null, globalEnv, {
+        totalSteps: this.stepId,
+        output: this.output,
+      })
+    } catch {}
 
     return { events: this.events, output: this.output, error }
   }
@@ -182,7 +224,12 @@ class Interpreter {
   // ── Statement evaluator ────────────────────────────────────────────────────
 
   _evalStmt(node, env) {
-    if (++this.stepId > MAX_STEPS) throw new Error(`Step limit (${MAX_STEPS}) exceeded — possible infinite loop`)
+    if (++this.stepId > this.limits.maxSteps) {
+      throw new ExecutionLimitError('steps', `Step limit (${this.limits.maxSteps}) reached — possible infinite loop`)
+    }
+    if ((this.stepId & 63) === 0 && Date.now() - this.startedAt > this.limits.maxRuntimeMs) {
+      throw new ExecutionLimitError('timeout', `Runtime limit (${this.limits.maxRuntimeMs} ms) reached`)
+    }
 
     this._emit(EventType.STATEMENT_ENTER, node, env)
 
@@ -976,6 +1023,13 @@ class Interpreter {
 
     if (fn?.__kind !== 'function') throw new TypeError(`Value is not a function`)
 
+    if (this.callStack.length >= this.limits.maxRecursionDepth) {
+      throw new ExecutionLimitError(
+        'recursion',
+        `Recursion limit (${this.limits.maxRecursionDepth} frames) reached`,
+      )
+    }
+
     const { node: fnNode, closure, name } = fn
     const fnName = name ?? fnNode.id?.name ?? '(anonymous)'
 
@@ -1194,13 +1248,13 @@ class Interpreter {
           : iterator?.next ?? (iterator?.__kind === 'native' ? iterator : undefined)
         if (next?.__kind === 'function' || next?.__kind === 'native') {
           const items = []
-          for (let i = 0; i < MAX_STEPS; i++) {
+          for (let i = 0; i < this.limits.maxSteps; i++) {
             const result = this._apply(next, [], iterator, null, new Environment(null))
             const done = isRef(result) ? this.heap.get(result, 'done') : result?.done
             if (done) return items
             items.push(isRef(result) ? this.heap.get(result, 'value') : result?.value)
           }
-          throw new Error(`Iterator limit (${MAX_STEPS}) exceeded — possible infinite iterator`)
+          throw new ExecutionLimitError('steps', `Iterator limit (${this.limits.maxSteps}) reached — possible infinite iterator`)
         }
       }
       return this.heap.ownKeys(value).map(k => this.heap.get(value, k))
@@ -1424,15 +1478,15 @@ class Interpreter {
 
     env.define('console', {
       __kind: 'native', name: 'console',
-      log:   native('console.log',   (_, args) => { const line = args.map(a => self._display(a)).join(' '); self.output.push(line); return undefined }),
-      warn:  native('console.warn',  (_, args) => { const line = args.map(a => self._display(a)).join(' '); self.output.push('[warn] ' + line); return undefined }),
-      error: native('console.error', (_, args) => { const line = args.map(a => self._display(a)).join(' '); self.output.push('[error] ' + line); return undefined }),
+      log:   native('console.log',   (_, args) => { const line = args.map(a => self._display(a)).join(' '); self._pushOutput(line); return undefined }),
+      warn:  native('console.warn',  (_, args) => { const line = args.map(a => self._display(a)).join(' '); self._pushOutput('[warn] ' + line); return undefined }),
+      error: native('console.error', (_, args) => { const line = args.map(a => self._display(a)).join(' '); self._pushOutput('[error] ' + line); return undefined }),
     }, 'const')
 
     // Override MemberExpression lookup for console.log etc.
     env.define('__console_log__', native('console.log', (_, args) => {
       const line = args.map(a => self._display(a)).join(' ')
-      self.output.push(line)
+      self._pushOutput(line)
       return undefined
     }), 'const')
 
@@ -1664,7 +1718,12 @@ class Interpreter {
     if (v?.__kind === 'function') return `[Function: ${v.name ?? '(anonymous)'}]`
     if (v?.__kind === 'class')    return `[Class: ${v.name}]`
     if (v?.__kind === 'native')   return `[native: ${v.name}]`
-    if (v?.__kind === 'reference') return this._display(v)  // array/object → display string
+    if (v?.__kind === 'reference') {
+      return this._display(v, 0, {
+        maxItems: this.limits.maxSnapshotItems,
+        maxChars: this.limits.maxSnapshotChars,
+      })
+    }
     return String(v)
   }
 
@@ -1673,17 +1732,18 @@ class Interpreter {
     if (!env) return {}
     const out = {}
     for (const [k, b] of env.bindings) {
+      if (env === this.globalEnv && this.builtinNames.has(k)) continue
       out[k] = b.initialized ? this._snapshotValue(b.value) : '<TDZ>'
     }
     return out
   }
 
-  _display(v, depth = 0) {
+  _display(v, depth = 0, bounds = null) {
     if (depth > 8) return '...'  // prevent infinite recursion on circular structures
     if (v === null)      return 'null'
     if (v === undefined) return 'undefined'
     // Top-level strings are unquoted (console.log("hi") → hi); nested strings are quoted (like Node.js)
-    if (typeof v === 'string') return depth === 0 ? v : `'${v}'`
+    if (typeof v === 'string') return this._boundSnapshotText(depth === 0 ? v : `'${v}'`, bounds)
     if (typeof v !== 'object') return String(v)
     if (v?.__kind === 'function') return `[Function: ${v.name ?? 'anonymous'}]`
     if (v?.__kind === 'class')    return `[class ${v.name}]`
@@ -1697,22 +1757,37 @@ class Interpreter {
       if (obj.type === 'Array') {
         const len = obj.properties.get('length') ?? 0
         const items = []
-        for (let i = 0; i < len; i++) items.push(this._display(obj.properties.get(String(i)), depth + 1))
-        return `[ ${items.join(', ')} ]`
+        const visibleLength = Math.min(len, bounds?.maxItems ?? Infinity)
+        for (let i = 0; i < visibleLength; i++) {
+          items.push(this._display(obj.properties.get(String(i)), depth + 1, bounds))
+        }
+        if (visibleLength < len) items.push(`… ${len - visibleLength} more`)
+        return this._boundSnapshotText(`[ ${items.join(', ')} ]`, bounds)
       }
       const pairs = []
       for (const [k, val] of obj.properties) {
         if (k === '__mapData__' || k === 'length') continue
-        pairs.push(`${k}: ${this._display(val, depth + 1)}`)
+        if (pairs.length >= (bounds?.maxItems ?? Infinity)) break
+        pairs.push(`${k}: ${this._display(val, depth + 1, bounds)}`)
       }
-      return `{ ${pairs.join(', ')} }`
+      const visibleProperties = [...obj.properties.keys()].filter(k => k !== '__mapData__' && k !== 'length').length
+      if (pairs.length < visibleProperties) pairs.push(`… ${visibleProperties - pairs.length} more`)
+      return this._boundSnapshotText(`{ ${pairs.join(', ')} }`, bounds)
     }
     return String(v)
+  }
+
+  _boundSnapshotText(text, bounds) {
+    const maxChars = bounds?.maxChars ?? Infinity
+    return text.length > maxChars ? `${text.slice(0, Math.max(0, maxChars - 1))}…` : text
   }
 
   // ── Event emission ─────────────────────────────────────────────────────────
 
   _emit(type, node, env, payload = {}) {
+    if (this.events.length >= this.limits.maxEvents) {
+      throw new ExecutionLimitError('events', `Trace event limit (${this.limits.maxEvents}) reached`)
+    }
     const loc = node?.loc?.start
       ? { line: node.loc.start.line, column: node.loc.start.column, astNodeId: node.start ?? null }
       : null
@@ -1749,7 +1824,32 @@ class Interpreter {
 
     const heapDelta = this.heap.drainDeltas()
 
-    this.events.push(makeEvent(type, this.stepId, loc, stackSnapshot, heapDelta, payload))
+    const event = makeEvent(type, this.stepId, loc, stackSnapshot, heapDelta, payload)
+    if (Number.isFinite(this.limits.maxTraceChars)) {
+      const eventChars = JSON.stringify(event).length
+      if (this.traceChars + eventChars > this.limits.maxTraceChars) {
+        throw new ExecutionLimitError(
+          'trace-size',
+          `Trace size limit (${this.limits.maxTraceChars} characters) reached`,
+        )
+      }
+      this.traceChars += eventChars
+    }
+    this.events.push(event)
+    this.onEvent?.(event)
+  }
+
+  _pushOutput(line) {
+    if (this.output.length >= this.limits.maxOutputLines) {
+      throw new ExecutionLimitError('output', `Output line limit (${this.limits.maxOutputLines}) reached`)
+    }
+    const nextChars = this.outputChars + line.length
+    if (nextChars > this.limits.maxOutputChars) {
+      throw new ExecutionLimitError('output', `Output size limit (${this.limits.maxOutputChars} characters) reached`)
+    }
+    this.outputChars = nextChars
+    this.output.push(line)
+    this.onOutput?.(line)
   }
 
   _nodeSource(node) {

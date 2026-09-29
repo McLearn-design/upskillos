@@ -1,8 +1,11 @@
 CodeLens has a strong foundation, but it is **not yet reliable enough to teach JavaScript, TypeScript, Python, and C++ as equally supported languages**. JavaScript is the closest; the other three need significant runtime work.
 
-### Implementation status — 2026-09-28
+### Implementation status — 2026-09-29
 
 - ✅ The full-screen CodeLens shell now stops above the active desktop taskbar (64 px mac dock or 48 px Windows taskbar) while retaining full height on smaller screens.
+- ✅ JavaScript and the current TypeScript execution path now run in a disposable Web Worker instead of blocking the interface.
+- ✅ CodeLens now provides Stop/Run again controls, keeps partial trace batches, and reports completed, stopped, limited, syntax-error, and runtime-error outcomes separately.
+- ✅ JavaScript runs are bounded by runtime, statement, trace-event, trace-size, output, recursion, heap-object, and heap-property limits. Variable snapshots use bounded previews instead of copying arbitrarily large structures into every event.
 
 - ✅ All 10 built-in examples execute without an interpreter error.
 - ✅ All 42 DSA/design-pattern CodeLens handoffs execute without an interpreter error (previously 33/42).
@@ -10,7 +13,7 @@ CodeLens has a strong foundation, but it is **not yet reliable enough to teach J
 - ✅ Unreliable syntax-only complexity labels are hidden until reviewed metadata or a defensible analyser replaces them.
 - ✅ The workspace defaults to one right-side panel. Learners can choose **Learn & output**, **Data structures**, or **Split view**.
 - ✅ `Array.from`, `Object.fromEntries`, `Symbol.iterator`, Map iteration, custom iteration, and destructured callback parameters cover the compatibility failures found in the initial audit.
-- ⏳ Worker isolation, TypeScript transpilation, richer Python tracing, the learning library, specialized DSA views, and C++ remain planned below.
+- ⏳ Python worker isolation, TypeScript transpilation, richer Python tracing, the learning library, specialized DSA views, and C++ remain planned below.
 
 ### Confirmed problems
 
