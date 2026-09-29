@@ -8,6 +8,7 @@ export const meta = {
 
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useGlobalTheme } from '../../context/ThemeContext.jsx'
 import CodeLens from './codelens/CodeLens'
 
 interface CodelensHandoff { code?: string; lang?: string }
@@ -33,6 +34,7 @@ function peekLessonReturn(): { path: string | null; label: string | null } {
 
 export default function CodeLensPage() {
   const navigate = useNavigate()
+  const { taskbarStyle } = useGlobalTheme()
   const [handoff] = useState(peekHandoff)
   const [lessonReturn] = useState(peekLessonReturn)
   const cleanedUp = useRef(false)
@@ -62,13 +64,15 @@ export default function CodeLensPage() {
   }
 
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      background: '#080c14',
-      overflow: 'hidden',
-      zIndex: 50,
-    }}>
+    <div
+      className={`fixed inset-x-0 top-0 bottom-0 overflow-hidden ${
+        taskbarStyle === 'mac' ? 'lg:bottom-16' : 'lg:bottom-12'
+      }`}
+      style={{
+        background: '#080c14',
+        zIndex: 50,
+      }}
+    >
       <CodeLens
         onBack={handleBack}
         initialCode={handoff?.code}

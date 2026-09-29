@@ -252,6 +252,39 @@ function Panel({ title, icon: Icon, children, badge, style, accent }: PanelProps
   )
 }
 
+function InspectorLayoutPicker({
+  value,
+  onChange,
+}: {
+  value: InspectorLayout
+  onChange: (value: InspectorLayout) => void
+}) {
+  const { theme: { ui } } = useCodeLensTheme()
+  return (
+    <label style={{
+      display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0,
+      color: ui.textFaint, fontSize: 10, fontWeight: 700,
+      fontFamily: 'JetBrains Mono, monospace',
+    }}>
+      VIEW
+      <select
+        aria-label="Choose what appears beside the editor"
+        value={value}
+        onChange={event => onChange(event.target.value as InspectorLayout)}
+        style={{
+          flex: 1, background: ui.panelBg, border: `1px solid ${ui.border}`,
+          color: ui.textSoft, padding: '4px 7px', borderRadius: 6,
+          fontSize: 11, fontFamily: 'JetBrains Mono, monospace', outline: 'none',
+        }}
+      >
+        <option value="learn">Learn & output</option>
+        <option value="data">Data structures</option>
+        <option value="both">Split view</option>
+      </select>
+    </label>
+  )
+}
+
 interface BtnProps {
   onClick: () => void
   disabled?: boolean
@@ -721,6 +754,7 @@ function StackFrame({ frame, depth }: { frame: StackFrame; depth: number }) {
 type RunTab = 'events' | 'output' | 'explain'
 type DataTab = 'variables' | 'heap' | 'calltree' | 'scope'
 type CodeTab = 'structure' | 'tokens' | 'ast'
+type InspectorLayout = 'learn' | 'data' | 'both'
 
 interface FnModalState { node: CallGraphNode; callGraph: CallGraph | undefined }
 
@@ -756,6 +790,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
   // tri-state, which crammed 5 tabs into one column and 6 more into another.
   const [runTab, setRunTab]         = useState<RunTab>('explain')
   const [dataTab, setDataTab]       = useState<DataTab>('variables')
+  const [inspectorLayout, setInspectorLayout] = useState<InspectorLayout>('learn')
   const [codeModalTab, setCodeModalTab] = useState<CodeTab | null>(null)
   const [showThemes, setShowThemes] = useState(false)
   const [showWatch, setShowWatch]   = useState(false)
@@ -944,6 +979,13 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
     setStep(events.length - 1)
   }, [step, execution, breakpoints])
 
+  const chooseInspectorLayout = useCallback((layout: InspectorLayout) => {
+    setInspectorLayout(layout)
+    if (layout === 'data') {
+      setDataTab(lang === 'js' || lang === 'ts' ? 'heap' : 'variables')
+    }
+  }, [lang])
+
   // ── Inspector nav: Run / Data / Code groups, each with its own tab strip ──
   const RUN_TABS: { id: RunTab; label: string; icon: LucideIcon }[] = [
     { id: 'explain', label: 'Explain', icon: Info },
@@ -951,9 +993,9 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
     { id: 'output',  label: 'Output',  icon: Terminal },
   ]
   const DATA_TABS: { id: DataTab; label: string; icon: LucideIcon }[] = [
-    { id: 'variables', label: 'Variables', icon: Layers },
-    ...(lang === 'js' ? [{ id: 'heap' as const, label: 'Heap', icon: Network }] : []),
-    { id: 'calltree',  label: 'Tree',      icon: GitBranch },
+    { id: 'variables', label: 'Values',     icon: Layers },
+    ...((lang === 'js' || lang === 'ts') ? [{ id: 'heap' as const, label: 'Structures', icon: Network }] : []),
+    { id: 'calltree',  label: 'Calls',      icon: GitBranch },
   ]
   const CODE_TABS: { id: CodeTab; label: string; icon: LucideIcon }[] = (lang === 'py' || lang === 'go')
     ? [{ id: 'structure', label: 'Structure', icon: Boxes }]
@@ -963,7 +1005,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
         { id: 'ast',       label: 'AST',       icon: Braces },
       ]
 
-  const heapSnapshot = (lang === 'js' && execution)
+  const heapSnapshot = ((lang === 'js' || lang === 'ts') && execution)
     ? buildHeapSnapshot(execution.events, step)
     : null
 
@@ -1068,6 +1110,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
               setExecution(null)
               setStep(0)
               setModel(null)
+              setDataTab('variables')
               setBreakpoints(new Set())
             }} style={{
               padding: '3px 10px', borderRadius: 4, border: 'none', cursor: 'pointer',
@@ -1353,17 +1396,14 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
           }} />
         </div>
 
-        {/* Inspector: three always-visible columns (Run / Data / Code),
-            each with its own small internal tab strip — replaces both the
-            old two-column design (which crammed 5 tabs into one column and
-            6 more into a second) AND a since-rejected single-column,
-            group-switcher design (which hid two of the three categories at
-            a time and left the freed-up width empty). Three narrower
-            columns keep every category visible without any one column
-            needing more than 3 tabs. */}
+        {/* The learner chooses the right-side workspace. Learn is the calm
+            default; Data exposes the DSA visualizers; Split remains available
+            when comparing narration with state is useful. */}
 
         {/* ── Run column ── */}
-        <div style={{ flex: editorW ? '1 1 360px' : '0 0 360px', minWidth: 300, marginLeft: 10, display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+        {inspectorLayout !== 'data' && (
+        <div style={{ flex: editorW || inspectorLayout === 'both' ? '1 1 360px' : '0 0 min(44vw, 520px)', minWidth: 300, marginLeft: 10, display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+          <InspectorLayoutPicker value={inspectorLayout} onChange={chooseInspectorLayout} />
           <div style={{
             display: 'flex', gap: 3, background: ui.panelBg,
             borderRadius: 6, padding: 3, border: `1px solid ${ui.border}`, flexShrink: 0,
@@ -1471,9 +1511,14 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
             )}
           </div>
         </div>
+        )}
 
         {/* ── Data column ── */}
-        <div style={{ flex: editorW ? '1 1 360px' : '0 0 360px', minWidth: 300, marginLeft: 10, display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+        {inspectorLayout !== 'learn' && (
+        <div style={{ flex: editorW || inspectorLayout === 'both' ? '1 1 360px' : '0 0 min(44vw, 520px)', minWidth: 300, marginLeft: 10, display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+          {inspectorLayout === 'data' && (
+            <InspectorLayoutPicker value={inspectorLayout} onChange={chooseInspectorLayout} />
+          )}
           <div style={{
             display: 'flex', gap: 3, background: ui.panelBg,
             borderRadius: 6, padding: 3, border: `1px solid ${ui.border}`, flexShrink: 0,
@@ -1532,6 +1577,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
             )}
           </div>
         </div>
+        )}
 
       </div>
 

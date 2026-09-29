@@ -337,29 +337,14 @@ function paramName(param) {
   return '?'
 }
 
-// Simple static complexity estimate: count loop nesting depth + recursion.
+// Complexity cannot be inferred safely from syntax alone. Binary search has
+// one loop but is O(log n); two sequential loops are not automatically O(n²);
+// recursive Fibonacci is exponential. Keep this field empty until a lesson
+// supplies reviewed complexity metadata or a future analyser can report a
+// qualified estimate with evidence.
 function estimateComplexity(fnNode) {
-  let loopDepth = 0
-  let maxDepth  = 0
-  let current   = 0
-  const fnName  = fnNode.id?.name
-
-  walkAST(fnNode, (node) => {
-    const isLoop = ['ForStatement','ForInStatement','ForOfStatement','WhileStatement','DoWhileStatement'].includes(node.type)
-    if (isLoop) { current++; maxDepth = Math.max(maxDepth, current) }
-
-    // Detect direct recursion
-    if (fnName && node.type === 'CallExpression' && node.callee?.name === fnName) {
-      loopDepth = Math.max(loopDepth, 1)
-    }
-  })
-
-  if (maxDepth === 0 && loopDepth === 0) return 'O(1)'
-  if (maxDepth === 1 && loopDepth === 0) return 'O(n)'
-  if (maxDepth === 0 && loopDepth === 1) return 'O(n) recursive'
-  if (maxDepth === 2) return 'O(n²)'
-  if (maxDepth >= 3) return `O(n^${maxDepth})`
-  return 'O(n log n)?'
+  void fnNode
+  return undefined
 }
 
 function inferInitType(init) {

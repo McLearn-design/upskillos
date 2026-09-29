@@ -749,7 +749,11 @@ class Interpreter {
     if (obj?.__kind === 'class') {
       const staticFn = obj.staticMethods?.['static:' + (isPrivate ? node.property.name : prop)]
       if (staticFn !== undefined) return staticFn
-      return undefined
+      // Native constructors (Array, Map, Set, …) expose selected static
+      // helpers directly on the descriptor. User-defined classes keep their
+      // methods in staticMethods, so this fallback cannot expose instance
+      // state accidentally.
+      return obj[prop]
     }
 
     if (isRef(obj)) {
@@ -915,6 +919,7 @@ class Interpreter {
       if (thisVal?.__kind === 'class') {
         // Static method call: Animal.create(...)
         fn = thisVal.staticMethods?.['static:' + (calleeIsPrivate ? node.callee.property.name : prop)]
+          ?? thisVal[prop]
       } else if (isRef(thisVal)) {
         fn = this.heap.get(thisVal, prop)
         // Accessor in call position: invoke getter to get the function, then call it
@@ -1091,9 +1096,14 @@ class Interpreter {
       const val = args[argIdx] !== undefined
         ? args[argIdx]
         : (param.type === 'AssignmentPattern' ? this._evalExpr(param.right, env) : undefined)
-      const name = param.type === 'AssignmentPattern' ? param.left.name
-        : param.type === 'Identifier' ? param.name : null
-      if (name) env.define(name, val, 'let')
+      const target = param.type === 'AssignmentPattern' ? param.left : param
+      if (target.type === 'Identifier') {
+        env.define(target.name, val, 'let')
+      } else {
+        for (const [name, item] of this._destructure(target, val, env, 'let')) {
+          env.define(name, item, 'let')
+        }
+      }
       argIdx++
     }
   }
@@ -1171,6 +1181,27 @@ class Interpreter {
         const items = []
         for (let i = 0; i < len; i++) items.push(this.heap.get(value, String(i)))
         return items
+      }
+
+      // Objects can provide the same iterator protocol learners use in real
+      // JavaScript. Symbol.iterator is represented by the stable @@iterator
+      // key inside the educational heap so it survives serialization.
+      const iteratorFactory = this.heap.get(value, '@@iterator')
+      if (iteratorFactory?.__kind === 'function' || iteratorFactory?.__kind === 'native') {
+        const iterator = this._apply(iteratorFactory, [], value, null, new Environment(null))
+        const next = isRef(iterator)
+          ? this.heap.get(iterator, 'next')
+          : iterator?.next ?? (iterator?.__kind === 'native' ? iterator : undefined)
+        if (next?.__kind === 'function' || next?.__kind === 'native') {
+          const items = []
+          for (let i = 0; i < MAX_STEPS; i++) {
+            const result = this._apply(next, [], iterator, null, new Environment(null))
+            const done = isRef(result) ? this.heap.get(result, 'done') : result?.done
+            if (done) return items
+            items.push(isRef(result) ? this.heap.get(result, 'value') : result?.value)
+          }
+          throw new Error(`Iterator limit (${MAX_STEPS}) exceeded — possible infinite iterator`)
+        }
       }
       return this.heap.ownKeys(value).map(k => this.heap.get(value, k))
     }
@@ -1380,6 +1411,13 @@ class Interpreter {
     env.define('Infinity',  Infinity,  'const')
     env.define('NaN',       NaN,       'const')
 
+    // A stable, serializable stand-in is sufficient for computed iterator
+    // properties such as [Symbol.iterator] in learner code.
+    env.define('Symbol', {
+      __kind: 'native', name: 'Symbol',
+      iterator: '@@iterator',
+    }, 'const')
+
     env.define('console', { __kind: 'native', name: 'console', fn: null }, 'const')
 
     const native = (name, fn) => ({ __kind: 'native', name, fn })
@@ -1491,6 +1529,14 @@ class Interpreter {
       values:  native('Object.values',  (_, [r]) => { const ref = self.heap.allocate('Array', {}); const vs = isRef(r) ? self.heap.ownKeys(r).map(k => self.heap.get(r, k)) : Object.values(r ?? {}); vs.forEach((v, i) => self.heap.set(ref, String(i), v)); self.heap.set(ref, 'length', vs.length); return ref }),
       assign:  native('Object.assign',  (_, [target, ...srcs]) => { for (const s of srcs) { if (isRef(s)) self.heap.ownKeys(s).forEach(k => self.heap.set(target, k, self.heap.get(s, k))) } return target }),
       entries: native('Object.entries', (_, [r]) => { const ref = self.heap.allocate('Array', {}); const entries = isRef(r) ? self.heap.ownKeys(r).map(k => [k, self.heap.get(r, k)]) : Object.entries(r ?? {}); entries.forEach(([k, v], i) => { const pair = self.heap.allocate('Array', { '0': k, '1': v, length: 2 }); self.heap.set(ref, String(i), pair) }); self.heap.set(ref, 'length', entries.length); return ref }),
+      fromEntries: native('Object.fromEntries', (_, [entries]) => {
+        const ref = self.heap.allocate('Object', {})
+        for (const pair of self._toIterable(entries)) {
+          const [key, value] = self._toIterable(pair)
+          self.heap.set(ref, String(key), value)
+        }
+        return ref
+      }),
       freeze:  native('Object.freeze',  (_, [r]) => r),
       create:  native('Object.create',  (_, [proto]) => self.heap.allocate('Object', {}, isRef(proto) ? proto.objectId : null)),
     }, 'const')
@@ -1550,6 +1596,13 @@ class Interpreter {
         self.heap.set(ref, '__mapData__', self.heap.allocate('Array', { length: 0 }))
         self.heap.set(ref, 'size', 0)
         self._installMapMethods(ref)
+        if (args.length > 0 && args[0] != null) {
+          const setFn = self.heap.get(ref, 'set')
+          for (const pair of self._toIterable(args[0])) {
+            const [key, value] = self._toIterable(pair)
+            interp._apply(setFn, [key, value], ref, null, new Environment(null))
+          }
+        }
         return ref
       }),
     }, 'const')
@@ -1586,6 +1639,7 @@ class Interpreter {
     this.heap.set(ref, 'keys',    native('Map.keys',    () => self._toIterator([...store.keys()])))
     this.heap.set(ref, 'values',  native('Map.values',  () => self._toIterator([...store.values()])))
     this.heap.set(ref, 'entries', native('Map.entries', () => self._toIterator([...store.entries()].map(([k,v]) => { const p = self.heap.allocate('Array', {'0':k,'1':v,length:2}); return p }))))
+    this.heap.set(ref, '@@iterator', native('Map[Symbol.iterator]', () => self._toIterator([...store.entries()].map(([k,v]) => { const p = self.heap.allocate('Array', {'0':k,'1':v,length:2}); return p }))))
     this.heap.set(ref, 'forEach', native('Map.forEach', (_, [cb], interp) => { store.forEach((v, k) => interp._apply(cb, [v, k, ref], null, null, new Environment(null))) }))
   }
 
@@ -1599,6 +1653,7 @@ class Interpreter {
     this.heap.set(ref, 'clear',   native('Set.clear',   () => { store.clear(); self.heap.set(ref, 'size', 0) }))
     this.heap.set(ref, 'forEach', native('Set.forEach', (_, [cb], interp) => { store.forEach(v => interp._apply(cb, [v, v, ref], null, null, new Environment(null))) }))
     this.heap.set(ref, 'values',  native('Set.values',  () => self._toIterator([...store.values()])))
+    this.heap.set(ref, '@@iterator', native('Set[Symbol.iterator]', () => self._toIterator([...store.values()])))
     this.heap.set(ref, 'size', store.size)
   }
 
