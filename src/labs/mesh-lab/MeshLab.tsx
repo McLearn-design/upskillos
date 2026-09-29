@@ -15,6 +15,11 @@ import { exportGLB, importGLTF } from './render/io';
 import { Btn, C, useEditorVersion } from './ui/kit';
 import { FieldLegend } from './ui/FieldLegend';
 import { Timeline } from './ui/Timeline';
+import { ProjectGallery, ProjectGuide } from './ui/Projects';
+import { PROJECTS, openProject, type ExampleProject } from './core/projects';
+import type { PyodideLike } from './core/python';
+import { getPyodide } from '../../utils/pyodideRuntime';
+import type { IncomingScript } from './ui/ScriptPanel';
 import { Outliner } from './ui/Outliner';
 import { Inspector } from './ui/Inspector';
 import { TracePanel } from './ui/TracePanel';
@@ -55,6 +60,10 @@ export default function MeshLab({ onBack }: MeshLabProps) {
   const [bottomH, setBottomH] = useState(270);
   const [menu, setMenu] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
+  const [gallery, setGallery] = useState(false);
+  const [project, setProject] = useState<ExampleProject | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+  const [incoming, setIncoming] = useState<IncomingScript | null>(null);
   const [scriptSeen, setScriptSeen] = useState(false);
   useEffect(() => { if (tab === 'script') setScriptSeen(true); }, [tab]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -179,6 +188,27 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     catch (err) { editor.say(`GLB export failed: ${err instanceof Error ? err.message : err}`); }
   };
 
+  /** Open a finished example: build it on a new scene, apply its setup, show its guide and script. */
+  const openExample = async (p: ExampleProject) => {
+    if (editor.undoStack.length && !confirm(`Open "${p.title}"? It replaces the current scene (save first to keep it).`)) return;
+    setOpening(p.id);
+    let py: PyodideLike | undefined;
+    if (p.lang === 'python') {
+      try { py = (await getPyodide()) as unknown as PyodideLike; }
+      catch (err) { setOpening(null); editor.say(`Python could not start: ${err instanceof Error ? err.message : err}`); return; }
+    }
+    const r = openProject(editor, p, py);
+    setOpening(null); setGallery(false);
+    if (r.error) { editor.say(`Could not open ${p.title}: ${r.error}`); return; }
+    setProject(p);
+    setIncoming({ code: p.code, lang: p.lang, n: Date.now() });
+    setTab(p.setup.tab ?? 'trace');
+    requestAnimationFrame(() => {
+      if (p.setup.view === 'selected') vp?.frameSelected(); else vp?.frameAll();
+      if (p.setup.play) editor.setPlaying(true);
+    });
+  };
+
   const edit = editor.mode === 'edit';
   const o = editor.activeObject;
   const menus: Record<string, [string, (() => void) | null, string?][]> = {
@@ -216,6 +246,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     ],
     View: [['Frame selected', () => vp?.frameSelected(), 'F'], ['Frame all', () => vp?.frameAll(), 'Home'], ['Front', () => vp?.view('front')], ['Right', () => vp?.view('right')], ['Top', () => vp?.view('top')], ['Perspective', () => vp?.view('persp')]],
     Script: [['Open script panel', () => setTab('script')], ['Show the GUI → code log', () => setTab('log')]],
+    Examples: [['Browse example projects…', () => setGallery(true)], ...PROJECTS.map((p) => [`${p.icon}  ${p.title}`, () => openExample(p)] as [string, () => void])],
     Help: [['Keyboard shortcuts', () => setHelp(true), '?']],
   };
 
@@ -279,6 +310,8 @@ export default function MeshLab({ onBack }: MeshLabProps) {
         {sep}
         <Btn small disabled={!editor.undoStack.length} onClick={() => editor.undo()} title={`Undo ${editor.undoStack.at(-1)?.label ?? ''} (Ctrl+Z)`}>↶</Btn>
         <Btn small disabled={!editor.redoStack.length} onClick={() => editor.redo()} title="Redo (Ctrl+Shift+Z)">↷</Btn>
+        {sep}
+        <Btn small active onClick={() => setGallery(true)} title="Finished example projects to open and take apart">📂 Examples</Btn>
       </div>
 
       <div style={{ gridColumn: 1, gridRow: 3, borderRight: `1px solid ${C.border}`, minHeight: 0 }}><Outliner editor={editor} /></div>
@@ -288,6 +321,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
           <div>Left-drag orbit · right-drag pan · wheel zoom · click select</div>
         </div>
         <FieldLegend editor={editor} />
+        {project && <ProjectGuide project={project} onClose={() => setProject(null)} onShowScript={() => { setIncoming({ code: project.code, lang: project.lang, n: Date.now() }); setTab('script'); }} />}
       </div>
       <div style={{ gridColumn: 3, gridRow: 3, borderLeft: `1px solid ${C.border}`, minHeight: 0 }}><Inspector editor={editor} /></div>
 
@@ -305,7 +339,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
           ))}
         </div>
         <div style={{ flex: 1, minHeight: 0, display: tab === 'trace' ? 'block' : 'none' }}><TracePanel editor={editor} viewport={vp} /></div>
-        <div style={{ flex: 1, minHeight: 0, display: tab === 'script' ? 'block' : 'none' }}>{scriptSeen ? <ScriptPanel editor={editor} onRun={() => vp?.sync()} /> : null}</div>
+        <div style={{ flex: 1, minHeight: 0, display: tab === 'script' ? 'block' : 'none' }}>{scriptSeen ? <ScriptPanel editor={editor} onRun={() => vp?.sync()} incoming={incoming} /> : null}</div>
         <div style={{ flex: 1, minHeight: 0, display: tab === 'timeline' ? 'block' : 'none' }}>{tab === 'timeline' ? <Timeline editor={editor} /> : null}</div>
         <div style={{ flex: 1, minHeight: 0, display: tab === 'log' ? 'block' : 'none' }}><LogPanel editor={editor} /></div>
       </div>
@@ -319,6 +353,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       </div>
 
       {help && <Help onClose={() => setHelp(false)} />}
+      {gallery && <ProjectGallery onOpen={openExample} onClose={() => setGallery(false)} busy={opening} />}
     </div>
   );
 }

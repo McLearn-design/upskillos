@@ -45,17 +45,17 @@ interface SceneObject {
   modifiers: { add(type: 'mirror' | 'subsurf', opts?: object): SceneObject; set(i: number, patch: object): SceneObject; remove(i: number): SceneObject; apply(): SceneObject; readonly list: object[] };
   delete(): void; duplicate(): SceneObject;
   /** Pin channels to values at a frame (no values: key the current position, rotation and scale). interp is how it leaves this key. */
-  keyframe(frame: number, values?: { position?: Vec3 | Vec3Handle; rotation?: Vec3 | Vec3Handle; scale?: Vec3 | Vec3Handle; interp?: 'constant' | 'linear' | 'ease' }): SceneObject;
-  deleteKeyframe(frame: number): SceneObject; setInterpolation(frame: number, interp: 'constant' | 'linear' | 'ease'): SceneObject;
+  keyframe(frame: number, values?: { position?: Vec3 | Vec3Handle; rotation?: Vec3 | Vec3Handle; scale?: Vec3 | Vec3Handle; interp?: 'constant' | 'linear' | 'ease' | 'ease-in' | 'ease-out' }): SceneObject;
+  deleteKeyframe(frame: number): SceneObject; setInterpolation(frame: number, interp: 'constant' | 'linear' | 'ease' | 'ease-in' | 'ease-out'): SceneObject;
   /** How rotation is interpolated between keys: each Euler angle separately, or quaternion slerp (shortest path, even speed). */ rotationMode: 'euler' | 'quaternion';
   readonly animation: { position?: Key[]; rotation?: Key[]; scale?: Key[]; rotationMode?: string } | null;
   clearAnimation(): SceneObject;
   /** The transform at a frame, without going there. */ sample(frame: number): { position: Vec3; rotation: Vec3; scale: Vec3 };
 }
-interface Key { frame: number; value: Vec3; interp: 'constant' | 'linear' | 'ease' }
+interface Key { frame: number; value: Vec3; interp: 'constant' | 'linear' | 'ease' | 'ease-in' | 'ease-out' }
 interface PrimOpts { name?: string; position?: Vec3; rotation?: Vec3; scale?: Vec3; parent?: SceneObject; size?: number; radius?: number; height?: number; segments?: number; rings?: number; subdivisions?: number; tube?: number; tubeSegments?: number }
 declare const scene: {
-  add: { cube(o?: PrimOpts): SceneObject; plane(o?: PrimOpts): SceneObject; grid(o?: PrimOpts): SceneObject; circle(o?: PrimOpts): SceneObject; cylinder(o?: PrimOpts): SceneObject; cone(o?: PrimOpts): SceneObject; uvSphere(o?: PrimOpts): SceneObject; torus(o?: PrimOpts): SceneObject; empty(o?: { name?: string; position?: Vec3 }): SceneObject; mesh(o: { name?: string; verts: Vec3[]; faces: number[][]; position?: Vec3 }): SceneObject };
+  add: { cube(o?: PrimOpts): SceneObject; plane(o?: PrimOpts): SceneObject; grid(o?: PrimOpts): SceneObject; circle(o?: PrimOpts): SceneObject; cylinder(o?: PrimOpts): SceneObject; cone(o?: PrimOpts): SceneObject; uvSphere(o?: PrimOpts): SceneObject; torus(o?: PrimOpts): SceneObject; empty(o?: { name?: string; position?: Vec3; rotation?: Vec3; scale?: Vec3; parent?: SceneObject }): SceneObject; mesh(o: { name?: string; verts: Vec3[]; faces: number[][]; position?: Vec3; rotation?: Vec3; scale?: Vec3; parent?: SceneObject }): SceneObject };
   addCube(o?: PrimOpts): SceneObject; addSphere(o?: PrimOpts): SceneObject;
   get(nameOrId: string): SceneObject; find(nameOrId: string): SceneObject | null;
   readonly objects: SceneObject[]; readonly selected: SceneObject[]; readonly active: SceneObject | null;
@@ -79,7 +79,10 @@ const STEP_CSS = `.ml-step-line { background: rgba(255,159,28,0.22); } .ml-step-
 
 type Line = { text: string; error?: boolean; note?: boolean };
 
-export function ScriptPanel({ editor, onRun }: { editor: Editor; onRun?: () => void }) {
+/** Code to load into the editor from outside (an example project); a new `n` loads it again. */
+export interface IncomingScript { code: string; lang: 'js' | 'python'; n: number }
+
+export function ScriptPanel({ editor, onRun, incoming }: { editor: Editor; onRun?: () => void; incoming?: IncomingScript | null }) {
   useEditorVersion(editor);
   const [lang, setLang] = useState<Lang>(() => (read(LANG_STORE) === 'python' ? 'python' : 'js'));
   const [codes, setCodes] = useState<Record<Lang, string>>(() => ({ js: read(STORE.js) ?? EXAMPLES[0].code, python: read(STORE.python) ?? PY_EXAMPLES[0].code }));
@@ -107,6 +110,13 @@ export function ScriptPanel({ editor, onRun }: { editor: Editor; onRun?: () => v
     window.addEventListener('meshlab:load-script', load);
     return () => window.removeEventListener('meshlab:load-script', load);
   }, []);
+  useEffect(() => {
+    if (!incoming) return;
+    closePlayer();
+    setLang(incoming.lang);
+    setCodes((c) => ({ ...c, [incoming.lang]: incoming.code }));
+    setOut([]);
+  }, [incoming?.n]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const closePlayer = () => {
     setRec(null); setPlaying(false); shownScene.current = -1;

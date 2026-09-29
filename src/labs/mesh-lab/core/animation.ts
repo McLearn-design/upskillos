@@ -5,6 +5,8 @@
 //
 //   t = (frame − f₀) / (f₁ − f₀)            how far through the gap, 0 → 1
 //   s = ease(t)                             linear: s = t;  ease: s = 3t² − 2t³
+//                                           ease-in: s = t² (starts slow: falling from rest)
+//                                           ease-out: s = 1 − (1 − t)² (ends slow: rising to rest)
 //   value = v₀ + s · (v₁ − v₀)              position and scale, per component
 //
 // Rotation can be interpolated two ways, and seeing the difference is the point:
@@ -23,7 +25,8 @@ import type { Vec3 } from './EditMesh';
 export type Channel = 'position' | 'rotation' | 'scale';
 export const CHANNELS: Channel[] = ['position', 'rotation', 'scale'];
 /** How the value moves from this key to the next one. */
-export type Interp = 'constant' | 'linear' | 'ease';
+export type Interp = 'constant' | 'linear' | 'ease' | 'ease-in' | 'ease-out';
+export const INTERPS: Interp[] = ['constant', 'linear', 'ease', 'ease-in', 'ease-out'];
 export interface Key { frame: number; value: Vec3; interp: Interp }
 export interface Animation {
   position?: Key[]; rotation?: Key[]; scale?: Key[]; rotationMode?: 'euler' | 'quaternion';
@@ -38,6 +41,9 @@ export type Quat = [number, number, number, number]; // x, y, z, w (three.js ord
 export function ease(t: number, interp: Interp): number {
   if (interp === 'constant') return 0;
   if (interp === 'linear') return t;
+  // Under gravity height is quadratic in time, so these two make a thrown or falling object exact.
+  if (interp === 'ease-in') return t * t;
+  if (interp === 'ease-out') return 1 - (1 - t) * (1 - t);
   return t * t * (3 - 2 * t); // cubic Hermite with zero slope at both keys: starts and stops gently
 }
 

@@ -2,7 +2,7 @@
 // all of them are run by the tests, so they cannot quietly break.
 
 /** The box-modelled character, shared by the modelling and rigging examples. */
-const CHARACTER = `// 1. Half a torso: a box from x = 0 to 0.6. The mirror makes the other half.
+export const CHARACTER = `// 1. Half a torso: a box from x = 0 to 0.6. The mirror makes the other half.
 const body = scene.add.cube({ name: 'Character', size: 1 })
 const m = body.mesh
 for (const v of m.vertices) { v.x = v.x < 0 ? 0 : 0.6; v.y = v.y < 0 ? 0 : 1.2; v.z *= 0.6 }

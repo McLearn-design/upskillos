@@ -21,7 +21,7 @@ import { Trace } from './trace';
 import { Recorder, brief, instrument, type Recording } from './recorder';
 import { gaussianCurvature, heatGeodesic, meanCurvature, operators, smooth as smoothMesh } from './geometry';
 import type { FieldSpec } from './fields';
-import { CHANNELS, cloneAnimation, hasKeys, removeBoneKey, removeKey, setBoneKey, setKey, transformAt, type Interp } from './animation';
+import { CHANNELS, INTERPS, cloneAnimation, hasKeys, removeBoneKey, removeKey, setBoneKey, setKey, transformAt, type Interp } from './animation';
 import { boneLength, limitWeights, orderBones, posedEnds, type Bone } from './armature';
 import { applyBonePatch, bindSkin, removeBone } from './evaluate';
 
@@ -50,10 +50,9 @@ function assign(target: Vec3, v: ArrayLike<number> | Vec3Handle): void {
   target[0] = a[0]; target[1] = a[1]; target[2] = a[2];
 }
 
-const INTERPS: Interp[] = ['constant', 'linear', 'ease'];
 function interpOf(x: unknown): Interp | undefined {
   if (x === undefined) return undefined;
-  if (!INTERPS.includes(x as Interp)) throw new Error(`Interpolation must be "constant", "linear" or "ease", not ${JSON.stringify(x)}`);
+  if (!INTERPS.includes(x as Interp)) throw new Error(`Interpolation must be one of ${INTERPS.map((i) => `"${i}"`).join(', ')}, not ${JSON.stringify(x)}`);
   return x as Interp;
 }
 
@@ -281,10 +280,15 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
     const list = ((p.bones as { name: string; parent?: string | null; head: Vec3; tail: Vec3 }[] | undefined) ?? [{ name: 'Bone', head: [0, 0, 0], tail: [0, 1, 0] }])
       .map((b) => ({ name: String(b.name), parent: b.parent ?? null, head: vec(b.head), tail: vec(b.tail), pose: [0, 0, 0] as Vec3 }));
     orderBones(list);
-    return objHandle(scene().add({ name: String(p.name ?? 'Armature'), kind: 'armature', bones: list, position: p.position as Vec3, material: { color: '#c9ced6', roughness: 0.6, metalness: 0 } }));
+    return objHandle(scene().add({ name: String(p.name ?? 'Armature'), kind: 'armature', bones: list, ...placed(p), material: { color: '#c9ced6', roughness: 0.6, metalness: 0 } }));
   };
-  add.empty = (p: Record<string, unknown> = {}) => objHandle(scene().add({ name: String(p.name ?? 'Empty'), kind: 'empty', position: p.position as Vec3 }));
-  add.mesh = (p: Record<string, unknown> = {}) => objHandle(scene().add({ name: String(p.name ?? 'Mesh'), mesh: new EditMesh((p.verts as Vec3[]) ?? [], (p.faces as number[][]) ?? []), position: p.position as Vec3 }));
+  // Transform and parent options, shared by every add: { position, rotation, scale, parent }.
+  const placed = (p: Record<string, unknown>) => ({
+    position: p.position === undefined ? undefined : vec(p.position as Vec3), rotation: p.rotation === undefined ? undefined : vec(p.rotation as Vec3),
+    scale: p.scale === undefined ? undefined : vec(p.scale as Vec3), parent: (p.parent as { id: string } | undefined)?.id ?? null,
+  });
+  add.empty = (p: Record<string, unknown> = {}) => objHandle(scene().add({ name: String(p.name ?? 'Empty'), kind: 'empty', ...placed(p) }));
+  add.mesh = (p: Record<string, unknown> = {}) => objHandle(scene().add({ name: String(p.name ?? 'Mesh'), mesh: new EditMesh(((p.verts as Vec3[]) ?? []).map((v) => vec(v)), ((p.faces as number[][]) ?? []).map((f) => Array.from(f, Number))), ...placed(p) }));
 
   const sceneApi = {
     add,

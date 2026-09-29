@@ -1,7 +1,7 @@
 // The timeline: frames, keyframes, playback, and the numbers behind interpolation.
 import React, { useRef, useState } from 'react';
 import type { Editor } from '../core/Editor';
-import { CHANNELS, angleBetween, eulerToQuat, keyFrames, sampleKeys, slerp, type Channel, type Interp, type Quat } from '../core/animation';
+import { CHANNELS, INTERPS, angleBetween, eulerToQuat, keyFrames, sampleKeys, slerp, type Channel, type Interp, type Quat } from '../core/animation';
 import { fmt } from '../core/trace';
 import { Btn, C, NumberField, useEditorVersion } from './kit';
 
@@ -23,7 +23,9 @@ export function Timeline({ editor }: { editor: Editor }) {
   const o = editor.activeObject;
   const anim = o?.anim;
   const hasBone = !!(o?.bones && editor.activeBone);
-  const channel: Row = chosen === 'bone' && !hasBone ? 'position' : chosen;
+  // With only bone keys on an armature, show the bone curve rather than an empty object channel.
+  const bkeys = boneKeys(editor);
+  const channel: Row = chosen === 'bone' && !hasBone ? 'position' : chosen !== 'bone' && !anim?.[chosen]?.length && bkeys?.length ? 'bone' : chosen;
   const posing = editor.mode === 'pose';
   const bk = boneKeys(editor);
   const keyAt = posing ? bk?.find((k) => k.frame === t.frame) : undefined;
@@ -51,7 +53,7 @@ export function Timeline({ editor }: { editor: Editor }) {
         <Btn small disabled={!keysHere.length} onClick={() => editor.deleteKey()} title="Remove the keys at this frame">Delete key</Btn>
         {keysHere.length > 0 && <>
           <span style={{ color: C.faint, marginLeft: 4 }}>leave this key</span>
-          {(['constant', 'linear', 'ease'] as Interp[]).map((i) => <Btn key={i} small active={interpHere === i} onClick={() => editor.setInterpolation(i)}>{i}</Btn>)}
+          {INTERPS.map((i) => <Btn key={i} small active={interpHere === i} onClick={() => editor.setInterpolation(i)}>{i}</Btn>)}
         </>}
         {o && anim?.rotation?.length ? <>
           <span style={{ color: C.faint, marginLeft: 4 }}>rotation</span>
@@ -110,7 +112,7 @@ function Track({ editor }: { editor: Editor }) {
       ))}
       {editor.activeObject?.bones && (
         <g>
-          <text x={6} y={66} fill={C.blue} fontSize={9}>{editor.activeBone ?? 'bone'}</text>
+          <text x={6} y={66} fill={C.blue} fontSize={9}>{(() => { const n = editor.activeBone ?? 'bone'; return n.length > 9 ? `${n.slice(0, 8)}…` : n; })()}<title>{editor.activeBone}</title></text>
           {bk?.map((k) => <rect key={k.frame} x={x(k.frame) - 4} y={59} width={8} height={8} transform={`rotate(45 ${x(k.frame)} 63)`} fill={k.frame === t.frame ? C.accent : '#9cc9ff'} stroke="#1b1b1b" strokeWidth={0.8} />)}
         </g>
       )}
@@ -202,7 +204,7 @@ function Explain({ editor }: { editor: Editor }) {
             {s.from && s.to ? (
               <>
                 <div style={{ color: C.dim }}>between keys at {s.from.frame} and {s.to.frame}: t = ({f} − {s.from.frame}) / ({s.to.frame} − {s.from.frame}) = {fmt(s.t!, 4)}</div>
-                <div style={{ color: C.dim }}>{s.from.interp === 'ease' ? `s = 3t² − 2t³ = ${fmt(s.s!, 4)} (ease)` : s.from.interp === 'linear' ? `s = t = ${fmt(s.s!, 4)} (linear)` : 's = 0: constant holds the first key until the next'}</div>
+                <div style={{ color: C.dim }}>{s.from.interp === 'ease' ? `s = 3t² − 2t³ = ${fmt(s.s!, 4)} (ease)` : s.from.interp === 'ease-in' ? `s = t² = ${fmt(s.s!, 4)} (ease-in: speeding up, as falling from rest)` : s.from.interp === 'ease-out' ? `s = 1 − (1 − t)² = ${fmt(s.s!, 4)} (ease-out: slowing down, as rising to rest)` : s.from.interp === 'linear' ? `s = t = ${fmt(s.s!, 4)} (linear)` : 's = 0: constant holds the first key until the next'}</div>
                 {!sl && <div style={{ color: C.dim }}>value = v₀ + s·(v₁ − v₀), each component</div>}
                 {sl && <Slerp from={s.from.value} to={s.to.value} s={s.s!} />}
               </>

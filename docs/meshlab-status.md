@@ -116,6 +116,36 @@ typecheck and the browser run below on r186.
 - Found and fixed: the character example's leg step also extruded the arms' undersides (they face down too),
   hanging two flaps under the arms; this was visible as slab-like arms and gave the hands 23% thigh weight.
 
+## Done (2026-09-29): finished example projects
+
+Examples menu and toolbar button open a gallery (grouped like Sim Lab's templates) of eleven finished projects,
+each built by a script on a new scene (one undo step), with a setup (selection, frame, panel, playback, camera)
+and a "look and try" guide beside the viewport; "Show how it was built" loads its script (JavaScript or Python)
+into the Script panel. `core/projects.ts`, `ui/Projects.tsx`.
+
+- Modelling: low-poly island (terrain from a height formula, trees as empties with children, rocks), dining set
+  (box modelling, one hierarchy), the box-modelled character.
+- Animation: bouncing ball with exact gravity (new ease-in / ease-out interpolation: s = t², 1 − (1 − t)², frame
+  counts from t = √(2h/g)), robot arm (nested joints; the carried block baked from the gripper's world matrix),
+  Euler vs slerp.
+- Rigging: the character walking and waving.
+- Geometry: curvature gallery (Gauss–Bonnet totals printed), distance on a trefoil knot (heat method, traced),
+  noise and smoothing (curvature spread and volume shrink printed).
+- Scripting: a turned vase in Python.
+
+Fixed on the way: `scene.add.empty` and `scene.add.mesh` ignored `parent`, `rotation` and `scale` (hierarchies
+built by script silently came out flat); `add.armature` now takes them too. The Timeline shows an armature's bone
+curve when the object itself has no keys.
+
+Verification: `core/projects.test.ts` builds every project (Python through Pyodide) with no error, valid meshes,
+the setup's selection, one undo step; and checks what the projects claim: the ball's first fall matches
+y = top − (top − y₁)t² at every frame and lasts 19 frames; the gallery prints 4π for the sphere and 0 for the
+torus; smoothing cuts the curvature spread by over 3× and shrinks the volume; the knot is closed and shows
+distance from vertex 0 with the heat-method trace; the gripper has no keys of its own yet moves, and the block is
+at the gripper (to 1e-9) from frame 45 to 105 and stays after. Browser: all eleven opened from the gallery by
+clicking, each with its selection, guide, playback or heat map, no page errors. `npx vitest run src/labs/mesh-lab`:
+13 files, 178 tests (183 with `src/utils` and `src/labs/codelens`).
+
 ## Verification
 
 - `npx vitest run src/labs/mesh-lab`: 7 files, 98 tests (session 1). They cover primitives (closed, outward, Euler,

@@ -146,6 +146,6 @@ describe('animation from scripts', () => {
   });
 
   it('rejects a bad interpolation name', () => {
-    expect(runScript(fresh(), `scene.add.cube().keyframe(1, { interp: 'bouncy' })`).error).toMatch(/constant", "linear" or "ease/);
+    expect(runScript(fresh(), `scene.add.cube().keyframe(1, { interp: 'bouncy' })`).error).toMatch(/"constant", "linear", "ease", "ease-in", "ease-out"/);
   });
 });

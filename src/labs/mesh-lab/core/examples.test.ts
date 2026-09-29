@@ -88,3 +88,21 @@ describe('number-field expressions', () => {
     for (const bad of ['', 'alert(1)', '1+', 'x', '(1', 'constructor']) expect(evalExpr(bad)).toBeNull();
   });
 });
+
+describe('adding objects inside a parent', () => {
+  it('empties, meshes and armatures accept parent, rotation and scale', () => {
+    const e = new Editor(); e.newScene();
+    const r = runScript(e, `
+      const g = scene.add.empty({ name: 'G', position: [1, 0, 0], rotation: [0, 1, 0] })
+      scene.add.empty({ name: 'E', parent: g, position: [0, 2, 0], scale: [2, 2, 2] })
+      scene.add.mesh({ name: 'M', parent: g, verts: [[0,0,0],[1,0,0],[0,1,0]], faces: [[0,1,2]], rotation: [0.5, 0, 0] })
+      scene.add.armature({ name: 'A', parent: g })
+    `);
+    expect(r.error).toBeNull();
+    const g = e.scene.get('G')!;
+    for (const n of ['E', 'M', 'A']) expect(e.scene.get(n)!.parent).toBe(g.id);
+    expect(e.scene.get('E')!.position).toEqual([0, 2, 0]); // local to the parent
+    expect(e.scene.get('E')!.scale).toEqual([2, 2, 2]);
+    expect(e.scene.get('M')!.rotation).toEqual([0.5, 0, 0]);
+  });
+});
