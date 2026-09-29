@@ -64,6 +64,47 @@ describe('what the projects claim', () => {
     expect(e.trace?.op).toBe('Heat method');
   });
 
+  it('the candy wrapper: at the full twist the linear tube pinches, the dual-quaternion one stays round', async () => {
+    const { skinnedSource } = await import('./evaluate');
+    const { e } = open('candy-wrapper');
+    e.setFrame(36);
+    const mid = (name: string) => {
+      const o = e.scene.get(name)!, v = skinnedSource(e.scene, o).verts;
+      return Array.from({ length: 16 }, (_, j) => 8 * 16 + j).reduce((s, i) => s + Math.hypot(v[i][0], v[i][2]), 0) / 16;
+    };
+    expect(mid('Linear blend')).toBeLessThan(0.5 * 0.25);
+    expect(mid('Dual quaternion')).toBeGreaterThan(0.9 * 0.25);
+    for (const n of ['Linear blend', 'Dual quaternion']) { const s = e.scene.get(n)!.mesh!.stats(); expect(s.closed).toBe(true); expect(s.volume).toBeGreaterThan(0); }
+  });
+
+  it('fix a bad rig: opens painting the spine, and painting the chest stops the arm dragging it', async () => {
+    const { skinnedSource, skinSource } = await import('./evaluate');
+    const { e } = open('fix-a-bad-rig');
+    expect(e.mode).toBe('weight'); expect(e.activeBone).toBe('Spine'); expect(e.frame).toBe(24);
+    const body = () => e.scene.get('Character')!;
+    const src = skinSource(body()).verts;
+    const chest = src.map((v, i) => [v, i] as const).filter(([v]) => v[0] > 0.2 && v[0] < 0.65 && v[1] > 0.8 && v[1] < 1.25).map(([, i]) => i);
+    const drift = () => { const p = skinnedSource(e.scene, body()).verts; return chest.reduce((s, i) => s + Math.hypot(p[i][0] - src[i][0], p[i][1] - src[i][1], p[i][2] - src[i][2]), 0) / chest.length; };
+    const before = drift();
+    const pos = skinnedSource(e.scene, body()).verts;
+    e.paint = { ...e.paint, brush: 'draw', value: 1, strength: 0.8, radius: 0.35 };
+    e.beginStroke(); for (const i of chest) e.strokeDab(pos[i]); e.endStroke();
+    expect(drift()).toBeLessThan(before * 0.5); // the chest stays nearly where it rests
+  });
+
+  it('the tentacle: rolling a bone 90° turns its bending plane from forward to sideways', async () => {
+    const { posedEnds } = await import('./armature');
+    const { e } = open('tentacle');
+    e.setFrame(13);                                   // Seg 1 at a full swing
+    const tip = () => posedEnds(e.scene.get('Tentacle rig')!.bones!).get('Seg 1')!.tail;
+    const a = tip();
+    expect(Math.abs(a[2])).toBeGreaterThan(0.2); expect(Math.abs(a[0])).toBeLessThan(1e-9);   // swings in z
+    e.enterBoneEdit(); e.setBone('Seg 1', { roll: Math.PI / 2 }); e.exitBoneEdit();
+    e.setFrame(13);
+    const b = tip();
+    expect(Math.abs(b[0])).toBeCloseTo(Math.abs(a[2]), 9); expect(Math.abs(b[2])).toBeLessThan(1e-9); // same swing, now in x
+  });
+
   it('the robot gripper moves only because its parents turn', () => {
     const { e } = open('robot-arm');
     const g = e.scene.get('Gripper')!;
@@ -76,5 +117,58 @@ describe('what the projects claim', () => {
     for (const f of [45, 60, 75, 90, 105]) expect(Math.hypot(...bAt(f).map((x, i) => x - at(f)[i]))).toBeLessThan(1e-9);
     expect(bAt(120)).toEqual(bAt(105));
     expect(Math.hypot(...bAt(105).map((x, i) => x - bAt(45)[i]))).toBeGreaterThan(1);
+  });
+});
+
+describe('bone edit mode shows the rest pose', () => {
+  it('while the tentacle rig is edited the tentacle is straight; leaving puts the pose back', async () => {
+    const { skinnedSource, skinSource } = await import('./evaluate');
+    const e = new Editor();
+    openProject(e, PROJECTS.find((p) => p.id === 'tentacle')!, py);
+    e.setFrame(13);
+    const t = () => e.scene.get('Tentacle')!;
+    const moved = () => { const a = skinnedSource(e.scene, t()).verts, b = skinSource(t()).verts; return Math.max(...a.map((v, i) => Math.hypot(v[0] - b[i][0], v[1] - b[i][1], v[2] - b[i][2]))); };
+    expect(moved()).toBeGreaterThan(0.3);
+    e.enterBoneEdit();
+    expect(moved()).toBe(0);
+    e.exitBoneEdit();
+    expect(moved()).toBeGreaterThan(0.3);
+  });
+});
+
+describe('UV and material projects', () => {
+  const open = (id: string) => { const e = new Editor(); const r = openProject(e, PROJECTS.find((p) => p.id === id)!, py); return { e, r }; };
+
+  it('unwrap basics: the cube has no distortion, the sphere keeps angles well but not areas', () => {
+    const { r } = open('unwrap-basics');
+    expect(r.output[0]).toBe('cube: worst angle distortion 1.0000');
+    expect(Number(r.output[1].split(' ').at(-1))).toBeLessThan(1.25);
+    expect(Number(r.output[2].match(/varies ([\d.]+)×/)![1])).toBeGreaterThan(3);
+  });
+
+  it('the vase gets a band and a disc, with little angle distortion', async () => {
+    const { uvFits, charts } = await import('./uv');
+    const { e, r } = open('python-vase');
+    const v = e.scene.get('Vase')!;
+    expect(uvFits(v.mesh!, v.uv)).toBe(true);
+    expect(charts(v.mesh!, new Set(v.seams)).length).toBe(2);
+    expect(Number(r.output.at(-1)!.match(/mean ([\d.]+)/)![1])).toBeLessThan(1.2);
+  });
+
+  it('the shader gallery has one sphere per model, all unwrapped, and the custom GLSL set', async () => {
+    const { uvFits } = await import('./uv');
+    const { e } = open('shader-gallery');
+    const want = { PBR: 'pbr', Lambert: 'lambert', 'Blinn–Phong 10': 'blinn-phong', 'Blinn–Phong 120': 'blinn-phong', Toon: 'toon', Normals: 'normals', UV: 'uv', Custom: 'custom' };
+    for (const [n, m] of Object.entries(want)) { const o = e.scene.get(n)!; expect(o.material.shader).toBe(m); expect(uvFits(o.mesh!, o.uv)).toBe(true); }
+    expect(e.scene.get('Blinn–Phong 120')!.material.shininess).toBe(120);
+    expect(e.scene.get('Custom')!.material.glsl).toMatch(/^float d = max/);
+  });
+
+  it('the dining set is wood-grained: every part unwrapped with the wood texture', async () => {
+    const { uvFits } = await import('./uv');
+    const { e } = open('dining-set');
+    const parts = e.scene.objects.filter((o) => o.mesh);
+    expect(parts.length).toBeGreaterThan(20);
+    for (const o of parts) { expect(o.material.texture).toBe('wood'); expect(uvFits(o.mesh!, o.uv)).toBe(true); }
   });
 });

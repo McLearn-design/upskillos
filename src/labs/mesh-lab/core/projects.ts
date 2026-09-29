@@ -20,10 +20,12 @@ export interface ProjectSetup {
   pose?: boolean;
   /** The bone to make active (its keys show on the Timeline). */
   bone?: string;
+  /** Open in weight paint mode on the selected mesh, painting this bone. */
+  weightPaint?: string;
   /** Record traces while it is built (so the Algorithm trace panel has the build's algorithms). */
   trace?: boolean;
   /** Which bottom panel to open. */
-  tab?: 'trace' | 'script' | 'timeline' | 'log';
+  tab?: 'trace' | 'script' | 'timeline' | 'uv' | 'shader' | 'log';
   /** Frame the camera on everything, or on the selection. */
   view?: 'all' | 'selected';
 }
@@ -32,7 +34,7 @@ export interface ExampleProject {
   id: string;
   title: string;
   icon: string;
-  group: 'Modelling' | 'Animation' | 'Rigging' | 'Geometry & heat maps' | 'Scripting';
+  group: 'Modelling' | 'Animation' | 'Rigging' | 'Geometry & heat maps' | 'UVs & materials' | 'Scripting';
   desc: string;
   lang: 'js' | 'python';
   code: string;
@@ -120,10 +122,13 @@ log(land.mesh, '·', trees, 'trees · 6 rocks')`,
       'Select "Dining set" and rotate it (R): the table and every chair turn together about its origin.',
       'Select the table top and press Tab: its top face was inset (an inner ring) and pushed down 2 cm, making a lip. Face select, click the middle face.',
       'Every chair is made by one function in the script, called four times with a different place and turn.',
+      'The wood grain is a texture: each box was cut along its sharp edges and unwrapped (the grain() function). Select the table top and open the UV tab to see its six pieces.',
     ],
     code: `// A table and four chairs under one empty. Moving "Dining set" moves everything.
 const set = scene.add.empty({ name: 'Dining set' })
-const wood = '#9a6a3a', dark = '#6e4a28'
+const wood = '#ffffff', dark = '#8a6040'
+// Wood grain needs UVs: cut each box along its sharp edges and unwrap it, then use the wood texture.
+const grain = (part) => { part.mesh.seamsFromSharp(60); part.mesh.unwrap(); part.material.texture = 'wood'; part.material.roughness = 0.7 }
 
 // The table top: a cube squashed flat. Its top face is inset and pushed down a little.
 const top = scene.add.cube({ name: 'Table top', size: 1, parent: set, position: [0, 0.75, 0] })
@@ -131,11 +136,13 @@ for (const v of top.mesh.verts) { v.x *= 2; v.y *= 0.08; v.z *= 1.2 }
 const tf = top.mesh.faces.top()
 top.mesh.inset(tf, 0.06).extrude(tf, -0.02)
 top.material.color = wood
+grain(top)
 
 // Four legs: one cube, scaled thin by the object's scale (see S in the inspector's T·R·S).
 for (const [x, z] of [[0.9, 0.5], [-0.9, 0.5], [0.9, -0.5], [-0.9, -0.5]]) {
   const leg = scene.add.cube({ name: 'Table leg', size: 1, parent: set, position: [x, 0.36, z], scale: [0.08, 0.72, 0.08] })
   leg.material.color = dark
+  grain(leg)
 }
 
 // One chair, built at the origin facing +z; the caller places and turns it.
@@ -144,11 +151,14 @@ function chair(name, position, turn) {
   c.rotation.y = turn
   const seat = scene.add.cube({ name: name + ' seat', size: 1, parent: c, position: [0, 0.45, 0], scale: [0.46, 0.05, 0.44] })
   seat.material.color = wood
+  grain(seat)
   const back = scene.add.cube({ name: name + ' back', size: 1, parent: c, position: [0, 0.75, -0.2], scale: [0.46, 0.55, 0.04] })
   back.material.color = wood
+  grain(back)
   for (const [x, z] of [[0.2, 0.19], [-0.2, 0.19], [0.2, -0.19], [-0.2, -0.19]]) {
     const leg = scene.add.cube({ name: name + ' leg', size: 1, parent: c, position: [x, 0.22, z], scale: [0.04, 0.44, 0.04] })
     leg.material.color = dark
+    grain(leg)
   }
   return c
 }
@@ -317,7 +327,8 @@ log(scene.objects.length, 'objects,', poses.length, 'poses keyed on 6 of them; t
     lang: 'js',
     setup: { select: 'Rig', bone: 'UpperArm.L', tab: 'timeline', frame: 1, play: true, view: 'all', trace: true },
     guide: [
-      'Press Space to pause, then Tab: pose mode. Click a bone and drag the gizmo rings; I keys the pose at this frame.',
+      'Press Space to pause, then Ctrl+Tab: pose mode. Click a bone and drag the gizmo rings; I keys the pose at this frame. (Tab instead edits the bones themselves: their joints and roll.)',
+      'Select Character and press Ctrl+Tab: weight paint mode. The "Fix a bad rig" project walks through repairing the chest.',
       'Select Character and use Heat map › Bone weights (or the Skin panel): red is where a bone moves the skin fully.',
       'The Algorithm trace panel shows how the weights were computed: heat spreading from each bone over the surface.',
       'Tab into edit mode on Character, select a vertex on the hand and press "Explain skinning here": each bone’s idea of where it goes, and the blend.',
@@ -334,6 +345,114 @@ swing('Shin.R', [0.05, 0, 0], [0.5, 0, 0])
 swing('UpperArm.R', [0, 0.4, -0.9], [0, -0.4, -0.9])
 swing('Head', [0.08, 0.1, 0], [0.08, -0.1, 0])
 body.material.color = '#d9a47a'`,
+  },
+
+  {
+    id: 'fix-a-bad-rig',
+    title: 'Fix a bad rig (weight painting)',
+    icon: '🖌️',
+    group: 'Rigging',
+    desc: 'The waving character\u2019s automatic weights let the raised arm drag the chest up. Paint the chest back to the spine and watch it stop.',
+    lang: 'js',
+    setup: { select: 'Character', frame: 24, weightPaint: 'Spine', view: 'all' },
+    guide: [
+      'The heat map is the Spine\u2019s weights: the left chest is blue, so the spine barely moves it; the raised arm pulls it up instead. Automatic weights gave it to UpperArm.L, the nearest bone through the air.',
+      'Brush Draw, Value 1: drag over the left chest. It turns red, and the chest drops back into place. Each stroke is one undo step and one paintWeights line in GUI → code.',
+      'Turn on X-mirror, then paint the right chest too: the other side\u2019s bone is painted at the mirrored spot.',
+      'Pick UpperArm.L in the panel and use Blur along the shoulder to soften the crease; scrub the Timeline to see it bend.',
+    ],
+    code: rigCode + `
+body.material.color = '#d9a47a'`,
+  },
+  {
+    id: 'tentacle',
+    title: 'Tentacle: bones by hand, and roll',
+    icon: '🐙',
+    group: 'Rigging',
+    desc: 'A tapered tube on a chain of five bones, curling in a travelling wave. Edit the bones yourself, and see what roll does to the way a bone bends.',
+    lang: 'js',
+    setup: { select: 'Tentacle rig', bone: 'Seg 1', tab: 'timeline', frame: 1, play: true, view: 'all' },
+    guide: [
+      'Every bone has the same kind of key: a turn about its own x axis. The wave comes from giving each bone the same swing a little later than the one below.',
+      'Pause (Space) and press Tab on the rig: Edit bones. Click a joint and drag it: the joints that touch move with it. Select the top tail and press E to grow a sixth segment.',
+      'Still in Edit bones, set Roll to 90 on Seg 1 in the inspector, then play: that segment now bends sideways under the same keys. Roll decides which way a bone’s x axis faces, and so its bending plane.',
+      'Ctrl+Tab for pose mode: bend a segment yourself and key it with I. Moving bones after binding changes the rest pose; "Bind again" in the tentacle’s Skin panel refreshes the weights.',
+    ],
+    code: `// A tentacle: a tapered tube and a chain of five bones, curling in a travelling wave.
+scene.setTimeline({ start: 1, end: 96, fps: 24 })
+const N = 16, K = 40, L = 3, verts = [], faces = []
+for (let k = 0; k <= K; k++) {
+  const y = (L * k) / K, r = 0.28 * (1 - 0.8 * (k / K))          // thinner toward the tip
+  for (let j = 0; j < N; j++) { const a = (j / N) * 2 * Math.PI; verts.push([r * Math.cos(a), y, -r * Math.sin(a)]) }
+}
+for (let k = 0; k < K; k++) for (let j = 0; j < N; j++) {
+  const a = k * N + j, b = k * N + ((j + 1) % N)
+  faces.push([a, b, b + N, a + N])
+}
+faces.push(Array.from({ length: N }, (_, j) => N - 1 - j), Array.from({ length: N }, (_, j) => K * N + j))
+const tentacle = scene.add.mesh({ name: 'Tentacle', verts, faces })
+tentacle.smooth = true
+tentacle.material.color = '#b5579a'
+
+// Five bones up the middle, each the child of the one below.
+const bones = []
+for (let i = 0; i < 5; i++) bones.push({ name: 'Seg ' + (i + 1), parent: i ? 'Seg ' + i : null, head: [0, (i * L) / 5, 0], tail: [0, ((i + 1) * L) / 5, 0] })
+const rig = scene.add.armature({ name: 'Tentacle rig', bones })
+tentacle.bindTo(rig)
+
+// A travelling wave: the same swing on every bone, each one a little later (phase 0.9 rad).
+for (let i = 0; i < 5; i++) {
+  const seg = rig.bone('Seg ' + (i + 1))
+  for (let f = 1; f <= 97; f += 8) seg.keyframe(f, { rotation: [0.45 * Math.sin((2 * Math.PI * (f - 1)) / 48 - 0.9 * i), 0, 0] })
+}
+log("5 bones, 13 keys each; bending about each bone’s own x axis")`,
+  },
+  {
+    id: 'candy-wrapper',
+    title: 'Candy wrapper: linear vs dual quaternion',
+    icon: '🍬',
+    group: 'Rigging',
+    desc: 'Two identical forearms twist the wrist 172°. Linear blending pinches the middle to a thin neck; dual-quaternion skinning keeps it round.',
+    lang: 'js',
+    setup: { select: 'Dual quaternion', tab: 'timeline', frame: 36, view: 'all', play: true },
+    guide: [
+      'Both tubes have the same bones, the same weights and the same animation. Only the skin\u2019s blend method differs (Skin panel › Blend).',
+      'Linear blending averages the points each bone would move a vertex to: half-way between a point and its 172°-turned copy is almost the axis. That is the pinch.',
+      'Dual quaternions average the bones\u2019 motions instead (a rotation and a move together), so a vertex half on each bone is turned half-way and keeps its distance from the axis.',
+      'Tab into edit mode on either tube, select a vertex at the middle and press "Explain skinning here" to see the two calculations step by step.',
+    ],
+    code: `// Two forearms that differ only in how the skin blends the bones.
+scene.setTimeline({ start: 1, end: 72, fps: 24 })
+
+function forearm(name, x, method, color) {
+  // A capped tube along y: 17 rings of 16 vertices, radius 0.25, length 2.
+  const N = 16, K = 16, r = 0.25, verts = [], faces = []
+  for (let k = 0; k <= K; k++) for (let j = 0; j < N; j++) {
+    const a = (j / N) * 2 * Math.PI
+    verts.push([r * Math.cos(a), (2 * k) / K, -r * Math.sin(a)])
+  }
+  for (let k = 0; k < K; k++) for (let j = 0; j < N; j++) {
+    const a = k * N + j, b = k * N + ((j + 1) % N)
+    faces.push([a, b, b + N, a + N])
+  }
+  faces.push(Array.from({ length: N }, (_, j) => N - 1 - j))       // bottom cap, facing down
+  faces.push(Array.from({ length: N }, (_, j) => K * N + j))       // top cap, facing up
+  const arm = scene.add.mesh({ name, verts, faces, position: [x, 0.2, 0] })
+  arm.smooth = true
+  arm.material.color = color
+  const rig = scene.add.armature({ name: name + ' rig', position: [x, 0.2, 0], bones: [
+    { name: 'Forearm', head: [0, 0, 0], tail: [0, 1, 0] },
+    { name: 'Wrist', parent: 'Forearm', head: [0, 1, 0], tail: [0, 2, 0] },
+  ] })
+  arm.bindTo(rig)
+  arm.skinning = method
+  // Twist the wrist about its own length: there and back.
+  rig.bone('Wrist').keyframe(1, { rotation: [0, 0, 0] }).keyframe(36, { rotation: [0, 3, 0] }).keyframe(72, { rotation: [0, 0, 0] })
+  return arm
+}
+forearm('Linear blend', -0.8, 'linear', '#5aa9ff')
+forearm('Dual quaternion', 0.8, 'dual-quaternion', '#ff9f1c')
+log('Same bones, same weights, same keys. Frame 36: the wrist is turned 172°.')`,
   },
 
   // ── Geometry & heat maps ─────────────────────────────────────────────────
@@ -449,6 +568,91 @@ for (const o of [bumpy, five, forty]) {
 bumpy.mesh.showField('mean')`,
   },
 
+  // ── UVs & materials ─────────────────────────────────────────────────────
+  {
+    id: 'unwrap-basics',
+    title: 'Unwrap a cube and a sphere',
+    icon: '🗺️',
+    group: 'UVs & materials',
+    desc: 'Cut along its edges, a cube unfolds into six perfect squares. Cut from pole to pole, a sphere opens flat, but its checker squares change size: a curved surface cannot lie flat unstretched.',
+    lang: 'js',
+    setup: { select: 'Sphere', view: 'all', tab: 'uv' },
+    guide: [
+      'The UV tab shows the sphere\u2019s layout: one piece, from the one seam. Select the Box to see its six squares.',
+      'On the cube every checker square is square and the same size: no distortion at all (the output panel prints 1.0000).',
+      'On the sphere the squares stay square (LSCM keeps angles) but not the same size: near the poles they are squeezed. The printed area ratio is how much. No cut can fix it everywhere; that is the Gauss–Bonnet idea from the curvature gallery.',
+      'Heat map › Mean curvature, then UV › Angle distortion heat map, on the sphere: the distortion is highest where the seam ends, at the poles.',
+      'Try it yourself: Tab into edit mode on a new cube, select edges (2), UV › Mark seam, then U to unwrap.',
+    ],
+    code: `// 1. A cube, cut along its twelve sharp edges: six squares.
+const cube = scene.add.cube({ name: 'Box', size: 1.6, position: [-2, 1, 0] })
+cube.mesh.seamsFromSharp(60)
+cube.mesh.unwrap()
+cube.material.texture = 'checker'
+
+// 2. A sphere, cut along one meridian from pole to pole (the vertices with z = 0 and x ≥ 0).
+const sphere = scene.add.uvSphere({ name: 'Sphere', radius: 1, segments: 32, rings: 16, position: [1, 1, 0] })
+const m = sphere.mesh
+const onMeridian = new Set(m.verts.filter((v) => v.x >= -1e-9 && Math.abs(v.z) < 1e-9).map((v) => v.index))
+m.markSeams(m.edges.filter((e) => onMeridian.has(e.a) && onMeridian.has(e.b)).map((e) => [e.a, e.b]))
+m.unwrap()
+sphere.material.texture = 'checker'
+sphere.material.textureScale = 2
+sphere.smooth = true
+
+log('cube: worst angle distortion', Math.max(...cube.mesh.uvDistortion()).toFixed(4))
+const d = m.uvDistortion()
+log('sphere: mean angle distortion', (d.reduce((a, b) => a + b) / d.length).toFixed(3))
+// Area: how much texture each face gets, per unit of surface area.
+const uvArea = (f) => { let a = 0; for (let i = 1; i + 1 < f.length; i++) a += Math.abs((f[i][0] - f[0][0]) * (f[i + 1][1] - f[0][1]) - (f[i + 1][0] - f[0][0]) * (f[i][1] - f[0][1])) / 2; return a }
+const ratios = m.uv.map((f, i) => uvArea(f) / m.faces[i].area)
+log('sphere: texture per unit area varies', (Math.max(...ratios) / Math.min(...ratios)).toFixed(1) + '×', 'from pole to equator')`,
+  },
+  {
+    id: 'shader-gallery',
+    title: 'Shader gallery',
+    icon: '💡',
+    group: 'UVs & materials',
+    desc: 'Eight spheres, eight ways to light a surface: PBR, Lambert, Blinn–Phong soft and sharp, toon, normals, UV, and a custom shader you can edit.',
+    lang: 'js',
+    setup: { select: 'Custom', view: 'all', tab: 'shader' },
+    guide: [
+      'The Shader tab shows the selected sphere\u2019s GLSL. "Custom" is editable: change a number in the body, press Apply (or Ctrl+Enter), and the sphere changes.',
+      'Compare Lambert and Blinn–Phong: the same matte base, plus a highlight where N·H is near 1. Shininess 10 spreads it, 120 makes it a small hot spot.',
+      'Normals colours each point by its direction; UV by its texture coordinate (a seam shows as a jump). Both are how you check a model, not how you light it.',
+      'Move the Light object (it is the sun): every shader but Normals and UV follows it. Break the custom GLSL on purpose: the error shows below the code and the sphere falls back to Lambert.',
+    ],
+    code: `// One sphere per shading model. Each needs UVs for the UV view, so open each along a meridian.
+function sphereAt(name, x, z) {
+  const s = scene.add.uvSphere({ name, radius: 0.85, segments: 48, rings: 24, position: [x, 1, z] })
+  const m = s.mesh
+  const cut = new Set(m.verts.filter((v) => v.x >= -1e-9 && Math.abs(v.z) < 1e-9).map((v) => v.index))
+  m.markSeams(m.edges.filter((e) => cut.has(e.a) && cut.has(e.b)).map((e) => [e.a, e.b]))
+  m.unwrap()
+  s.smooth = true
+  s.material.color = '#d9734a'
+  s.material.roughness = 0.35
+  return s
+}
+const models = [
+  ['PBR', 'pbr'], ['Lambert', 'lambert'], ['Blinn–Phong 10', 'blinn-phong', 10], ['Blinn–Phong 120', 'blinn-phong', 120],
+  ['Toon', 'toon'], ['Normals', 'normals'], ['UV', 'uv'], ['Custom', 'custom'],
+]
+models.forEach(([name, shader, shininess], i) => {
+  const s = sphereAt(name, (i % 4) * 2.1 - 3.15, Math.floor(i / 4) * 2.3 - 1.15)
+  s.material.shader = shader
+  if (shininess) s.material.shininess = shininess
+})
+// The custom shader: warm where lit, cool in shadow, with a blue rim at the silhouette.
+scene.get('Custom').material.glsl = [
+  'float d = max(dot(N, L), 0.0);',
+  'float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);',
+  'vec3 cool = vec3(0.10, 0.25, 0.80), warm = vec3(1.00, 0.60, 0.25);',
+  'return mix(cool, warm, d) * (0.3 + 0.7 * d) + rim * vec3(0.4, 0.8, 1.0);',
+].join('\\n')
+log(models.length, 'spheres; the sun is the Light object')`,
+  },
+
   // ── Scripting ───────────────────────────────────────────────────────────
   {
     id: 'python-vase',
@@ -463,6 +667,7 @@ bumpy.mesh.showField('mean')`,
       'radius(y) is the profile. Change the numbers in it (the 0.25 and the 2.2), undo, run: a different vase.',
       'Tab into edit mode: every ring of vertices is one height; every column one angle.',
       'Heat map › Height (y) shows the rings; Heat map › Mean curvature shows the neck and the belly.',
+      'The stripes are a texture on UVs made at the end of the script: a seam down one side and around the base, then an unwrap. Open the UV tab: the side is a curved band, the base a disc.',
     ],
     code: `# A surface of revolution: a profile r(y) turned around the y axis.
 import math
@@ -492,11 +697,22 @@ faces.append([segments - 1 - j for j in range(segments)])   # the base, facing d
 vase = scene.add.mesh(name='Vase', verts=verts, faces=faces)
 vase.smooth = True
 vase.material.color = '#c8744a'
-print(vase.mesh, '- open at the top:', not vase.mesh.stats().closed)`,
+print(vase.mesh, '- open at the top:', not vase.mesh.stats().closed)
+
+# A texture needs UVs. Cut a seam down one side (the column at angle 0) and around the base,
+# then unwrap: the side unrolls into a band, the base into a disc.
+side = [[i * segments, (i + 1) * segments] for i in range(rings)]
+base = [[j, (j + 1) % segments] for j in range(segments)]
+vase.mesh.markSeams(side + base)
+vase.mesh.unwrap()
+vase.material.texture = 'stripes'
+vase.material.textureScale = 2
+d = vase.mesh.uvDistortion()
+print('angle distortion: mean', round(sum(d) / len(d), 3), 'worst', round(max(d), 3))`,
   },
 ];
 
-export const PROJECT_GROUPS = ['Modelling', 'Animation', 'Rigging', 'Geometry & heat maps', 'Scripting'] as const;
+export const PROJECT_GROUPS = ['Modelling', 'Animation', 'Rigging', 'Geometry & heat maps', 'UVs & materials', 'Scripting'] as const;
 
 /**
  * Build a project on a new scene (the default cube removed, the sun kept) and
@@ -525,6 +741,7 @@ export function openProject(editor: Editor, p: ExampleProject, py?: PyodideLike)
   if (s.select) { const o = editor.scene.get(s.select); if (o) editor.selectObject(o.id); }
   if (s.bone) editor.activeBone = s.bone;
   if (s.pose) editor.enterPose();
+  if (s.weightPaint) { editor.activeBone = s.weightPaint; editor.enterWeightPaint(); }
   editor.message = `${p.title}: see the guide in the viewport`;
   editor.emit('select');
   return { error: null, output: r.output };

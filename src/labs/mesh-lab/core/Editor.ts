@@ -14,15 +14,17 @@ import { EditMesh, type Vec3 } from './EditMesh';
 import { Scene, type SceneJSON, type SceneObject } from './Scene';
 import { makePrimitive, type PrimitiveParams, type PrimitiveType } from './primitives';
 import { defaultModifier, evaluate, onMirrorPlane, type Modifier } from './modifiers';
-import { applyBonePatch, bindSkin, evaluatedMesh, removeBone, skinnedSource } from './evaluate';
+import { applyBonePatch, bindSkin, evaluatedMesh, removeBone, skinnedSource, skinSource, skinState } from './evaluate';
 import { catmullClark } from './subdivision';
 import { Trace } from './trace';
 import { computeField, type FieldResult, type FieldSpec } from './fields';
 import { smooth as smoothMesh } from './geometry';
 import { CHANNELS, hasKeys, posesAt, removeBoneKey, removeKey, setBoneKey, setKey, transformAt, type Channel, type Interp } from './animation';
-import { limitWeights, orderBones, type Bone } from './armature';
+import { cloneBones, limitWeights, moveJoint, orderBones, type Bone, type JointSel } from './armature';
+import { DEFAULT_PAINT, dab, neighbourLists, type PaintSettings } from './weightPaint';
+import { angleDistortion, planarUV, sharpEdges, unwrap as unwrapMesh, uvFits } from './uv';
 
-export type Mode = 'object' | 'edit' | 'pose';
+export type Mode = 'object' | 'edit' | 'pose' | 'weight' | 'bones';
 export type SelectMode = 'vert' | 'edge' | 'face';
 export type ChangeKind = 'scene' | 'live' | 'select' | 'mode' | 'trace' | 'frame';
 export interface LogEntry { label: string; code: string | null }
@@ -167,6 +169,10 @@ export class Editor {
     if (this.active && !this.scene.get(this.active)) this.active = null;
     if (this.mode === 'edit' && !this.activeObject?.mesh) this.mode = 'object';
     if (this.mode === 'pose' && !this.activeObject?.bones) this.mode = 'object';
+    if (this.mode === 'weight' && !this.activeObject?.skin) this.mode = 'object';
+    if (this.mode === 'bones' && !this.activeObject?.bones) this.mode = 'object';
+    this.scene.restPose = this.mode === 'bones' ? this.active : null;
+    if (this.boneSel && !this.activeObject?.bones?.some((b) => b.name === this.boneSel!.bone)) this.boneSel = null;
     this.clearElements(false);
   }
 
@@ -354,11 +360,76 @@ export class Editor {
   }
 
   /** Tab: edit mode for a mesh, pose mode for an armature. */
+  /** Tab, as in Blender: edit mode for a mesh, bone edit mode for an armature (Ctrl+Tab poses it). */
   toggleEdit(): void {
-    if (this.mode === 'edit') this.exitEdit();
+    if (this.mode === 'weight') this.exitWeightPaint();
+    else if (this.mode === 'edit') this.exitEdit();
+    else if (this.mode === 'bones') this.exitBoneEdit();
     else if (this.mode === 'pose') this.exitPose();
-    else if (this.activeObject?.bones) this.enterPose();
+    else if (this.activeObject?.bones) this.enterBoneEdit();
     else this.enterEdit();
+  }
+
+  // ── bone edit mode ────────────────────────────────────────────────────
+
+  /** In bone edit mode: the selected joint (a bone's head or tail) or the whole bone. */
+  boneSel: JointSel | null = null;
+  private jointStart: Bone[] | null = null;
+
+  /** Edit the armature's rest bones: click a joint, drag it; E extrudes a new bone from a tail. */
+  enterBoneEdit(): boolean {
+    this.endPreview();
+    const o = this.activeObject;
+    if (!o?.bones) { this.say('Select an armature to edit its bones'); return false; }
+    this.mode = 'bones';
+    this.scene.restPose = o.id;
+    this.selected = new Set([o.id]);
+    if (!o.bones.some((b) => b.name === this.activeBone)) this.activeBone = o.bones[0]?.name ?? null;
+    this.boneSel = this.activeBone ? { bone: this.activeBone, part: 'tail' } : null;
+    this.message = 'Edit bones: click a joint and drag it (G); E extrudes a new bone from the selected tail';
+    this.emit('mode');
+    return true;
+  }
+
+  exitBoneEdit(): void {
+    if (this.mode !== 'bones') return;
+    this.mode = 'object';
+    this.scene.restPose = null;
+    this.boneSel = null;
+    this.emit('mode');
+  }
+
+  selectJoint(sel: JointSel | null): void {
+    this.boneSel = sel;
+    if (sel) this.activeBone = sel.bone;
+    this.emit('select');
+  }
+
+  /** Called when a joint drag starts (the gizmo has already begun the live change). */
+  beginJointDrag(): void { const o = this.activeObject; this.jointStart = o?.bones ? cloneBones(o.bones) : null; }
+
+  /** Move the selected joint by d (armature space) from where the drag began. */
+  jointDrag(d: Vec3): void {
+    const o = this.activeObject;
+    if (!o?.bones || !this.jointStart || !this.boneSel) return;
+    moveJoint(o.bones, this.jointStart, this.boneSel, d);
+    this.liveUpdate();
+  }
+
+  endJointDrag(): void {
+    const o = this.activeObject, start = this.jointStart;
+    this.jointStart = null;
+    if (!o?.bones || !start) { this.endLive('Move bone', null); return; }
+    const changed = o.bones.filter((b) => { const s = start.find((x) => x.name === b.name)!; return b.head.some((v, i) => v !== s.head[i]) || b.tail.some((v, i) => v !== s.tail[i]); });
+    this.endLive(changed.length === 1 ? 'Move bone' : 'Move joint', changed.map((b) => `${ref(o)}.bone(${lit(b.name)}).set(${lit({ head: b.head, tail: b.tail })})`).join('\n') || null);
+  }
+
+  /** E in bone edit mode: a new bone from the selected bone's tail, with its tail selected to drag. */
+  extrudeBone(): boolean {
+    if (!this.addBone(this.activeBone)) return false;
+    this.boneSel = { bone: this.activeBone!, part: 'tail' };
+    this.emit('select');
+    return true;
   }
 
   get poseObject(): SceneObject | undefined { return this.mode === 'pose' ? this.activeObject : undefined; }
@@ -381,7 +452,73 @@ export class Editor {
     this.emit('mode');
   }
 
-  selectBone(name: string | null): void { this.activeBone = name; this.emit('select'); }
+  selectBone(name: string | null): void {
+    this.activeBone = name;
+    if (this.mode === 'weight' && name) this.showWeightsQuietly(name);
+    this.emit('select');
+  }
+
+  // ── weight paint mode ─────────────────────────────────────────────────
+
+  /** Brush settings (not part of the scene). */
+  paint: PaintSettings = { ...DEFAULT_PAINT };
+  private stroke: { o: SceneObject; bone: string; points: Vec3[]; positions: Vec3[]; neighbours: number[][] } | null = null;
+
+  private showWeightsQuietly(bone: string): void {
+    const s = this.scripting; this.scripting = true;
+    this.showField({ kind: 'weight', bone });
+    this.scripting = s;
+  }
+
+  /** Weight paint mode (Blender: Ctrl+Tab on a skinned mesh): the active bone's weights as a heat map, and a brush. */
+  enterWeightPaint(): boolean {
+    this.endPreview();
+    const o = this.activeObject;
+    if (!o?.skin) { this.say('Weight paint: select a mesh bound to an armature (Object › Bind to armature)'); return false; }
+    if (skinState(this.scene, o) !== 'ok') { this.say('Weight paint: the mesh changed since it was bound; bind again first'); return false; }
+    this.mode = 'weight';
+    this.selected = new Set([o.id]);
+    if (!o.skin.bones.includes(this.activeBone ?? '')) this.activeBone = o.skin.bones[0];
+    this.showWeightsQuietly(this.activeBone!);
+    this.message = `Weight paint · ${this.activeBone}: drag over the mesh to paint`;
+    this.emit('mode');
+    return true;
+  }
+
+  exitWeightPaint(): void {
+    if (this.mode !== 'weight') return;
+    this.mode = 'object';
+    this.field = null;
+    this.emit('mode');
+  }
+
+  /** Start a brush stroke: one undo step, however many dabs. */
+  beginStroke(): boolean {
+    const o = this.activeObject;
+    if (this.mode !== 'weight' || !o?.skin || !this.activeBone) return false;
+    this.beginLive();
+    const src = skinSource(o);
+    this.stroke = { o, bone: this.activeBone, points: [], positions: skinnedSource(this.scene, o).verts, neighbours: neighbourLists(src.verts.length, src.faces) };
+    return true;
+  }
+
+  /** One dab at a point in the mesh's own coordinates (on the surface as drawn). */
+  strokeDab(p: Vec3): void {
+    const st = this.stroke;
+    if (!st) return;
+    dab(st.o.skin!, st.bone, st.positions, st.neighbours, p, this.paint);
+    st.points.push([+p[0].toFixed(4), +p[1].toFixed(4), +p[2].toFixed(4)]);
+    this.liveUpdate();
+  }
+
+  endStroke(): void {
+    const st = this.stroke;
+    this.stroke = null;
+    if (!st) return;
+    if (!st.points.length) { this.endLive('Paint weights', null); return; }
+    const { brush, radius, strength, value, normalize, mirror } = this.paint;
+    this.endLive(`Paint ${st.bone}`, `${ref(st.o)}.paintWeights(${lit(st.bone)}, ${lit({ brush, radius, strength, value, normalize, mirror, points: st.points })})`);
+  }
 
   setSelectMode(m: SelectMode): void {
     const mesh = this.editObject?.mesh;
@@ -613,7 +750,7 @@ export class Editor {
 
   /** The mesh a field is computed on: what the viewport draws (modifiers applied), or the cage for script values. */
   private fieldMesh(o: SceneObject, spec: FieldSpec): EditMesh {
-    if (spec.kind === 'custom') return o.mesh!.clone();
+    if (spec.kind === 'custom' || spec.kind === 'uv') return o.mesh!.clone();
     // Weights belong to the mesh the armature deforms (mirrored, not subdivided): show them on that, posed.
     if (spec.kind === 'weight') return skinnedSource(this.scene, o);
     return evaluatedMesh(this.scene, o, 3);
@@ -630,13 +767,17 @@ export class Editor {
       if (!o.skin || i < 0) { this.say(o.skin ? `${o.name} has no weights for bone "${spec.bone}"` : `${o.name} is not bound to an armature`); return false; }
       spec = { kind: 'weight', bone: spec.bone, values: o.skin.weights[i] };
     }
+    if (spec.kind === 'uv') {
+      if (!uvFits(o.mesh, o.uv)) { this.say(o.uv ? `${o.name}'s UVs no longer fit its mesh: unwrap again` : `${o.name} has no UVs yet: UV › Unwrap`); return false; }
+      spec = { kind: 'uv', values: Array.from(angleDistortion(o.mesh, o.uv)) };
+    }
     const mesh = this.fieldMesh(o, spec);
     const trace = this.traceEnabled && spec.kind === 'geodesic' ? new Trace('Heat method') : undefined;
     if (trace && mesh.verts.length <= trace.snapshotLimit) trace.before = mesh.toSnapshot();
     this.field = { objectId: o.id, spec, mesh, result: computeField(mesh, spec, trace) };
     if (trace && trace.steps.length) { this.trace = trace; this.traceTarget = o.id; this.emit('trace'); }
     if (!this.scripting && spec.kind !== 'custom') {
-      const args = spec.kind === 'geodesic' ? `"geodesic", { from: ${lit(spec.sources)} }` : spec.kind === 'coord' ? `"${'xyz'[spec.axis]}"` : spec.kind === 'weight' ? `"weight", { bone: ${lit(spec.bone)} }` : `"${spec.kind}"`;
+      const args = spec.kind === 'geodesic' ? `"geodesic", { from: ${lit(spec.sources)} }` : spec.kind === 'coord' ? `"${'xyz'[spec.axis]}"` : spec.kind === 'weight' ? `"weight", { bone: ${lit(spec.bone)} }` : spec.kind === 'uv' ? '"uv"' : `"${spec.kind}"`;
       this.log.push({ label: `Show ${this.field.result.label}`, code: `${ref(o)}.mesh.showField(${args})` });
     }
     this.message = this.field.result.label;
@@ -665,6 +806,10 @@ export class Editor {
       const i = o.skin?.bones.indexOf(spec.bone) ?? -1;
       if (!o.skin || i < 0) { this.field = null; return; }
       spec = { kind: 'weight', bone: spec.bone, values: o.skin.weights[i] };
+    }
+    if (spec.kind === 'uv') {
+      if (!uvFits(o.mesh!, o.uv)) { this.field = null; return; }
+      spec = { kind: 'uv', values: Array.from(angleDistortion(o.mesh!, o.uv)) };
     }
     if (spec.kind === 'geodesic') {
       spec = { kind: 'geodesic', sources: spec.sources.filter((s) => s < mesh.verts.length) };
@@ -819,11 +964,11 @@ export class Editor {
     for (let i = 1; ; i++) { const n = `${stem}.${String(i).padStart(3, '0')}`; if (!taken.has(n)) return n; }
   }
 
-  addArmature(bones?: Omit<Bone, 'pose'>[], name = 'Armature'): SceneObject {
+  addArmature(bones?: (Omit<Bone, 'pose'>)[], name = 'Armature'): SceneObject {
     const list: Bone[] = (bones ?? [{ name: 'Bone', parent: null, head: [0, 0, 0], tail: [0, 1, 0] }]).map((b) => ({ ...b, head: [...b.head] as Vec3, tail: [...b.tail] as Vec3, pose: [0, 0, 0] }));
     orderBones(list);
     let o!: SceneObject;
-    this.run('Add armature', `scene.add.armature(${lit({ name, bones: list.map(({ name: n, parent, head, tail }) => ({ name: n, parent, head, tail })) })})`, () => {
+    this.run('Add armature', `scene.add.armature(${lit({ name, bones: list.map(({ name: n, parent, head, tail, roll }) => ({ name: n, parent, head, tail, ...(roll ? { roll } : {}) })) })})`, () => {
       o = this.scene.add({ name, kind: 'armature', bones: list, material: { color: '#c9ced6', roughness: 0.6, metalness: 0 } });
       this.selected = new Set([o.id]); this.active = o.id; this.activeBone = list[0]?.name ?? null;
     });
@@ -843,7 +988,7 @@ export class Editor {
   }
 
   /** Change a bone's rest head/tail, name or parent. A rename follows through to skins and keys. */
-  setBone(name: string, patch: { name?: string; head?: Vec3; tail?: Vec3; parent?: string | null }): boolean {
+  setBone(name: string, patch: { name?: string; head?: Vec3; tail?: Vec3; parent?: string | null; roll?: number }): boolean {
     const o = this.armature();
     const b = o?.bones!.find((x) => x.name === name);
     if (!o || !b) return false;
@@ -900,7 +1045,7 @@ export class Editor {
     const trace = this.traceEnabled ? new Trace('Automatic weights') : undefined;
     this.run(`Bind to ${arm.name}`, meshes.map((m) => `${ref(m)}.bindTo(${ref(arm)})`).join('\n'), () => { meshes.forEach((m, i) => bindSkin(this.scene, m, arm, i === 0 ? trace : undefined)); });
     if (trace && trace.steps.length) { this.trace = trace; this.traceTarget = meshes[0].id; this.emit('trace'); }
-    this.say(`Bound ${meshes.map((m) => m.name).join(', ')} to ${arm.name}: automatic weights for ${arm.bones!.length} bones. Pose mode (Tab on the armature) to try it.`);
+    this.say(`Bound ${meshes.map((m) => m.name).join(', ')} to ${arm.name}: automatic weights for ${arm.bones!.length} bones. Pose mode (Ctrl+Tab on the armature) to try it.`);
     return true;
   }
 
@@ -911,6 +1056,13 @@ export class Editor {
     let n = 0;
     this.run(`Limit to ${k} bones per vertex`, `${ref(o)}.limitWeights(${k})`, () => { n = limitWeights(o.skin!, k); });
     this.say(`${n} vertices had more than ${k} bones; their weakest weights were dropped.`);
+  }
+
+  /** Linear blending (averages points) or dual quaternions (averages rigid motions). */
+  setSkinMethod(id: string, method: 'linear' | 'dual-quaternion'): void {
+    const o = this.scene.get(id);
+    if (!o?.skin) return;
+    this.run(method === 'linear' ? 'Linear blend skinning' : 'Dual-quaternion skinning', `${ref(o)}.skinning = ${lit(method)}`, () => { o.skin!.method = method; });
   }
 
   unbind(id: string): void {
@@ -928,6 +1080,53 @@ export class Editor {
     skinnedSource(this.scene, o, trace, vertex);
     if (!trace.steps.length) { this.say('This vertex has no weights (or the mesh changed since binding: rebind)'); return false; }
     this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    return true;
+  }
+
+  // ── UVs ────────────────────────────────────────────────────────────────
+
+  private uvObject(): SceneObject | undefined {
+    const o = this.editObject ?? this.activeObject;
+    if (!o?.mesh) { this.say('Select a mesh first'); return undefined; }
+    return o;
+  }
+
+  /** Mark (or clear) the selected edges as UV seams: where the surface is cut to lie flat. */
+  markSeams(on = true): boolean {
+    const o = this.editObject;
+    const edges = this.selectedEdges();
+    if (!o?.mesh || !edges.length) { this.say('Seams: in edit mode, select the edges to cut along (edge select, 2)'); return false; }
+    const keys = edges.map(([a, b]) => EditMesh.edgeKey(a, b));
+    this.run(on ? 'Mark seams' : 'Clear seams', `${ref(o)}.mesh.${on ? 'markSeams' : 'clearSeams'}(${lit(edges)})`, () => {
+      const s = new Set(o.seams ?? []);
+      for (const k of keys) if (on) s.add(k); else s.delete(k);
+      o.seams = s.size ? [...s] : undefined;
+    });
+    return true;
+  }
+
+  /** Mark every edge sharper than `degrees` as a seam (a cube's twelve edges): the usual start for hard-surface models. */
+  seamsFromSharp(degrees = 60): void {
+    const o = this.uvObject();
+    if (!o) return;
+    this.run('Seams from sharp edges', `${ref(o)}.mesh.seamsFromSharp(${lit(degrees)})`, () => { o.seams = [...new Set([...(o.seams ?? []), ...sharpEdges(o.mesh!, degrees)])]; });
+  }
+
+  /** Unwrap: LSCM on each chart cut by the seams (or a flat projection from above). Adds a checker texture if there is none. */
+  unwrap(method: 'lscm' | 'planar' = 'lscm'): boolean {
+    const o = this.uvObject();
+    if (!o) return false;
+    const trace = this.traceEnabled && method === 'lscm' ? new Trace('Unwrap (LSCM)') : undefined;
+    if (trace && o.mesh!.verts.length <= trace.snapshotLimit) trace.before = o.mesh!.toSnapshot();
+    let layer;
+    try { layer = method === 'planar' ? planarUV(o.mesh!) : unwrapMesh(o.mesh!, new Set(o.seams ?? []), trace); }
+    catch (e) { this.say(e instanceof Error ? e.message : String(e)); return false; }
+    const addTexture = !o.material.texture || o.material.texture === 'none';
+    this.run('Unwrap', `${ref(o)}.mesh.unwrap(${method === 'planar' ? '{ method: "planar" }' : ''})${addTexture ? `\n${ref(o)}.material.texture = "checker"` : ''}`, () => {
+      o.uv = layer;
+      if (addTexture) o.material = { ...o.material, texture: 'checker' };
+    });
+    if (trace && trace.steps.length) { this.trace = trace; this.traceTarget = o.id; this.emit('trace'); }
     return true;
   }
 }

@@ -146,6 +146,92 @@ at the gripper (to 1e-9) from frame 45 to 105 and stays after. Browser: all elev
 clicking, each with its selection, guide, playback or heat map, no page errors. `npx vitest run src/labs/mesh-lab`:
 13 files, 178 tests (183 with `src/utils` and `src/labs/codelens`).
 
+## Done (2026-09-29): weight painting and dual-quaternion skinning
+
+- **Weight paint mode** (Ctrl+Tab on a bound mesh, or the Weight paint button): the active bone's weights as the
+  heat map, a brush ring on the surface, and Draw / Add / Subtract / Blur brushes with value, radius and
+  strength. Falloff f = (1 − (d/r)²)²; auto-normalise keeps the painted weight and scales the other bones so every
+  vertex still sums to 1; X-mirror paints the mirrored spot on the other side's bone (.L ↔ .R). A press on the mesh
+  paints, anywhere else orbits. Each stroke is one undo step, logged as `paintWeights(bone, { …, points })`, which
+  replays to the same weights (`core/weightPaint.ts`).
+- **Dual-quaternion skinning** (Skin panel › Blend, or `mesh.skinning = 'dual-quaternion'`): the bones' rigid
+  motions are blended as dual quaternions (hemisphere-aligned, normalised) in the armature's space, instead of
+  averaging the points each bone would give. "Explain skinning here" shows each bone's dual quaternion and the
+  blend. glTF stores only linear blending; the Skin panel says so.
+- **Examples**: "Fix a bad rig" opens the waving character in weight paint mode on the Spine at frame 24, where
+  the chest is dragged by the arm; "Candy wrapper" twists two identical forearms 172°, linear beside dual
+  quaternion. The walk-and-wave guide points to weight painting.
+- Verification: `core/weightPaint.test.ts` (falloff values; normalisation keeps the painted weight and scales the
+  rest, 0.5/0.3/0.2 → 0.8/0.12/0.08; draw/subtract/mirror; a stroke on the chest cuts UpperArm.L's weight there by
+  over 80%, keeps every sum at 1, is one undo step, and its logged line replays to the same weights; undo restores
+  them); `core/armature.test.ts` (a 0.999π twist: linear pinches the knee ring below half its radius, dual
+  quaternion keeps every ring within 1%; the two agree exactly where a vertex follows one bone and in the rest
+  pose; method switch undo/log/file); `core/projects.test.ts` (the candy wrapper's middle ring < 0.5r linear,
+  > 0.9r dual quaternion, both tubes closed; one stroke on "Fix a bad rig" halves the chest's drift). Browser: the
+  project opens in weight paint; a real mouse drag over the chest paints (UpperArm.L weight there 3.29 → 2.62),
+  one undo step, the camera did not orbit; the candy wrapper shows the pinch beside the round tube. No page errors.
+
+## Done (2026-09-29): bone roll and editing bones in the viewport
+
+- **Roll**: a bone's turn about its own length, B = T(head) · R(+y → bone) · R_y(roll). It leaves the bone where it
+  is but turns its x and z axes, so the same pose rotation bends it in another plane. Inspector field, `bone.roll`,
+  kept through files, `addBone`, `add.armature` and the log.
+- **Edit bones** (Tab on an armature, as in Blender; pose mode moved to Ctrl+Tab): bones drawn at rest with joint
+  spheres; click a joint (screen distance) or a bone's middle (the whole bone) and drag the arrows. Joints that sat
+  on the moved one move with it, so connected children stay attached. E extrudes a bone from the selected tail
+  and selects its tail; X deletes. Each drag is one undo step, logged as `bone(n).set({ head, tail })` lines.
+  While an armature's bones are edited, meshes bound to it are shown in the rest pose (as Blender does).
+- **Example** "Tentacle: bones by hand, and roll": a tapered tube on five bones in a travelling wave; the guide has
+  you move joints, extrude a sixth segment and roll a bone to change its bending plane. Guides and help texts now
+  say Tab = edit bones, Ctrl+Tab = pose.
+- Verification: rolling a bone 90° keeps its tail and turns a 90° bend about x from +z to +x; `moveJoint` moves
+  touching joints (a tail drags the child's head, a whole bone drags both neighbours' ends); Tab enters bone edit,
+  a drag is one step with the two expected log lines, E extrudes and selects the new tail, roll survives a file
+  round trip, the log replays to identical bones; the tentacle's Seg 1 swings in z without roll and by the same
+  amount in x with 90° roll; bound meshes are exactly at rest while editing bones and posed again after.
+  Browser: Tab into bone edit on the tentacle, a click selected the Seg 2/Seg 3 joint, a drag of the X arrow moved
+  both ends (one "Move joint" step), clicking the top tail and pressing E grew Seg 5.001; the tentacle stood straight
+  at rest behind the bones. No page errors. `npx vitest run src/labs/mesh-lab`: 14 files, 197 tests.
+
+## Done (2026-09-29): UV unwrapping and shaders
+
+- **Seams** (UV menu, or edit mode edge select): mark and clear; "Seams from sharp edges" (every edge over 60°).
+  Drawn red in edit mode. Stored on the object as edge keys.
+- **Unwrap** (U in edit mode, UV › Unwrap), `core/uv.ts`: charts from the seams, with vertices split into wedges so
+  a seam that stops part way still opens the surface; LSCM per chart in Mullen et al.'s form,
+  E = ½(uᵀCu + vᵀCv) − ½uᵀSv, with the cotan matrix C of the heat maps and the boundary shoelace matrix S, two
+  pins, one CG solve; each chart straightened to its smallest bounding box (a square chart pinned at opposite
+  corners otherwise stands on a corner), scaled to its true area, packed in rows into the unit square. Traced.
+  "Project from above" for terrain. A closed mesh without seams gets a message, not a broken map.
+- **UVs through the modifiers**: mirrored faces reuse their originals' UVs reversed; Catmull–Clark averages them
+  with the same stencil as the new faces (linear, Blender's "UV Smooth: None"). The viewport splits vertices at
+  seams and draws textures on the evaluated (mirrored, skinned, subdivided) mesh.
+- **Distortion**: σ₁/σ₂ of each triangle's map (1 = angles kept), as a heat map (UV › Angle distortion) and in the
+  UV tab, which draws the layout over the texture with edit-mode selections highlighted.
+- **Materials** (inspector): shading model PBR / Lambert / Blinn–Phong / Toon / Normals / UV / Custom GLSL, each
+  with its equation; procedural textures (checker, grid, bricks, wood, stripes) with a repeat scale; shininess.
+  The **Shader tab** shows the full GLSL of the model; for Custom, the body of shade(N, L, V, uv, base, light) is
+  editable (Apply or Ctrl+Enter). A compile error is shown with its line counted in your code, and the object is
+  drawn with Lambert until the code compiles. Lighting comes from the scene's sun.
+- Script API: `markSeams`, `clearSeams`, `seams`, `seamsFromSharp`, `unwrap({ method })`, `uv`, `uvDistortion()`,
+  `showField('uv')`, `material.shader / texture / textureScale / shininess / glsl`.
+- **Examples**: "Unwrap a cube and a sphere", "Shader gallery", the vase now unwrapped with stripes, the dining set in
+  wood grain (the plan's "texture the vase" and "wood on the dining set").
+- Verification: `core/uv.test.ts` (the distortion measure on a rotation-and-scale map and a 2× stretch; a cube's
+  twelve sharp edges give six charts of four; a partial seam doubles exactly the cut vertices; a flat grid unwraps
+  with distortion 1; the cube to six equal, axis-aligned, undistorted squares inside [0, 1]²; a sphere opened on one
+  meridian converges toward conformal under refinement (48×24 mean < 1.12) while its area ratio varies over 5×; a
+  closed mesh without seams is refused; UVs fit the mirrored and subdivided meshes; editor/script flows, logged and
+  replayed; every shading model's GLSL frame; the checker pattern). `core/projects.test.ts` (the unwrap project
+  prints distortion 1.0000 for the cube, a sphere mean under 1.25 and area variation over 3×; the vase has two
+  charts and mean distortion under 1.2; the gallery's models, UVs and GLSL; every dining-set part wood-grained).
+  Browser (real GPU): all eight gallery shaders compiled; a broken custom body showed "line 1 of your code: …
+  syntax error" and fell back to Lambert; the fix compiled and cleared it; textured cube, sphere, vase and dining
+  set drawn; the UV tab's layout. No page errors. `npx vitest run src/labs/mesh-lab`: 15 files, 216 tests (224 with
+  `src/utils` and `src/labs/codelens`).
+- Noticed, not changed: the selection outline draws every edge of the selected object, so a selected dense mesh
+  looks wireframed; Blender outlines only the silhouette.
+
 ## Verification
 
 - `npx vitest run src/labs/mesh-lab`: 7 files, 98 tests (session 1). They cover primitives (closed, outward, Euler,
@@ -211,7 +297,49 @@ seam sat inside the mirrored solid (now skipped, as Blender does); trace markers
 
 ## Next, in order
 
-1. Weight painting (a brush over the weights heat map), dual-quaternion skinning beside linear blending (to show
-   the candy-wrapper fix), bone roll, and editing bones by dragging in the viewport.
-2. UVs (LSCM unwrap, which reuses the cotan Laplacian and the CG solver) and materials/shaders.
-3. Bevel, dissolve and region inset; then learning modes built on the traces (pause before a step and predict).
+1. Bevel, dissolve and region inset; then learning modes built on the traces (pause before a step and predict).
+
+## Example projects: plan
+
+The gallery (`core/projects.ts`) grows with the app. **Rule: every new feature ships with a new example or an
+updated one, plus a test of what that example claims** (as `core/projects.test.ts` already does for the ball's
+parabola, the Gauss–Bonnet totals and the carried block). A feature is not done while its example is missing or
+broken.
+
+### Existing examples to update
+
+| Example | Current compromise | Update when |
+|---|---|---|
+| Rigged character | Automatic weights on the 66-vertex cage spread arm weight onto the chest. | **Done** (2026-09-29): "Fix a bad rig" opens it in weight paint mode on the chest; the walk-and-wave guide points to it. |
+| Rigged character | Twisting a bone collapses the joint (the candy wrapper). | **Done** (2026-09-29): the "Candy wrapper" project, and Skin panel › Blend on any bound mesh. |
+| Robot arm | The block is carried by baked keys, because there are no constraints. | Constraints, if added: a live Child Of constraint, keeping the baked version for comparison. |
+| Dining set, island | Hard box edges on the table; the island is flat-coloured. | Wood grain **done** (2026-09-29). Still to do: a bevelled table edge (bevel), and a texture on the island (planar UVs). |
+| Box-modelled character | Arms and legs are extruded from whole faces, so the shoulders are blocky. | Region inset and bevel: rebuild with cleaner topology. |
+| All | Guides are "Tab, click, press I" instructions. | Learning modes: guides become checkpoints with a pause-and-predict step before each operation. |
+
+### New examples, by feature
+
+- **Weight painting and skinning:** "Fix a bad rig" (a poorly weighted arm repaired with the brush); "Candy
+  wrapper" (two twisted forearms, linear blend beside dual quaternion).
+- **UVs and materials:** "Unwrap a cube and a sphere" (seams, a checker texture, the stretch heat map; why a sphere
+  cannot unwrap without distortion, the Gauss–Bonnet idea from the curvature gallery); "Texture the vase" (a
+  cylindrical unwrap of the Python vase); a shader gallery (one sphere across roughness, metalness and normal maps,
+  with the lighting maths shown).
+- **Bevel, dissolve, region inset:** a hard-surface prop (a crate or a phone: bevels and support loops, with and
+  without subdivision); a retopology comparison (good and bad quad flow, and what each does to subdivision and
+  deformation).
+- **Animation:** a proper walk cycle (foot contacts, the hip rising and falling, a clean loop); a camera fly-through
+  of the island, if cameras become objects.
+- **Learning modes:** guided challenges instead of finished scenes ("extrude this into a table", "make the ball
+  land on frame 20", "fix these weights"), graded by the same kind of checks the project tests use.
+
+### Keeping guides honest
+
+Guides name menus and buttons ("Heat map › Bone weights"). The tests check that each project builds and that its
+numbers hold, but not that those words still exist in the UI, so a renamed menu leaves a stale guide. Give each
+guide step a reference to the menu item or action it mentions, and add a test that the reference exists.
+
+### When the app is finished
+
+One pass over the gallery as a whole: order it as a path (modelling → animation → rigging → geometry → scripting),
+remove overlaps (the character now appears in three projects), and check every guide once more in the browser.

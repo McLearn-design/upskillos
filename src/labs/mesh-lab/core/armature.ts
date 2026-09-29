@@ -34,13 +34,22 @@ export interface Bone {
   tail: Vec3;
   /** Pose rotation: Euler XYZ radians, in the bone's own rest frame. Zero is the rest pose. */
   pose: Vec3;
+  /**
+   * Roll: a turn of the bone's own axes about its length (radians). It does not move the bone,
+   * but it decides which way its x and z axes face, and so which way a pose rotation bends it.
+   */
+  roll?: number;
 }
 
-/** A mesh bound to an armature: one weight per vertex per bone, for the mesh the armature deforms. */
-export interface Skin { armature: string; bones: string[]; weights: number[][]; verts: number }
+/**
+ * A mesh bound to an armature: one weight per vertex per bone, for the mesh the armature deforms.
+ * `method` is how the bones' motions are blended: linear (the default, what glTF and game
+ * engines use) or dual quaternion (keeps volume in twisted joints).
+ */
+export interface Skin { armature: string; bones: string[]; weights: number[][]; verts: number; method?: 'linear' | 'dual-quaternion' }
 
-export const cloneBones = (b: Bone[]): Bone[] => b.map((x) => ({ name: x.name, parent: x.parent, head: [...x.head] as Vec3, tail: [...x.tail] as Vec3, pose: [...x.pose] as Vec3 }));
-export const cloneSkin = (s: Skin | undefined): Skin | undefined => s && { armature: s.armature, bones: [...s.bones], weights: s.weights.map((w) => [...w]), verts: s.verts };
+export const cloneBones = (b: Bone[]): Bone[] => b.map((x) => ({ name: x.name, parent: x.parent, head: [...x.head] as Vec3, tail: [...x.tail] as Vec3, pose: [...x.pose] as Vec3, ...(x.roll ? { roll: x.roll } : {}) }));
+export const cloneSkin = (s: Skin | undefined): Skin | undefined => s && { armature: s.armature, bones: [...s.bones], weights: s.weights.map((w) => [...w]), verts: s.verts, ...(s.method ? { method: s.method } : {}) };
 
 const Y = new Vector3(0, 1, 0);
 
@@ -48,10 +57,16 @@ export function boneLength(b: Bone): number {
   return Math.hypot(b.tail[0] - b.head[0], b.tail[1] - b.head[1], b.tail[2] - b.head[2]);
 }
 
-/** The rest matrix B: origin at the head, y axis along the bone (the shortest turn from +y). */
+/**
+ * The rest matrix B: origin at the head, y axis along the bone (the shortest turn from +y),
+ * then turned by the roll about that y axis: B = T(head) · R(+y → bone) · R_y(roll).
+ * (Blender's zero roll uses a different reference direction, so the same roll number can
+ * face a different way there; the idea is the same.)
+ */
 export function restMatrix(b: Bone): Matrix4 {
   const dir = new Vector3(b.tail[0] - b.head[0], b.tail[1] - b.head[1], b.tail[2] - b.head[2]);
   const q = dir.lengthSq() > 1e-18 ? new Quaternion().setFromUnitVectors(Y, dir.normalize()) : new Quaternion();
+  if (b.roll) q.multiply(new Quaternion().setFromAxisAngle(Y, b.roll));
   return new Matrix4().compose(new Vector3(...b.head), q, new Vector3(1, 1, 1));
 }
 
@@ -106,6 +121,52 @@ export function segmentDistance(p: Vec3, a: Vec3, b: Vec3): { d: number; t: numb
   return { d: Math.hypot(ap[0] - t * ab[0], ap[1] - t * ab[1], ap[2] - t * ab[2]), t };
 }
 
+// ── dual quaternions ─────────────────────────────────────────────────────
+//
+// A rigid motion (rotation R, then translation t) as a dual quaternion q̂ = q_r + ε q_d:
+//   q_r = the rotation as a unit quaternion,  q_d = ½ · (0, t) · q_r,  ε² = 0.
+// Blending: q̂ = Σ wᵢ sᵢ q̂ᵢ, then divide by |q_r|. sᵢ = ±1 puts every q_r on the same
+// side of the 4D sphere as the heaviest bone's (q and −q are the same turn). The result is
+// again a rigid motion, so a vertex between two bones is rotated and moved, never pulled
+// in toward the axis as a plain average of points is.
+
+type Q = [number, number, number, number]; // x, y, z, w
+const qmul = (a: Q, b: Q): Q => [
+  a[3] * b[0] + b[3] * a[0] + a[1] * b[2] - a[2] * b[1],
+  a[3] * b[1] + b[3] * a[1] + a[2] * b[0] - a[0] * b[2],
+  a[3] * b[2] + b[3] * a[2] + a[0] * b[1] - a[1] * b[0],
+  a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+];
+
+/** A rigid matrix as a dual quaternion [q_r, q_d]. */
+export function toDualQuat(m: Matrix4): [Q, Q] {
+  const p = new Vector3(), r = new Quaternion(), s = new Vector3();
+  m.decompose(p, r, s);
+  const qr: Q = [r.x, r.y, r.z, r.w];
+  const qd = qmul([p.x, p.y, p.z, 0], qr).map((c) => c / 2) as Q;
+  return [qr, qd];
+}
+
+/** Blend dual quaternions with weights; returns the normalised rotation and the translation. */
+export function blendDualQuats(dqs: [Q, Q][], weights: number[]): { qr: Q; t: Vec3 } {
+  let heavy = 0;
+  weights.forEach((w, i) => { if (w > weights[heavy]) heavy = i; });
+  const br: Q = [0, 0, 0, 0], bd: Q = [0, 0, 0, 0];
+  dqs.forEach(([qr, qd], i) => {
+    const w = weights[i];
+    if (!w) return;
+    const s = qr[0] * dqs[heavy][0][0] + qr[1] * dqs[heavy][0][1] + qr[2] * dqs[heavy][0][2] + qr[3] * dqs[heavy][0][3] < 0 ? -w : w;
+    for (let k = 0; k < 4; k++) { br[k] += s * qr[k]; bd[k] += s * qd[k]; }
+  });
+  const n = Math.hypot(...br) || 1;
+  const qr = br.map((c) => c / n) as Q, qd = bd.map((c) => c / n) as Q;
+  // t = 2 · q_d · conj(q_r), its vector part.
+  const t = qmul(qd, [-qr[0], -qr[1], -qr[2], qr[3]]);
+  return { qr, t: [2 * t[0], 2 * t[1], 2 * t[2]] };
+}
+
+const rotate = (q: Q, v: Vec3): Vec3 => { const r = qmul(qmul(q, [v[0], v[1], v[2], 0]), [-q[0], -q[1], -q[2], q[3]]); return [r[0], r[1], r[2]]; };
+
 /**
  * Linear blend skinning. `toArm` takes the mesh's coordinates into the armature's
  * space (and back with its inverse). With a trace, one vertex (`explain`) is
@@ -116,6 +177,7 @@ export function deform(mesh: EditMesh, skin: Skin, bones: Bone[], toArm = new Ma
   if (skin.verts !== mesh.verts.length) return out; // weights are for a different mesh: leave it undeformed
   const mats = boneMatrices(bones, poses);
   const fromArm = toArm.clone().invert();
+  if (skin.method === 'dual-quaternion') return deformDQ(mesh, out, skin, mats, toArm, fromArm, trace, explain);
   const S = skin.bones.map((n) => mats.get(n)?.skin ?? new Matrix4());
   // Everything in one matrix per bone: mesh → armature → skin → mesh.
   const K = S.map((s) => fromArm.clone().multiply(s).multiply(toArm).elements);
@@ -151,6 +213,40 @@ export function deform(mesh: EditMesh, skin: Skin, bones: Bone[], toArm = new Ma
       detail: 'The weighted average of the candidates. Averaging points (not rotations) is what makes it linear, and why a twisted joint loses volume: the "candy wrapper".',
       verts: [explain], points: [...parts.map((x) => ({ p: [x.p.x, x.p.y, x.p.z] as Vec3, color: '#38bdf8' })), { p: r, label: 'blend', color: '#f59e0b' }],
       arrows: [{ from: v, to: r, color: '#f59e0b' }],
+    }, out);
+  }
+  return out;
+}
+
+/** Dual-quaternion skinning, in the armature's space (where every bone's motion is rigid). */
+function deformDQ(mesh: EditMesh, out: EditMesh, skin: Skin, mats: Map<string, BoneMatrices>, toArm: Matrix4, fromArm: Matrix4, trace?: Trace, explain?: number): EditMesh {
+  const dqs = skin.bones.map((n) => toDualQuat(mats.get(n)?.skin ?? new Matrix4()));
+  const p = new Vector3();
+  for (let i = 0; i < mesh.verts.length; i++) {
+    const ws = skin.weights.map((w) => w[i]);
+    if (!ws.some((w) => w > 0)) continue; // no weight: stays where it is (the clone already has it)
+    const { qr, t } = blendDualQuats(dqs, ws);
+    p.set(...mesh.verts[i]).applyMatrix4(toArm);
+    const r = rotate(qr, [p.x, p.y, p.z]);
+    p.set(r[0] + t[0], r[1] + t[1], r[2] + t[2]).applyMatrix4(fromArm);
+    out.verts[i] = [p.x, p.y, p.z];
+  }
+  if (trace && explain !== undefined && explain < mesh.verts.length) {
+    const ws = skin.weights.map((w) => w[explain]);
+    skin.bones.forEach((n, b) => {
+      if (!(ws[b] > 0)) return;
+      const [qr, qd] = dqs[b];
+      trace.step({
+        phase: 'Each bone as a dual quaternion', label: `${n}: q_r = (${qr.map((c) => fmt(c)).join(', ')}), weight ${fmt(ws[b])}`,
+        detail: `Bone "${n}"'s motion S = P·B⁻¹ as a rotation quaternion q_r and a dual part q_d = ½·(0, t)·q_r = (${qd.map((c) => fmt(c)).join(', ')}). Together they are one rigid motion.`,
+        verts: [explain], values: [['weight', fmt(ws[b])]],
+      });
+    });
+    const { qr, t } = blendDualQuats(dqs, ws);
+    trace.step({
+      phase: 'Blend the motions', label: `Σ w·q̂, normalised: rotate by (${qr.map((c) => fmt(c)).join(', ')}), move by ${fmtV(t)} → ${fmtV(out.verts[explain])}`,
+      detail: 'The motions are averaged, not the points they produce: the result is still a rotation and a move, so a vertex half on each of two twisted bones is turned half way instead of pulled onto the axis.',
+      verts: [explain], arrows: [{ from: mesh.verts[explain], to: out.verts[explain], color: '#f59e0b' }],
     }, out);
   }
   return out;
@@ -235,6 +331,30 @@ export function limitWeights(skin: Skin, k: number): number {
     skin.weights.forEach((w, b) => { w[i] = keep.has(b) ? w[i] / sum : 0; });
   }
   return changed;
+}
+
+export type JointSel = { bone: string; part: 'head' | 'tail' | 'body' };
+
+/**
+ * Move a bone's head, tail or both (body) by d, from the positions in `start`. Joints of
+ * other bones that sat exactly where a moved one started move too: a child whose head is
+ * its parent's tail stays attached, as connected bones do in Blender. Returns the bones changed.
+ */
+export function moveJoint(bones: Bone[], start: Bone[], sel: JointSel, d: Vec3, eps = 1e-6): string[] {
+  const s = start.find((b) => b.name === sel.bone);
+  if (!s) return [];
+  const targets: Vec3[] = sel.part === 'head' ? [s.head] : sel.part === 'tail' ? [s.tail] : [s.head, s.tail];
+  const at = (p: Vec3) => targets.some((t) => Math.hypot(p[0] - t[0], p[1] - t[1], p[2] - t[2]) < eps);
+  const moved: string[] = [];
+  for (const b0 of start) {
+    const b = bones.find((x) => x.name === b0.name);
+    if (!b) continue;
+    const h = at(b0.head), t = at(b0.tail);
+    b.head = h ? [b0.head[0] + d[0], b0.head[1] + d[1], b0.head[2] + d[2]] : [...b0.head] as Vec3;
+    b.tail = t ? [b0.tail[0] + d[0], b0.tail[1] + d[1], b0.tail[2] + d[2]] : [...b0.tail] as Vec3;
+    if (h || t) moved.push(b.name);
+  }
+  return moved;
 }
 
 /** Bones of a simple chain from a list of joint positions: Bone, Bone.001 … each parented to the one before. */

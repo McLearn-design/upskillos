@@ -23,7 +23,10 @@ import { gaussianCurvature, heatGeodesic, meanCurvature, operators, smooth as sm
 import type { FieldSpec } from './fields';
 import { CHANNELS, INTERPS, cloneAnimation, hasKeys, removeBoneKey, removeKey, setBoneKey, setKey, transformAt, type Interp } from './animation';
 import { boneLength, limitWeights, orderBones, posedEnds, type Bone } from './armature';
-import { applyBonePatch, bindSkin, removeBone } from './evaluate';
+import { applyBonePatch, bindSkin, removeBone, skinnedSource, skinSource } from './evaluate';
+import { BRUSHES, DEFAULT_PAINT, dab, neighbourLists, type PaintSettings } from './weightPaint';
+import { angleDistortion, planarUV, sharpEdges, unwrap as unwrapMesh, uvFits } from './uv';
+import { SHADER_MODELS, TEXTURES, type ShaderModel, type TextureName } from './shading';
 
 type Vec3Handle = { x: number; y: number; z: number; set(x: number, y: number, z: number): Vec3Handle; toArray(): Vec3 };
 
@@ -135,11 +138,28 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
           : what === 'geodesic' ? { kind: 'geodesic', sources: from === undefined ? [] : Array.isArray(from) ? from : [from] }
           : what === 'mean' || what === 'gaussian' ? { kind: what }
           : what === 'weight' ? { kind: 'weight', bone: String(opts.bone ?? '') }
+          : what === 'uv' ? { kind: 'uv' }
           : what === 'x' || what === 'y' || what === 'z' ? { kind: 'coord', axis: 'xyz'.indexOf(what) as 0 | 1 | 2 }
-          : (() => { throw new Error(`showField: unknown field "${what}". Use "geodesic", "mean", "gaussian", "x", "y", "z", "weight" (with bone) or an array of numbers`); })();
+          : (() => { throw new Error(`showField: unknown field "${what}". Use "geodesic", "mean", "gaussian", "x", "y", "z", "weight" (with bone), "uv" or an array of numbers`); })();
         if (!editor.showField(spec, o.id)) throw new Error(editor.message);
         return api;
       },
+      // UVs: seams cut the surface; unwrap flattens each piece (LSCM) and packs them into the unit square.
+      markSeams(edges: [number, number][]) { const s = new Set(o.seams ?? []); for (const [a, b] of edges) s.add(EditMesh.edgeKey(a, b)); o.seams = [...s]; return api; },
+      clearSeams(edges?: [number, number][]) {
+        if (!edges) { o.seams = undefined; return api; }
+        const s = new Set(o.seams ?? []); for (const [a, b] of edges) s.delete(EditMesh.edgeKey(a, b)); o.seams = s.size ? [...s] : undefined; return api;
+      },
+      get seams() { return (o.seams ?? []).map((k) => k.split('-').map(Number)); },
+      seamsFromSharp(degrees = 60) { o.seams = [...new Set([...(o.seams ?? []), ...sharpEdges(m(), degrees)])]; return api; },
+      unwrap(opts: { method?: 'lscm' | 'planar' } = {}) {
+        o.uv = opts.method === 'planar' ? planarUV(m()) : unwrapMesh(m(), new Set(o.seams ?? []), trace('Unwrap (LSCM)'));
+        return api;
+      },
+      /** UVs per face corner: uv[f][i] = [u, v] of corner i of face f (null if none, or if the mesh changed since). */
+      get uv() { return uvFits(m(), o.uv) ? o.uv.faces.map((f) => f.map((p) => [...p])) : null; },
+      /** Angle distortion σ₁/σ₂ of the UV map around each vertex (1 = angles kept). */
+      uvDistortion() { if (!uvFits(m(), o.uv)) throw new Error(`${o.name} has no UVs that fit its mesh: unwrap first`); return Array.from(angleDistortion(m(), o.uv)); },
       toString: () => { const s = m().stats(); return `Mesh(${s.verts} verts, ${s.edges} edges, ${s.faces} faces)`; },
     };
     return api;
@@ -157,10 +177,12 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       /** Pose rotation: radians, XYZ, in the bone's own frame. */
       get pose() { return pose; }, set pose(v: ArrayLike<number> | Vec3Handle) { assign(b.pose, v); },
       get length() { return boneLength(b); },
+      /** Roll (radians): which way the bone's own x and z axes face around its length. */
+      get roll() { return b.roll ?? 0; }, set roll(v: number) { bh.set({ roll: Number(v) }); },
       /** Where the head and tail are in the current pose (armature space). */
       get posedHead() { return posedEnds(o.bones!).get(b.name)!.head; },
       get posedTail() { return posedEnds(o.bones!).get(b.name)!.tail; },
-      set(patch: { name?: string; head?: Vec3; tail?: Vec3; parent?: string | null }) {
+      set(patch: { name?: string; head?: Vec3; tail?: Vec3; parent?: string | null; roll?: number }) {
         if (patch.name !== undefined && patch.name !== b.name && o.bones!.some((x) => x.name === patch.name)) throw new Error(`There is already a bone called "${patch.name}"`);
         if (patch.parent) orderBones(o.bones!.map((x) => (x === b ? { ...x, parent: patch.parent! } : x)));
         applyBonePatch(scene(), o, b, { ...patch, head: patch.head && vec(patch.head), tail: patch.tail && vec(patch.tail) });
@@ -193,6 +215,16 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
         get color() { return o.material.color; }, set color(v: string) { o.material.color = String(v); },
         get roughness() { return o.material.roughness; }, set roughness(v: number) { o.material.roughness = v; },
         get metalness() { return o.material.metalness; }, set metalness(v: number) { o.material.metalness = v; },
+        /** "pbr", "lambert", "blinn-phong", "toon", "normals", "uv" or "custom". */
+        get shader() { return o.material.shader ?? 'pbr'; },
+        set shader(v: ShaderModel) { if (!SHADER_MODELS.includes(v)) throw new Error(`shader must be one of ${SHADER_MODELS.join(', ')}`); o.material.shader = v; },
+        /** A procedural texture drawn with the UVs: "none", "checker", "grid", "bricks", "wood", "stripes". */
+        get texture() { return o.material.texture ?? 'none'; },
+        set texture(v: TextureName) { if (!TEXTURES.includes(v)) throw new Error(`texture must be one of ${TEXTURES.join(', ')}`); o.material.texture = v; },
+        get textureScale() { return o.material.textureScale ?? 1; }, set textureScale(v: number) { o.material.textureScale = Number(v); },
+        get shininess() { return o.material.shininess ?? 40; }, set shininess(v: number) { o.material.shininess = Number(v); },
+        /** The body of shade(N, L, V, uv, base, light) for the custom shader (GLSL). */
+        get glsl() { return o.material.glsl ?? ''; }, set glsl(v: string) { o.material.glsl = String(v); },
       },
       get parent(): ReturnType<typeof objHandle> | null { return o.parent ? objHandle(scene().get(o.parent)!) : null; },
       set parent(p: { id: string } | null) { if (!scene().setParent(o.id, p ? p.id : null, true)) throw new Error(`Cannot parent ${o.name} there`); },
@@ -232,10 +264,10 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       // Armatures.
       get bones() { if (!o.bones) throw new Error(`${o.name} is not an armature`); return o.bones.map((b) => boneHandle(o, b)); },
       bone(name: string) { const b = o.bones?.find((x) => x.name === name); if (!b) throw new Error(`${o.name} has no bone called "${name}"`); return boneHandle(o, b); },
-      addBone(p: { name: string; parent?: string | null; head: Vec3; tail: Vec3 }) {
+      addBone(p: { name: string; parent?: string | null; head: Vec3; tail: Vec3; roll?: number }) {
         if (!o.bones) throw new Error(`${o.name} is not an armature`);
         if (o.bones.some((b) => b.name === p.name)) throw new Error(`There is already a bone called "${p.name}"`);
-        const b: Bone = { name: String(p.name), parent: p.parent ?? null, head: vec(p.head), tail: vec(p.tail), pose: [0, 0, 0] };
+        const b: Bone = { name: String(p.name), parent: p.parent ?? null, head: vec(p.head), tail: vec(p.tail), pose: [0, 0, 0], ...(p.roll ? { roll: Number(p.roll) } : {}) };
         orderBones([...o.bones, b]);
         o.bones.push(b);
         return boneHandle(o, b);
@@ -245,6 +277,13 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       // Skinning.
       bindTo(arm: { id: string }) { const a = scene().get(arm.id); if (!a) throw new Error('bindTo: no such armature'); bindSkin(scene(), o, a, trace('Automatic weights')); return h; },
       unbind() { o.skin = undefined; return h; },
+      /** How bone motions are blended: "linear" (averages points) or "dual-quaternion" (averages rigid motions). */
+      get skinning() { return o.skin?.method ?? 'linear'; },
+      set skinning(m: 'linear' | 'dual-quaternion') {
+        if (!o.skin) throw new Error(`${o.name} is not bound to an armature`);
+        if (m !== 'linear' && m !== 'dual-quaternion') throw new Error('skinning is "linear" or "dual-quaternion"');
+        o.skin.method = m;
+      },
       /** Keep each vertex's k strongest bone weights (glTF and game engines use 4). */
       limitWeights(k = 4) { if (!o.skin) throw new Error(`${o.name} is not bound to an armature`); limitWeights(o.skin, k); return h; },
       get skin() {
@@ -254,6 +293,15 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
           armature: scene().get(sk.armature)?.name ?? null, bones: [...sk.bones], verts: sk.verts,
           weights(bone: string) { const i = sk.bones.indexOf(bone); if (i < 0) throw new Error(`No weights for bone "${bone}"`); return [...sk.weights[i]]; },
         };
+      },
+      /** Brush strokes on a bone's weights, as weight paint mode does: points in the mesh's own space, on the posed surface. */
+      paintWeights(bone: string, opts: Partial<PaintSettings> & { points: (Vec3 | Vec3Handle)[] }) {
+        if (!o.skin) throw new Error(`${o.name} is not bound to an armature`);
+        const s: PaintSettings = { ...DEFAULT_PAINT, ...opts };
+        if (!BRUSHES.includes(s.brush)) throw new Error(`paintWeights: brush must be one of ${BRUSHES.join(', ')}`);
+        const src = skinSource(o), pos = skinnedSource(scene(), o).verts, nb = neighbourLists(src.verts.length, src.faces);
+        for (const p of opts.points) dab(o.skin, bone, pos, nb, vec(p), s);
+        return h;
       },
       setWeights(bone: string, values: number[]) {
         const sk = o.skin;
@@ -277,8 +325,8 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
     };
   }
   add.armature = (p: Record<string, unknown> = {}) => {
-    const list = ((p.bones as { name: string; parent?: string | null; head: Vec3; tail: Vec3 }[] | undefined) ?? [{ name: 'Bone', head: [0, 0, 0], tail: [0, 1, 0] }])
-      .map((b) => ({ name: String(b.name), parent: b.parent ?? null, head: vec(b.head), tail: vec(b.tail), pose: [0, 0, 0] as Vec3 }));
+    const list = ((p.bones as { name: string; parent?: string | null; head: Vec3; tail: Vec3; roll?: number }[] | undefined) ?? [{ name: 'Bone', head: [0, 0, 0], tail: [0, 1, 0] }])
+      .map((b) => ({ name: String(b.name), parent: b.parent ?? null, head: vec(b.head), tail: vec(b.tail), pose: [0, 0, 0] as Vec3, ...(b.roll ? { roll: Number(b.roll) } : {}) }));
     orderBones(list);
     return objHandle(scene().add({ name: String(p.name ?? 'Armature'), kind: 'armature', bones: list, ...placed(p), material: { color: '#c9ced6', roughness: 0.6, metalness: 0 } }));
   };

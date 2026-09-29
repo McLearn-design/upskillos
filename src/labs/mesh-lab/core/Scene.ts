@@ -10,9 +10,23 @@ import { EditMesh, type MeshSnapshot, type Vec3 } from './EditMesh';
 import type { Modifier } from './modifiers';
 import { DEFAULT_TIMELINE, cloneAnimation, transformAt, type Animation, type Timeline } from './animation';
 import { cloneBones, cloneSkin, type Bone, type Skin } from './armature';
+import type { ShaderModel, TextureName } from './shading';
+import type { UVLayer } from './uv';
 
 export type ObjectKind = 'mesh' | 'empty' | 'light' | 'armature';
-export interface Material { color: string; roughness: number; metalness: number }
+export interface Material {
+  color: string; roughness: number; metalness: number;
+  /** How the surface is lit (default PBR). */
+  shader?: ShaderModel;
+  /** A procedural texture, drawn with the object's UVs. */
+  texture?: TextureName;
+  /** How many times the texture repeats across the UV square. */
+  textureScale?: number;
+  /** Blinn–Phong highlight tightness. */
+  shininess?: number;
+  /** The body of shade() for the custom GLSL model. */
+  glsl?: string;
+}
 
 export interface SceneObject {
   id: string;
@@ -36,6 +50,10 @@ export interface SceneObject {
   bones?: Bone[];
   /** A mesh bound to an armature: its weights. */
   skin?: Skin;
+  /** Edges marked as UV seams (edge keys "a-b" of the cage). */
+  seams?: string[];
+  /** UV coordinates per face corner of the cage. */
+  uv?: UVLayer;
 }
 
 export interface SceneJSON {
@@ -53,6 +71,8 @@ export class Scene {
   objects: SceneObject[] = [];
   nextId = 1;
   timeline: Timeline = { ...DEFAULT_TIMELINE };
+  /** An armature whose bones are being edited: meshes bound to it are shown in the rest pose. Not saved. */
+  restPose: string | null = null;
 
   get(idOrName: string): SceneObject | undefined {
     return this.objects.find((o) => o.id === idOrName) ?? this.objects.find((o) => o.name === idOrName);
@@ -88,6 +108,8 @@ export class Scene {
       anim: cloneAnimation(init.anim),
       bones: init.bones ? cloneBones(init.bones) : undefined,
       skin: cloneSkin(init.skin),
+      seams: init.seams ? [...init.seams] : undefined,
+      uv: init.uv ? { faces: init.uv.faces.map((f) => f.map((p) => [p[0], p[1]] as [number, number])) } : undefined,
     };
     if (o.parent && !this.get(o.parent)) o.parent = null;
     this.objects.push(o);
@@ -171,6 +193,7 @@ export class Scene {
         material: { ...o.material }, modifiers: o.modifiers.map((m) => ({ ...m })), light: o.light ? { ...o.light } : undefined,
         mesh: o.mesh ? o.mesh.toSnapshot() : null, anim: cloneAnimation(o.anim),
         bones: o.bones ? cloneBones(o.bones) : undefined, skin: cloneSkin(o.skin),
+        seams: o.seams ? [...o.seams] : undefined, uv: o.uv ? { faces: o.uv.faces.map((f) => f.map((p) => [p[0], p[1]] as [number, number])) } : undefined,
       })),
     };
   }
@@ -185,6 +208,7 @@ export class Scene {
       material: { ...o.material }, modifiers: o.modifiers.map((m) => ({ ...m })), light: o.light ? { ...o.light } : undefined,
       mesh: o.mesh ? EditMesh.fromSnapshot(o.mesh) : null, anim: cloneAnimation(o.anim),
       bones: o.bones ? cloneBones(o.bones) : undefined, skin: cloneSkin(o.skin),
+      seams: o.seams ? [...o.seams] : undefined, uv: o.uv ? { faces: o.uv.faces.map((f) => f.map((p) => [p[0], p[1]] as [number, number])) } : undefined,
     }));
     return s;
   }

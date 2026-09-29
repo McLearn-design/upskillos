@@ -5,6 +5,7 @@ import type { Editor } from '../core/Editor';
 import type { Vec3 } from '../core/EditMesh';
 import { boneLength, boneMatrices, posedEnds } from '../core/armature';
 import { skinState } from '../core/evaluate';
+import { BRUSHES, type Brush } from '../core/weightPaint';
 import { Btn, C, MatrixView, NumberField, Row, Section } from './kit';
 
 const DEG = 180 / Math.PI;
@@ -25,7 +26,8 @@ export function ArmaturePanel({ editor }: { editor: Editor }) {
   return (
     <Section title={`ARMATURE · ${bones.length} BONE${bones.length === 1 ? '' : 'S'}`}>
       <div style={{ display: 'flex', gap: 4, marginBottom: 6, flexWrap: 'wrap' }}>
-        <Btn small active={posing} onClick={() => (posing ? editor.exitPose() : editor.enterPose())} title="Tab">{posing ? 'Leave pose mode' : 'Pose mode'}</Btn>
+        <Btn small active={editor.mode === 'bones'} onClick={() => (editor.mode === 'bones' ? editor.exitBoneEdit() : editor.enterBoneEdit())} title="Tab">{editor.mode === 'bones' ? 'Done editing' : 'Edit bones'}</Btn>
+        <Btn small active={posing} onClick={() => (posing ? editor.exitPose() : editor.enterPose())} title="Ctrl+Tab">{posing ? 'Leave pose mode' : 'Pose mode'}</Btn>
         <Btn small onClick={() => editor.addBone()} title="A new bone from the tail of the active one">+ Bone</Btn>
         <Btn small disabled={!b || bones.length < 2} onClick={() => editor.deleteBone()}>Delete bone</Btn>
         <Btn small onClick={() => editor.resetPose()} title="Every bone back to its rest pose (Alt+R)">Clear pose</Btn>
@@ -49,6 +51,7 @@ export function ArmaturePanel({ editor }: { editor: Editor }) {
           <div style={{ color: C.dim, margin: '6px 0 3px' }}>Rest (armature space)</div>
           {vecRow('Head', b.head, (v) => editor.setBone(b.name, { head: v }))}
           {vecRow('Tail', b.tail, (v) => editor.setBone(b.name, { tail: v }))}
+          <Row label="Roll °"><NumberField value={(b.roll ?? 0) * DEG} step={5} width={56} onCommit={(v) => editor.setBone(b.name, { roll: v / DEG })} /><span style={{ color: C.faint, fontSize: 11 }}>turns the bone's x and z about its length</span></Row>
           <div style={{ color: C.dim, margin: '6px 0 3px' }}>Pose: rotation about the head, in the bone's own axes (°)</div>
           {vecRow('Rotate', b.pose, (v) => editor.setBonePose(b.name, v), DEG)}
           {ends && <Row label="Posed tail"><span style={{ fontFamily: C.mono }}>{f3(ends.get(b.name)!.tail)}</span></Row>}
@@ -67,7 +70,9 @@ export function ArmaturePanel({ editor }: { editor: Editor }) {
         </>
       )}
       <div style={{ color: C.faint, fontSize: 11, marginTop: 6, lineHeight: 1.5 }}>
-        {posing ? 'Click a bone, drag the gizmo rings to rotate it. I keys the active bone (or all bones if none is active); the Timeline plays it.' : 'To rig a mesh: select it, Shift-click this armature, then Object › Bind to armature (Ctrl+P).'}
+        {posing ? 'Click a bone, drag the gizmo rings to rotate it. I keys the active bone (or all bones if none is active); the Timeline plays it.'
+          : editor.mode === 'bones' ? 'Click a joint (or a bone\'s middle for the whole bone) and drag the arrows. Joints that touch move together. E adds a bone from the selected tail; X deletes. Moving bones after binding changes the rest pose: bind again for fresh weights.'
+          : 'To rig a mesh: select it, Shift-click this armature, then Object › Bind to armature (Ctrl+P).'}
       </div>
     </Section>
   );
@@ -85,6 +90,11 @@ export function SkinPanel({ editor }: { editor: Editor }) {
     <Section title="SKIN (ARMATURE)">
       <Row label="Armature"><span>{arm?.name ?? '(deleted)'}</span></Row>
       <Row label="Weights"><span style={{ fontFamily: C.mono }}>{sk.bones.length} bones × {sk.verts} vertices</span></Row>
+      <Row label="Blend">
+        <Btn small active={(sk.method ?? 'linear') === 'linear'} onClick={() => editor.setSkinMethod(o.id, 'linear')} title="v' = Σ w·S·v: average the points each bone would move the vertex to">Linear</Btn>
+        <Btn small active={sk.method === 'dual-quaternion'} onClick={() => editor.setSkinMethod(o.id, 'dual-quaternion')} title="Average the bones' rigid motions as dual quaternions: twisted joints keep their volume">Dual quaternion</Btn>
+      </Row>
+      {sk.method === 'dual-quaternion' && <div style={{ color: C.faint, fontSize: 11, marginBottom: 6 }}>glTF stores only linear blending, so a GLB export deforms linearly in other programs.</div>}
       {state === 'stale' && <div style={{ color: C.warn, marginBottom: 6 }}>The mesh has changed since it was bound ({sk.verts} vertices then); it is not being deformed. Bind again.</div>}
       {state === 'no-armature' && <div style={{ color: C.warn, marginBottom: 6 }}>Its armature is gone; it is not being deformed.</div>}
       <Row label="Show">
@@ -121,5 +131,45 @@ export function VertexSkin({ editor, v }: { editor: Editor; v: number }) {
       ))}
       <Btn small style={{ marginTop: 4 }} onClick={() => editor.explainSkinning(o.id, v)} title="Show each bone's candidate position and the weighted blend, in the trace panel">Explain skinning here</Btn>
     </div>
+  );
+}
+
+const BRUSH_MATHS: Record<Brush, string> = {
+  draw: 'w ← w + s·f·(value − w): toward the value',
+  add: 'w ← w + s·f·value',
+  subtract: 'w ← w − s·f·value',
+  blur: 'w ← w + s·f·(w̄ − w): toward the neighbours\' average',
+};
+
+/** Weight paint mode: which bone, which brush, and what a dab does. */
+export function WeightPaintPanel({ editor }: { editor: Editor }) {
+  const o = editor.activeObject!;
+  const sk = o.skin!;
+  const p = editor.paint;
+  const set = (patch: Partial<typeof p>) => { editor.paint = { ...p, ...patch }; editor.emit('select'); };
+  const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+  return (
+    <Section title="WEIGHT PAINT">
+      <div style={{ color: C.dim, marginBottom: 4 }}>Bone (its weights are the heat map)</div>
+      <div data-testid="paint-bones" style={{ background: C.bg, borderRadius: 4, padding: 4, maxHeight: 140, overflowY: 'auto', marginBottom: 8 }}>
+        {sk.bones.map((n) => (
+          <div key={n} onClick={() => editor.selectBone(n)} style={{ padding: '2px 6px', cursor: 'pointer', borderRadius: 3, fontFamily: C.mono, fontSize: 11.5, background: n === editor.activeBone ? C.raised : 'transparent', color: n === editor.activeBone ? C.blue : C.text }}>{n}</div>
+        ))}
+      </div>
+      <Row label="Brush">{BRUSHES.map((b) => <Btn key={b} small active={p.brush === b} onClick={() => set({ brush: b })}>{b}</Btn>)}</Row>
+      <Row label="Value"><NumberField value={p.value} step={0.05} width={56} onCommit={(v) => set({ value: clamp01(v) })} /><span style={{ color: C.faint, fontSize: 11 }}>1 = fully this bone</span></Row>
+      <Row label="Radius"><NumberField value={p.radius} step={0.02} width={56} onCommit={(v) => set({ radius: Math.max(0.01, v) })} /><span style={{ color: C.faint, fontSize: 11 }}>in the mesh's units</span></Row>
+      <Row label="Strength"><NumberField value={p.strength} step={0.05} width={56} onCommit={(v) => set({ strength: clamp01(v) })} /></Row>
+      <Row label="Options">
+        <Btn small active={p.normalize} onClick={() => set({ normalize: !p.normalize })} title="Keep every vertex's weights summing to 1: the other bones give way">Auto-normalise</Btn>
+        <Btn small active={p.mirror} onClick={() => set({ mirror: !p.mirror })} title="Paint the other side too, on the other side's bone (.L ↔ .R)">X-mirror</Btn>
+      </Row>
+      <div style={{ fontFamily: C.mono, fontSize: 11, color: C.dim, background: C.bg, borderRadius: 4, padding: '6px 8px', lineHeight: 1.6 }}>
+        {BRUSH_MATHS[p.brush]}<br />
+        f = (1 − (d/r)²)², s = strength{p.normalize ? <><br />then the other bones × (1 − w) / (their sum)</> : null}
+      </div>
+      <div style={{ color: C.faint, fontSize: 11, marginTop: 6, lineHeight: 1.5 }}>Drag over the mesh to paint; drag off it to orbit. Each stroke is one undo step and one line of code. Pose the armature first to paint where it bends badly.</div>
+      <Btn small style={{ marginTop: 6 }} onClick={() => editor.exitWeightPaint()}>Leave weight paint (Tab)</Btn>
+    </Section>
   );
 }

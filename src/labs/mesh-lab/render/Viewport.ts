@@ -24,6 +24,8 @@ import type { Trace, TraceStep } from '../core/trace';
 import { fieldRange, vertexColors } from '../core/fields';
 import { contours, levelsFor } from '../core/geometry';
 import { hasKeys, keyFrames } from '../core/animation';
+import { evaluateUV, uvFits, type UVLayer } from '../core/uv';
+import { DEFAULT_CUSTOM, VERTEX_SHADER, fragmentShader, textureRGBA, type TextureName } from '../core/shading';
 import { boneLength, boneMatrices } from '../core/armature';
 
 export type GizmoMode = 'translate' | 'rotate' | 'scale';
@@ -36,7 +38,7 @@ const COL = {
   traceFace: 0xf59e0b, traceEdge: 0xfbbf24, traceVert: 0xfde047,
 };
 
-interface ObjView { bones?: THREE.Group; bonesSig?: string; group: THREE.Group; body?: THREE.Mesh; outline?: THREE.LineSegments; wire?: THREE.LineSegments; normals?: THREE.LineSegments; axes?: THREE.AxesHelper; light?: THREE.DirectionalLight; helper?: THREE.Object3D; sig: string }
+interface ObjView { matKey?: string; bones?: THREE.Group; bonesSig?: string; group: THREE.Group; body?: THREE.Mesh; outline?: THREE.LineSegments; wire?: THREE.LineSegments; normals?: THREE.LineSegments; axes?: THREE.AxesHelper; light?: THREE.DirectionalLight; helper?: THREE.Object3D; sig: string }
 
 function signature(o: SceneObject): string {
   if (!o.mesh) return 'none';
@@ -56,6 +58,39 @@ export function toGeometry(mesh: EditMesh | MeshSnapshot): { geo: THREE.BufferGe
   geo.setIndex(new THREE.BufferAttribute(t.indices, 1));
   geo.computeVertexNormals();
   return { geo, faceIndex: t.faceIndex };
+}
+
+/**
+ * A geometry with UVs: every triangle corner its own vertex (UVs can differ on each
+ * side of a seam), normals smooth (area-weighted per vertex) or flat (per face).
+ */
+export function toGeometryUV(m: EditMesh, uv: UVLayer, smooth: boolean): THREE.BufferGeometry {
+  const vn: number[][] = m.verts.map(() => [0, 0, 0]);
+  const fns = m.faces.map((f) => {
+    let n: Vec3 = [0, 0, 0];
+    for (let i = 1; i + 1 < f.length; i++) {
+      const a = m.verts[f[0]], b = m.verts[f[i]], c = m.verts[f[i + 1]];
+      const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], w = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+      n = [n[0] + u[1] * w[2] - u[2] * w[1], n[1] + u[2] * w[0] - u[0] * w[2], n[2] + u[0] * w[1] - u[1] * w[0]];
+    }
+    if (smooth) for (const v of f) { vn[v][0] += n[0]; vn[v][1] += n[1]; vn[v][2] += n[2]; }
+    const l = Math.hypot(...n) || 1;
+    return [n[0] / l, n[1] / l, n[2] / l];
+  });
+  const unit = (n: number[]) => { const l = Math.hypot(n[0], n[1], n[2]) || 1; return [n[0] / l, n[1] / l, n[2] / l]; };
+  const pos: number[] = [], nor: number[] = [], uvs: number[] = [];
+  m.faces.forEach((f, fi) => {
+    for (let i = 1; i + 1 < f.length; i++) for (const k of [0, i, i + 1]) {
+      pos.push(...m.verts[f[k]]);
+      nor.push(...(smooth ? unit(vn[f[k]]) : fns[fi]));
+      uvs.push(uv.faces[fi][k][0], uv.faces[fi][k][1]);
+    }
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  return g;
 }
 
 /** Line segments along the model's own edges: quads show as quads, not as two triangles. */
@@ -90,10 +125,19 @@ export class Viewport {
   private traceGroup = new THREE.Group();
   private traceLabels: { p: THREE.Vector3; text: string; color: string; parent: THREE.Object3D }[] = [];
   private proxy = new THREE.Object3D();
-  private drag: { kind: 'object' | 'verts' | 'bone'; start: Vec3[]; startMatrix: THREE.Matrix4; verts: number[]; bone?: string; base?: THREE.Quaternion } | null = null;
+  private drag: { kind: 'object' | 'verts' | 'bone' | 'joint'; start: Vec3[]; startMatrix: THREE.Matrix4; verts: number[]; bone?: string; base?: THREE.Quaternion; from?: THREE.Vector3 } | null = null;
   private traceView: { trace: Trace; step: number } | null = null;
   private fieldGroup = new THREE.Group();
   private pathGroup = new THREE.Group();
+  private textures = new Map<TextureName, THREE.DataTexture>();
+  private white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+  /** Custom shaders that failed to compile: the GLSL that failed and the compiler's message. */
+  readonly shaderErrors = new Map<string, { glsl: string; message: string }>();
+  /** Called when a custom shader fails to compile (or compiles again after a fix). */
+  onShaderError?: (objectId: string, message: string | null) => void;
+  /** Weight paint: the brush outline, and the last dab of the stroke in progress. */
+  private brushRing: THREE.Mesh | null = null;
+  private painting: { last: THREE.Vector3 } | null = null;
   private pathKey = '';
   private fieldDrawn: { field: unknown; contours: boolean } = { field: null, contours: true };
   private raf = 0;
@@ -126,6 +170,25 @@ export class Viewport {
     (this.worldAxes.material as THREE.Material).depthTest = false;
     this.worldAxes.renderOrder = 2;
     this.scene.add(this.grid, this.worldAxes, this.root);
+
+    // A custom shader that does not compile: find whose GLSL it was, remember the message,
+    // and draw that object with Lambert until the code changes.
+    this.renderer.debug.onShaderError = (gl, program, _vs, fs) => {
+      const src = gl.getShaderSource(fs) ?? '';
+      // Line numbers count the whole program three compiled; turn them into lines of the shade() body.
+      const lines = src.split('\n'), start = lines.findIndex((l) => l.startsWith('vec3 shade(')) + 2;
+      const message = ([gl.getShaderInfoLog(fs), gl.getProgramInfoLog(program)].filter(Boolean).join('\n').trim() || 'The shader did not compile')
+        .replace(/ERROR: 0:(\d+):/g, (_m, n: string) => (start > 1 && +n >= start ? `line ${+n - start + 1} of your code:` : `line ${n}:`));
+      for (const o of this.editor.scene.objects) {
+        const glsl = o.material.glsl || DEFAULT_CUSTOM;
+        if (o.material.shader === 'custom' && src.includes(glsl.split('\n').filter((l) => l.trim()).at(-1)!.trim())) {
+          this.shaderErrors.set(o.id, { glsl, message });
+          this.onShaderError?.(o.id, message);
+        }
+      }
+      queueMicrotask(() => this.sync());
+    };
+    this.white.needsUpdate = true;
 
     this.gizmo = new TransformControls(this.camera, el);
     const g = this.gizmo as unknown as { getHelper?: () => THREE.Object3D };
@@ -314,11 +377,14 @@ export class Viewport {
     const editing = this.editor.mode === 'edit' && active;
 
     if (o.kind === 'mesh' && o.mesh) {
-      const sig = signature(o) + skinSignature(this.editor.scene, o);
+      const uvSig = o.uv ? `${o.uv.faces.length}:${o.uv.faces.reduce((s, f) => s + f.reduce((t, p) => t + p[0] * 7.3 + p[1] * 3.1, 0), 0).toFixed(6)}` : '';
+      const sig = signature(o) + skinSignature(this.editor.scene, o) + uvSig;
       if (sig !== v.sig || !v.body) {
         v.sig = sig;
         const ev = evaluatedMesh(this.editor.scene, o, 3);
-        const { geo } = toGeometry(ev);
+        // With UVs, carry them through the modifiers and split vertices at seams; without, share vertices.
+        const uvEv = uvFits(o.mesh, o.uv) ? evaluateUV(o.mesh, o.uv, o.modifiers, 3, !!o.skin) : null;
+        const geo = uvEv && uvFits(ev, uvEv) ? toGeometryUV(ev, uvEv, o.smooth) : toGeometry(ev).geo;
         if (!v.body) {
           v.body = new THREE.Mesh(geo, new THREE.MeshStandardMaterial());
           v.body.userData.id = o.id;
@@ -335,13 +401,7 @@ export class Viewport {
         if (v.normals) { v.normals.geometry.dispose(); v.normals.removeFromParent(); v.normals = undefined; }
         if (this.options.normals) v.normals = this.normalLines(ev, g);
       }
-      const mat = v.body.material as THREE.MeshStandardMaterial;
-      mat.color.set(o.material.color);
-      mat.roughness = o.material.roughness;
-      mat.metalness = o.material.metalness;
-      if (mat.flatShading !== !o.smooth) { mat.flatShading = !o.smooth; mat.needsUpdate = true; }
-      mat.transparent = this.options.xray || editing; mat.opacity = this.options.xray ? 0.45 : editing ? 0.85 : 1;
-      mat.depthWrite = !mat.transparent;
+      this.syncMaterial(o, v, editing);
       v.body.visible = !(this.traceView && this.traceTargetId() === o.id) && this.editor.field?.objectId !== o.id;
       v.outline!.visible = selected && !editing && v.body.visible;
       (v.outline!.material as THREE.LineBasicMaterial).color.set(active ? COL.active : COL.select);
@@ -383,20 +443,86 @@ export class Viewport {
     } else if (v.axes) v.axes.visible = false;
   }
 
+  private texture(name: TextureName): THREE.DataTexture {
+    let t = this.textures.get(name);
+    if (!t) {
+      t = new THREE.DataTexture(textureRGBA(name, 256), 256, 256);
+      t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true;
+      t.needsUpdate = true;
+      this.textures.set(name, t);
+    }
+    return t;
+  }
+
+  /**
+   * The body's material: three's PBR material, or one of MeshLab's shaders built
+   * from core/shading.ts (rebuilt when the model, texture or GLSL changes; uniforms
+   * updated every sync). A custom shader that failed to compile falls back to Lambert.
+   */
+  private syncMaterial(o: SceneObject, v: ObjView, editing: boolean): void {
+    const m = o.material, tex = m.texture && m.texture !== 'none' ? m.texture : null;
+    const bad = m.shader === 'custom' && this.shaderErrors.get(o.id)?.glsl === (m.glsl || DEFAULT_CUSTOM);
+    const model = bad ? 'lambert' : m.shader ?? 'pbr';
+    const key = `${model}|${tex}|${model === 'custom' ? m.glsl : ''}|${o.smooth}`;
+    if (v.matKey !== key) {
+      v.matKey = key;
+      (v.body!.material as THREE.Material).dispose();
+      if (model === 'pbr') {
+        v.body!.material = new THREE.MeshStandardMaterial({ map: tex ? this.texture(tex).clone() : null });
+      } else {
+        v.body!.material = new THREE.ShaderMaterial({
+          vertexShader: VERTEX_SHADER, fragmentShader: fragmentShader(model, m.glsl || DEFAULT_CUSTOM, !o.smooth),
+          uniforms: {
+            uBase: { value: new THREE.Color() }, uMap: { value: tex ? this.texture(tex) : this.white }, uHasMap: { value: tex ? 1 : 0 },
+            uUvScale: { value: new THREE.Vector2(1, 1) }, uLightDir: { value: new THREE.Vector3(0.5, 1, 0.3) }, uLightColor: { value: new THREE.Color(1, 1, 1) },
+            uSky: { value: new THREE.Color(0xdfe6f5).multiplyScalar(0.32) }, uGround: { value: new THREE.Color(0x2a2622).multiplyScalar(0.32) },
+            uShininess: { value: 40 }, uSpecular: { value: 0.5 }, uBands: { value: 3 }, uOpacity: { value: 1 },
+          },
+        });
+      }
+      if (!bad && this.shaderErrors.delete(o.id)) this.onShaderError?.(o.id, null);
+    }
+    const transparent = this.options.xray || editing, opacity = this.options.xray ? 0.45 : editing ? 0.85 : 1;
+    const scale = m.textureScale ?? 1;
+    const mat = v.body!.material;
+    if (mat instanceof THREE.MeshStandardMaterial) {
+      mat.color.set(m.color); mat.roughness = m.roughness; mat.metalness = m.metalness;
+      if (mat.map) mat.map.repeat.set(scale, scale);
+      if (mat.flatShading !== !o.smooth) { mat.flatShading = !o.smooth; mat.needsUpdate = true; }
+      mat.transparent = transparent; mat.opacity = opacity; mat.depthWrite = !transparent;
+    } else if (mat instanceof THREE.ShaderMaterial) {
+      const u = mat.uniforms;
+      (u.uBase.value as THREE.Color).set(m.color);
+      (u.uUvScale.value as THREE.Vector2).set(scale, scale);
+      u.uShininess.value = m.shininess ?? 40; u.uSpecular.value = 0.9 * (1 - m.roughness); u.uOpacity.value = opacity;
+      // The sun: from its position toward the origin, its colour times its strength.
+      const sun = this.editor.scene.objects.find((x) => x.kind === 'light');
+      if (sun) {
+        const p = new THREE.Vector3().setFromMatrixPosition(this.editor.scene.worldMatrix(sun));
+        (u.uLightDir.value as THREE.Vector3).copy(p.lengthSq() > 0 ? p.normalize() : new THREE.Vector3(0, 1, 0));
+        (u.uLightColor.value as THREE.Color).set(sun.light?.color ?? '#ffffff').multiplyScalar((sun.light?.intensity ?? 2.5) * 0.4);
+      }
+      mat.transparent = transparent; mat.depthWrite = !transparent;
+    }
+  }
+
   /**
    * Bones drawn as Blender does: an octahedron from head to tail, fat near the
    * head. They are drawn in front of the mesh so they can be seen and clicked
    * inside a character. In pose mode the active bone is blue.
    */
   private syncBones(o: SceneObject, v: ObjView, selected: boolean): void {
-    const ed = this.editor, posing = ed.mode === 'pose' && ed.active === o.id;
-    const sig = `${JSON.stringify(o.bones)}|${posing}|${ed.activeBone}|${selected}`;
+    const ed = this.editor, posing = ed.mode === 'pose' && ed.active === o.id, editing = ed.mode === 'bones' && ed.active === o.id;
+    const sig = `${JSON.stringify(o.bones)}|${posing}|${editing}|${ed.activeBone}|${JSON.stringify(ed.boneSel)}|${selected}`;
     if (sig === v.bonesSig && v.bones) return;
     v.bonesSig = sig;
     if (v.bones) { this.disposeGroup(v.bones); }
     const g = new THREE.Group();
     let mats: ReturnType<typeof boneMatrices>;
-    try { mats = boneMatrices(o.bones!); } catch { v.bones = g; v.group.add(g); return; }
+    // Editing bones shows the rest pose (as Blender's edit mode does); otherwise the pose.
+    const rest = editing ? new Map(o.bones!.map((b) => [b.name, [0, 0, 0] as Vec3])) : undefined;
+    try { mats = boneMatrices(o.bones!, rest); } catch { v.bones = g; v.group.add(g); return; }
     for (const b of o.bones!) {
       const L = Math.max(1e-4, boneLength(b)), w = 0.1 * L;
       const P = [[0, 0, 0], [w, 0.1 * L, 0], [0, 0.1 * L, w], [-w, 0.1 * L, 0], [0, 0.1 * L, -w], [0, L, 0]];
@@ -404,12 +530,22 @@ export class Viewport {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(tri.flat().flatMap((i) => P[i]), 3));
       geo.computeVertexNormals();
-      const active = posing && b.name === ed.activeBone;
-      const color = active ? 0x5aa9ff : posing ? 0x8fa3b8 : selected ? 0xffb347 : 0xb8bec8;
+      const active = (posing || editing) && b.name === ed.activeBone;
+      const wholeBone = editing && ed.boneSel?.bone === b.name && ed.boneSel.part === 'body';
+      const color = wholeBone ? 0xff9f1c : active ? 0x5aa9ff : posing || editing ? 0x8fa3b8 : selected ? 0xffb347 : 0xb8bec8;
       const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.6, flatShading: true, transparent: true, opacity: 0.92, depthTest: false }));
       const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: active ? 0xe8f2ff : 0x15181c, depthTest: false, transparent: true }));
       for (const x of [m, edges]) { x.matrixAutoUpdate = false; x.matrix.copy(mats.get(b.name)!.posed); x.renderOrder = 8; x.userData.id = o.id; x.userData.bone = b.name; }
       g.add(m, edges);
+      if (editing) {
+        // Joints: a sphere at the head and at the tail, the selected one orange.
+        for (const part of ['head', 'tail'] as const) {
+          const on = ed.boneSel?.bone === b.name && (ed.boneSel.part === part || ed.boneSel.part === 'body');
+          const s = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.025, 0.06 * L), 12, 8), new THREE.MeshBasicMaterial({ color: on ? 0xff9f1c : 0xdfe3ea, depthTest: false, transparent: true }));
+          s.position.set(...(part === 'head' ? b.head : b.tail)); s.renderOrder = 9;
+          g.add(s);
+        }
+      }
     }
     v.bones = g;
     v.group.add(g);
@@ -452,6 +588,9 @@ export class Viewport {
     const allKeys = [...mesh.edges().keys()];
     this.cage.add(new THREE.LineSegments(edgeLines(mesh, allKeys.filter((k) => !selE.has(k))), new THREE.LineBasicMaterial({ color: COL.cageEdge, transparent: true, opacity: 0.85, depthTest: !this.options.xray })));
     if (selE.size) this.cage.add(new THREE.LineSegments(edgeLines(mesh, selE), new THREE.LineBasicMaterial({ color: COL.selEdge, depthTest: !this.options.xray })));
+    // UV seams, red, as in Blender.
+    const seams = (o.seams ?? []).filter((k) => mesh.edges().has(k) && !selE.has(k));
+    if (seams.length) this.cage.add(new THREE.LineSegments(edgeLines(mesh, seams), new THREE.LineBasicMaterial({ color: 0xff3b3b, depthTest: !this.options.xray })));
 
     if (ed.selectMode !== 'face') {
       const pos: number[] = [], col: number[] = [];
@@ -474,8 +613,20 @@ export class Viewport {
   private syncGizmo(): void {
     const ed = this.editor;
     if (this.drag) return;
-    if (this.traceView) { this.gizmo.detach(); return; }
-    this.gizmo.setMode(ed.mode === 'pose' ? 'rotate' : this.gizmoMode);
+    if (this.traceView || ed.mode === 'weight') { this.gizmo.detach(); return; }
+    this.gizmo.setMode(ed.mode === 'pose' ? 'rotate' : ed.mode === 'bones' ? 'translate' : this.gizmoMode);
+    if (ed.mode === 'bones') {
+      // A joint (or a whole bone, at its middle) moves; the armature's own axes.
+      const o = ed.activeObject, v = o && this.views.get(o.id), sel = ed.boneSel;
+      const b = sel && o?.bones?.find((x) => x.name === sel.bone);
+      if (!o || !v || !b || !sel) { this.gizmo.detach(); return; }
+      const p = sel.part === 'head' ? b.head : sel.part === 'tail' ? b.tail : b.head.map((h, i) => (h + b.tail[i]) / 2) as Vec3;
+      if (this.proxy.parent !== v.group) v.group.add(this.proxy);
+      this.proxy.position.set(...p); this.proxy.quaternion.identity(); this.proxy.scale.set(1, 1, 1);
+      this.proxy.updateMatrix();
+      this.gizmo.attach(this.proxy);
+      return;
+    }
     if (ed.mode === 'pose') {
       // A bone turns about its head: put the gizmo there, lined up with the bone.
       const o = ed.activeObject, v = o && this.views.get(o.id);
@@ -509,6 +660,11 @@ export class Viewport {
   private dragStart(): void {
     const ed = this.editor;
     ed.beginLive();
+    if (ed.mode === 'bones' && ed.boneSel) {
+      ed.beginJointDrag();
+      this.drag = { kind: 'joint', start: [], startMatrix: new THREE.Matrix4(), verts: [], from: this.proxy.position.clone() };
+      return;
+    }
     const po = ed.mode === 'pose' ? ed.activeObject : undefined, pb = po?.bones?.find((x) => x.name === ed.activeBone);
     if (po && pb) {
       // The rotation the bone has before its own pose: posed · R(pose)⁻¹. A drag's new
@@ -530,6 +686,11 @@ export class Viewport {
   private dragMove(): void {
     const ed = this.editor, d = this.drag;
     if (!d) return;
+    if (d.kind === 'joint') {
+      const m = this.proxy.position.clone().sub(d.from!);
+      ed.jointDrag([m.x, m.y, m.z]);
+      return;
+    }
     if (d.kind === 'bone') {
       const b = ed.activeObject?.bones?.find((x) => x.name === d.bone);
       if (!b) return;
@@ -560,7 +721,8 @@ export class Viewport {
     const ed = this.editor, d = this.drag;
     this.drag = null;
     if (!d) return;
-    if (d.kind === 'bone') ed.endBoneDrag(d.bone!);
+    if (d.kind === 'joint') ed.endJointDrag();
+    else if (d.kind === 'bone') ed.endBoneDrag(d.bone!);
     else if (d.kind === 'object') ed.endObjectDrag(ed.active ? [ed.active] : [], this.gizmoMode === 'translate' ? 'move' : this.gizmoMode === 'rotate' ? 'rotate' : 'scale');
     else ed.endVertexDrag(d.verts);
   }
@@ -581,14 +743,59 @@ export class Viewport {
 
   // ── picking ─────────────────────────────────────────────────────────────
 
+  /** Where the pointer meets the weight-painted mesh, in the object's own coordinates. */
+  private paintHit(x: number, y: number): { p: THREE.Vector3; n: THREE.Vector3; group: THREE.Object3D } | null {
+    const f = this.editor.field, v = f && this.views.get(f.objectId);
+    const body = this.fieldGroup.children.find((c) => (c as THREE.Mesh).isMesh) as THREE.Mesh | undefined;
+    if (this.editor.mode !== 'weight' || !v || !body) return null;
+    const hit = this.ray(x, y).intersectObject(body, false)[0];
+    if (!hit) return null;
+    return { p: v.group.worldToLocal(hit.point.clone()), n: (hit.face?.normal ?? new THREE.Vector3(0, 1, 0)).clone(), group: v.group };
+  }
+
+  /** The brush outline on the surface under the pointer (weight paint mode). */
+  private updateBrush(x: number, y: number): void {
+    const h = this.editor.mode === 'weight' ? this.paintHit(x, y) : null;
+    if (!h) { if (this.brushRing) this.brushRing.visible = false; return; }
+    const r = this.editor.paint.radius;
+    if (!this.brushRing || (this.brushRing.userData.r as number) !== r) {
+      if (this.brushRing) { this.brushRing.geometry.dispose(); (this.brushRing.material as THREE.Material).dispose(); this.brushRing.removeFromParent(); }
+      this.brushRing = new THREE.Mesh(new THREE.RingGeometry(r * 0.93, r, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthTest: false, side: THREE.DoubleSide }));
+      this.brushRing.userData.r = r; this.brushRing.renderOrder = 9;
+    }
+    if (this.brushRing.parent !== h.group) h.group.add(this.brushRing);
+    this.brushRing.position.copy(h.p).addScaledVector(h.n, 0.002);
+    this.brushRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), h.n);
+    this.brushRing.visible = true;
+  }
+
   private onDown = (e: PointerEvent) => {
     if (e.button !== 0) return;
+    if (this.editor.mode === 'weight') {
+      // A press on the mesh paints; anywhere else it orbits as usual.
+      const h = this.paintHit(e.offsetX, e.offsetY);
+      if (h && this.editor.beginStroke()) {
+        this.orbit.enabled = false;
+        this.painting = { last: h.p.clone() };
+        this.editor.strokeDab([h.p.x, h.p.y, h.p.z]);
+        return;
+      }
+    }
     this.down = { x: e.offsetX, y: e.offsetY, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey };
     if (this.boxArmed) { this.orbit.enabled = false; Object.assign(this.box.style, { display: 'block', left: `${e.offsetX}px`, top: `${e.offsetY}px`, width: '0px', height: '0px' }); }
   };
 
   private onMove = (e: PointerEvent) => {
     this.hover = { x: e.offsetX, y: e.offsetY };
+    if (this.editor.mode === 'weight') {
+      this.updateBrush(e.offsetX, e.offsetY);
+      if (this.painting) {
+        // Dabs spaced a fifth of the radius apart, however fast the pointer moves.
+        const h = this.paintHit(e.offsetX, e.offsetY);
+        if (h && h.p.distanceTo(this.painting.last) > this.editor.paint.radius * 0.2) { this.painting.last.copy(h.p); this.editor.strokeDab([h.p.x, h.p.y, h.p.z]); }
+        return;
+      }
+    } else if (this.brushRing) this.brushRing.visible = false;
     if (this.boxArmed && this.down) {
       const x = Math.min(this.down.x, e.offsetX), y = Math.min(this.down.y, e.offsetY);
       Object.assign(this.box.style, { left: `${x}px`, top: `${y}px`, width: `${Math.abs(e.offsetX - this.down.x)}px`, height: `${Math.abs(e.offsetY - this.down.y)}px` });
@@ -596,6 +803,7 @@ export class Viewport {
   };
 
   private onUp = (e: PointerEvent) => {
+    if (this.painting) { this.painting = null; this.orbit.enabled = true; this.editor.endStroke(); this.down = null; return; }
     const d = this.down;
     this.down = null;
     if (!d || e.button !== 0) return;
@@ -635,6 +843,13 @@ export class Viewport {
       if (b) ed.selectBone(b);
       return;
     }
+    if (ed.mode === 'bones') {
+      const j = this.nearestJoint(x, y);
+      if (j) { ed.selectJoint(j); return; }
+      const b = this.nearestBone(x, y, true);
+      ed.selectJoint(b ? { bone: b, part: 'body' } : null);
+      return;
+    }
     if (ed.mode === 'object') {
       const targets: THREE.Object3D[] = [];
       for (const v of this.views.values()) {
@@ -664,11 +879,11 @@ export class Viewport {
    * are thin, so a ray often misses the one in front and hits one behind it; screen
    * distance (as Blender uses) picks the bone you pointed at.
    */
-  private nearestBone(x: number, y: number): string | null {
+  private nearestBone(x: number, y: number, rest = false): string | null {
     const o = this.editor.activeObject, v = o && this.views.get(o.id);
     if (!o?.bones || !v) return null;
     let mats: ReturnType<typeof boneMatrices>;
-    try { mats = boneMatrices(o.bones); } catch { return null; }
+    try { mats = boneMatrices(o.bones, rest ? new Map(o.bones.map((b) => [b.name, [0, 0, 0] as Vec3])) : undefined); } catch { return null; }
     v.group.updateMatrixWorld();
     const w = this.renderer.domElement.clientWidth, h = this.renderer.domElement.clientHeight;
     const scr = (p: THREE.Vector3) => { p.applyMatrix4(v.group.matrixWorld).project(this.camera); return [((p.x + 1) / 2) * w, ((1 - p.y) / 2) * h, p.z] as const; };
@@ -680,6 +895,20 @@ export class Viewport {
       const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L2)) : 0;
       const d = Math.hypot(x - ax - t * dx, y - ay - t * dy);
       if (d < bd) { bd = d; best = b.name; }
+    }
+    return best;
+  }
+
+  /** Bone edit mode: the head or tail nearest the pointer on screen, within 10 px. */
+  private nearestJoint(x: number, y: number): { bone: string; part: 'head' | 'tail' } | null {
+    const o = this.editor.activeObject, v = o && this.views.get(o.id);
+    if (!o?.bones || !v) return null;
+    v.group.updateMatrixWorld();
+    let best: { bone: string; part: 'head' | 'tail' } | null = null, bd = 10;
+    for (const b of o.bones) for (const part of ['tail', 'head'] as const) {
+      const s = this.toScreen(part === 'head' ? b.head : b.tail, v.group);
+      const d = Math.hypot(s.x - x, s.y - y);
+      if (d < bd) { bd = d; best = { bone: b.name, part }; }
     }
     return best;
   }

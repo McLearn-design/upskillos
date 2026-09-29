@@ -214,3 +214,82 @@ describe('the rigged character example', () => {
     expect(y(24)).toBeGreaterThan(y(1) + 1); // arm down at frame 1, up at 24
   });
 });
+
+describe('dual-quaternion skinning', () => {
+  const m = tube(), bones = legBones();
+  const w = boneHeatWeights(m, bones);
+  const skin = (method: 'linear' | 'dual-quaternion'): Skin => ({ armature: 'a', bones: ['Thigh', 'Shin'], weights: w, verts: m.verts.length, method });
+  const radius = (verts: Vec3[], k: number) => ring(k).reduce((s, i) => s + Math.hypot(verts[i][0], verts[i][2]), 0) / 12;
+
+  it('fixes the candy wrapper: a half twist keeps the knee round instead of collapsing it', () => {
+    const posed = legBones(); posed[1].pose = [0, Math.PI * 0.999, 0];
+    const lin = deform(m, skin('linear'), posed).verts, dq = deform(m, skin('dual-quaternion'), posed).verts;
+    expect(radius(lin, 10)).toBeLessThan(0.5 * R);
+    expect(radius(dq, 10)).toBeGreaterThan(0.95 * R);
+    for (let k = 0; k <= 20; k++) expect(radius(dq, k)).toBeCloseTo(R, 2); // every ring keeps its radius
+  });
+
+  it('agrees with linear blending wherever a vertex follows one bone, and in the rest pose', () => {
+    const hard: Skin = { ...skin('dual-quaternion'), weights: [m.verts.map((v) => (v[1] < 1 ? 1 : 0)), m.verts.map((v) => (v[1] < 1 ? 0 : 1))] };
+    const posed = legBones(); posed[0].pose = [0.3, 0.2, -0.4]; posed[1].pose = [0, 0, 1.2];
+    const a = deform(m, hard, posed).verts, b = deform(m, { ...hard, method: 'linear' }, posed).verts;
+    a.forEach((v, i) => close(v, b[i], 9));
+    deform(m, skin('dual-quaternion'), legBones()).verts.forEach((v, i) => close(v, m.verts[i], 12));
+  });
+
+  it('is chosen per mesh, undoable, logged and scriptable', () => {
+    const e = new Editor(); e.newScene();
+    expect(runScript(e, `scene.add.armature({ name: 'R', bones: [{ name: 'A', head: [0,0,0], tail: [0,1,0] }] })\nscene.get('Cube').bindTo(scene.get('R'))\nscene.get('Cube').skinning = 'dual-quaternion'`).error).toBeNull();
+    const id = e.scene.get('Cube')!.id;
+    expect(e.scene.get(id)!.skin!.method).toBe('dual-quaternion');
+    e.setSkinMethod(id, 'linear');
+    expect(e.log.at(-1)!.code).toBe('scene.get("Cube").skinning = "linear"');
+    e.undo();
+    expect(e.scene.get(id)!.skin!.method).toBe('dual-quaternion');
+    expect(Scene.fromJSON(JSON.parse(JSON.stringify(e.scene.toJSON()))).get('Cube')!.skin!.method).toBe('dual-quaternion');
+  });
+});
+
+describe('bone roll and bone editing', () => {
+  it('roll does not move a bone but turns the axis its pose bends about', () => {
+    const plain = legBones(), rolled = legBones();
+    rolled[0].roll = Math.PI / 2;
+    close(new Vector3(0, 1, 0).applyMatrix4(restMatrix(rolled[0])).toArray(), [0, 1, 0]); // the tail is where it was
+    for (const b of [plain, rolled]) b[0].pose = [Math.PI / 2, 0, 0];                       // "bend about the bone's x"
+    close(posedEnds(plain).get('Shin')!.head, [0, 0, 1]);    // x is world x: the leg swings forward
+    close(posedEnds(rolled).get('Shin')!.head, [1, 0, 0]);   // rolled 90°, x faces −z: it swings sideways
+  });
+
+  it('moving a joint moves the joints that touch it; a whole bone drags its neighbours\' ends', async () => {
+    const { moveJoint } = await import('./armature');
+    const start = chain(['A', 'B', 'C'], [[0, 0, 0], [0, 1, 0], [0, 2, 0], [0, 3, 0]]);
+    const bones = start.map((b) => ({ ...b, head: [...b.head] as Vec3, tail: [...b.tail] as Vec3 }));
+    expect(moveJoint(bones, start, { bone: 'A', part: 'tail' }, [0.5, 0, 0])).toEqual(['A', 'B']);
+    expect(bones.map((b) => [b.head, b.tail])).toEqual([[[0, 0, 0], [0.5, 1, 0]], [[0.5, 1, 0], [0, 2, 0]], [[0, 2, 0], [0, 3, 0]]]);
+    expect(moveJoint(bones, start, { bone: 'B', part: 'body' }, [0, 0, 1])).toEqual(['A', 'B', 'C']);
+    expect(bones[1].head).toEqual([0, 1, 1]); expect(bones[0].tail).toEqual([0, 1, 1]); expect(bones[2].head).toEqual([0, 2, 1]);
+  });
+
+  it('bone edit mode: Tab enters it, a drag is one logged undo step, E extrudes, roll round-trips', () => {
+    const e = new Editor(); e.newScene();
+    const arm = e.addArmature([{ name: 'A', parent: null, head: [0, 0, 0], tail: [0, 1, 0] }], 'Rig');
+    e.selectObject(arm.id);
+    e.toggleEdit();
+    expect(e.mode).toBe('bones');
+    expect(e.boneSel).toEqual({ bone: 'A', part: 'tail' });
+    e.extrudeBone();
+    expect(e.boneSel).toEqual({ bone: 'A.001', part: 'tail' });
+    e.selectJoint({ bone: 'A', part: 'tail' });
+    e.beginLive(); e.beginJointDrag(); e.jointDrag([1, 0, 0]); e.endJointDrag();
+    const r = e.scene.get(arm.id)!;
+    expect(r.bones!.find((b) => b.name === 'A.001')!.head).toEqual([1, 1, 0]); // the child followed
+    expect(e.log.at(-1)!.code).toBe('scene.get("Rig").bone("A").set({ head: [0, 0, 0], tail: [1, 1, 0] })\nscene.get("Rig").bone("A.001").set({ head: [1, 1, 0], tail: [0, 2, 0] })');
+    e.setBone('A', { roll: 0.5 });
+    expect(Scene.fromJSON(JSON.parse(JSON.stringify(e.scene.toJSON()))).get('Rig')!.bones![0].roll).toBe(0.5);
+    const e2 = new Editor(); e2.newScene();
+    expect(runScript(e2, e.log.map((l) => l.code).join('\n')).error).toBeNull();
+    expect(e2.scene.get('Rig')!.bones).toEqual(e.scene.get(arm.id)!.bones);
+    e.toggleEdit();
+    expect(e.mode).toBe('object');
+  });
+});

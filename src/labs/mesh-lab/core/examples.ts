@@ -174,7 +174,7 @@ ball.mesh.showField('geodesic', { from: pole })    // try 'mean', 'gaussian', or
   {
     id: 'rig-character',
     title: 'Rig and animate the character',
-    about: 'The box-modelled character, an armature of ten bones, automatic weights, and a wave. Then Tab on the armature to pose it yourself.',
+    about: 'The box-modelled character, an armature of ten bones, automatic weights, and a wave. Then Ctrl+Tab on the armature to pose it yourself.',
     code: CHARACTER.replace(/\nlog\(m, [^\n]*$/, '') + `
 
 // 7. An armature: spine, head, two-bone arms and legs, left and right.

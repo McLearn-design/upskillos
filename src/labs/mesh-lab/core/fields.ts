@@ -15,7 +15,9 @@ export type FieldSpec =
   | { kind: 'coord'; axis: 0 | 1 | 2 }
   | { kind: 'custom'; values: number[]; label?: string }
   /** A bone's skin weights; the editor fills in the values from the mesh's skin. */
-  | { kind: 'weight'; bone: string; values?: number[] };
+  | { kind: 'weight'; bone: string; values?: number[] }
+  /** How much the UV map distorts angles around each vertex (σ₁/σ₂; the editor fills in the values). */
+  | { kind: 'uv'; values?: number[] };
 
 export type FieldKind = FieldSpec['kind'];
 
@@ -39,6 +41,7 @@ export const FIELD_NAMES: Record<FieldKind, string> = {
   coord: 'Coordinate',
   custom: 'Script values',
   weight: 'Bone weights',
+  uv: 'UV angle distortion',
 };
 
 function percentile(values: ArrayLike<number>, p: number): number {
@@ -102,6 +105,13 @@ export function computeField(mesh: EditMesh, spec: FieldSpec, trace?: Trace): Fi
       return {
         values, label: `Weights of bone "${spec.bone}"`, diverging: false, range: [0, 1], contours: 0,
         meaning: 'How much this bone moves each vertex: red 1 (entirely), blue 0 (not at all). At every vertex the weights of all bones add up to 1, so where this one fades another takes over.',
+      };
+    }
+    case 'uv': {
+      const values = Float64Array.from({ length: n }, (_, i) => Number(spec.values?.[i] ?? 1));
+      return {
+        values, label: FIELD_NAMES.uv, diverging: false, range: [1, Math.max(1.5, fieldRange(values, false, true)[1])], contours: 0,
+        meaning: 'σ₁/σ₂ of the map from surface to texture around each vertex: 1 (blue) keeps angles, so a checker square stays square; red squashes them. Where the surface is curved no flat map can keep everything.',
       };
     }
     case 'custom': {

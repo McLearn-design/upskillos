@@ -21,7 +21,7 @@ export function FieldLegend({ editor }: { editor: Editor }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
         <b style={{ color: C.text, flex: 1, fontSize: 12 }}>{label}</b>
         <button onClick={() => setExplain(!explain)} title={explain ? 'Hide the explanation' : 'What do the colours mean?'} style={{ background: 'none', border: 'none', color: explain ? C.accent : C.dim, cursor: 'pointer', fontSize: 12 }}>?</button>
-        <button onClick={() => editor.clearField()} title="Hide the heat map" style={{ background: 'none', border: 'none', color: C.dim, cursor: 'pointer', fontSize: 14 }}>×</button>
+        {editor.mode !== 'weight' && <button onClick={() => editor.clearField()} title="Hide the heat map" style={{ background: 'none', border: 'none', color: C.dim, cursor: 'pointer', fontSize: 14 }}>×</button>}
       </div>
       <div style={{ height: 12, borderRadius: 3, background: legendGradient(diverging), border: `1px solid ${C.border}` }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: C.mono, marginTop: 2, color: C.text }}>
@@ -32,13 +32,13 @@ export function FieldLegend({ editor }: { editor: Editor }) {
         {clamped && <div style={{ color: C.faint, marginTop: 3 }}>Actual range {fmt(lo, 3)} to {fmt(hi, 3)}; the extremes (corners, poles) are clamped so the rest of the surface shows.</div>}
         <div style={{ color: C.faint, marginTop: 3 }}>{f.mesh.verts.length} vertices{kind === 'weight' ? ': the cage the weights belong to (mirrored, not subdivided), in its current pose' : editor.scene.get(f.objectId)?.modifiers.length && kind !== 'custom' ? ', modifiers applied' : ''}.</div>
       </>}
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 7 }}>
+      {editor.mode !== 'weight' && <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 7 }}>
         <Btn small active={kind === 'geodesic'} disabled={!edit} onClick={() => editor.showDistanceFromSelection()} title={edit ? 'Distance from the selected vertices' : 'Enter edit mode and select vertices'}>Distance</Btn>
         <Btn small active={kind === 'mean'} onClick={() => editor.showField({ kind: 'mean' }, f.objectId)} title="Mean curvature">H</Btn>
         <Btn small active={kind === 'gaussian'} onClick={() => editor.showField({ kind: 'gaussian' }, f.objectId)} title="Gaussian curvature">K</Btn>
         <Btn small active={kind === 'coord'} onClick={() => editor.showField({ kind: 'coord', axis: 1 }, f.objectId)} title="Height">y</Btn>
         <Btn small active={editor.showContours} onClick={() => { editor.showContours = !editor.showContours; editor.emit('select'); }} title="Iso-lines: points with equal value">Lines</Btn>
-      </div>
+      </div>}
     </div>
   );
 }

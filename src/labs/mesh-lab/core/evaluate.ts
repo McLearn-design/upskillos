@@ -40,6 +40,7 @@ export function skinnedSource(scene: Scene, o: SceneObject, trace?: Trace, expla
   const src = skinSource(o);
   if (skinState(scene, o) !== 'ok') return src;
   const arm = scene.get(o.skin!.armature)!;
+  if (scene.restPose === arm.id) return src; // its bones are being edited: show the rest pose, as Blender does
   return deform(src, o.skin!, arm.bones!, toArmatureSpace(scene, o, arm), trace, explain);
 }
 
@@ -58,7 +59,7 @@ export function skinSignature(scene: Scene, o: SceneObject): string {
   const arm = scene.get(o.skin.armature);
   if (!arm?.bones) return 'no-armature';
   const m = toArmatureSpace(scene, o, arm).elements.map((x) => x.toFixed(6)).join(',');
-  return `${m}|${JSON.stringify(arm.bones)}|${o.skin.verts}|${o.skin.bones.join(',')}`;
+  return `${m}|${JSON.stringify(arm.bones)}|${o.skin.verts}|${o.skin.bones.join(',')}|${o.skin.method ?? ''}|${scene.restPose === arm.id}`;
 }
 
 /**
@@ -82,7 +83,8 @@ export function bindSkin(scene: Scene, o: SceneObject, arm: SceneObject, trace?:
 }
 
 /** Apply a bone edit, following a rename through children, skins and keys. */
-export function applyBonePatch(scene: Scene, o: SceneObject, b: Bone, patch: { name?: string; head?: Vec3; tail?: Vec3; parent?: string | null }): void {
+export function applyBonePatch(scene: Scene, o: SceneObject, b: Bone, patch: { name?: string; head?: Vec3; tail?: Vec3; parent?: string | null; roll?: number }): void {
+  if (patch.roll !== undefined) { if (patch.roll) b.roll = patch.roll; else delete b.roll; }
   if (patch.head) b.head = [patch.head[0], patch.head[1], patch.head[2]];
   if (patch.tail) b.tail = [patch.tail[0], patch.tail[1], patch.tail[2]];
   if (patch.parent !== undefined) b.parent = patch.parent;

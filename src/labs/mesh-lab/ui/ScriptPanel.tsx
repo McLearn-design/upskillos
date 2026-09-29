@@ -33,17 +33,24 @@ interface Mesh {
   /** Distance along the surface from the given vertices, by the heat method. */ geodesic(from: number | number[]): number[];
   /** Laplacian smoothing: move each vertex λ of the way to its neighbours' average, repeatedly. Boundary stays. */ smooth(opts?: { verts?: number[]; iterations?: number; lambda?: number; method?: 'uniform' | 'cotan' }): Mesh;
   /** The cotan Laplacian: per vertex, [neighbour, weight] pairs (the diagonal is the vertex itself), and its area. */ laplacian(): { rows: [number, number][][]; mass: number[] };
-  /** Colour the mesh as a heat map. */ showField(what: 'geodesic' | 'mean' | 'gaussian' | 'x' | 'y' | 'z' | number[], opts?: { from?: number | number[]; /** Same as from (from is a keyword in Python). */ source?: number | number[]; label?: string }): Mesh;
+  /** UV seams: edges where the surface is cut to lie flat. */ markSeams(edges: [number, number][]): Mesh; clearSeams(edges?: [number, number][]): Mesh; readonly seams: [number, number][];
+  /** Mark every edge sharper than this angle as a seam. */ seamsFromSharp(degrees?: number): Mesh;
+  /** Flatten onto the UV square: LSCM per chart (default) or a projection from above. */ unwrap(opts?: { method?: 'lscm' | 'planar' }): Mesh;
+  /** [u, v] per face corner, or null. */ readonly uv: [number, number][][] | null; uvDistortion(): number[];
+  /** Colour the mesh as a heat map. */ showField(what: 'geodesic' | 'mean' | 'gaussian' | 'x' | 'y' | 'z' | 'weight' | 'uv' | number[], opts?: { from?: number | number[]; /** Same as from (from is a keyword in Python). */ source?: number | number[]; label?: string }): Mesh;
 }
 interface SceneObject {
   readonly id: string; name: string; readonly kind: 'mesh' | 'empty' | 'light';
   position: Vec3Handle; /** Radians, XYZ order. */ rotation: Vec3Handle; scale: Vec3Handle;
-  visible: boolean; smooth: boolean; material: { color: string; roughness: number; metalness: number };
+  visible: boolean; smooth: boolean; material: { color: string; roughness: number; metalness: number; shader: 'pbr' | 'lambert' | 'blinn-phong' | 'toon' | 'normals' | 'uv' | 'custom'; texture: 'none' | 'checker' | 'grid' | 'bricks' | 'wood' | 'stripes'; textureScale: number; shininess: number; /** GLSL body of shade(N, L, V, uv, base, light) */ glsl: string };
   parent: SceneObject | null; readonly children: SceneObject[];
   readonly mesh: Mesh | null; readonly geometry: Mesh | null;
   /** Column-major 4×4, like three.js Matrix4.elements. */ readonly localMatrix: number[]; readonly worldMatrix: number[];
   modifiers: { add(type: 'mirror' | 'subsurf', opts?: object): SceneObject; set(i: number, patch: object): SceneObject; remove(i: number): SceneObject; apply(): SceneObject; readonly list: object[] };
   delete(): void; duplicate(): SceneObject;
+  /** How bone motions are blended on a bound mesh: averaging points, or averaging rigid motions (no candy wrapper). */ skinning: 'linear' | 'dual-quaternion';
+  /** Weight paint by script: brush dabs at points (the mesh's own space) on one bone. */
+  paintWeights(bone: string, opts: { points: Vec3[]; brush?: 'draw' | 'add' | 'subtract' | 'blur'; radius?: number; strength?: number; value?: number; normalize?: boolean; mirror?: boolean }): SceneObject;
   /** Pin channels to values at a frame (no values: key the current position, rotation and scale). interp is how it leaves this key. */
   keyframe(frame: number, values?: { position?: Vec3 | Vec3Handle; rotation?: Vec3 | Vec3Handle; scale?: Vec3 | Vec3Handle; interp?: 'constant' | 'linear' | 'ease' | 'ease-in' | 'ease-out' }): SceneObject;
   deleteKeyframe(frame: number): SceneObject; setInterpolation(frame: number, interp: 'constant' | 'linear' | 'ease' | 'ease-in' | 'ease-out'): SceneObject;

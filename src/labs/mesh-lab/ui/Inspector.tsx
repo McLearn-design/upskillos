@@ -9,7 +9,8 @@ import { EditMesh, type Vec3 } from '../core/EditMesh';
 import type { Modifier } from '../core/modifiers';
 import { evaluatedMesh } from '../core/evaluate';
 import { Btn, C, MatrixView, NumberField, Row, Section, useEditorVersion } from './kit';
-import { ArmaturePanel, SkinPanel, VertexSkin } from './Rig';
+import { ArmaturePanel, SkinPanel, VertexSkin, WeightPaintPanel } from './Rig';
+import { SHADER_INFO, SHADER_MODELS, TEXTURES, type ShaderModel, type TextureName } from '../core/shading';
 
 const f3 = (v: Vec3) => `(${v.map((x) => (Math.abs(x) < 5e-7 ? 0 : +x.toFixed(3))).join(', ')})`;
 const DEG = 180 / Math.PI;
@@ -22,7 +23,7 @@ export function Inspector({ editor }: { editor: Editor }) {
       {editor.lastOpLive && editor.lastOp && <AdjustLast editor={editor} />}
       {!o ? (
         <div style={{ padding: 16, color: C.dim, lineHeight: 1.6 }}>Nothing selected. Click an object in the viewport or the scene list, or add one from the Add menu.</div>
-      ) : editor.mode === 'edit' ? <EditInspector editor={editor} /> : (
+      ) : editor.mode === 'edit' ? <EditInspector editor={editor} /> : editor.mode === 'weight' ? <WeightPaintPanel editor={editor} /> : (
         <>
           {o.bones && <ArmaturePanel editor={editor} />}
           {o.skin && <SkinPanel editor={editor} />}
@@ -100,6 +101,21 @@ function ObjectInspector({ editor }: { editor: Editor }) {
           <Row label="Roughness"><NumberField value={o.material.roughness} step={0.05} onCommit={(v) => editor.setMaterial(o.id, { roughness: Math.min(1, Math.max(0, v)) })} /></Row>
           <Row label="Metalness"><NumberField value={o.material.metalness} step={0.05} onCommit={(v) => editor.setMaterial(o.id, { metalness: Math.min(1, Math.max(0, v)) })} /></Row>
           <Row label="Shading"><Btn small active={!o.smooth} onClick={() => editor.setSmooth(o.id, false)}>Flat</Btn><Btn small active={o.smooth} onClick={() => editor.setSmooth(o.id, true)}>Smooth</Btn></Row>
+          <Row label="Model">
+            <select value={o.material.shader ?? 'pbr'} onChange={(e) => editor.setMaterial(o.id, { shader: e.target.value as ShaderModel })} style={{ width: 140, background: C.bg, color: C.text, border: `1px solid ${C.border}`, fontSize: 12, padding: 2 }}>
+              {SHADER_MODELS.map((m) => <option key={m} value={m}>{SHADER_INFO[m].label}</option>)}
+            </select>
+            <Btn small onClick={() => window.dispatchEvent(new CustomEvent('meshlab:tab', { detail: 'shader' }))} title="The GLSL, and the formula">Code</Btn>
+          </Row>
+          <div style={{ color: C.faint, fontSize: 11, fontFamily: C.mono, margin: '-2px 0 6px 68px' }}>{SHADER_INFO[o.material.shader ?? 'pbr'].equation}</div>
+          <Row label="Texture">
+            <select value={o.material.texture ?? 'none'} onChange={(e) => editor.setMaterial(o.id, { texture: e.target.value as TextureName })} style={{ width: 100, background: C.bg, color: C.text, border: `1px solid ${C.border}`, fontSize: 12, padding: 2 }}>
+              {TEXTURES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <NumberField label="×" value={o.material.textureScale ?? 1} step={0.5} width={44} onCommit={(v) => editor.setMaterial(o.id, { textureScale: Math.max(0.01, v) })} />
+          </Row>
+          {(o.material.texture ?? 'none') !== 'none' && !o.uv && <div style={{ color: C.warn, fontSize: 11, marginBottom: 4 }}>No UVs yet, so the texture has nowhere to go: UV › Unwrap.</div>}
+          {o.material.shader === 'blinn-phong' && <Row label="Shininess"><NumberField value={o.material.shininess ?? 40} step={5} width={56} onCommit={(v) => editor.setMaterial(o.id, { shininess: Math.max(1, v) })} /></Row>}
           <div style={{ color: C.faint, fontSize: 11 }}>Flat: one normal per face. Smooth: each vertex's normal is the average of the faces around it, and lighting is interpolated across faces.</div>
         </Section>
       )}
