@@ -70,6 +70,47 @@ const cube = scene.add.cube({ name: 'Cube to subdivide', size: 2, position: [0, 
 cube.mesh.subdivide(1)
 log('6 faces became', cube.mesh.faces.length, 'quads. Open the Algorithm trace and predict each step.')`,
   },
+  {
+    id: 'two-lists',
+    title: 'A mesh is two lists',
+    icon: '🔺',
+    group: 'Learning',
+    desc: 'Two square pyramids typed in as a vertex list and a face list. One shares its corners between faces; the other gives every face its own copies. Pull the tip of each and see which one tears.',
+    lang: 'js',
+    setup: { select: 'Pyramid', tab: 'script', view: 'all' },
+    guide: [
+      'The Script tab shows the two lists that built both pyramids. The left one shares its corners: 5 vertices. The right one gives each face its own copies: 16.',
+      'Select the left Pyramid, press Tab for edit mode, click its tip and press G, then move the mouse up and click. All four sides follow the tip: they all name vertex 4.',
+      'Press Tab, select the right pyramid and do the same. Only one side’s corner moves and the pyramid tears open: nothing joins the four copies of the tip.',
+      'Undo, then in the Script change the tip’s height 1.5 to 3 and press Run. Only the vertex list changed; the face list is the same and the faces follow.',
+    ],
+    code: `// A square pyramid, typed in as two lists.
+// 1. Where each corner is: vertex i is the point [x, y, z].
+const vertices = [
+  [-1, 0, -1],   // vertex 0
+  [ 1, 0, -1],   // vertex 1
+  [ 1, 0,  1],   // vertex 2
+  [-1, 0,  1],   // vertex 3
+  [ 0, 1.5, 0],  // vertex 4: the tip
+]
+// 2. Which corners make each face, in order around its edge.
+const faces = [
+  [0, 1, 2, 3],  // face 0: the square base
+  [1, 0, 4],     // faces 1-4: the sides, all using the tip, vertex 4
+  [2, 1, 4],
+  [3, 2, 4],
+  [0, 3, 4],
+]
+scene.add.mesh({ name: 'Pyramid', verts: vertices, faces, position: [-1.6, 0, 0] })
+
+// The same five faces with nothing shared: each face gets its own copies of its corners.
+const copies = [], ownFaces = []
+for (const f of faces) ownFaces.push(f.map((i) => copies.push([...vertices[i]]) - 1))
+scene.add.mesh({ name: 'Pyramid, separate faces', verts: copies, faces: ownFaces, position: [1.6, 0, 0] })
+
+log('Shared corners:', vertices.length, 'vertices,', faces.length, 'faces')
+log('Separate faces:', copies.length, 'vertices,', ownFaces.length, 'faces:', JSON.stringify(ownFaces))`,
+  },
 
   // ── Modelling ───────────────────────────────────────────────────────────
   {

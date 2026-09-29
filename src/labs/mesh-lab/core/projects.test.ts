@@ -139,6 +139,20 @@ describe('bone edit mode shows the rest pose', () => {
 describe('UV and material projects', () => {
   const open = (id: string) => { const e = new Editor(); const r = openProject(e, PROJECTS.find((p) => p.id === id)!, py); return { e, r }; };
 
+  it('two lists: the shared pyramid is closed with 5 vertices; the separate one has 16 and tears when its tip moves', () => {
+    const { e, r } = open('two-lists');
+    expect(r.output).toEqual(['Shared corners: 5 vertices, 5 faces', 'Separate faces: 16 vertices, 5 faces: [[0,1,2,3],[4,5,6],[7,8,9],[10,11,12],[13,14,15]]']);
+    const shared = e.scene.get('Pyramid')!.mesh!, apart = e.scene.get('Pyramid, separate faces')!.mesh!;
+    expect(shared.stats()).toMatchObject({ verts: 5, faces: 5, edges: 8, closed: true });
+    expect(apart.stats()).toMatchObject({ verts: 16, faces: 5, closed: false });
+    // Raising vertex 4 moves all four sides; raising face 1's copy of the tip (6) moves one corner only.
+    shared.translateVerts([4], [0, 1.5, 0]);
+    expect(shared.faces.filter((f) => f.includes(4)).length).toBe(4);
+    apart.translateVerts([6], [0, 1.5, 0]);
+    expect([9, 12, 15].map((i) => apart.verts[i][1])).toEqual([1.5, 1.5, 1.5]);
+    expect(apart.verts[6][1]).toBe(3);
+  });
+
   it('unwrap basics: the cube has no distortion, the sphere keeps angles well but not areas', () => {
     const { r } = open('unwrap-basics');
     expect(r.output[0]).toBe('cube: worst angle distortion 1.0000');

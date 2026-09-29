@@ -1,4 +1,5 @@
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { setEntryLink } from '../utils/entryLinks.js'
 import { useEffect, useState } from 'react'
 import { useDesktop } from '../components/desktop/DesktopProvider.jsx'
 import LoadingSpinner from '../components/ui/LoadingSpinner.jsx'
@@ -9,6 +10,7 @@ export default function EntryShell({ paramKey, loader, notFoundEmoji, notFoundLa
   const params = useParams()
   const key = params[paramKey]
   const navigate = useNavigate()
+  const { search } = useLocation()
   const { openWindow } = useDesktop()
   const [notFound, setNotFound] = useState(false)
 
@@ -17,6 +19,8 @@ export default function EntryShell({ paramKey, loader, notFoundEmoji, notFoundLa
     loader(key).then(entry => {
       if (cancelled) return
       if (!entry?.component) { setNotFound(true); return }
+      // A deep link's query (?project=…) would be lost by the navigation below; hand it to the lab.
+      if (search) setEntryLink(key, search)
       openWindow({
         id: key,
         label: entry.label,
@@ -30,7 +34,7 @@ export default function EntryShell({ paramKey, loader, notFoundEmoji, notFoundLa
       navigate(backTo, { replace: true })
     }).catch(() => { if (!cancelled) setNotFound(true) })
     return () => { cancelled = true }
-  }, [key])
+  }, [key, search])
 
   if (notFound) return (
     <div className="py-20 text-center">

@@ -8,9 +8,9 @@
     "game": "An entry in GAMES in src/games/registry.js."
   },
   "counts": {
-    "courses": 42,
-    "chapters": 213,
-    "lessons": 1222,
+    "courses": 43,
+    "chapters": 214,
+    "lessons": 1225,
     "labs": 51,
     "games": 15
   },
@@ -253,7 +253,15 @@
       "domain": "engineering",
       "description": "Computational geometry for a CAM application — meshes, surface queries, and comparing two models to find what was cut",
       "chapters": 1,
-      "lessons": 9
+      "lessons": 11
+    },
+    {
+      "id": "modelling-geometry",
+      "label": "Modelling & Geometry Processing",
+      "domain": "creative",
+      "description": "How 3D modelling tools work inside: meshes, transforms, modelling operations, subdivision, curvature, UVs, shading, animation and skinning, each built by hand in a notebook and then used in MeshLab",
+      "chapters": 1,
+      "lessons": 1
     },
     {
       "id": "native-languages",

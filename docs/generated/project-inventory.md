@@ -2,7 +2,7 @@
 
 # Project inventory
 
-42 courses · 213 chapters · 1222 lessons · 51 labs · 15 games
+43 courses · 214 chapters · 1225 lessons · 51 labs · 15 games
 
 ## How things are counted
 
@@ -45,7 +45,8 @@
 | Linear Algebra | `linear-algebra` | math | 10 | 68 |
 | Logic | `logic` | cs | 1 | 8 |
 | Machine Learning | `machine-learning` | cs | 1 | 1 |
-| Mesh Engine | `mesh-engine` | engineering | 1 | 9 |
+| Mesh Engine | `mesh-engine` | engineering | 1 | 11 |
+| Modelling & Geometry Processing | `modelling-geometry` | creative | 1 | 1 |
 | Native Languages | `native-languages` | cs | 1 | 3 |
 | NoSQL | `nosql` | data | 1 | 4 |
 | Physics | `physics` | science | 9 | 80 |

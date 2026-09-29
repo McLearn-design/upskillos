@@ -18,7 +18,9 @@ import { Timeline } from './ui/Timeline';
 import { UVPanel } from './ui/UVPanel';
 import { ShaderPanel } from './ui/ShaderPanel';
 import { ChallengeCard, ProjectGallery, ProjectGuide } from './ui/Projects';
-import { startChallenge, type Challenge } from './core/challenges';
+import { CHALLENGES, startChallenge, type Challenge } from './core/challenges';
+import { parseMeshLabLink } from './links';
+import { takeEntryLink } from '../../utils/entryLinks';
 import { PROJECTS, openProject, type ExampleProject } from './core/projects';
 import type { PyodideLike } from './core/python';
 import { getPyodide } from '../../utils/pyodideRuntime';
@@ -229,6 +231,27 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     setProject(null); setChallenge(c);
     requestAnimationFrame(() => vp?.frameAll());
   };
+
+  // Deep links from lessons: #/lab/mesh-lab?project=… or ?challenge=… opens it, on arrival and
+  // whenever the link changes. Each link opens once, so reloads of the viewport do not repeat it.
+  const linked = useRef('');
+  useEffect(() => {
+    if (!vp) return;
+    const follow = (search?: string | null) => {
+      const t = parseMeshLabLink(search ?? window.location.hash), key = t ? `${t.kind}:${t.id}` : '';
+      if (!t || key === linked.current) return;
+      linked.current = key;
+      if (t.kind === 'project') { const p = PROJECTS.find((x) => x.id === t.id); if (p) openExample(p); else editor.say(`No example project called "${t.id}"`); }
+      else { const c = CHALLENGES.find((x) => x.id === t.id); if (c) beginChallenge(c); else editor.say(`No challenge called "${t.id}"`); }
+    };
+    // Opened by a link (EntryShell hands the query over), or the address changed while open.
+    follow(takeEntryLink('mesh-lab'));
+    const onHash = () => follow();
+    const onEntry = (e: Event) => { const d = (e as CustomEvent<{ key: string; search: string }>).detail; if (d.key === 'mesh-lab') { takeEntryLink('mesh-lab'); linked.current = ''; follow(d.search); } };
+    window.addEventListener('hashchange', onHash);
+    window.addEventListener('entry-link', onEntry);
+    return () => { window.removeEventListener('hashchange', onHash); window.removeEventListener('entry-link', onEntry); };
+  }, [vp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const edit = editor.mode === 'edit';
   const o = editor.activeObject;

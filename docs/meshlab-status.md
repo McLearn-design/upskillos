@@ -302,6 +302,23 @@ clicking, each with its selection, guide, playback or heat map, no page errors. 
   the walk and the island rendered. No page errors. `npx vitest run src/labs/mesh-lab`: 18 files, 245 tests
   (253 with `src/utils` and `src/labs/codelens`).
 
+## Done (2026-09-29): deep links for lessons
+
+`#/lab/mesh-lab?project=<id>` and `?challenge=<id>` open a project or challenge, built by `meshLabLink(kind, id)`
+in `src/labs/mesh-lab/links.ts` (which throws on an unknown id). `EntryShell` opens labs as windows and then
+navigates back to the listing, which dropped the query; it now hands the query to the lab through
+`src/utils/entryLinks.js` (taken on mount, or announced as an event to a lab already open). Tests: every
+project and challenge id round-trips through the link builder and parser; an unknown id throws; the hand-off is
+taken once and announced. Browser: a fresh load of `?project=walk-cycle` opened the walk cycle playing with its
+guide; changing the address to `?challenge=six-squares` while open started the challenge. The course plan these
+serve is `docs/modelling-course-plan.md`.
+
+## Done (2026-09-29): "A mesh is two lists" project
+
+A new Learning example, `two-lists`, for lesson 1.1 of the modelling course. It contains two pyramids typed in as
+a vertex list and a face list. One shares its corners (5 vertices); the other gives every face its own copies
+(16), and tears when its tip moves. The test checks both counts and the tear.
+
 ## Verification
 
 - `npx vitest run src/labs/mesh-lab`: 7 files, 98 tests (session 1). They cover primitives (closed, outward, Euler,

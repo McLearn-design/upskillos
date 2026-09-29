@@ -117,12 +117,12 @@ const PROSE_COMPONENTS = {
       {children}
     </td>
   ),
-  // Links
+  // Links. An in-app link (#/lab/..., #/chapter/...) stays in this tab, where
+  // the HashRouter follows it; anything else opens in a new tab.
   a: ({ href, children }) => (
     <a
       href={href}
-      target="_blank"
-      rel="noopener noreferrer"
+      {...(href?.startsWith("#/") ? {} : { target: "_blank", rel: "noopener noreferrer" })}
       className="text-brand-600 dark:text-brand-400 underline hover:text-brand-700 dark:hover:text-brand-300"
     >
       {children}
