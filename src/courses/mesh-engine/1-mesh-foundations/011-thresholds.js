@@ -879,7 +879,7 @@ export default {
   coreConcept:
     'A threshold does not find defects. It chooses which kind of mistake to make, and the two kinds do not cost the same - so the right value follows from a price, not from the geometry. Below that sits an error floor set by the model’s own faceting: a bore drawn as an n-sided prism is inside the true circle by R(1-cos(pi/n)), which for a 1 inch bore at 32 facets is 2.41 thou against a 1 thou tolerance, and which is a one-sided bias that never averages out. Floating point is about two thousand times smaller and is not the thing to worry about. A bias you know about is free, because it is absorbed by moving the threshold; a bias you do not know about silently widens your effective tolerance - measured, by 60%.',
   prerequisites: ['mesh-engine-1-10-signed-distance'],
-  nextLesson: null,
+  nextLesson: 'mesh-engine-1-12-attribution',
 
   semantics: {
     core: [
