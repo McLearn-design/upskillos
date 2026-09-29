@@ -5,6 +5,7 @@ CodeLens has a strong foundation, but it is **not yet reliable enough to teach J
 - ✅ The full-screen CodeLens shell now stops above the active desktop taskbar (64 px mac dock or 48 px Windows taskbar) while retaining full height on smaller screens.
 - ✅ The stack-depth timeline is pinned to a 28 px graph inside a 32 px strip, overriding the app-wide responsive SVG rule that previously expanded it into the workspace.
 - ✅ JavaScript and the current TypeScript execution path now run in a disposable Web Worker instead of blocking the interface.
+- ✅ TypeScript now uses `typescript.transpileModule`, reports compiler diagnostics separately, and maps generated trace lines back to the learner's TypeScript source. Parameter properties and the starter output are preserved correctly.
 - ✅ CodeLens now provides Stop/Run again controls, keeps partial trace batches, and reports completed, stopped, limited, syntax-error, and runtime-error outcomes separately.
 - ✅ JavaScript runs are bounded by runtime, statement, trace-event, trace-size, output, recursion, heap-object, and heap-property limits. Variable snapshots use bounded previews instead of copying arbitrarily large structures into every event.
 
@@ -14,7 +15,7 @@ CodeLens has a strong foundation, but it is **not yet reliable enough to teach J
 - ✅ Unreliable syntax-only complexity labels are hidden until reviewed metadata or a defensible analyser replaces them.
 - ✅ The workspace defaults to one right-side panel. Learners can choose **Learn & output**, **Data structures**, or **Split view**.
 - ✅ `Array.from`, `Object.fromEntries`, `Symbol.iterator`, Map iteration, custom iteration, and destructured callback parameters cover the compatibility failures found in the initial audit.
-- ⏳ Python worker isolation, TypeScript transpilation, richer Python tracing, the learning library, specialized DSA views, and C++ remain planned below.
+- ⏳ Python worker isolation, richer Python tracing, the learning library, specialized DSA views, and C++ remain planned below.
 
 ### Confirmed problems
 
@@ -43,31 +44,31 @@ The estimator counted loops without understanding bounds or even distinguishing 
 
 | Language | Readiness | Main limitation |
 |---|---|---|
-| JavaScript | Promising subset | Custom interpreter lacks parts of JavaScript and runs on the UI thread |
-| TypeScript | Not trustworthy yet | Regular-expression type stripping changes program behavior |
+| JavaScript | Promising subset | Custom interpreter still lacks parts of JavaScript |
+| TypeScript | Promising subset | Real transpilation is in place, but execution inherits the JavaScript subset and does not resolve imports or perform project-wide type checking |
 | Python | Useful for basic flow/recursion | Cannot meaningfully visualize Python data structures |
 | C++ | Not implemented | No UI option or backend adapter |
 
-TypeScript currently uses `stripTypeScript()` in [CodeLens.tsx](C:/Users/g4m3r/Documents/testing%20tutorials/open-calc/src/labs/codelens/codelens/CodeLens.tsx:35). The included TypeScript starter uses a parameter property:
+TypeScript now uses `typescript.transpileModule` inside the execution worker. The included starter's parameter property:
 
 ```ts
 constructor(public name: string) {}
 ```
 
-The stripper turns that into:
+is correctly compiled with its required assignment:
 
 ```js
-constructor(name) {}
+constructor(name) { this.name = name }
 ```
 
-It loses the assignment to `this.name`. I executed the starter through the current transformation and got:
+The starter now produces:
 
 ```text
- says woof
- fetches ball!
+Rex says woof
+Rex fetches ball!
 ```
 
-instead of output containing `Rex`. That is especially harmful in a teaching tool because the learner’s valid TypeScript appears to behave incorrectly.
+Generated trace locations are mapped back to the TypeScript source, and syntax diagnostics retain their original line and column. CodeLens remains a single-file educational runtime rather than a full TypeScript project builder, so imports and project-wide semantic type checking remain outside the supported subset.
 
 Python tracing in [pythonTracer.ts](C:/Users/g4m3r/Documents/testing%20tutorials/open-calc/src/labs/codelens/codelens/interpreter/pythonTracer.ts:1) only records list and dictionary lengths. It does not preserve elements, keys, object fields, links, mutations, or reference identity. That means linked lists, trees, graphs, hash tables, and object-oriented patterns cannot be visualized accurately. Pyodide also runs on the main thread without cancellation or a timeout.
 
@@ -95,10 +96,10 @@ C++ is only mentioned as future backend work. The language type in [types.ts](C:
    - Clearly describe this as an educational JavaScript subset until coverage is broader.
 
 4. **Replace TypeScript stripping**
-   - Use `typescript.transpileModule`.
-   - Preserve source maps so trace lines still point to the TypeScript source.
-   - Show compile diagnostics separately from runtime errors.
-   - Test interfaces, enums, generics, parameter properties, optional properties, unions, access modifiers, and casts.
+   - ✅ Use `typescript.transpileModule`.
+   - ✅ Preserve source maps so trace lines still point to the TypeScript source.
+   - ✅ Show compile diagnostics separately from runtime errors.
+   - ✅ Test interfaces, enums, generics, parameter properties, optional properties, unions, access modifiers, casts, and exports.
 
 5. **Rebuild Python tracing**
    - Run Pyodide in a worker, following the worker architecture already used by the ML Lab.

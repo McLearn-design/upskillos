@@ -33,53 +33,6 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-// ── TypeScript → JS type stripper ─────────────────────────────────────────────
-// Best-effort for educational code: removes type annotations so the JS
-// interpreter can run the logic. Not a full transpiler.
-function stripTypeScript(src: string): string {
-  let s = src
-
-  // interface Foo { ... } (handles nested braces via iteration)
-  s = s.replace(/(?:export\s+)?interface\s+\w+(?:\s+extends\s+[^{]+)?\s*\{[^}]*\}/g, '')
-
-  // type Foo = ...; or type Foo = { ... } (with or without trailing semicolon)
-  s = s.replace(/(?:export\s+)?type\s+[\w<>, ]+\s*=\s*(?:\{[^}]*\}|[^\n;]+)[;\n]?/g, '')
-
-  // enum Foo { A, B, C } → const Foo = { A: 0, B: 1, ... }
-  s = s.replace(/(?:export\s+)?enum\s+(\w+)\s*\{([^}]*)\}/g, (_: string, name: string, body: string) => {
-    const members = body.split(',').map((m: string) => m.trim().split('=')[0].trim()).filter(Boolean)
-    return `const ${name} = {\n${members.map((m: string, i: number) => `  ${m}: ${i}`).join(',\n')}\n}`
-  })
-
-  // Access modifiers in class constructors/fields
-  s = s.replace(/\b(public|private|protected|readonly|abstract|override)\s+/g, '')
-
-  // implements clause
-  s = s.replace(/\s+implements\s+[\w, .]+(?=\s*\{)/g, '')
-
-  // export keyword — remove from value declarations (script/eval context, no module system)
-  s = s.replace(/\bexport\s+(?=class\b|function\b|const\b|let\b|var\b|async\b)/g, '')
-
-  // Generic type parameters on functions/classes: <T>, <T extends X>, <K, V>
-  s = s.replace(/<[A-Z][A-Za-z0-9_$,\s extends=|&\[\]]*>/g, '')
-
-  // Return type annotations: ): Type {  or  ): Type;
-  s = s.replace(/\)\s*:\s*[\w.<>|&\[\] ]+(?=\s*[\{;,])/g, ')')
-
-  // Variable/param type annotations: x: Type — only when annotation looks like a TS type
-  // (uppercase class name or known primitive keyword), to avoid stripping object property values like x: 3
-  s = s.replace(
-    /(\w)\s*\??\s*:\s*(?=[A-Z]|string\b|number\b|boolean\b|void\b|any\b|never\b|unknown\b|null\b|undefined\b|object\b)[\w.<>|&\[\] ]+(?=\s*[,)=;!?\n])/g,
-    '$1'
-  )
-
-  // `as Type` casts
-  s = s.replace(/\s+as\s+[\w.<>|&\[\] ]+/g, '')
-
-  // Leftover stray colons from partial stripping (e.g. `: {`)  — leave alone
-  return s
-}
-
 // Playback speeds are shared with MeshLab's algorithm traces (utils/playback).
 const SPEED_CONFIG = CODE_SPEEDS
 
@@ -821,6 +774,9 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
   const totalSteps   = execution?.events?.length ?? 0
   const currentEvent: TraceEvent | null = execution?.events?.[step]      ?? null
   const prevEvent: TraceEvent | null    = execution?.events?.[step - 1]  ?? null
+  const compilerDiagnostics = source === lastRunSourceRef.current
+    ? execution?.diagnostics ?? []
+    : []
 
   useEffect(() => () => {
     runGenerationRef.current += 1
@@ -959,6 +915,9 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
   const handleRun = useCallback(async () => {
     const generation = ++runGenerationRef.current
     setRunning(true)
+    setExecution(null)
+    setStep(0)
+    setPlaying(false)
     lastRunSourceRef.current = source
     try {
       let result: ExecutionResult
@@ -967,8 +926,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
       } else if (lang === 'go') {
         result = withExecutionStatus(await runNative(source, 'go'))
       } else {
-        const jsSource = lang === 'ts' ? stripTypeScript(source) : source
-        const handle = startJavaScriptExecution(jsSource)
+        const handle = startJavaScriptExecution(source, lang)
         activeExecutionRef.current = handle
         result = await handle.promise
       }
@@ -1276,6 +1234,32 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
             L{model.error.line}: {model.error.message}
           </span>
         )}
+        {compilerDiagnostics.length > 0 && (
+          <span
+            title={compilerDiagnostics.map(diagnostic => (
+              `TS${diagnostic.code}${diagnostic.line ? ` L${diagnostic.line}` : ''}: ${diagnostic.message}`
+            )).join('\n')}
+            style={{
+              fontSize: 11,
+              background: compilerDiagnostics.some(diagnostic => diagnostic.category === 'error')
+                ? '#7f1d1d'
+                : '#78350f',
+              color: compilerDiagnostics.some(diagnostic => diagnostic.category === 'error')
+                ? ui.redSoft
+                : ui.amberSoft,
+              padding: '2px 8px',
+              borderRadius: 5,
+              maxWidth: 420,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            TypeScript · {compilerDiagnostics[0].line ? `L${compilerDiagnostics[0].line} · ` : ''}
+            TS{compilerDiagnostics[0].code}: {compilerDiagnostics[0].message}
+            {compilerDiagnostics.length > 1 ? ` (+${compilerDiagnostics.length - 1})` : ''}
+          </span>
+        )}
       </div>
 
       {/* ── Video-style playback controls ── */}
@@ -1409,7 +1393,9 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
             }}>
               <Code2 size={13} color={ui.accent} />
               <span style={{ fontSize: 11, fontWeight: 600, color: ui.text }}>Source</span>
-              <span style={{ fontSize: 10, color: ui.textFaint, marginLeft: 'auto' }}>JavaScript</span>
+              <span style={{ fontSize: 10, color: ui.textFaint, marginLeft: 'auto' }}>
+                {lang === 'ts' ? 'TypeScript' : lang === 'py' ? 'Python' : lang === 'go' ? 'Go' : 'JavaScript'}
+              </span>
             </div>
             <div style={{ height: 'calc(100% - 33px)' }}>
               <Editor

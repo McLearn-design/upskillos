@@ -59,6 +59,14 @@ export interface RuntimeError {
   limitKind?: ExecutionLimitKind
 }
 
+export interface CompilerDiagnostic {
+  category: 'error' | 'warning' | 'message'
+  code: number
+  message: string
+  line: number | null
+  column: number | null
+}
+
 export type ExecutionStatus =
   | 'completed'
   | 'stopped'
@@ -93,6 +101,7 @@ export interface ExecutionResult {
   events: TraceEvent[]
   output: string[]
   error: RuntimeError | null
+  diagnostics?: CompilerDiagnostic[]
   status?: ExecutionStatus
   limit?: { kind: ExecutionLimitKind; message: string }
 }

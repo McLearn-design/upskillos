@@ -8,6 +8,12 @@ import type {
 import { JAVASCRIPT_EXECUTION_LIMITS } from './executionLimits'
 
 const WORKER_TIMEOUT_GRACE_MS = 500
+const WORKER_STARTUP_TIMEOUT_MS = 15_000
+
+interface PhaseMessage {
+  type: 'phase'
+  phase: 'executing'
+}
 
 interface ProgressMessage {
   type: 'progress'
@@ -20,7 +26,7 @@ interface ResultMessage {
   result: ExecutionResult
 }
 
-type WorkerMessage = ProgressMessage | ResultMessage
+type WorkerMessage = PhaseMessage | ProgressMessage | ResultMessage
 
 export interface JavaScriptExecutionHandle {
   promise: Promise<ExecutionResult>
@@ -42,7 +48,11 @@ function stoppedResult(events: TraceEvent[], output: string[]): ExecutionResult 
   }
 }
 
-function timeoutResult(events: TraceEvent[], output: string[]): ExecutionResult {
+function timeoutResult(
+  events: TraceEvent[],
+  output: string[],
+  message = `Runtime limit (${JAVASCRIPT_EXECUTION_LIMITS.maxRuntimeMs} ms) reached`,
+): ExecutionResult {
   return {
     events,
     output,
@@ -50,12 +60,15 @@ function timeoutResult(events: TraceEvent[], output: string[]): ExecutionResult 
     status: 'limit',
     limit: {
       kind: 'timeout',
-      message: `Runtime limit (${JAVASCRIPT_EXECUTION_LIMITS.maxRuntimeMs} ms) reached`,
+      message,
     },
   }
 }
 
-export function startJavaScriptExecution(source: string): JavaScriptExecutionHandle {
+export function startJavaScriptExecution(
+  source: string,
+  language: 'js' | 'ts' = 'js',
+): JavaScriptExecutionHandle {
   const worker = new Worker(new URL('./jsExecution.worker.ts', import.meta.url), { type: 'module' })
   const events: TraceEvent[] = []
   const output: string[] = []
@@ -70,9 +83,9 @@ export function startJavaScriptExecution(source: string): JavaScriptExecutionHan
     resolvePromise(result)
   }
 
-  const timeoutId = window.setTimeout(() => {
-    finish(timeoutResult(events, output))
-  }, JAVASCRIPT_EXECUTION_LIMITS.maxRuntimeMs + WORKER_TIMEOUT_GRACE_MS)
+  let timeoutId = window.setTimeout(() => {
+    finish(timeoutResult(events, output, 'The execution worker took too long to start'))
+  }, WORKER_STARTUP_TIMEOUT_MS)
 
   const promise = new Promise<ExecutionResult>((resolve) => {
     resolvePromise = resolve
@@ -80,6 +93,13 @@ export function startJavaScriptExecution(source: string): JavaScriptExecutionHan
 
   worker.onmessage = (message: MessageEvent<WorkerMessage>) => {
     if (settled) return
+    if (message.data.type === 'phase') {
+      window.clearTimeout(timeoutId)
+      timeoutId = window.setTimeout(() => {
+        finish(timeoutResult(events, output))
+      }, JAVASCRIPT_EXECUTION_LIMITS.maxRuntimeMs + WORKER_TIMEOUT_GRACE_MS)
+      return
+    }
     if (message.data.type === 'progress') {
       events.push(...message.data.events)
       output.push(...message.data.output)
@@ -115,6 +135,7 @@ export function startJavaScriptExecution(source: string): JavaScriptExecutionHan
   worker.postMessage({
     type: 'run',
     source,
+    language,
     limits: JAVASCRIPT_EXECUTION_LIMITS,
   })
 
