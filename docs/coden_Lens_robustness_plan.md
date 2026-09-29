@@ -6,6 +6,8 @@ CodeLens has a strong foundation, but it is **not yet reliable enough to teach J
 - ✅ The stack-depth timeline is pinned to a 28 px graph inside a 32 px strip, overriding the app-wide responsive SVG rule that previously expanded it into the workspace.
 - ✅ JavaScript and the current TypeScript execution path now run in a disposable Web Worker instead of blocking the interface.
 - ✅ TypeScript now uses `typescript.transpileModule`, reports compiler diagnostics separately, and maps generated trace lines back to the learner's TypeScript source. Parameter properties and the starter output are preserved correctly.
+- ✅ JavaScript and TypeScript now stop before unsupported generators, async/await, module syntax, and other unhandled constructs can produce a misleading trace. Browser and Node API failures explain the sandbox boundary instead of appearing as generic reference errors.
+- ✅ A Sandbox guide beside the language selector documents supported features, and execution limits now display prominent, cause-specific guidance for loops, recursion, output, trace size, and memory growth.
 - ✅ CodeLens now provides Stop/Run again controls, keeps partial trace batches, and reports completed, stopped, limited, syntax-error, and runtime-error outcomes separately.
 - ✅ JavaScript runs are bounded by runtime, statement, trace-event, trace-size, output, recursion, heap-object, and heap-property limits. Variable snapshots use bounded previews instead of copying arbitrarily large structures into every event.
 

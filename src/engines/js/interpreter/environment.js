@@ -1,5 +1,25 @@
 let _envId = 0
 
+const UNSUPPORTED_GLOBALS = new Map([
+  ['setTimeout', 'Browser timers'], ['setInterval', 'Browser timers'],
+  ['clearTimeout', 'Browser timers'], ['clearInterval', 'Browser timers'],
+  ['requestAnimationFrame', 'Browser animation APIs'], ['cancelAnimationFrame', 'Browser animation APIs'],
+  ['fetch', 'Browser networking'], ['XMLHttpRequest', 'Browser networking'],
+  ['WebSocket', 'Browser networking'], ['document', 'the DOM'], ['window', 'the DOM'],
+  ['navigator', 'Browser APIs'], ['location', 'Browser APIs'],
+  ['localStorage', 'Browser storage'], ['sessionStorage', 'Browser storage'],
+  ['Worker', 'Web Workers'], ['queueMicrotask', 'the event loop'], ['Promise', 'Promises and the event loop'],
+  ['process', 'Node.js APIs'], ['require', 'Node.js modules'], ['module', 'Node.js modules'],
+  ['Buffer', 'Node.js APIs'], ['__dirname', 'Node.js modules'], ['__filename', 'Node.js modules'],
+])
+
+export class UnsupportedEnvironmentError extends ReferenceError {
+  constructor(name, feature) {
+    super(`${name} uses ${feature}, which is not available in CodeLens. CodeLens visualizes self-contained synchronous JavaScript; use console.log and in-memory data instead.`)
+    this.name = 'UnsupportedEnvironmentError'
+  }
+}
+
 export class Environment {
   constructor(parent = null, name = 'global') {
     this.id       = ++_envId
@@ -28,6 +48,8 @@ export class Environment {
       return binding.value
     }
     if (this.parent) return this.parent.lookup(name)
+    const unsupportedFeature = UNSUPPORTED_GLOBALS.get(name)
+    if (unsupportedFeature) throw new UnsupportedEnvironmentError(name, unsupportedFeature)
     throw new ReferenceError(`${name} is not defined`)
   }
 

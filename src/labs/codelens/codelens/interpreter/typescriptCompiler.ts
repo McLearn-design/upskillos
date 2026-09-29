@@ -62,7 +62,10 @@ export function compileTypeScript(source: string): TypeScriptCompilation {
       removeComments: false,
       useDefineForClassFields: false,
     },
-    transformers: { before: [stripExports] },
+    // TypeScript may synthesize an export list after the type-erasing pass
+    // when the original source was a module, so remove module syntax both
+    // before and after the built-in transform.
+    transformers: { before: [stripExports], after: [stripExports] },
   })
 
   const diagnostics = (result.diagnostics ?? []).map(formatDiagnostic)

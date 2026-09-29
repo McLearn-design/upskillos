@@ -25,6 +25,70 @@ class ExecutionLimitError extends Error {
   }
 }
 
+class UnsupportedFeatureError extends SyntaxError {
+  constructor(message, line = null) {
+    super(message)
+    this.name = 'UnsupportedFeatureError'
+    this.line = line
+  }
+}
+
+function findUnsupportedFeature(ast) {
+  let found = null
+
+  const visit = (node) => {
+    if (found || !node || typeof node !== 'object') return
+    const line = node.loc?.start?.line ?? null
+
+    if (
+      (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression' || node.type === 'ArrowFunctionExpression')
+      && node.generator
+    ) {
+      found = new UnsupportedFeatureError('Generators and `yield` are not supported by CodeLens yet.', line)
+      return
+    }
+    if (
+      (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression' || node.type === 'ArrowFunctionExpression')
+      && node.async
+    ) {
+      found = new UnsupportedFeatureError('Async functions, `await`, Promises, and the event loop are not supported by CodeLens yet.', line)
+      return
+    }
+
+    const unsupported = {
+      YieldExpression: 'Generators and `yield` are not supported by CodeLens yet.',
+      AwaitExpression: 'Async functions, `await`, Promises, and the event loop are not supported by CodeLens yet.',
+      ImportDeclaration: 'ES module imports are not supported. CodeLens runs one self-contained file at a time.',
+      ExportNamedDeclaration: 'ES module exports are not supported in JavaScript mode. CodeLens runs one self-contained file at a time.',
+      ExportDefaultDeclaration: 'ES module exports are not supported in JavaScript mode. CodeLens runs one self-contained file at a time.',
+      ExportAllDeclaration: 'ES module exports are not supported in JavaScript mode. CodeLens runs one self-contained file at a time.',
+      ImportExpression: 'Dynamic import() is not supported. CodeLens runs one self-contained file at a time.',
+      TaggedTemplateExpression: 'Tagged template literals are not supported by CodeLens yet.',
+      MetaProperty: 'Module metadata such as import.meta is not supported by CodeLens.',
+      StaticBlock: 'Static class initialization blocks are not supported by CodeLens yet.',
+    }[node.type]
+
+    if (unsupported) {
+      found = new UnsupportedFeatureError(unsupported, line)
+      return
+    }
+    if (node.type === 'ForOfStatement' && node.await) {
+      found = new UnsupportedFeatureError('`for await...of` is not supported. Synchronous `for...of` is supported.', line)
+      return
+    }
+
+    for (const [key, child] of Object.entries(node)) {
+      if (key === 'loc' || key === 'start' || key === 'end') continue
+      if (Array.isArray(child)) child.forEach(visit)
+      else if (child && typeof child === 'object' && child.type) visit(child)
+      if (found) return
+    }
+  }
+
+  visit(ast)
+  return found
+}
+
 // ── Control-flow sentinels ────────────────────────────────────────────────────
 
 class ReturnSignal  { constructor(v) { this.value = v } }
@@ -43,6 +107,15 @@ export function run(source, options = {}) {
       events: [],
       output: [],
       error: { type: 'SyntaxError', message: e.message, line: e.loc?.line ?? null },
+    }
+  }
+
+  const unsupported = findUnsupportedFeature(ast)
+  if (unsupported) {
+    return {
+      events: [],
+      output: [],
+      error: { type: unsupported.name, message: unsupported.message, line: unsupported.line },
     }
   }
 
@@ -110,6 +183,7 @@ class Interpreter {
       error = {
         message: e?.message ?? String(e),
         type: e?.name ?? e?.constructor?.name ?? 'Error',
+        ...(e?.line != null ? { line: e.line } : {}),
         ...(e?.limitKind ? { limitKind: e.limitKind } : {}),
       }
       try {
@@ -237,6 +311,8 @@ class Interpreter {
     switch (node.type) {
       case 'ExpressionStatement':
         result = this._evalExpr(node.expression, env); break
+      case 'EmptyStatement':
+        result = undefined; break
       case 'BlockStatement':
         result = this._evalBlock(node, env); break
       case 'VariableDeclaration':
@@ -279,7 +355,7 @@ class Interpreter {
       case 'ExportDefaultDeclaration':
         result = undefined; break
       default:
-        result = undefined
+        throw new UnsupportedFeatureError(`Statement syntax ${node.type} is not supported by CodeLens yet.`, node.loc?.start?.line ?? null)
     }
 
     this._emit(EventType.STATEMENT_EXIT, node, env, { result: serializeValue(result) })
@@ -585,7 +661,7 @@ class Interpreter {
       case 'ChainExpression':         return this._evalChain(node, env)
       case 'Super':                   return { __kind: 'super' }
       default:
-        return undefined
+        throw new UnsupportedFeatureError(`Expression syntax ${node.type} is not supported by CodeLens yet.`, node.loc?.start?.line ?? null)
     }
   }
 
@@ -1786,7 +1862,7 @@ class Interpreter {
 
   _emit(type, node, env, payload = {}) {
     if (this.events.length >= this.limits.maxEvents) {
-      throw new ExecutionLimitError('events', `Trace event limit (${this.limits.maxEvents}) reached`)
+      throw new ExecutionLimitError('events', `Trace event limit (${this.limits.maxEvents}) reached — possible infinite loop or unusually detailed execution`)
     }
     const loc = node?.loc?.start
       ? { line: node.loc.start.line, column: node.loc.start.column, astNodeId: node.start ?? null }

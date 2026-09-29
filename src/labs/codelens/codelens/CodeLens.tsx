@@ -24,7 +24,7 @@ import { CODE_SPEEDS, usePlaybackTicker } from '../../../utils/playback'
 import type { CodeLensUiPalette } from './theme'
 import type {
   Lang, TraceEvent, StackFrame, ExecutionResult, HeapObjectEntry, HeapSnapshot,
-  CallGraph, CallGraphNode, AstNode, ProgramModel, TokenInfo, Snippet,
+  CallGraph, CallGraphNode, AstNode, ProgramModel, TokenInfo, Snippet, ExecutionLimitKind,
 } from './types'
 import {
   ChevronRight, ChevronDown, Code2, Boxes, Braces, ArrowLeft,
@@ -35,6 +35,22 @@ import {
 
 // Playback speeds are shared with MeshLab's algorithm traces (utils/playback).
 const SPEED_CONFIG = CODE_SPEEDS
+
+function limitGuidance(kind: ExecutionLimitKind): string {
+  if (kind === 'steps' || kind === 'events' || kind === 'timeout') {
+    return 'This often means a loop never finishes or its condition is not being updated. Check the loop condition and the variables changed inside it.'
+  }
+  if (kind === 'trace-size') {
+    return 'The program produced more visual history than the learner interface can safely retain. Try a smaller input or fewer iterations.'
+  }
+  if (kind === 'output') {
+    return 'The program printed too much text. Reduce logging or test with a smaller input.'
+  }
+  if (kind === 'recursion') {
+    return 'The call stack grew too deep. Check the base case and confirm every recursive call moves toward it.'
+  }
+  return 'The program created more objects or properties than the visualizer can safely display. Try a smaller input or reuse existing data.'
+}
 
 // ── Theme config ──────────────────────────────────────────────────────────────
 // The full CODELENS_THEMES list (theme.ts) now drives both the Monaco editor
@@ -750,6 +766,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
   const [inspectorLayout, setInspectorLayout] = useState<InspectorLayout>('learn')
   const [codeModalTab, setCodeModalTab] = useState<CodeTab | null>(null)
   const [showThemes, setShowThemes] = useState(false)
+  const [showSandboxGuide, setShowSandboxGuide] = useState(false)
   const [showWatch, setShowWatch]   = useState(false)
   const [playing, setPlaying]       = useState(false)
   const [playSpeed, setPlaySpeed]   = useState('1x')
@@ -1122,6 +1139,12 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
           ))}
         </div>
 
+        {(lang === 'js' || lang === 'ts') && (
+          <Btn onClick={() => setShowSandboxGuide(true)} title="See supported JavaScript and TypeScript features">
+            <Info size={12} /> Sandbox
+          </Btn>
+        )}
+
         {/* Teaching Snippets */}
         <select
           style={{
@@ -1275,16 +1298,17 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
             borderRadius: 99,
             padding: '2px 7px',
             color: execution.status === 'completed' ? ui.green
-              : execution.status === 'limit' ? ui.amber
+              : execution.status === 'limit' || execution.status === 'unsupported' ? ui.amber
                 : execution.status === 'stopped' ? ui.textSoft
                   : ui.red,
             border: `1px solid ${execution.status === 'completed' ? ui.green
-              : execution.status === 'limit' ? ui.amber
+              : execution.status === 'limit' || execution.status === 'unsupported' ? ui.amber
                 : execution.status === 'stopped' ? ui.borderStrong
                   : ui.red}66`,
           }}>
             {execution.status === 'completed' ? 'Completed'
               : execution.status === 'limit' ? 'Limit reached'
+                : execution.status === 'unsupported' ? 'Unsupported feature'
                 : execution.status === 'stopped' ? 'Stopped'
                   : execution.status === 'syntax-error' ? 'Syntax error'
                     : 'Runtime error'}
@@ -1352,11 +1376,39 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
             ))}
           </div>
 
-          {(execution.limit || execution.error) && (
-            <span style={{ fontSize: 10, color: execution.limit ? ui.amber : ui.red }}>
-              {execution.limit?.message ?? `${execution.error?.type}: ${execution.error?.message}`}
+          {execution.error && !execution.limit && (
+            <span style={{ fontSize: 10, color: execution.status === 'unsupported' ? ui.amber : ui.red }}>
+              {execution.error.type}: {execution.error.message}
             </span>
           )}
+        </div>
+      )}
+
+      {execution?.limit && (
+        <div role="alert" style={{
+          display: 'flex', alignItems: 'flex-start', gap: 10,
+          padding: '9px 14px', borderBottom: `1px solid ${ui.amberDeep}`,
+          background: ui.amberDeep + '22', color: ui.amberSoft, flexShrink: 0,
+        }}>
+          <Info size={16} style={{ marginTop: 1, flexShrink: 0 }} />
+          <div style={{ fontSize: 12, lineHeight: 1.5 }}>
+            <strong>CodeLens stopped this run to stay responsive.</strong>{' '}
+            {`${execution.limit.message}. ${limitGuidance(execution.limit.kind)}`}
+          </div>
+        </div>
+      )}
+
+      {execution?.status === 'unsupported' && execution.error && (
+        <div role="alert" style={{
+          display: 'flex', alignItems: 'flex-start', gap: 10,
+          padding: '9px 14px', borderBottom: `1px solid ${ui.amberDeep}`,
+          background: ui.amberDeep + '22', color: ui.amberSoft, flexShrink: 0,
+        }}>
+          <Info size={16} style={{ marginTop: 1, flexShrink: 0 }} />
+          <div style={{ fontSize: 12, lineHeight: 1.5 }}>
+            <strong>This code uses a feature outside the CodeLens sandbox.</strong>{' '}
+            {execution.error.message}
+          </div>
         </div>
       )}
 
@@ -1657,6 +1709,12 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
           )}
           {codeModalTab === 'tokens' && <TokensView model={model} source={source} />}
           {codeModalTab === 'ast'    && <AstView model={model} />}
+        </CodeDetailModal>
+      )}
+
+      {showSandboxGuide && (
+        <CodeDetailModal title="JavaScript and TypeScript sandbox" icon={Info} onClose={() => setShowSandboxGuide(false)}>
+          <SandboxGuide />
         </CodeDetailModal>
       )}
 
@@ -2174,6 +2232,63 @@ function CodeDetailModal({ title, icon: Icon, onClose, children }: { title: stri
         <div style={{ flex: 1, overflow: 'auto', padding: 16, minHeight: 0 }}>
           {children}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function SandboxGuide() {
+  const { theme: { ui } } = useCodeLensTheme()
+  const supported = [
+    'Synchronous variables, expressions, conditions, loops, and switch statements',
+    'Functions, closures, recursion, callbacks, and error handling',
+    'Arrays, objects, Map, Set, destructuring, spread, and for...of',
+    'Classes, inheritance, instance fields, private fields, and common OOP patterns',
+    'Single-file TypeScript including interfaces, enums, generics, unions, and access modifiers',
+  ]
+  const unsupported = [
+    'Browser APIs: the DOM, fetch, timers, storage, workers, and browser events',
+    'Node.js APIs: require, process, Buffer, filesystem access, and Node modules',
+    'Async/await, Promises, the event loop, generators, and yield',
+    'Imports, multi-file projects, package resolution, and project-wide TypeScript type checking',
+  ]
+
+  const FeatureList = ({ items, color }: { items: string[]; color: string }) => (
+    <div style={{ display: 'grid', gap: 8 }}>
+      {items.map(item => (
+        <div key={item} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', color: ui.textDim, fontSize: 13, lineHeight: 1.55 }}>
+          <span style={{ color, fontWeight: 800, flexShrink: 0 }}>●</span>
+          <span>{item}</span>
+        </div>
+      ))}
+    </div>
+  )
+
+  return (
+    <div style={{ maxWidth: 820, margin: '0 auto', padding: '8px 6px 24px' }}>
+      <div style={{
+        padding: 14, marginBottom: 20, borderRadius: 10,
+        background: ui.accentBg, border: `1px solid ${ui.accentSolid}55`,
+        color: ui.textSoft, fontSize: 13, lineHeight: 1.65,
+      }}>
+        CodeLens is a visual execution sandbox for learning how code moves through scopes, the call stack, and the heap. It intentionally runs self-contained, synchronous programs so every supported operation can be traced clearly.
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: 24 }}>
+        <div>
+          <h3 style={{ margin: '0 0 12px', color: ui.green, fontSize: 14 }}>Supported</h3>
+          <FeatureList items={supported} color={ui.green} />
+        </div>
+        <div>
+          <h3 style={{ margin: '0 0 12px', color: ui.amber, fontSize: 14 }}>Not supported yet</h3>
+          <FeatureList items={unsupported} color={ui.amber} />
+        </div>
+      </div>
+      <div style={{
+        marginTop: 22, padding: 12, borderRadius: 8,
+        background: ui.panelBg2, border: `1px solid ${ui.border}`,
+        color: ui.textMuted, fontSize: 12, lineHeight: 1.6,
+      }}>
+        When CodeLens recognizes unsupported syntax or an unavailable API, it stops before producing a misleading trace and explains the boundary. Regular JavaScript mistakes still appear as syntax or runtime errors.
       </div>
     </div>
   )

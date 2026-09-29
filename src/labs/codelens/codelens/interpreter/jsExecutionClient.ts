@@ -36,6 +36,7 @@ export interface JavaScriptExecutionHandle {
 function statusFor(error: RuntimeError | null): ExecutionStatus {
   if (!error) return 'completed'
   if (error.type === 'ExecutionLimitError' || error.limitKind) return 'limit'
+  if (error.type === 'UnsupportedFeatureError' || error.type === 'UnsupportedEnvironmentError') return 'unsupported'
   return error.line != null || error.type === 'SyntaxError' ? 'syntax-error' : 'runtime-error'
 }
 

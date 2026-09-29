@@ -71,6 +71,7 @@ export type ExecutionStatus =
   | 'completed'
   | 'stopped'
   | 'limit'
+  | 'unsupported'
   | 'syntax-error'
   | 'runtime-error'
 

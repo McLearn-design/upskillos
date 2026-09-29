@@ -72,6 +72,44 @@ console.log(found[1])
     expect(result.output).toEqual(['2'])
   })
 
+  it.each([
+    ['generators', 'function* values() { yield 1 }', 'Generators'],
+    ['async functions', 'async function load() { await fetch("/data") }', 'Async functions'],
+    ['module imports', 'import value from "./value.js"', 'module imports'],
+    ['dynamic imports', 'const module = import("./value.js")', 'Dynamic import'],
+  ])('rejects unsupported %s before execution', (_name, source, expectedMessage) => {
+    const result = run(source)
+
+    expect(result.events).toEqual([])
+    expect(result.error?.type).toBe('UnsupportedFeatureError')
+    expect(result.error?.message).toContain(expectedMessage)
+    expect(result.error?.line).toBe(1)
+  })
+
+  it.each([
+    ['setTimeout', 'Browser timers'],
+    ['fetch', 'Browser networking'],
+    ['document', 'the DOM'],
+    ['require', 'Node.js modules'],
+    ['Promise', 'Promises and the event loop'],
+  ])('explains why the %s global is unavailable', (name, expectedFeature) => {
+    const result = run(`${name}()`)
+
+    expect(result.error?.type).toBe('UnsupportedEnvironmentError')
+    expect(result.error?.message).toContain(expectedFeature)
+    expect(result.error?.message).toContain('self-contained synchronous JavaScript')
+  })
+
+  it('allows a program to define a local with the same name as an unavailable API', () => {
+    const result = run(`
+function setTimeout(callback) { callback() }
+setTimeout(() => console.log('local timer'))
+`)
+
+    expect(result.error).toBeNull()
+    expect(result.output).toEqual(['local timer'])
+  })
+
   it('does not invent complexity labels from syntax', () => {
     const model = buildProgramModel(`
 function binarySearch(values, target) {
