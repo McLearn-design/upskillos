@@ -25,7 +25,11 @@ export const CHANNELS: Channel[] = ['position', 'rotation', 'scale'];
 /** How the value moves from this key to the next one. */
 export type Interp = 'constant' | 'linear' | 'ease';
 export interface Key { frame: number; value: Vec3; interp: Interp }
-export interface Animation { position?: Key[]; rotation?: Key[]; scale?: Key[]; rotationMode?: 'euler' | 'quaternion' }
+export interface Animation {
+  position?: Key[]; rotation?: Key[]; scale?: Key[]; rotationMode?: 'euler' | 'quaternion';
+  /** Pose rotation keys per bone (armatures). Bones always interpolate by slerp, as Blender's quaternion bones do. */
+  bones?: Record<string, Key[]>;
+}
 export interface Timeline { start: number; end: number; fps: number; frame: number }
 export const DEFAULT_TIMELINE: Timeline = { start: 1, end: 120, fps: 24, frame: 1 };
 
@@ -128,13 +132,13 @@ export function removeKey(anim: Animation, ch: Channel, frame: number): boolean 
 }
 
 export function hasKeys(anim: Animation | undefined): boolean {
-  return !!anim && CHANNELS.some((c) => anim[c]?.length);
+  return !!anim && (CHANNELS.some((c) => anim[c]?.length) || Object.values(anim.bones ?? {}).some((k) => k.length));
 }
 
 /** Every frame with a key on any channel, sorted. */
 export function keyFrames(anim: Animation | undefined): number[] {
   if (!anim) return [];
-  return [...new Set(CHANNELS.flatMap((c) => anim[c]?.map((k) => k.frame) ?? []))].sort((a, b) => a - b);
+  return [...new Set([...CHANNELS.flatMap((c) => anim[c]?.map((k) => k.frame) ?? []), ...Object.values(anim.bones ?? {}).flatMap((ks) => ks.map((k) => k.frame))])].sort((a, b) => a - b);
 }
 
 export function cloneAnimation(a: Animation | undefined): Animation | undefined {
@@ -142,6 +146,32 @@ export function cloneAnimation(a: Animation | undefined): Animation | undefined 
   const out: Animation = {};
   for (const c of CHANNELS) if (a[c]) out[c] = a[c]!.map((k) => ({ frame: k.frame, value: [k.value[0], k.value[1], k.value[2]], interp: k.interp }));
   if (a.rotationMode) out.rotationMode = a.rotationMode;
+  if (a.bones) out.bones = Object.fromEntries(Object.entries(a.bones).map(([n, ks]) => [n, ks.map((k) => ({ frame: k.frame, value: [k.value[0], k.value[1], k.value[2]] as Vec3, interp: k.interp }))]));
+  return out;
+}
+
+/** Set or replace a bone's rotation key. */
+export function setBoneKey(anim: Animation, bone: string, frame: number, value: Vec3, interp?: Interp): void {
+  const tmp: Animation = { rotation: (anim.bones ??= {})[bone] ?? [] };
+  setKey(tmp, 'rotation', frame, value, interp);
+  anim.bones[bone] = tmp.rotation!;
+}
+
+export function removeBoneKey(anim: Animation, bone: string, frame: number): boolean {
+  const ks = anim.bones?.[bone];
+  if (!ks) return false;
+  const i = ks.findIndex((k) => k.frame === frame);
+  if (i < 0) return false;
+  ks.splice(i, 1);
+  if (!ks.length) delete anim.bones![bone];
+  if (anim.bones && !Object.keys(anim.bones).length) delete anim.bones;
+  return true;
+}
+
+/** Each keyed bone's pose rotation at a frame. */
+export function posesAt(anim: Animation | undefined, frame: number): Map<string, Vec3> {
+  const out = new Map<string, Vec3>();
+  for (const [n, ks] of Object.entries(anim?.bones ?? {})) if (ks.length) out.set(n, sampleKeys(ks, frame, true).value);
   return out;
 }
 

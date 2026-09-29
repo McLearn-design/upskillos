@@ -21,7 +21,9 @@ import { Trace } from './trace';
 import { Recorder, brief, instrument, type Recording } from './recorder';
 import { gaussianCurvature, heatGeodesic, meanCurvature, operators, smooth as smoothMesh } from './geometry';
 import type { FieldSpec } from './fields';
-import { CHANNELS, cloneAnimation, hasKeys, removeKey, setKey, transformAt, type Interp } from './animation';
+import { CHANNELS, cloneAnimation, hasKeys, removeBoneKey, removeKey, setBoneKey, setKey, transformAt, type Interp } from './animation';
+import { boneLength, limitWeights, orderBones, posedEnds, type Bone } from './armature';
+import { applyBonePatch, bindSkin, removeBone } from './evaluate';
 
 type Vec3Handle = { x: number; y: number; z: number; set(x: number, y: number, z: number): Vec3Handle; toArray(): Vec3 };
 
@@ -128,19 +130,51 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       /** The cotan Laplacian as rows of [neighbour, weight] pairs, and each vertex's area (mass). */
       laplacian() { const { C, mass } = operators(m()); return { rows: C.rows.map((r) => [...r.entries()]), mass: Array.from(mass) }; },
       /** Colour the mesh by a field: "geodesic" (with from), "mean", "gaussian", "x", "y", "z", or your own values. */
-      showField(what: string | number[], opts: { from?: number | number[]; source?: number | number[]; label?: string } = {}) {
+      showField(what: string | number[], opts: { from?: number | number[]; source?: number | number[]; label?: string; bone?: string } = {}) {
         const from = opts.from ?? opts.source;
         const spec: FieldSpec = Array.isArray(what) ? { kind: 'custom', values: what.map(Number), label: opts.label }
           : what === 'geodesic' ? { kind: 'geodesic', sources: from === undefined ? [] : Array.isArray(from) ? from : [from] }
           : what === 'mean' || what === 'gaussian' ? { kind: what }
+          : what === 'weight' ? { kind: 'weight', bone: String(opts.bone ?? '') }
           : what === 'x' || what === 'y' || what === 'z' ? { kind: 'coord', axis: 'xyz'.indexOf(what) as 0 | 1 | 2 }
-          : (() => { throw new Error(`showField: unknown field "${what}". Use "geodesic", "mean", "gaussian", "x", "y", "z" or an array of numbers`); })();
+          : (() => { throw new Error(`showField: unknown field "${what}". Use "geodesic", "mean", "gaussian", "x", "y", "z", "weight" (with bone) or an array of numbers`); })();
         if (!editor.showField(spec, o.id)) throw new Error(editor.message);
         return api;
       },
       toString: () => { const s = m().stats(); return `Mesh(${s.verts} verts, ${s.edges} edges, ${s.faces} faces)`; },
     };
     return api;
+  }
+
+  function boneHandle(o: SceneObject, b: Bone) {
+    const hv = (k: 'head' | 'tail' | 'pose') => vecHandle(() => b[k]);
+    const head = hv('head'), tail = hv('tail'), pose = hv('pose');
+    const bh = {
+      get name() { return b.name; }, set name(v: string) { bh.set({ name: String(v) }); },
+      get parent() { return b.parent; }, set parent(v: string | null) { bh.set({ parent: v }); },
+      /** Rest position (armature space). */
+      get head() { return head; }, set head(v: ArrayLike<number> | Vec3Handle) { bh.set({ head: vec(v) }); },
+      get tail() { return tail; }, set tail(v: ArrayLike<number> | Vec3Handle) { bh.set({ tail: vec(v) }); },
+      /** Pose rotation: radians, XYZ, in the bone's own frame. */
+      get pose() { return pose; }, set pose(v: ArrayLike<number> | Vec3Handle) { assign(b.pose, v); },
+      get length() { return boneLength(b); },
+      /** Where the head and tail are in the current pose (armature space). */
+      get posedHead() { return posedEnds(o.bones!).get(b.name)!.head; },
+      get posedTail() { return posedEnds(o.bones!).get(b.name)!.tail; },
+      set(patch: { name?: string; head?: Vec3; tail?: Vec3; parent?: string | null }) {
+        if (patch.name !== undefined && patch.name !== b.name && o.bones!.some((x) => x.name === patch.name)) throw new Error(`There is already a bone called "${patch.name}"`);
+        if (patch.parent) orderBones(o.bones!.map((x) => (x === b ? { ...x, parent: patch.parent! } : x)));
+        applyBonePatch(scene(), o, b, { ...patch, head: patch.head && vec(patch.head), tail: patch.tail && vec(patch.tail) });
+        return bh;
+      },
+      keyframe(frame: number, values: { rotation?: Vec3 | Vec3Handle; interp?: Interp } = {}) {
+        setBoneKey((o.anim ??= {}), b.name, Math.round(frame), values.rotation !== undefined ? vec(values.rotation) : b.pose, interpOf(values.interp));
+        return bh;
+      },
+      deleteKeyframe(frame: number) { if (o.anim) { removeBoneKey(o.anim, b.name, frame); if (!hasKeys(o.anim)) o.anim = undefined; } return bh; },
+      toString: () => `Bone "${b.name}"`,
+    };
+    return bh;
   }
 
   function objHandle(o: SceneObject) {
@@ -196,7 +230,41 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       clearAnimation() { o.anim = undefined; return h; },
       /** The transform at a frame, without going there. */
       sample(frame: number) { const t = transformAt(o, frame); return { position: [...t.position], rotation: [...t.rotation], scale: [...t.scale] }; },
-      toString: () => `${o.kind === 'mesh' ? 'Mesh' : o.kind === 'light' ? 'Light' : 'Empty'} "${o.name}"`,
+      // Armatures.
+      get bones() { if (!o.bones) throw new Error(`${o.name} is not an armature`); return o.bones.map((b) => boneHandle(o, b)); },
+      bone(name: string) { const b = o.bones?.find((x) => x.name === name); if (!b) throw new Error(`${o.name} has no bone called "${name}"`); return boneHandle(o, b); },
+      addBone(p: { name: string; parent?: string | null; head: Vec3; tail: Vec3 }) {
+        if (!o.bones) throw new Error(`${o.name} is not an armature`);
+        if (o.bones.some((b) => b.name === p.name)) throw new Error(`There is already a bone called "${p.name}"`);
+        const b: Bone = { name: String(p.name), parent: p.parent ?? null, head: vec(p.head), tail: vec(p.tail), pose: [0, 0, 0] };
+        orderBones([...o.bones, b]);
+        o.bones.push(b);
+        return boneHandle(o, b);
+      },
+      removeBone(name: string) { if (!o.bones) throw new Error(`${o.name} is not an armature`); removeBone(scene(), o, name); return h; },
+      resetPose() { for (const b of o.bones ?? []) b.pose = [0, 0, 0]; return h; },
+      // Skinning.
+      bindTo(arm: { id: string }) { const a = scene().get(arm.id); if (!a) throw new Error('bindTo: no such armature'); bindSkin(scene(), o, a, trace('Automatic weights')); return h; },
+      unbind() { o.skin = undefined; return h; },
+      /** Keep each vertex's k strongest bone weights (glTF and game engines use 4). */
+      limitWeights(k = 4) { if (!o.skin) throw new Error(`${o.name} is not bound to an armature`); limitWeights(o.skin, k); return h; },
+      get skin() {
+        const sk = o.skin;
+        if (!sk) return null;
+        return {
+          armature: scene().get(sk.armature)?.name ?? null, bones: [...sk.bones], verts: sk.verts,
+          weights(bone: string) { const i = sk.bones.indexOf(bone); if (i < 0) throw new Error(`No weights for bone "${bone}"`); return [...sk.weights[i]]; },
+        };
+      },
+      setWeights(bone: string, values: number[]) {
+        const sk = o.skin;
+        if (!sk) throw new Error(`${o.name} is not bound to an armature`);
+        if (values.length !== sk.verts) throw new Error(`setWeights: need ${sk.verts} values, got ${values.length}`);
+        const i = sk.bones.indexOf(bone);
+        if (i >= 0) sk.weights[i] = values.map(Number); else { sk.bones.push(bone); sk.weights.push(values.map(Number)); }
+        return h;
+      },
+      toString: () => `${o.kind === 'mesh' ? 'Mesh' : o.kind === 'light' ? 'Light' : o.kind === 'armature' ? 'Armature' : 'Empty'} "${o.name}"`,
     };
     return h;
   }
@@ -209,6 +277,12 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       return objHandle(o);
     };
   }
+  add.armature = (p: Record<string, unknown> = {}) => {
+    const list = ((p.bones as { name: string; parent?: string | null; head: Vec3; tail: Vec3 }[] | undefined) ?? [{ name: 'Bone', head: [0, 0, 0], tail: [0, 1, 0] }])
+      .map((b) => ({ name: String(b.name), parent: b.parent ?? null, head: vec(b.head), tail: vec(b.tail), pose: [0, 0, 0] as Vec3 }));
+    orderBones(list);
+    return objHandle(scene().add({ name: String(p.name ?? 'Armature'), kind: 'armature', bones: list, position: p.position as Vec3, material: { color: '#c9ced6', roughness: 0.6, metalness: 0 } }));
+  };
   add.empty = (p: Record<string, unknown> = {}) => objHandle(scene().add({ name: String(p.name ?? 'Empty'), kind: 'empty', position: p.position as Vec3 }));
   add.mesh = (p: Record<string, unknown> = {}) => objHandle(scene().add({ name: String(p.name ?? 'Mesh'), mesh: new EditMesh((p.verts as Vec3[]) ?? [], (p.faces as number[][]) ?? []), position: p.position as Vec3 }));
 

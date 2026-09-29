@@ -1,6 +1,36 @@
 // Example scripts for the script panel. Each one is a small, complete idea;
 // all of them are run by the tests, so they cannot quietly break.
 
+/** The box-modelled character, shared by the modelling and rigging examples. */
+const CHARACTER = `// 1. Half a torso: a box from x = 0 to 0.6. The mirror makes the other half.
+const body = scene.add.cube({ name: 'Character', size: 1 })
+const m = body.mesh
+for (const v of m.vertices) { v.x = v.x < 0 ? 0 : 0.6; v.y = v.y < 0 ? 0 : 1.2; v.z *= 0.6 }
+m.delete({ faces: m.faces.facing([-1, 0, 0]) })        // open the seam on the mirror plane
+body.modifiers.add('mirror', { axis: 'x' })
+
+// 2. Two loop cuts: one down the middle of each half (for the leg),
+//    one around the chest (for the arm).
+m.loopCut(m.nearest([0, 0, -0.3]), m.nearest([0.6, 0, -0.3]), 0.5)
+m.loopCut(m.nearest([0.6, 0, 0.3]), m.nearest([0.6, 1.2, 0.3]), 0.75)
+
+// 3. Arm: the upper part of the side, out twice.
+const shoulder = m.faces.where(f => f.normal[0] > 0.9 && f.center[1] > 0.9)
+m.extrude(shoulder, 0.55).extrude(shoulder, 0.5)
+
+// 4. Leg: the outer half of the torso's bottom (y = 0), straight down. (Without the height
+//    test the arm's underside, which also faces down, would be pulled down with it.)
+m.extrude(m.faces.where(f => f.normal[1] < -0.9 && f.center[0] > 0.3 && f.center[1] < 0.01), 1.1)
+
+// 5. Neck and head: the inner half of the top.
+const top = m.faces.where(f => f.normal[1] > 0.9 && f.center[0] < 0.3)
+m.extrude(top, 0.12).extrude(top, 0.5)
+
+// 6. Smooth it: Catmull–Clark on the mirrored cage.
+body.modifiers.add('subsurf', { levels: 2 })
+body.position.set(3, 1.1, 0)            // stand it beside anything already in the scene
+log(m, '— the cage you edit; the modifiers show the full, smooth body')`;
+
 export interface Example { id: string; title: string; about: string; code: string }
 
 export const EXAMPLES: Example[] = [
@@ -89,33 +119,7 @@ log(stair.children.length, 'steps')`,
     id: 'character',
     title: 'Box-model a character',
     about: 'Half a body, a mirror modifier for the other half, two loop cuts, extrusions for the arm, leg, neck and head, then subdivision to smooth it.',
-    code: `// 1. Half a torso: a box from x = 0 to 0.6. The mirror makes the other half.
-const body = scene.add.cube({ name: 'Character', size: 1 })
-const m = body.mesh
-for (const v of m.vertices) { v.x = v.x < 0 ? 0 : 0.6; v.y = v.y < 0 ? 0 : 1.2; v.z *= 0.6 }
-m.delete({ faces: m.faces.facing([-1, 0, 0]) })        // open the seam on the mirror plane
-body.modifiers.add('mirror', { axis: 'x' })
-
-// 2. Two loop cuts: one down the middle of each half (for the leg),
-//    one around the chest (for the arm).
-m.loopCut(m.nearest([0, 0, -0.3]), m.nearest([0.6, 0, -0.3]), 0.5)
-m.loopCut(m.nearest([0.6, 0, 0.3]), m.nearest([0.6, 1.2, 0.3]), 0.75)
-
-// 3. Arm: the upper part of the side, out twice.
-const shoulder = m.faces.where(f => f.normal[0] > 0.9 && f.center[1] > 0.9)
-m.extrude(shoulder, 0.55).extrude(shoulder, 0.5)
-
-// 4. Leg: the outer half of the bottom, straight down.
-m.extrude(m.faces.where(f => f.normal[1] < -0.9 && f.center[0] > 0.3), 1.1)
-
-// 5. Neck and head: the inner half of the top.
-const top = m.faces.where(f => f.normal[1] > 0.9 && f.center[0] < 0.3)
-m.extrude(top, 0.12).extrude(top, 0.5)
-
-// 6. Smooth it: Catmull–Clark on the mirrored cage.
-body.modifiers.add('subsurf', { levels: 2 })
-body.position.set(3, 1.1, 0)            // stand it beside anything already in the scene
-log(m, '— the cage you edit; the modifiers show the full, smooth body')`,
+    code: CHARACTER,
   },
   {
     id: 'buffers',
@@ -166,6 +170,33 @@ const d = ball.mesh.geodesic(pole)
 log('pole to equator', d[eq].toFixed(4), ' exact πr/2 =', (Math.PI * r / 2).toFixed(4))
 
 ball.mesh.showField('geodesic', { from: pole })    // try 'mean', 'gaussian', or your own numbers`,
+  },
+  {
+    id: 'rig-character',
+    title: 'Rig and animate the character',
+    about: 'The box-modelled character, an armature of ten bones, automatic weights, and a wave. Then Tab on the armature to pose it yourself.',
+    code: CHARACTER.replace(/\nlog\(m, [^\n]*$/, '') + `
+
+// 7. An armature: spine, head, two-bone arms and legs, left and right.
+const bones = [
+  { name: 'Spine', head: [0, 0, 0], tail: [0, 1.1, 0] },
+  { name: 'Head', parent: 'Spine', head: [0, 1.2, 0], tail: [0, 1.8, 0] },
+]
+for (const [side, s] of [['L', 1], ['R', -1]]) bones.push(
+  { name: \`UpperArm.\${side}\`, parent: 'Spine', head: [0.6 * s, 1.05, 0], tail: [1.1 * s, 1.05, 0] },
+  { name: \`Forearm.\${side}\`, parent: \`UpperArm.\${side}\`, head: [1.1 * s, 1.05, 0], tail: [1.65 * s, 1.05, 0] },
+  { name: \`Thigh.\${side}\`, parent: 'Spine', head: [0.45 * s, 0, 0], tail: [0.45 * s, -0.55, 0] },
+  { name: \`Shin.\${side}\`, parent: \`Thigh.\${side}\`, head: [0.45 * s, -0.55, 0], tail: [0.45 * s, -1.1, 0] },
+)
+const rig = scene.add.armature({ name: 'Rig', bones, position: [3, 1.1, 0] })   // same place as the body
+body.bindTo(rig)      // automatic weights: heat spreading over the skin from each bone
+
+// 8. A wave: each key is a bone rotation (radians, about the bone's own axes).
+scene.setTimeline({ start: 1, end: 48 })
+rig.bone('UpperArm.L').keyframe(1, { rotation: [0, 0, -0.9] }).keyframe(24, { rotation: [0, 0, 0.6] }).keyframe(48, { rotation: [0, 0, -0.9] })
+rig.bone('Forearm.L').keyframe(1, { rotation: [0, 0, 0.2] }).keyframe(24, { rotation: [0, 0, 0.9] }).keyframe(48, { rotation: [0, 0, 0.2] })
+rig.bone('Thigh.R').keyframe(1, { rotation: [0.4, 0, 0] }).keyframe(24, { rotation: [-0.4, 0, 0] }).keyframe(48, { rotation: [0.4, 0, 0] })
+log(body.skin.bones.length, 'bones weighted over', body.skin.verts, 'vertices. Space plays it; Heat map › Bone weights shows the weights.')`,
   },
   {
     id: 'euler-vs-slerp',

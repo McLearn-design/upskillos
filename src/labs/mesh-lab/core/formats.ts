@@ -6,7 +6,7 @@
 
 import { EditMesh, type Vec3 } from './EditMesh';
 import type { Scene } from './Scene';
-import { evaluate } from './modifiers';
+import { evaluatedMesh } from './evaluate';
 import { Vector3 } from 'three';
 
 export interface ObjObject { name: string; verts: Vec3[]; faces: number[][] }
@@ -42,7 +42,7 @@ export function exportOBJ(scene: Scene, { applyModifiers = true } = {}): string 
   let offset = 1;
   for (const o of scene.objects) {
     if (!o.mesh || !o.visible) continue;
-    const mesh: EditMesh = applyModifiers ? evaluate(o.mesh, o.modifiers) : o.mesh;
+    const mesh: EditMesh = applyModifiers ? evaluatedMesh(scene, o) : o.mesh;
     const m = scene.worldMatrix(o);
     lines.push(`o ${o.name}`);
     const p = new Vector3();

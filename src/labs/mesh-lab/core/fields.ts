@@ -13,7 +13,9 @@ export type FieldSpec =
   | { kind: 'mean' }
   | { kind: 'gaussian' }
   | { kind: 'coord'; axis: 0 | 1 | 2 }
-  | { kind: 'custom'; values: number[]; label?: string };
+  | { kind: 'custom'; values: number[]; label?: string }
+  /** A bone's skin weights; the editor fills in the values from the mesh's skin. */
+  | { kind: 'weight'; bone: string; values?: number[] };
 
 export type FieldKind = FieldSpec['kind'];
 
@@ -36,6 +38,7 @@ export const FIELD_NAMES: Record<FieldKind, string> = {
   gaussian: 'Gaussian curvature K',
   coord: 'Coordinate',
   custom: 'Script values',
+  weight: 'Bone weights',
 };
 
 function percentile(values: ArrayLike<number>, p: number): number {
@@ -92,6 +95,13 @@ export function computeField(mesh: EditMesh, spec: FieldSpec, trace?: Trace): Fi
       return {
         values, label: `${name} coordinate`, diverging: false, range: fieldRange(values, false, false), contours: 10,
         meaning: `The vertex's ${name} position in the object's own space. Lines are level sets: slices at equal ${name}.`,
+      };
+    }
+    case 'weight': {
+      const values = Float64Array.from({ length: n }, (_, i) => Number(spec.values?.[i] ?? 0));
+      return {
+        values, label: `Weights of bone "${spec.bone}"`, diverging: false, range: [0, 1], contours: 0,
+        meaning: 'How much this bone moves each vertex: red 1 (entirely), blue 0 (not at all). At every vertex the weights of all bones add up to 1, so where this one fades another takes over.',
       };
     }
     case 'custom': {

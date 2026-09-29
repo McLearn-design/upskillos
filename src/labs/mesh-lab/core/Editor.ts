@@ -14,13 +14,15 @@ import { EditMesh, type Vec3 } from './EditMesh';
 import { Scene, type SceneJSON, type SceneObject } from './Scene';
 import { makePrimitive, type PrimitiveParams, type PrimitiveType } from './primitives';
 import { defaultModifier, evaluate, onMirrorPlane, type Modifier } from './modifiers';
+import { applyBonePatch, bindSkin, evaluatedMesh, removeBone, skinnedSource } from './evaluate';
 import { catmullClark } from './subdivision';
 import { Trace } from './trace';
 import { computeField, type FieldResult, type FieldSpec } from './fields';
 import { smooth as smoothMesh } from './geometry';
-import { CHANNELS, hasKeys, removeKey, setKey, transformAt, type Channel, type Interp } from './animation';
+import { CHANNELS, hasKeys, posesAt, removeBoneKey, removeKey, setBoneKey, setKey, transformAt, type Channel, type Interp } from './animation';
+import { limitWeights, orderBones, type Bone } from './armature';
 
-export type Mode = 'object' | 'edit';
+export type Mode = 'object' | 'edit' | 'pose';
 export type SelectMode = 'vert' | 'edge' | 'face';
 export type ChangeKind = 'scene' | 'live' | 'select' | 'mode' | 'trace' | 'frame';
 export interface LogEntry { label: string; code: string | null }
@@ -62,6 +64,8 @@ export class Editor {
   /** The heat map being shown, if any. It is a view, not part of the scene: not saved, not undone. */
   field: FieldView | null = null;
   showContours = true;
+  /** The bone being posed (pose mode) or shown in the inspector. */
+  activeBone: string | null = null;
   /** Animation playback is running (the loop lives in the UI; this is the switch). */
   playing = false;
   /** While a past state of a script is shown: the real scene, kept aside. */
@@ -162,6 +166,7 @@ export class Editor {
     this.selected = new Set([...this.selected].filter((id) => this.scene.get(id)));
     if (this.active && !this.scene.get(this.active)) this.active = null;
     if (this.mode === 'edit' && !this.activeObject?.mesh) this.mode = 'object';
+    if (this.mode === 'pose' && !this.activeObject?.bones) this.mode = 'object';
     this.clearElements(false);
   }
 
@@ -348,7 +353,35 @@ export class Editor {
     this.emit('mode');
   }
 
-  toggleEdit(): void { if (this.mode === 'edit') this.exitEdit(); else this.enterEdit(); }
+  /** Tab: edit mode for a mesh, pose mode for an armature. */
+  toggleEdit(): void {
+    if (this.mode === 'edit') this.exitEdit();
+    else if (this.mode === 'pose') this.exitPose();
+    else if (this.activeObject?.bones) this.enterPose();
+    else this.enterEdit();
+  }
+
+  get poseObject(): SceneObject | undefined { return this.mode === 'pose' ? this.activeObject : undefined; }
+
+  enterPose(): boolean {
+    this.endPreview();
+    const o = this.activeObject;
+    if (!o?.bones) { this.say('Select an armature to pose'); return false; }
+    this.mode = 'pose';
+    this.selected = new Set([o.id]);
+    if (!o.bones.some((b) => b.name === this.activeBone)) this.activeBone = o.bones[0]?.name ?? null;
+    this.message = 'Pose mode: click a bone, rotate it (R); I keys the pose';
+    this.emit('mode');
+    return true;
+  }
+
+  exitPose(): void {
+    if (this.mode !== 'pose') return;
+    this.mode = 'object';
+    this.emit('mode');
+  }
+
+  selectBone(name: string | null): void { this.activeBone = name; this.emit('select'); }
 
   setSelectMode(m: SelectMode): void {
     const mesh = this.editObject?.mesh;
@@ -580,7 +613,10 @@ export class Editor {
 
   /** The mesh a field is computed on: what the viewport draws (modifiers applied), or the cage for script values. */
   private fieldMesh(o: SceneObject, spec: FieldSpec): EditMesh {
-    return spec.kind === 'custom' || !o.modifiers.length ? o.mesh!.clone() : evaluate(o.mesh!, o.modifiers, 3);
+    if (spec.kind === 'custom') return o.mesh!.clone();
+    // Weights belong to the mesh the armature deforms (mirrored, not subdivided): show them on that, posed.
+    if (spec.kind === 'weight') return skinnedSource(this.scene, o);
+    return evaluatedMesh(this.scene, o, 3);
   }
 
   /** Show a per-vertex field on an object. Returns false (with a message) when it cannot. */
@@ -589,13 +625,18 @@ export class Editor {
     if (!o?.mesh) { this.say('Select a mesh object to show a heat map on'); return false; }
     if (spec.kind === 'geodesic' && !spec.sources.length) { this.say('Distance: select one or more vertices in edit mode to measure from'); return false; }
     if (spec.kind === 'custom' && spec.values.length !== o.mesh.verts.length) { this.say(`Script values: need ${o.mesh.verts.length} values, one per vertex, got ${spec.values.length}`); return false; }
+    if (spec.kind === 'weight') {
+      const i = o.skin?.bones.indexOf(spec.bone) ?? -1;
+      if (!o.skin || i < 0) { this.say(o.skin ? `${o.name} has no weights for bone "${spec.bone}"` : `${o.name} is not bound to an armature`); return false; }
+      spec = { kind: 'weight', bone: spec.bone, values: o.skin.weights[i] };
+    }
     const mesh = this.fieldMesh(o, spec);
     const trace = this.traceEnabled && spec.kind === 'geodesic' ? new Trace('Heat method') : undefined;
     if (trace && mesh.verts.length <= trace.snapshotLimit) trace.before = mesh.toSnapshot();
     this.field = { objectId: o.id, spec, mesh, result: computeField(mesh, spec, trace) };
     if (trace && trace.steps.length) { this.trace = trace; this.traceTarget = o.id; this.emit('trace'); }
     if (!this.scripting && spec.kind !== 'custom') {
-      const args = spec.kind === 'geodesic' ? `"geodesic", { from: ${lit(spec.sources)} }` : spec.kind === 'coord' ? `"${'xyz'[spec.axis]}"` : `"${spec.kind}"`;
+      const args = spec.kind === 'geodesic' ? `"geodesic", { from: ${lit(spec.sources)} }` : spec.kind === 'coord' ? `"${'xyz'[spec.axis]}"` : spec.kind === 'weight' ? `"weight", { bone: ${lit(spec.bone)} }` : `"${spec.kind}"`;
       this.log.push({ label: `Show ${this.field.result.label}`, code: `${ref(o)}.mesh.showField(${args})` });
     }
     this.message = this.field.result.label;
@@ -620,6 +661,11 @@ export class Editor {
     if (!o?.mesh || (f.spec.kind === 'custom' && f.spec.values.length !== o.mesh.verts.length)) { this.field = null; return; }
     const mesh = this.fieldMesh(o, f.spec);
     let spec = f.spec;
+    if (spec.kind === 'weight') {
+      const i = o.skin?.bones.indexOf(spec.bone) ?? -1;
+      if (!o.skin || i < 0) { this.field = null; return; }
+      spec = { kind: 'weight', bone: spec.bone, values: o.skin.weights[i] };
+    }
     if (spec.kind === 'geodesic') {
       spec = { kind: 'geodesic', sources: spec.sources.filter((s) => s < mesh.verts.length) };
       if (!spec.sources.length) { this.field = null; return; }
@@ -660,6 +706,7 @@ export class Editor {
       if (!hasKeys(o.anim) || (only && !only.has(o.id))) continue;
       const x = transformAt(o, this.scene.timeline.frame);
       o.position = [...x.position] as Vec3; o.rotation = [...x.rotation] as Vec3; o.scale = [...x.scale] as Vec3;
+      if (o.bones) for (const [n, p] of posesAt(o.anim, this.scene.timeline.frame)) { const b = o.bones.find((x) => x.name === n); if (b) b.pose = [...p] as Vec3; }
     }
   }
 
@@ -672,6 +719,16 @@ export class Editor {
 
   /** Key the selected objects' current transforms at the current frame (Blender: I). */
   insertKey(channels: Channel[] = CHANNELS): boolean {
+    const po = this.poseObject;
+    if (po?.bones) {
+      const bones = this.keyBones(po);
+      const f = this.frame;
+      this.run(`Key pose at frame ${f}`, bones.map((b) => `${ref(po)}.bone(${lit(b.name)}).keyframe(${f}, { rotation: ${lit(b.pose)} })`).join('\n'), () => {
+        po.anim ??= {};
+        for (const b of bones) setBoneKey(po.anim, b.name, f, b.pose);
+      });
+      return true;
+    }
     const objs = this.keyTargets();
     if (!objs.length) { this.say('Insert keyframe: select an object first'); return false; }
     const f = this.frame;
@@ -683,6 +740,16 @@ export class Editor {
   /** Remove the selected objects' keys at the current frame. */
   deleteKey(): boolean {
     const f = this.frame;
+    const po = this.poseObject;
+    if (po?.bones) {
+      const bones = this.keyBones(po).filter((b) => po.anim?.bones?.[b.name]?.some((k) => k.frame === f));
+      if (!bones.length) { this.say(`No bone key at frame ${f}`); return false; }
+      this.run(`Delete bone keys at frame ${f}`, bones.map((b) => `${ref(po)}.bone(${lit(b.name)}).deleteKeyframe(${f})`).join('\n'), () => {
+        for (const b of bones) removeBoneKey(po.anim!, b.name, f);
+        if (!hasKeys(po.anim)) po.anim = undefined;
+      });
+      return true;
+    }
     const objs = this.keyTargets().filter((o) => CHANNELS.some((c) => o.anim?.[c]?.some((k) => k.frame === f)));
     if (!objs.length) { this.say(`No keyframe at frame ${f} on the selection`); return false; }
     this.run(`Delete keyframe at frame ${f}`, objs.map((o) => `${ref(o)}.deleteKeyframe(${f})`).join('\n'), () => {
@@ -694,6 +761,16 @@ export class Editor {
   /** How the value leaves the keys at the current frame: constant, linear or eased. */
   setInterpolation(interp: Interp): boolean {
     const f = this.frame;
+    const po = this.poseObject;
+    if (po?.bones) {
+      const bones = this.keyBones(po).filter((b) => po.anim?.bones?.[b.name]?.some((k) => k.frame === f));
+      if (!bones.length) { this.say(`Interpolation: frame ${f} has no bone key`); return false; }
+      this.run(`Interpolation ${interp}`, bones.map((b) => `${ref(po)}.bone(${lit(b.name)}).keyframe(${f}, { rotation: ${lit(po.anim!.bones![b.name].find((k) => k.frame === f)!.value)}, interp: ${lit(interp)} })`).join('\n'), () => {
+        for (const b of bones) for (const k of po.anim!.bones![b.name]) if (k.frame === f) k.interp = interp;
+        this.applyFrame();
+      });
+      return true;
+    }
     const objs = this.keyTargets().filter((o) => CHANNELS.some((c) => o.anim?.[c]?.some((k) => k.frame === f)));
     if (!objs.length) { this.say(`Interpolation: go to a frame with a keyframe (frame ${f} has none)`); return false; }
     this.run(`Interpolation ${interp}`, objs.map((o) => `${ref(o)}.setInterpolation(${f}, ${lit(interp)})`).join('\n'), () => {
@@ -719,5 +796,138 @@ export class Editor {
     const o = this.scene.get(id);
     if (!o?.anim) return;
     this.run('Clear animation', `${ref(o)}.clearAnimation()`, () => { o.anim = undefined; });
+  }
+
+  // ── armatures ──────────────────────────────────────────────────────────
+
+  /** In pose mode, the bones I and Delete key act on: the active bone, or all of them if none is active. */
+  private keyBones(o: SceneObject): Bone[] {
+    const b = o.bones!.find((x) => x.name === this.activeBone);
+    return b ? [b] : o.bones!;
+  }
+
+  private armature(): SceneObject | undefined {
+    const o = this.activeObject;
+    if (!o?.bones) { this.say('Select an armature first'); return undefined; }
+    return o;
+  }
+
+  private uniqueBone(o: SceneObject, base: string): string {
+    const taken = new Set(o.bones!.map((b) => b.name));
+    if (!taken.has(base)) return base;
+    const stem = base.replace(/\.\d{3}$/, '');
+    for (let i = 1; ; i++) { const n = `${stem}.${String(i).padStart(3, '0')}`; if (!taken.has(n)) return n; }
+  }
+
+  addArmature(bones?: Omit<Bone, 'pose'>[], name = 'Armature'): SceneObject {
+    const list: Bone[] = (bones ?? [{ name: 'Bone', parent: null, head: [0, 0, 0], tail: [0, 1, 0] }]).map((b) => ({ ...b, head: [...b.head] as Vec3, tail: [...b.tail] as Vec3, pose: [0, 0, 0] }));
+    orderBones(list);
+    let o!: SceneObject;
+    this.run('Add armature', `scene.add.armature(${lit({ name, bones: list.map(({ name: n, parent, head, tail }) => ({ name: n, parent, head, tail })) })})`, () => {
+      o = this.scene.add({ name, kind: 'armature', bones: list, material: { color: '#c9ced6', roughness: 0.6, metalness: 0 } });
+      this.selected = new Set([o.id]); this.active = o.id; this.activeBone = list[0]?.name ?? null;
+    });
+    return o;
+  }
+
+  /** A new bone continuing from the tail of `parent` (default: the active bone), same direction and length. */
+  addBone(parent = this.activeBone): boolean {
+    const o = this.armature();
+    if (!o) return false;
+    const p = o.bones!.find((b) => b.name === parent) ?? o.bones!.at(-1);
+    const head: Vec3 = p ? [...p.tail] as Vec3 : [0, 0, 0];
+    const dir: Vec3 = p ? [p.tail[0] - p.head[0], p.tail[1] - p.head[1], p.tail[2] - p.head[2]] : [0, 1, 0];
+    const bone: Bone = { name: this.uniqueBone(o, p?.name ?? 'Bone'), parent: p?.name ?? null, head, tail: [head[0] + dir[0], head[1] + dir[1], head[2] + dir[2]], pose: [0, 0, 0] };
+    this.run('Add bone', `${ref(o)}.addBone(${lit({ name: bone.name, parent: bone.parent, head: bone.head, tail: bone.tail })})`, () => { o.bones!.push(bone); this.activeBone = bone.name; });
+    return true;
+  }
+
+  /** Change a bone's rest head/tail, name or parent. A rename follows through to skins and keys. */
+  setBone(name: string, patch: { name?: string; head?: Vec3; tail?: Vec3; parent?: string | null }): boolean {
+    const o = this.armature();
+    const b = o?.bones!.find((x) => x.name === name);
+    if (!o || !b) return false;
+    if (patch.name !== undefined && patch.name !== name && o.bones!.some((x) => x.name === patch.name)) { this.say(`There is already a bone called "${patch.name}"`); return false; }
+    try { orderBones(o.bones!.map((x) => (x === b ? { ...x, parent: patch.parent !== undefined ? patch.parent : x.parent } : x))); }
+    catch (e) { this.say(e instanceof Error ? e.message : String(e)); return false; }
+    this.run(patch.name && patch.name !== name ? 'Rename bone' : 'Edit bone', `${ref(o)}.bone(${lit(name)}).set(${lit(patch)})`, () => {
+      applyBonePatch(this.scene, o, b, patch);
+      if (this.activeBone === name && patch.name) this.activeBone = patch.name;
+    });
+    return true;
+  }
+
+  /** Delete a bone: its children move up to its parent; skins lose its weights, keys go with it. */
+  deleteBone(name = this.activeBone ?? ''): boolean {
+    const o = this.armature();
+    if (!o || !o.bones!.some((b) => b.name === name)) return false;
+    if (o.bones!.length === 1) { this.say('An armature needs at least one bone'); return false; }
+    this.run('Delete bone', `${ref(o)}.removeBone(${lit(name)})`, () => { removeBone(this.scene, o, name); this.activeBone = o.bones![0].name; });
+    return true;
+  }
+
+  /** Set a bone's pose rotation (radians, XYZ, in the bone's own frame). */
+  setBonePose(name: string, pose: Vec3): void {
+    const o = this.armature();
+    const b = o?.bones!.find((x) => x.name === name);
+    if (!o || !b) return;
+    this.run('Pose bone', `${ref(o)}.bone(${lit(name)}).pose = ${lit(pose)}`, () => { b.pose = [pose[0], pose[1], pose[2]]; });
+  }
+
+  /** Commit a finished gizmo drag of a bone (already posed live). */
+  endBoneDrag(name: string): void {
+    const o = this.activeObject, b = o?.bones?.find((x) => x.name === name);
+    this.endLive('Pose bone', o && b ? `${ref(o)}.bone(${lit(name)}).pose = ${lit(b.pose)}` : null);
+  }
+
+  /** Back to the rest pose (Blender: Alt+R). */
+  resetPose(): void {
+    const o = this.armature();
+    if (!o) return;
+    this.run('Clear pose', `${ref(o)}.resetPose()`, () => { for (const b of o.bones!) b.pose = [0, 0, 0]; });
+  }
+
+  /**
+   * Bind the selected meshes to an armature with automatic weights (Blender: Ctrl+P).
+   * The armature is the active object if it is one, otherwise the only one in the scene.
+   */
+  bindToArmature(): boolean {
+    const act = this.activeObject;
+    const arm = act?.bones ? act : this.scene.objects.filter((x) => x.bones).length === 1 ? this.scene.objects.find((x) => x.bones) : undefined;
+    const meshes = [...this.selected].map((id) => this.scene.get(id)).filter((x): x is SceneObject => !!x?.mesh);
+    if (!arm) { this.say('Bind: select the mesh, then Shift-click the armature (so the armature is active)'); return false; }
+    if (!meshes.length) { this.say('Bind: select a mesh too (Shift-click it), then the armature'); return false; }
+    const trace = this.traceEnabled ? new Trace('Automatic weights') : undefined;
+    this.run(`Bind to ${arm.name}`, meshes.map((m) => `${ref(m)}.bindTo(${ref(arm)})`).join('\n'), () => { meshes.forEach((m, i) => bindSkin(this.scene, m, arm, i === 0 ? trace : undefined)); });
+    if (trace && trace.steps.length) { this.trace = trace; this.traceTarget = meshes[0].id; this.emit('trace'); }
+    this.say(`Bound ${meshes.map((m) => m.name).join(', ')} to ${arm.name}: automatic weights for ${arm.bones!.length} bones. Pose mode (Tab on the armature) to try it.`);
+    return true;
+  }
+
+  /** At most `k` bones per vertex, as glTF and game engines require. */
+  limitInfluences(id: string, k = 4): void {
+    const o = this.scene.get(id);
+    if (!o?.skin) return;
+    let n = 0;
+    this.run(`Limit to ${k} bones per vertex`, `${ref(o)}.limitWeights(${k})`, () => { n = limitWeights(o.skin!, k); });
+    this.say(`${n} vertices had more than ${k} bones; their weakest weights were dropped.`);
+  }
+
+  unbind(id: string): void {
+    const o = this.scene.get(id);
+    if (!o?.skin) return;
+    this.run('Unbind', `${ref(o)}.unbind()`, () => { o.skin = undefined; });
+  }
+
+  /** Record a trace of linear blend skinning at one vertex of a skinned mesh. */
+  explainSkinning(id: string, vertex: number): boolean {
+    const o = this.scene.get(id);
+    if (!o?.skin) return false;
+    const trace = new Trace('Linear blend skinning');
+    trace.before = skinnedSource(this.scene, { ...o, skin: undefined }).toSnapshot();
+    skinnedSource(this.scene, o, trace, vertex);
+    if (!trace.steps.length) { this.say('This vertex has no weights (or the mesh changed since binding: rebind)'); return false; }
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    return true;
   }
 }

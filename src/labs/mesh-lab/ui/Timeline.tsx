@@ -12,14 +12,23 @@ const frameX = (f: number, start: number, end: number) => GUTTER + ((f - start) 
 const DEG = 180 / Math.PI;
 const q4 = (q: Quat) => `(w ${fmt(q[3], 3)}, x ${fmt(q[0], 3)}, y ${fmt(q[1], 3)}, z ${fmt(q[2], 3)})`;
 
+/** An object channel, or the active bone's rotation. */
+type Row = Channel | 'bone';
+const boneKeys = (editor: Editor) => (editor.activeObject?.bones && editor.activeBone ? editor.activeObject.anim?.bones?.[editor.activeBone] : undefined);
+
 export function Timeline({ editor }: { editor: Editor }) {
   useEditorVersion(editor);
-  const [channel, setChannel] = useState<Channel>('position');
+  const [chosen, setChannel] = useState<Row>('position');
   const t = editor.scene.timeline;
   const o = editor.activeObject;
   const anim = o?.anim;
-  const keysHere = anim ? CHANNELS.filter((c) => anim[c]?.some((k) => k.frame === t.frame)) : [];
-  const interpHere = keysHere.length ? anim![keysHere[0]]!.find((k) => k.frame === t.frame)!.interp : null;
+  const hasBone = !!(o?.bones && editor.activeBone);
+  const channel: Row = chosen === 'bone' && !hasBone ? 'position' : chosen;
+  const posing = editor.mode === 'pose';
+  const bk = boneKeys(editor);
+  const keyAt = posing ? bk?.find((k) => k.frame === t.frame) : undefined;
+  const keysHere = posing ? (keyAt ? ['bone'] : []) : anim ? CHANNELS.filter((c) => anim[c]?.some((k) => k.frame === t.frame)) : [];
+  const interpHere = posing ? keyAt?.interp ?? null : keysHere.length ? anim![keysHere[0] as Channel]!.find((k) => k.frame === t.frame)!.interp : null;
   const go = (f: number) => editor.setFrame(Math.max(t.start, Math.min(t.end, f)));
   const all = keyFrames(anim);
   const prevKey = [...all].reverse().find((f) => f < t.frame), nextKey = all.find((f) => f > t.frame);
@@ -38,7 +47,7 @@ export function Timeline({ editor }: { editor: Editor }) {
         <NumberField value={t.end} digits={0} step={1} width={44} onCommit={(v) => editor.setTimeline({ end: v })} />
         <NumberField label="fps" value={t.fps} digits={0} step={1} width={36} onCommit={(v) => editor.setTimeline({ fps: v })} />
         <span style={{ width: 1, height: 18, background: C.border, margin: '0 4px' }} />
-        <Btn small active onClick={() => editor.insertKey()} title="Key position, rotation and scale of the selection at this frame (I)">◆ Insert keyframe</Btn>
+        <Btn small active onClick={() => editor.insertKey()} title={posing ? 'Key the active bone\'s rotation at this frame (I)' : 'Key position, rotation and scale of the selection at this frame (I)'}>◆ {posing ? `Key ${editor.activeBone ?? 'pose'}` : 'Insert keyframe'}</Btn>
         <Btn small disabled={!keysHere.length} onClick={() => editor.deleteKey()} title="Remove the keys at this frame">Delete key</Btn>
         {keysHere.length > 0 && <>
           <span style={{ color: C.faint, marginLeft: 4 }}>leave this key</span>
@@ -55,7 +64,8 @@ export function Timeline({ editor }: { editor: Editor }) {
         <div style={{ flex: 1.4, minWidth: 0, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${C.border}` }}>
           <div style={{ display: 'flex', gap: 4, padding: '4px 8px', alignItems: 'center' }}>
             {CHANNELS.map((c) => <Btn key={c} small active={channel === c} onClick={() => setChannel(c)}>{c}</Btn>)}
-            <span style={{ color: C.faint, fontSize: 11 }}>value against frame{channel === 'rotation' ? ' (degrees)' : ''}{channel === 'rotation' && anim?.rotationMode === 'quaternion' ? ' · dashed: what Euler interpolation would do' : ''}</span>
+            {hasBone && <Btn small active={channel === 'bone'} onClick={() => setChannel('bone')} title="The active bone's pose rotation">bone {editor.activeBone}</Btn>}
+            <span style={{ color: C.faint, fontSize: 11 }}>value against frame{channel === 'rotation' || channel === 'bone' ? ' (degrees)' : ''}{(channel === 'rotation' && anim?.rotationMode === 'quaternion') || channel === 'bone' ? ' · dashed: what Euler interpolation would do' : ''}</span>
           </div>
           <Graph editor={editor} channel={channel} />
         </div>
@@ -71,7 +81,8 @@ export function Timeline({ editor }: { editor: Editor }) {
 function Track({ editor }: { editor: Editor }) {
   const ref = useRef<SVGSVGElement>(null);
   const t = editor.scene.timeline, anim = editor.activeObject?.anim;
-  const H = 64;
+  const bk = boneKeys(editor);
+  const H = bk || editor.activeObject?.bones ? 78 : 64;
   const x = (f: number) => frameX(f, t.start, t.end);
   const frameAt = (clientX: number) => {
     const r = ref.current!.getBoundingClientRect();
@@ -97,17 +108,23 @@ function Track({ editor }: { editor: Editor }) {
           {anim?.[c]?.map((k) => <rect key={k.frame} x={x(k.frame) - 4} y={17 + row * 14} width={8} height={8} transform={`rotate(45 ${x(k.frame)} ${21 + row * 14})`} fill={k.frame === t.frame ? C.accent : '#e8c07a'} stroke="#1b1b1b" strokeWidth={0.8} />)}
         </g>
       ))}
+      {editor.activeObject?.bones && (
+        <g>
+          <text x={6} y={66} fill={C.blue} fontSize={9}>{editor.activeBone ?? 'bone'}</text>
+          {bk?.map((k) => <rect key={k.frame} x={x(k.frame) - 4} y={59} width={8} height={8} transform={`rotate(45 ${x(k.frame)} 63)`} fill={k.frame === t.frame ? C.accent : '#9cc9ff'} stroke="#1b1b1b" strokeWidth={0.8} />)}
+        </g>
+      )}
       <line x1={x(t.frame)} x2={x(t.frame)} y1={0} y2={H} stroke={C.blue} strokeWidth={2} vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
 
 /** Each component of a channel against frame, with the keys marked. */
-function Graph({ editor, channel }: { editor: Editor; channel: Channel }) {
-  const t = editor.scene.timeline, o = editor.activeObject, keys = o?.anim?.[channel];
-  if (!o || !keys?.length) return <div style={{ color: C.faint, padding: '10px 12px' }}>No {channel} keys on {o ? o.name : 'the selection'}.</div>;
-  const slerpOn = channel === 'rotation' && o.anim!.rotationMode === 'quaternion';
-  const scale = channel === 'rotation' ? DEG : 1;
+function Graph({ editor, channel }: { editor: Editor; channel: Row }) {
+  const t = editor.scene.timeline, o = editor.activeObject, keys = channel === 'bone' ? boneKeys(editor) : o?.anim?.[channel];
+  if (!o || !keys?.length) return <div style={{ color: C.faint, padding: '10px 12px' }}>No {channel === 'bone' ? `keys on bone ${editor.activeBone}` : `${channel} keys on ${o ? o.name : 'the selection'}`}.</div>;
+  const slerpOn = channel === 'bone' || (channel === 'rotation' && o.anim!.rotationMode === 'quaternion');
+  const scale = channel === 'rotation' || channel === 'bone' ? DEG : 1;
   const frames = Array.from({ length: t.end - t.start + 1 }, (_, i) => t.start + i);
   const main = frames.map((f) => sampleKeys(keys, f, slerpOn).value.map((v) => v * scale));
   const ghost = slerpOn ? frames.map((f) => sampleKeys(keys, f, false).value.map((v) => v * scale)) : null;
@@ -138,7 +155,8 @@ function Graph({ editor, channel }: { editor: Editor; channel: Channel }) {
 /** The interpolation worked out at the current frame. */
 function Explain({ editor }: { editor: Editor }) {
   const t = editor.scene.timeline, o = editor.activeObject, anim = o?.anim;
-  if (!o || !anim || !CHANNELS.some((c) => anim[c]?.length)) {
+  const bk = boneKeys(editor);
+  if (!o || !anim || (!CHANNELS.some((c) => anim[c]?.length) && !bk?.length)) {
     return (
       <div style={{ fontFamily: 'system-ui', color: C.dim, fontSize: 12, lineHeight: 1.6 }}>
         <b style={{ color: C.text }}>Animate an object</b>
@@ -157,6 +175,21 @@ function Explain({ editor }: { editor: Editor }) {
   return (
     <div>
       <div style={{ color: C.dim, fontFamily: 'system-ui', fontSize: 11, fontWeight: 600, marginBottom: 4 }}>{o.name.toUpperCase()} AT FRAME {f}</div>
+      {bk?.length ? (() => {
+        const s = sampleKeys(bk, f, true);
+        return (
+          <div style={{ marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${C.panel2}` }}>
+            <div><span style={{ color: C.blue }}>bone {editor.activeBone}</span> pose = ({s.value.map((a) => fmt(a * DEG, 3)).join(', ')})°</div>
+            {s.from && s.to ? (
+              <>
+                <div style={{ color: C.dim }}>between keys at {s.from.frame} and {s.to.frame}: t = {fmt(s.t!, 4)}, s = {fmt(s.s!, 4)} ({s.from.interp})</div>
+                <div style={{ color: C.dim }}>Bones always slerp: the rotation in the bone's own axes, blended as quaternions.</div>
+                <Slerp from={s.from.value} to={s.to.value} s={s.s!} />
+              </>
+            ) : <div style={{ color: C.dim }}>outside the keyed range: holds the nearest key</div>}
+          </div>
+        );
+      })() : null}
       {CHANNELS.map((c) => {
         const keys = anim[c];
         if (!keys?.length) return null;

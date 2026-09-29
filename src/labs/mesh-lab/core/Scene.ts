@@ -9,8 +9,9 @@ import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
 import { EditMesh, type MeshSnapshot, type Vec3 } from './EditMesh';
 import type { Modifier } from './modifiers';
 import { DEFAULT_TIMELINE, cloneAnimation, transformAt, type Animation, type Timeline } from './animation';
+import { cloneBones, cloneSkin, type Bone, type Skin } from './armature';
 
-export type ObjectKind = 'mesh' | 'empty' | 'light';
+export type ObjectKind = 'mesh' | 'empty' | 'light' | 'armature';
 export interface Material { color: string; roughness: number; metalness: number }
 
 export interface SceneObject {
@@ -31,6 +32,10 @@ export interface SceneObject {
   light?: { type: 'point' | 'sun'; intensity: number; color: string };
   /** Keyframes on the transform channels, if the object is animated. */
   anim?: Animation;
+  /** An armature's bones (rest positions and current pose). */
+  bones?: Bone[];
+  /** A mesh bound to an armature: its weights. */
+  skin?: Skin;
 }
 
 export interface SceneJSON {
@@ -81,6 +86,8 @@ export class Scene {
       smooth: init.smooth ?? false,
       light: init.light,
       anim: cloneAnimation(init.anim),
+      bones: init.bones ? cloneBones(init.bones) : undefined,
+      skin: cloneSkin(init.skin),
     };
     if (o.parent && !this.get(o.parent)) o.parent = null;
     this.objects.push(o);
@@ -163,6 +170,7 @@ export class Scene {
         ...o, position: v3(o.position), rotation: v3(o.rotation), scale: v3(o.scale),
         material: { ...o.material }, modifiers: o.modifiers.map((m) => ({ ...m })), light: o.light ? { ...o.light } : undefined,
         mesh: o.mesh ? o.mesh.toSnapshot() : null, anim: cloneAnimation(o.anim),
+        bones: o.bones ? cloneBones(o.bones) : undefined, skin: cloneSkin(o.skin),
       })),
     };
   }
@@ -176,6 +184,7 @@ export class Scene {
       ...o, position: v3(o.position), rotation: v3(o.rotation), scale: v3(o.scale),
       material: { ...o.material }, modifiers: o.modifiers.map((m) => ({ ...m })), light: o.light ? { ...o.light } : undefined,
       mesh: o.mesh ? EditMesh.fromSnapshot(o.mesh) : null, anim: cloneAnimation(o.anim),
+      bones: o.bones ? cloneBones(o.bones) : undefined, skin: cloneSkin(o.skin),
     }));
     return s;
   }

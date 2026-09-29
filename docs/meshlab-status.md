@@ -1,6 +1,6 @@
 # MeshLab — implementation status
 
-Updated 2026-09-28. Read this first when resuming MeshLab work. The specification is [meshlab.md](meshlab.md);
+Updated 2026-09-28 (session 3). Read this first when resuming MeshLab work. The specification is [meshlab.md](meshlab.md);
 this file records what is built, how it was checked, and what comes next.
 
 ## Where the code is
@@ -87,6 +87,35 @@ slerp weights, and how many degrees Euler would be off. The active object's moti
 needed no change: it already handled `TransformControls.getHelper()`, uses no removed API, and passed its tests,
 typecheck and the browser run below on r186.
 
+## Done (session 3, 2026-09-28): bones and skinning
+
+- **Armatures** (`core/armature.ts`): a tree of bones with rest head/tail and a pose rotation in the bone's own
+  axes (Blender's convention, y along the bone). Rest B, posed P = P_parent · (B_parent⁻¹B) · R(pose), skin
+  S = P·B⁻¹. Add › Armature; bones added from the active bone's tail, edited (name, parent, head, tail) in the
+  inspector, which also shows B, P and S for the active bone. Renames follow through to skins and keys.
+- **Pose mode** (Tab on an armature): click a bone (picked by screen distance, as Blender does, since a ray
+  misses thin bones), rotate it with the gizmo at its head, or type angles; Alt+R clears the pose. Bones are
+  drawn as octahedra in front of the mesh; the active one blue.
+- **Binding** (Object › Bind to armature, Ctrl+P): automatic weights by bone heat (Baran & Popović 2007, what
+  Blender uses): per bone, (C + M·H) w = M·H·p with the cotan Laplacian and CG solver of the heat maps, then
+  Blender's weight limits (drop below 0.025, fade to 0.05) and normalisation. Traced: nearest-bone distance, each
+  bone's heat, the normalisation. The mesh is parented to the armature.
+- **Skinning**: linear blend skinning, evaluated mirror → armature → subdivision (Blender's recommended order);
+  every consumer (viewport, heat maps, OBJ/GLB export, statistics) goes through `core/evaluate.ts`. A mesh edited
+  after binding is flagged stale and shown undeformed. Heat map › Bone weights; in edit mode the vertex card lists
+  a vertex's weights and "Explain skinning here" traces each bone's candidate position and the blend.
+  "Limit to 4 bones per vertex" makes MeshLab match glTF and game engines.
+- **Bone animation**: I in pose mode keys the active bone's rotation; bones always slerp; the Timeline has a row,
+  graph and slerp breakdown for the active bone.
+- **GLB export** of the rig: a SkinnedMesh (the mirrored cage, 4 weights per vertex) on a bone hierarchy, with the
+  bone animation baked, so Blender imports an armature and action.
+- **Example** "Rig and animate the character": ten bones, automatic weights, a wave and a step.
+- Script API: `scene.add.armature({ bones })`, `arm.bone(name)` (head, tail, parent, name, `pose`, `set`,
+  `keyframe`, `posedHead/Tail`), `addBone`, `removeBone`, `resetPose`, `mesh.bindTo(arm)`, `unbind`, `skin`
+  (`weights(bone)`), `setWeights`, `limitWeights`, `showField('weight', { bone })`.
+- Found and fixed: the character example's leg step also extruded the arms' undersides (they face down too),
+  hanging two flaps under the arms; this was visible as slab-like arms and gave the hands 23% thigh weight.
+
 ## Verification
 
 - `npx vitest run src/labs/mesh-lab`: 7 files, 98 tests (session 1). They cover primitives (closed, outward, Euler,
@@ -127,6 +156,22 @@ typecheck and the browser run below on r186.
 - Browser: the Euler vs slerp example at frame 36 (Euler (44.4, 44.4, 0)°, slerp (26.3, 41.2, 26.3)°) with the
   Timeline's graph and slerp panel; Space played 23 frames in one second at 24 fps; I keyed frames 1, 40 and 72;
   at frame 20 the cube was at (1.442, 0.962, 0) = eased t = 19/39; the motion path drawn. No page errors.
+- Session 3 (`core/armature.test.ts`, `render/io.test.ts`): B·(0, L, 0) is the tail; a parent's quarter turn
+  puts the child at (−1,0,0)–(−2,0,0) exactly; rest pose leaves the mesh unchanged; bone heat on a two-bone tube:
+  weights sum to 1, > 0.95 pure at the ends, shared at the knee, fading monotonically; a hard-weighted shin bent
+  90° moves rigidly about the knee; a half twist collapses the knee ring (the candy-wrapper artefact); editor add
+  bone / rename / delete / bind / pose / undo; bone keys slerp to exactly half the turn halfway; the GUI log
+  rebuilds rig, identical weights and animation; files round-trip; the weights heat map equals the skin; a stale
+  skin is reported; the script API; the rigged character's hand is ≥ 0.9 forearm with no leg weight and rises
+  over 1 unit by frame 24; the exported GLB re-imported by three.js as a SkinnedMesh deforms within 2.3e-7 of
+  MeshLab at every vertex with ≤ 4 bones (up to 0.05 off where glTF drops weaker bones), and at every vertex after
+  "Limit to 4".
+- Browser (session 3): the rig example; Tab into pose mode, a mouse click selects the Head bone, a gizmo drag
+  poses it (one undo step, logged as `bone("Head").pose = [...]`); the weights heat map; the vertex weights card
+  and the skinning trace (0.053 · (1.382, 1.767, −0.3) + 0.947 · (0.902, 1.892, −0.3) = (0.927, 1.885, −0.3)).
+  No page errors.
+- Totals at the end of session 3: `npx vitest run src/labs/mesh-lab`: 12 files, 160 tests; with `src/utils` and
+  `src/labs/codelens`: 14 files, 165. `npx tsc --noEmit`: no errors in MeshLab, playback or CodeLens.
 - Totals at the end of session 2: `npx vitest run src/labs/mesh-lab`: 11 files, 142 tests. With `src/utils` and
   `src/labs/codelens`: 13 files, 147. `npx tsc --noEmit`: no errors in MeshLab, playback or CodeLens.
 
@@ -136,7 +181,7 @@ seam sat inside the mirrored solid (now skipped, as Blender does); trace markers
 
 ## Next, in order
 
-1. Bones and skinning: an armature of joints, vertex weights (heat map of each bone's influence, reusing the field
-   view), linear blend skinning, and posing/keying bones with the timeline above.
+1. Weight painting (a brush over the weights heat map), dual-quaternion skinning beside linear blending (to show
+   the candy-wrapper fix), bone roll, and editing bones by dragging in the viewport.
 2. UVs (LSCM unwrap, which reuses the cotan Laplacian and the CG solver) and materials/shaders.
 3. Bevel, dissolve and region inset; then learning modes built on the traces (pause before a step and predict).

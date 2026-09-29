@@ -37,6 +37,8 @@ export function sceneHash(scene: Scene): number {
     for (const v of [o.position, o.rotation, o.scale]) { mix(v[0]); mix(v[1]); mix(v[2]); }
     mixS(o.material.color); mix(o.material.roughness); mix(o.material.metalness);
     mixS(JSON.stringify(o.modifiers)); if (o.anim) mixS(JSON.stringify(o.anim));
+    if (o.bones) mixS(JSON.stringify(o.bones));
+    if (o.skin) { mixS(o.skin.armature); mixS(o.skin.bones.join(',')); mix(o.skin.verts); }
     if (o.mesh) {
       mix(o.mesh.verts.length); mix(o.mesh.faces.length);
       for (const p of o.mesh.verts) { mix(p[0]); mix(p[1]); mix(p[2]); }

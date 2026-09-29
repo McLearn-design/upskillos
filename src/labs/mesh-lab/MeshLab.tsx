@@ -126,8 +126,10 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       if (mod && k === 's') return act(() => saveFile());
       if (mod && k === 'r') return act(() => loopCut());
       if (mod && k === 'l') return act(() => ed.selectLinked());
+      if (mod && k === 'p') return act(() => ed.bindToArmature());
       if (mod) return;
       if (e.key === 'Tab') return act(() => ed.toggleEdit());
+      if (ed.mode === 'pose' && e.altKey && k === 'r') return act(() => ed.resetPose());
       if (e.key === '?') return act(() => setHelp((h) => !h));
       if (e.key === 'Escape') { setHelp(false); setMenu(null); return; }
       if (edit && ['1', '2', '3'].includes(k)) return act(() => ed.setSelectMode((['vert', 'edge', 'face'] as const)[+k - 1]));
@@ -189,7 +191,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       ['Export GLB', exportGlb],
     ],
     Edit: [['Undo', () => editor.undo(), 'Ctrl+Z'], ['Redo', () => editor.redo(), 'Ctrl+Shift+Z'], ['Duplicate', () => editor.duplicate(), 'Shift+D'], ['Delete', () => (edit ? editor.deleteElements() : editor.deleteObjects()), 'X'], ['Select all', () => (edit ? editor.selectAllElements() : editor.selectAllObjects()), 'A'], ['Select linked', () => editor.selectLinked(), 'Ctrl+L']],
-    Add: [...PRIMS.map(([t, label]) => [label, () => editor.addPrimitive(t)] as [string, () => void]), ['Empty', () => editor.addEmpty()]],
+    Add: [...PRIMS.map(([t, label]) => [label, () => editor.addPrimitive(t)] as [string, () => void]), ['Empty', () => editor.addEmpty()], ['Armature (one bone)', () => editor.addArmature()]],
     Mesh: [
       ['Extrude', () => editor.extrude(0.5), 'E'], ['Inset', () => editor.inset(0.25), 'I'], ['Loop cut', loopCut, 'Ctrl+R'],
       ['Subdivide faces', () => editor.split()], ['Subdivide smooth (Catmull–Clark)', () => editor.smoothSubdivide()],
@@ -199,6 +201,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       ['Distance from selected vertices', () => editor.showDistanceFromSelection()],
       ['Mean curvature (H)', () => editor.showField({ kind: 'mean' })], ['Gaussian curvature (K)', () => editor.showField({ kind: 'gaussian' })],
       ['Height (y)', () => editor.showField({ kind: 'coord', axis: 1 })],
+      ['Bone weights (skinned mesh)', () => { const sk = o?.skin; if (!sk) { editor.say('Select a mesh bound to an armature'); return; } editor.showField({ kind: 'weight', bone: sk.bones.includes(editor.activeBone ?? '') ? editor.activeBone! : sk.bones[0] }); }],
       [editor.showContours ? 'Hide iso-lines' : 'Show iso-lines', () => { editor.showContours = !editor.showContours; editor.emit('select'); }],
       ['Hide heat map', () => editor.clearField()],
     ],
@@ -208,6 +211,8 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       ['Add mirror modifier', () => o && editor.addModifier(o.id, 'mirror')], ['Add subdivision modifier', () => o && editor.addModifier(o.id, 'subsurf')],
       ['Apply modifiers', () => o && editor.applyModifiers(o.id)], ['Clear parent', () => o && editor.setParent(o.id, null)],
       ['Insert keyframe', () => { editor.insertKey(); setTab('timeline'); }, 'I'], ['Clear animation', () => o && editor.clearAnimation(o.id)],
+      ['Bind to armature (automatic weights)', () => editor.bindToArmature(), 'Ctrl+P'], ['Unbind from armature', () => o?.skin && editor.unbind(o.id)],
+      ['Pose mode (armature)', () => editor.enterPose(), 'Tab'], ['Clear pose', () => editor.resetPose(), 'Alt+R'],
     ],
     View: [['Frame selected', () => vp?.frameSelected(), 'F'], ['Frame all', () => vp?.frameAll(), 'Home'], ['Front', () => vp?.view('front')], ['Right', () => vp?.view('right')], ['Top', () => vp?.view('top')], ['Perspective', () => vp?.view('persp')]],
     Script: [['Open script panel', () => setTab('script')], ['Show the GUI → code log', () => setTab('log')]],
@@ -255,7 +260,9 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       {/* Toolbar */}
       <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', background: C.panel, borderBottom: `1px solid ${C.border}`, overflowX: 'auto' }}>
         <Btn small active={!edit} onClick={() => editor.exitEdit()} title="Object mode (Tab)">Object</Btn>
-        <Btn small active={edit} onClick={() => editor.enterEdit()} title="Edit mode (Tab)">Edit</Btn>
+        {o?.bones
+          ? <Btn small active={editor.mode === 'pose'} onClick={() => editor.enterPose()} title="Pose mode (Tab): rotate bones">Pose</Btn>
+          : <Btn small active={edit} onClick={() => editor.enterEdit()} title="Edit mode (Tab)">Edit</Btn>}
         {edit && <>{sep}{(['vert', 'edge', 'face'] as const).map((m, i) => <Btn key={m} small active={editor.selectMode === m} onClick={() => editor.setSelectMode(m)} title={`${m} select (${i + 1})`}>{['Vertex', 'Edge', 'Face'][i]}</Btn>)}</>}
         {sep}
         <Btn small active={gizmo === 'translate'} onClick={() => setGizmo('translate')} title="Move (G)">Move</Btn>
@@ -277,7 +284,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       <div style={{ gridColumn: 1, gridRow: 3, borderRight: `1px solid ${C.border}`, minHeight: 0 }}><Outliner editor={editor} /></div>
       <div ref={viewRef} style={{ gridColumn: 2, gridRow: 3, position: 'relative', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
         <div style={{ position: 'absolute', left: 10, top: 8, fontSize: 11, color: C.dim, pointerEvents: 'none', zIndex: 1, lineHeight: 1.5, textShadow: '0 1px 2px #000' }}>
-          <div style={{ color: edit ? C.accent : C.text, fontWeight: 600 }}>{edit ? `Edit mode · ${editor.selectMode === 'vert' ? 'vertices' : editor.selectMode === 'edge' ? 'edges' : 'faces'}` : 'Object mode'}</div>
+          <div style={{ color: edit ? C.accent : editor.mode === 'pose' ? C.blue : C.text, fontWeight: 600 }}>{edit ? `Edit mode · ${editor.selectMode === 'vert' ? 'vertices' : editor.selectMode === 'edge' ? 'edges' : 'faces'}` : editor.mode === 'pose' ? `Pose mode · ${editor.activeBone ?? 'click a bone'}` : 'Object mode'}</div>
           <div>Left-drag orbit · right-drag pan · wheel zoom · click select</div>
         </div>
         <FieldLegend editor={editor} />
@@ -322,6 +329,7 @@ function Help({ onClose }: { onClose: () => void }) {
     ['B then drag', 'Box select'], ['A, Alt+A', 'Select all, none'], ['Ctrl+L', 'Select linked'], ['G R S', 'Move / rotate / scale gizmo'],
     ['E', 'Extrude faces'], ['I', 'Inset faces (edit mode); insert keyframe (object mode)'], ['Space', 'Play / pause the animation'], ['← →', 'Previous / next frame'], ['Ctrl+R', 'Loop cut at the edge under the pointer'], ['M', 'Merge vertices at centre'],
     ['X, Delete', 'Delete'], ['Shift+D', 'Duplicate object'], ['H', 'Hide object'], ['F, Home', 'Frame selected, frame all'],
+    ['Tab on an armature', 'Pose mode: click a bone, rotate it'], ['Ctrl+P', 'Bind the selected mesh to the active armature'], ['Alt+R (pose mode)', 'Clear the pose'],
     ['Ctrl+Z, Ctrl+Shift+Z', 'Undo, redo'], ['Ctrl+S', 'Save the scene file'], ['Ctrl+Enter', 'Run the script'],
   ];
   return (

@@ -7,8 +7,9 @@ import * as THREE from 'three';
 import type { Editor } from '../core/Editor';
 import { EditMesh, type Vec3 } from '../core/EditMesh';
 import type { Modifier } from '../core/modifiers';
-import { evaluate } from '../core/modifiers';
+import { evaluatedMesh } from '../core/evaluate';
 import { Btn, C, MatrixView, NumberField, Row, Section, useEditorVersion } from './kit';
+import { ArmaturePanel, SkinPanel, VertexSkin } from './Rig';
 
 const f3 = (v: Vec3) => `(${v.map((x) => (Math.abs(x) < 5e-7 ? 0 : +x.toFixed(3))).join(', ')})`;
 const DEG = 180 / Math.PI;
@@ -21,7 +22,13 @@ export function Inspector({ editor }: { editor: Editor }) {
       {editor.lastOpLive && editor.lastOp && <AdjustLast editor={editor} />}
       {!o ? (
         <div style={{ padding: 16, color: C.dim, lineHeight: 1.6 }}>Nothing selected. Click an object in the viewport or the scene list, or add one from the Add menu.</div>
-      ) : editor.mode === 'edit' ? <EditInspector editor={editor} /> : <ObjectInspector editor={editor} />}
+      ) : editor.mode === 'edit' ? <EditInspector editor={editor} /> : (
+        <>
+          {o.bones && <ArmaturePanel editor={editor} />}
+          {o.skin && <SkinPanel editor={editor} />}
+          <ObjectInspector editor={editor} />
+        </>
+      )}
     </div>
   );
 }
@@ -85,7 +92,7 @@ function ObjectInspector({ editor }: { editor: Editor }) {
         <div style={{ color: C.dim, margin: '10px 0 4px' }}>World = {chain.map((x) => x.name).join(' · ')}</div>
         <MatrixView m={world.elements} note={`${chain.length > 1 ? 'Each parent\'s local matrix, multiplied in order from the root. ' : 'No parent, so world = local. '}Determinant ${det.toFixed(3)}${det < 0 ? ' (negative: the object is mirrored)' : ' (the volume scale factor)'}.`} />
       </Section>
-      {o.mesh && <MeshStats mesh={o.mesh} evaluated={o.modifiers.length ? evaluate(o.mesh, o.modifiers, 3) : null} />}
+      {o.mesh && <MeshStats mesh={o.mesh} evaluated={o.modifiers.length || o.skin ? evaluatedMesh(editor.scene, o, 3) : null} />}
       {o.mesh && <Modifiers editor={editor} />}
       {o.kind === 'mesh' && (
         <Section title="MATERIAL & SHADING">
@@ -194,6 +201,7 @@ function VertexCard({ editor, v, toWorld }: { editor: Editor; v: number; toWorld
       <Row label="Normal"><span style={{ fontFamily: C.mono }}>{f3(n)}</span></Row>
       <Row label="Valence"><span style={{ fontFamily: C.mono }}>{nb.length} edges → {nb.join(', ')}</span></Row>
       <div style={{ color: C.faint, fontSize: 11 }}>World = the object's world matrix × local. The normal averages the faces around the vertex, weighted by area.</div>
+      <VertexSkin editor={editor} v={v} />
     </div>
   );
 }
