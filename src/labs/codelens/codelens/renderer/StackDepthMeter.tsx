@@ -98,6 +98,8 @@ export default function StackDepthMeter({ events, step, onSeek }: StackDepthMete
     <div style={{
       display: 'flex', alignItems: 'center', gap: 6,
       padding: '0 12px 4px 12px', background: ui.bg, flexShrink: 0,
+      boxSizing: 'border-box', height: 32, minHeight: 32, maxHeight: 32,
+      overflow: 'hidden',
     }}>
 
       {/* Label */}
@@ -115,7 +117,12 @@ export default function StackDepthMeter({ events, step, onSeek }: StackDepthMete
         preserveAspectRatio="none"
         width="100%"
         height={VH}
-        style={{ flex: 1, cursor: 'col-resize', display: 'block' }}
+        style={{
+          flex: '1 1 0', width: 0,
+          height: VH, minHeight: VH, maxHeight: VH,
+          aspectRatio: 'auto', overflow: 'hidden',
+          cursor: 'col-resize', display: 'block',
+        }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseLeave={() => setHover(null)}

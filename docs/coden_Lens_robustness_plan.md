@@ -3,6 +3,7 @@ CodeLens has a strong foundation, but it is **not yet reliable enough to teach J
 ### Implementation status — 2026-09-29
 
 - ✅ The full-screen CodeLens shell now stops above the active desktop taskbar (64 px mac dock or 48 px Windows taskbar) while retaining full height on smaller screens.
+- ✅ The stack-depth timeline is pinned to a 28 px graph inside a 32 px strip, overriding the app-wide responsive SVG rule that previously expanded it into the workspace.
 - ✅ JavaScript and the current TypeScript execution path now run in a disposable Web Worker instead of blocking the interface.
 - ✅ CodeLens now provides Stop/Run again controls, keeps partial trace batches, and reports completed, stopped, limited, syntax-error, and runtime-error outcomes separately.
 - ✅ JavaScript runs are bounded by runtime, statement, trace-event, trace-size, output, recursion, heap-object, and heap-property limits. Variable snapshots use bounded previews instead of copying arbitrarily large structures into every event.
