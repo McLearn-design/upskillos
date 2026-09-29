@@ -16,6 +16,19 @@ import type { MeshSnapshot, Vec3 } from './EditMesh';
 export interface TracePoint { p: Vec3; label?: string; color?: string }
 export interface TraceArrow { from: Vec3; to: Vec3; label?: string; color?: string }
 
+/**
+ * A question a learner can answer before the step is shown (Predict mode): the prompt gives
+ * the inputs, `answer` is what the algorithm computed, `rule` is shown afterwards.
+ */
+export interface Quiz { prompt: string; answer: number[]; labels?: string[]; rule: string; tolerance?: number }
+
+/** Whether a prediction is right: each number within the tolerance (default 0.01, plus 1% of its size). */
+export function checkQuiz(q: Quiz, given: number[]): { correct: boolean; off: number[] } {
+  const off = q.answer.map((a, i) => Math.abs((given[i] ?? NaN) - a));
+  const tol = (a: number) => (q.tolerance ?? 0.01) + 0.01 * Math.abs(a);
+  return { correct: off.every((d, i) => Number.isFinite(d) && d <= tol(q.answer[i])), off };
+}
+
 export interface TraceStep {
   /** The stage of the algorithm this step belongs to, e.g. "Face points". */
   phase: string;
@@ -41,6 +54,8 @@ export interface TraceStep {
   fieldDiverging?: boolean;
   /** Draw this many iso-lines of the field. */
   contours?: number;
+  /** A prediction to make before the step is shown. */
+  quiz?: Quiz;
 }
 
 export interface MeshLike { toSnapshot(): MeshSnapshot; verts: Vec3[] }

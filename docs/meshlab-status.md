@@ -232,6 +232,76 @@ clicking, each with its selection, guide, playback or heat map, no page errors. 
 - Noticed, not changed: the selection outline draws every edge of the selected object, so a selected dense mesh
   looks wireframed; Blender outlines only the silhouette.
 
+## Done (2026-09-29): bevel, dissolve, region inset, learning mode
+
+- **Region inset** (I, now the default, as Blender's): the selection's outline moves in by a distance, mitred at
+  corners; faces inside keep their shape. "Inset individual faces" stays in the Mesh menu.
+- **Bevel** (Ctrl+B): width along the neighbouring edges, 1–12 segments (a quadratic Bézier profile with the old
+  corner as control point); corner patches where three or more bevels meet (fanned from a centre point when
+  rounded); clamped so bevels do not cross. Rules in `core/modelling.ts`.
+- **Dissolve** (Ctrl+X): vertices, edges or faces by the selection mode; the faces around merge, the shape stays.
+- All three traced, logged, adjustable afterwards (thickness; width and segments) and in the script API
+  (`insetRegion`, `bevel`, `dissolve`). `obj.evaluatedStats()` gives the stats of the mesh as shown.
+- **Learning mode, Predict**: trace steps can carry a question (prompt with the inputs, the answer, the rule).
+  Catmull–Clark asks for two face points, two edge points and two moved vertices; extrude for a copied vertex;
+  inset for an inner corner; skinning (Explain skinning) for the blend. In the trace player's 🎯 Predict mode,
+  playback stops at each question (no speed jumps past one), the result is hidden in the panel and the viewport
+  (the inputs stay highlighted), answers are checked within 0.01 + 1%, and a score counts right-first-time.
+- **Selection outline**: now a silhouette (an inverted hull pushed out along smooth normals, back faces only), not
+  every edge; a selected dense mesh no longer looks wireframed. At concave creases (the crate's recessed panels)
+  thin outline lines show through, a known limit of the technique.
+- **Examples**: "Hard-surface crate" (bevel, region inset, recessed panels, wood), "Support loops and subdivision"
+  (plain, bevelled and support-looped cubes under the same subdivision, volumes printed), the dining table's edge
+  bevelled, and "Predict Catmull–Clark" in a new Learning group.
+- Fixed on the way:
+  - Extrude moved a selection of separate pieces along one averaged normal, so six sides of a box went nowhere
+    (zero-area walls); each edge-connected piece now moves along its own normal, as in Blender.
+  - Undo left the undone step's line in the GUI → code log, so replaying the log after an undo (or an Adjust)
+    did not rebuild the scene; undo now removes the line and redo restores it.
+  - Adjust re-ran an operation with the selection as it was after the operation, which bevel clears; it now uses
+    the selection from before.
+  - Dissolve vertices renumbered the mesh before removing the vertices, removing the wrong one.
+  - Traces started by scripts did not record the object or the starting mesh, so a Predict question showed the
+    finished result (the answers) in the viewport.
+- Verification: `core/modelling.test.ts` (a 2 × 2 region inset moves its outline in by exactly the thickness with
+  (±0.8, ±0.8) mitred corners; a cube's top inset keeps volume 8; one cube edge bevelled: 7 faces, 10 vertices,
+  two pentagons, volume 8 − w²; all twelve: 26 faces with 8 corner triangles and every vertex on the cube; three
+  segments; valence-4 ends and a fully bevelled subdivided cube stay closed with χ = 2; dissolve faces, edges and
+  vertices give the expected polygons; in the editor: Adjust changes a bevel's segments afterwards, one undo step
+  each, log replay equals the mesh); `core/editor.test.ts` (log after undo and redo replays to the scene);
+  `core/learning.test.ts` (tolerance; Catmull–Clark's six questions, each answer re-derived from its prompt's
+  numbers and rule; extrude and inset questions; the project opens in Predict mode on a trace that starts from the
+  8-vertex cube); `core/projects.test.ts` (the crate closed, χ = 2, mean UV distortion < 1.1; support-loop volumes
+  ordered plain < bevelled < looped, the looped over 90% of the box). Browser: Ctrl+B on an edge and segments 4 in
+  Adjust (logged `bevel([[2, 6]], 0.1, 4)`); the crate and support-loop cubes rendered; Predict stopped at the first
+  question with the original cube shown, a wrong answer got "Not quite", the right one "✓ Right" and the rule, the
+  score read "0 right first time, 1 of 6 done". No page errors. `npx vitest run src/labs/mesh-lab`: 17 files,
+  236 tests (244 with `src/utils` and `src/labs/codelens`).
+
+## Done (2026-09-29): challenges, guide checks, walk cycle, island texture
+
+- **Guided challenges** (`core/challenges.ts`, the gallery's first section): a starting scene, a goal, and a
+  checklist evaluated on every change, with hints one at a time and a solution script loaded (not run) on request.
+  "Land on frame 20" (a key at 20 on the floor, falling straight, ease-in from rest), "Six squares" (UVs that fit,
+  six pieces, no distortion), "Fix the chest" (the arms' weight on the chest under 10% each side, the hands still
+  over 85% forearm), "Keep it a box" (subdivision still on, cage closed, 90% of the box's volume after subdivision).
+  Starting a challenge clears undo and the log, so they hold only the learner's work.
+- **Guides are checked**: every "Menu › Item" in a project guide, description, challenge brief or hint must be an
+  item of that menu, and every other "A › B" must be text in the interface; the check proves it catches a
+  made-up item and a made-up panel.
+- **Walk cycle** project: the rigged character walking four 24-frame cycles: contact and passing keys for thighs
+  and shins, the hips dipping 3 frames after each contact and rising at passing, steady forward motion, arms
+  relaxed (adding arm swing is left as the exercise).
+- **Island textured**: a new procedural "grass" texture on planar UVs; the sea is 14 wide, 2 more than the land,
+  because the land's sunken edges showed under a sea the same width when seen from an angle.
+- Verification: `core/challenges.test.ts` (for every challenge the start fails and the solution passes; a key at
+  20 with linear easing is not enough for "Land on frame 20"); the guide check in `core/projects.test.ts`; the walk
+  loops (frames 25 and 49 equal frame 1 bone for bone), dips at frame 4 and rises at frame 10, and covers the same
+  distance every 6 frames; the island's grass and UVs. Browser: "Six squares" solved through the UV menu (the
+  checklist ticked live to "✓ Challenge complete" after a hint); "Land on frame 20" completed from its solution;
+  the walk and the island rendered. No page errors. `npx vitest run src/labs/mesh-lab`: 18 files, 245 tests
+  (253 with `src/utils` and `src/labs/codelens`).
+
 ## Verification
 
 - `npx vitest run src/labs/mesh-lab`: 7 files, 98 tests (session 1). They cover primitives (closed, outward, Euler,
@@ -297,7 +367,9 @@ seam sat inside the mirrored solid (now skipped, as Blender does); trace markers
 
 ## Next, in order
 
-1. Bevel, dissolve and region inset; then learning modes built on the traces (pause before a step and predict).
+1. More challenges (one per project group), and guides whose steps tick themselves like a challenge's checklist.
+2. A camera object and a fly-through of the island; render a still to a PNG.
+3. Knife and loop select; the outline showing through concave creases; UV smooth (Catmull–Clark on UVs, not only linear).
 
 ## Example projects: plan
 

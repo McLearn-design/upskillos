@@ -17,7 +17,8 @@ import { FieldLegend } from './ui/FieldLegend';
 import { Timeline } from './ui/Timeline';
 import { UVPanel } from './ui/UVPanel';
 import { ShaderPanel } from './ui/ShaderPanel';
-import { ProjectGallery, ProjectGuide } from './ui/Projects';
+import { ChallengeCard, ProjectGallery, ProjectGuide } from './ui/Projects';
+import { startChallenge, type Challenge } from './core/challenges';
 import { PROJECTS, openProject, type ExampleProject } from './core/projects';
 import type { PyodideLike } from './core/python';
 import { getPyodide } from '../../utils/pyodideRuntime';
@@ -66,6 +67,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
   const [help, setHelp] = useState(false);
   const [gallery, setGallery] = useState(false);
   const [project, setProject] = useState<ExampleProject | null>(null);
+  const [challenge, setChallenge] = useState<Challenge | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const [incoming, setIncoming] = useState<IncomingScript | null>(null);
   const [scriptSeen, setScriptSeen] = useState(false);
@@ -140,6 +142,8 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       if (mod && k === 'r') return act(() => loopCut());
       if (mod && k === 'l') return act(() => ed.selectLinked());
       if (mod && k === 'p') return act(() => ed.bindToArmature());
+      if (mod && k === 'b' && ed.mode === 'edit') return act(() => ed.bevel(0.1, 1));
+      if (mod && k === 'x' && ed.mode === 'edit') return act(() => ed.dissolve());
       if (mod) return;
       if (e.key === 'Tab' && mod) return act(() => (ed.activeObject?.bones ? (ed.mode === 'pose' ? ed.exitPose() : ed.enterPose()) : ed.mode === 'weight' ? ed.exitWeightPaint() : ed.enterWeightPaint()));
       if (ed.mode === 'bones' && k === 'e') return act(() => { ed.extrudeBone(); setGizmo('translate'); });
@@ -158,7 +162,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       if (e.key === 'Home') return act(() => vp?.frameAll());
       if (k === 'x' || e.key === 'Delete') return act(() => (edit ? ed.deleteElements() : ed.deleteObjects()));
       if (edit && k === 'e') return act(() => { ed.extrude(0.5); setGizmo('translate'); });
-      if (edit && k === 'i') return act(() => ed.inset(0.25));
+      if (edit && k === 'i') return act(() => ed.insetRegion(0.1));
       if (!edit && k === 'i') return act(() => { ed.insertKey(); setTab('timeline'); });
       if (e.key === ' ') return act(() => { ed.setPlaying(!ed.playing); setTab('timeline'); });
       if (e.key === 'ArrowRight' && !e.shiftKey) return act(() => ed.setFrame(Math.min(ed.scene.timeline.end, ed.frame + 1)));
@@ -208,13 +212,22 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     const r = openProject(editor, p, py);
     setOpening(null); setGallery(false);
     if (r.error) { editor.say(`Could not open ${p.title}: ${r.error}`); return; }
-    setProject(p);
+    setProject(p); setChallenge(null);
     setIncoming({ code: p.code, lang: p.lang, n: Date.now() });
     setTab(p.setup.tab ?? 'trace');
     requestAnimationFrame(() => {
       if (p.setup.view === 'selected') vp?.frameSelected(); else vp?.frameAll();
       if (p.setup.play) editor.setPlaying(true);
     });
+  };
+
+  const beginChallenge = (c: Challenge) => {
+    if (editor.undoStack.length && !confirm(`Start "${c.title}"? It replaces the current scene (save first to keep it).`)) return;
+    const err = startChallenge(editor, c);
+    setGallery(false);
+    if (err) { editor.say(`Could not start ${c.title}: ${err}`); return; }
+    setProject(null); setChallenge(c);
+    requestAnimationFrame(() => vp?.frameAll());
   };
 
   const edit = editor.mode === 'edit';
@@ -231,9 +244,9 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     Edit: [['Undo', () => editor.undo(), 'Ctrl+Z'], ['Redo', () => editor.redo(), 'Ctrl+Shift+Z'], ['Duplicate', () => editor.duplicate(), 'Shift+D'], ['Delete', () => (edit ? editor.deleteElements() : editor.deleteObjects()), 'X'], ['Select all', () => (edit ? editor.selectAllElements() : editor.selectAllObjects()), 'A'], ['Select linked', () => editor.selectLinked(), 'Ctrl+L']],
     Add: [...PRIMS.map(([t, label]) => [label, () => editor.addPrimitive(t)] as [string, () => void]), ['Empty', () => editor.addEmpty()], ['Armature (one bone)', () => editor.addArmature()]],
     Mesh: [
-      ['Extrude', () => editor.extrude(0.5), 'E'], ['Inset', () => editor.inset(0.25), 'I'], ['Loop cut', loopCut, 'Ctrl+R'],
+      ['Extrude', () => editor.extrude(0.5), 'E'], ['Inset (region)', () => editor.insetRegion(0.1), 'I'], ['Inset individual faces', () => editor.inset(0.25)], ['Bevel edges', () => editor.bevel(0.1, 1), 'Ctrl+B'], ['Loop cut', loopCut, 'Ctrl+R'],
       ['Subdivide faces', () => editor.split()], ['Subdivide smooth (Catmull–Clark)', () => editor.smoothSubdivide()],
-      ['Merge at centre', () => editor.merge(), 'M'], ['Smooth vertices', () => editor.smoothVerts(5, 0.5)], ['Flip normals', () => editor.flip()], ['Delete', () => editor.deleteElements(), 'X'],
+      ['Merge at centre', () => editor.merge(), 'M'], ['Smooth vertices', () => editor.smoothVerts(5, 0.5)], ['Flip normals', () => editor.flip()], ['Dissolve', () => editor.dissolve(), 'Ctrl+X'], ['Delete', () => editor.deleteElements(), 'X'],
     ],
     UV: [
       ['Mark seam (selected edges)', () => editor.markSeams(true)], ['Clear seam', () => editor.markSeams(false)],
@@ -260,7 +273,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     ],
     View: [['Frame selected', () => vp?.frameSelected(), 'F'], ['Frame all', () => vp?.frameAll(), 'Home'], ['Front', () => vp?.view('front')], ['Right', () => vp?.view('right')], ['Top', () => vp?.view('top')], ['Perspective', () => vp?.view('persp')]],
     Script: [['Open script panel', () => setTab('script')], ['Show the GUI → code log', () => setTab('log')]],
-    Examples: [['Browse example projects…', () => setGallery(true)], ...PROJECTS.map((p) => [`${p.icon}  ${p.title}`, () => openExample(p)] as [string, () => void])],
+    Examples: [['Browse example projects and challenges…', () => setGallery(true)], ...PROJECTS.map((p) => [`${p.icon}  ${p.title}`, () => openExample(p)] as [string, () => void])],
     Help: [['Keyboard shortcuts', () => setHelp(true), '?']],
   };
 
@@ -320,7 +333,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
         <Btn small active={space === 'world'} onClick={() => setSpace(space === 'local' ? 'world' : 'local')} title="Gizmo axes: the object's own (local) or the world's">{space === 'local' ? 'Local axes' : 'World axes'}</Btn>
         <Btn small active={snap} onClick={() => setSnap(!snap)} title="Snap: 0.25 units, 15°, 0.1 scale">Snap</Btn>
         <Btn small active={boxArmed} onClick={() => vp?.armBoxSelect()} title="Box select (B), then drag">Box</Btn>
-        {edit && <>{sep}<Btn small onClick={() => { editor.extrude(0.5); setGizmo('translate'); }} title="Extrude (E)">Extrude</Btn><Btn small onClick={() => editor.inset(0.25)} title="Inset (I)">Inset</Btn><Btn small onClick={loopCut} title="Loop cut (Ctrl+R): point at an edge">Loop cut</Btn><Btn small onClick={() => editor.smoothSubdivide()} title="Catmull–Clark">Smooth ×1</Btn></>}
+        {edit && <>{sep}<Btn small onClick={() => { editor.extrude(0.5); setGizmo('translate'); }} title="Extrude (E)">Extrude</Btn><Btn small onClick={() => editor.insetRegion(0.1)} title="Inset the selection as one region (I)">Inset</Btn><Btn small onClick={() => editor.bevel(0.1, 1)} title="Bevel the selected edges (Ctrl+B); change width and segments in Adjust">Bevel</Btn><Btn small onClick={loopCut} title="Loop cut (Ctrl+R): point at an edge">Loop cut</Btn><Btn small onClick={() => editor.smoothSubdivide()} title="Catmull–Clark">Smooth ×1</Btn></>}
         {sep}
         {(['grid', 'axes', 'normals', 'wire', 'xray'] as const).map((k) => <Btn key={k} small active={opts[k]} onClick={() => toggle(k)} title={k === 'xray' ? 'See through surfaces' : `Show ${k}`}>{k === 'xray' ? 'X-ray' : k[0].toUpperCase() + k.slice(1)}</Btn>)}
         {sep}
@@ -339,7 +352,8 @@ export default function MeshLab({ onBack }: MeshLabProps) {
           <div>Left-drag orbit · right-drag pan · wheel zoom · click select</div>
         </div>
         <FieldLegend editor={editor} />
-        {project && <ProjectGuide project={project} onClose={() => setProject(null)} onShowScript={() => { setIncoming({ code: project.code, lang: project.lang, n: Date.now() }); setTab('script'); }} />}
+        {challenge && <ChallengeCard editor={editor} challenge={challenge} onClose={() => setChallenge(null)} onSolution={() => { setIncoming({ code: `// One way to do "${challenge.title}". Press Run to try it (Ctrl+Z takes it back).\n${challenge.solution}`, lang: 'js', n: Date.now() }); setTab('script'); }} />}
+        {project && !challenge && <ProjectGuide project={project} onClose={() => setProject(null)} onShowScript={() => { setIncoming({ code: project.code, lang: project.lang, n: Date.now() }); setTab('script'); }} />}
       </div>
       <div style={{ gridColumn: 3, gridRow: 3, borderLeft: `1px solid ${C.border}`, minHeight: 0 }}><Inspector editor={editor} /></div>
 
@@ -373,7 +387,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       </div>
 
       {help && <Help onClose={() => setHelp(false)} />}
-      {gallery && <ProjectGallery onOpen={openExample} onClose={() => setGallery(false)} busy={opening} />}
+      {gallery && <ProjectGallery onOpen={openExample} onClose={() => setGallery(false)} busy={opening} onChallenge={beginChallenge} />}
     </div>
   );
 }
@@ -382,7 +396,7 @@ function Help({ onClose }: { onClose: () => void }) {
   const keys: [string, string][] = [
     ['Tab', 'Object / Edit mode'], ['1 2 3', 'Vertex / edge / face select (edit mode)'], ['Click, Shift+click', 'Select, add to selection'],
     ['B then drag', 'Box select'], ['A, Alt+A', 'Select all, none'], ['Ctrl+L', 'Select linked'], ['G R S', 'Move / rotate / scale gizmo'],
-    ['U (edit mode)', 'Unwrap: LSCM on the pieces the seams cut'], ['E', 'Extrude faces'], ['I', 'Inset faces (edit mode); insert keyframe (object mode)'], ['Space', 'Play / pause the animation'], ['← →', 'Previous / next frame'], ['Ctrl+R', 'Loop cut at the edge under the pointer'], ['M', 'Merge vertices at centre'],
+    ['U (edit mode)', 'Unwrap: LSCM on the pieces the seams cut'], ['Ctrl+B', 'Bevel the selected edges'], ['Ctrl+X', 'Dissolve the selection (keep the shape)'], ['E', 'Extrude faces'], ['I', 'Inset the selection as one region (edit mode); insert keyframe (object mode)'], ['Space', 'Play / pause the animation'], ['← →', 'Previous / next frame'], ['Ctrl+R', 'Loop cut at the edge under the pointer'], ['M', 'Merge vertices at centre'],
     ['X, Delete', 'Delete'], ['Shift+D', 'Duplicate object'], ['H', 'Hide object'], ['F, Home', 'Frame selected, frame all'],
     ['Tab on an armature', 'Edit bones: click a joint, drag it; E extrudes a bone'], ['Ctrl+Tab on an armature', 'Pose mode: click a bone, rotate it'], ['Ctrl+Tab on a bound mesh', 'Weight paint: brush a bone\'s weights'], ['Ctrl+P', 'Bind the selected mesh to the active armature'], ['Alt+R (pose mode)', 'Clear the pose'],
     ['Ctrl+Z, Ctrl+Shift+Z', 'Undo, redo'], ['Ctrl+S', 'Save the scene file'], ['Ctrl+Enter', 'Run the script'],

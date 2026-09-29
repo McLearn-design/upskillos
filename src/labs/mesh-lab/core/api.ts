@@ -23,9 +23,10 @@ import { gaussianCurvature, heatGeodesic, meanCurvature, operators, smooth as sm
 import type { FieldSpec } from './fields';
 import { CHANNELS, INTERPS, cloneAnimation, hasKeys, removeBoneKey, removeKey, setBoneKey, setKey, transformAt, type Interp } from './animation';
 import { boneLength, limitWeights, orderBones, posedEnds, type Bone } from './armature';
-import { applyBonePatch, bindSkin, removeBone, skinnedSource, skinSource } from './evaluate';
+import { applyBonePatch, bindSkin, evaluatedMesh, removeBone, skinnedSource, skinSource } from './evaluate';
 import { BRUSHES, DEFAULT_PAINT, dab, neighbourLists, type PaintSettings } from './weightPaint';
 import { angleDistortion, planarUV, sharpEdges, unwrap as unwrapMesh, uvFits } from './uv';
+import { bevelEdges, dissolveEdges, dissolveFaces, dissolveVerts, insetRegion } from './modelling';
 import { SHADER_MODELS, TEXTURES, type ShaderModel, type TextureName } from './shading';
 
 type Vec3Handle = { x: number; y: number; z: number; set(x: number, y: number, z: number): Vec3Handle; toArray(): Vec3 };
@@ -64,10 +65,13 @@ const NAMES: Record<PrimitiveType, string> = { cube: 'Cube', plane: 'Plane', gri
 
 export function makeApi(editor: Editor, print: (s: string) => void) {
   const scene = () => editor.scene;
-  const trace = (op: string) => {
+  /** A trace for an operation a script runs on object o: it starts from o's mesh as it is now, and plays over o. */
+  const trace = (op: string, o?: SceneObject) => {
     if (!editor.traceEnabled) return undefined;
     const t = new Trace(op);
+    if (o?.mesh && o.mesh.verts.length <= t.snapshotLimit) t.before = o.mesh.toSnapshot();
     editor.trace = t;
+    if (o) editor.traceTarget = o.id;
     return t;
   };
 
@@ -109,26 +113,37 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       },
       /** The render form: flat typed arrays, exactly what goes to the GPU. */
       buffer: () => { const t = m().triangulate(); return { positions: t.positions, indices: t.indices }; },
-      extrude(faces: number[], distance = 1) { m().extrudeFaces(faces, distance, trace('Extrude'), { skipWall: onMirrorPlane(m(), o.modifiers) }); return api; },
-      inset(faces: number[], amount = 0.25) { m().insetFaces(faces, amount, trace('Inset')); return api; },
-      loopCut(a: number, b: number, t = 0.5) { m().loopCut(a, b, t, trace('Loop cut')); return api; },
+      extrude(faces: number[], distance = 1) { m().extrudeFaces(faces, distance, trace('Extrude', o), { skipWall: onMirrorPlane(m(), o.modifiers) }); return api; },
+      /** Inset faces as one region by a distance; inset() insets each face on its own by a fraction. */
+      insetRegion(faces: number[], thickness = 0.1) { insetRegion(m(), faces, thickness, trace('Inset (region)', o)); return api; },
+      /** Bevel edges: width along the neighbouring edges, segments across (more = rounder). */
+      bevel(edges: [number, number][], width = 0.1, segments = 1) { bevelEdges(m(), edges, width, segments, trace('Bevel', o)); return api; },
+      /** Remove vertices, edges or faces while keeping the shape: the faces around them merge. */
+      dissolve(what: { verts?: number[]; edges?: [number, number][]; faces?: number[] }) {
+        if (what.faces) dissolveFaces(m(), what.faces, trace('Dissolve', o));
+        if (what.edges) dissolveEdges(m(), what.edges, trace('Dissolve', o));
+        if (what.verts) dissolveVerts(m(), what.verts, trace('Dissolve', o));
+        return api;
+      },
+      inset(faces: number[], amount = 0.25) { m().insetFaces(faces, amount, trace('Inset', o)); return api; },
+      loopCut(a: number, b: number, t = 0.5) { m().loopCut(a, b, t, trace('Loop cut', o)); return api; },
       split(faces?: number[]) { m().subdivideFaces(faces); return api; },
-      subdivide(levels = 1) { for (let i = 0; i < levels; i++) o.mesh = catmullClark(m(), i === 0 ? trace('Catmull–Clark') : undefined); return api; },
+      subdivide(levels = 1) { for (let i = 0; i < levels; i++) o.mesh = catmullClark(m(), i === 0 ? trace('Catmull–Clark', o) : undefined); return api; },
       delete(what: { faces?: number[]; verts?: number[]; edges?: [number, number][] }) {
         if (what.faces) m().deleteFaces(what.faces);
         if (what.edges) m().deleteEdges(what.edges);
         if (what.verts) m().deleteVerts(what.verts);
         return api;
       },
-      merge(verts: number[], at?: Vec3) { m().mergeVerts(verts, at, trace('Merge')); return api; },
+      merge(verts: number[], at?: Vec3) { m().mergeVerts(verts, at, trace('Merge', o)); return api; },
       flip(faces?: number[]) { m().flip(faces); return api; },
       weld(tol = 0) { m().weld(tol); return api; },
       translate(verts: number[], d: Vec3) { m().translateVerts(verts, d); return api; },
       setVerts(map: Record<number, Vec3>) { for (const [i, p] of Object.entries(map)) m().verts[Number(i)] = [p[0], p[1], p[2]]; m().touch(); return api; },
       // Geometry processing: one number per vertex, as a plain array.
       curvature(kind: 'mean' | 'gaussian' = 'mean') { return Array.from(kind === 'gaussian' ? gaussianCurvature(m()) : meanCurvature(m())); },
-      geodesic(from: number | number[]) { return Array.from(heatGeodesic(m(), Array.isArray(from) ? from : [from], trace('Heat method'))); },
-      smooth(opts: { verts?: number[]; iterations?: number; lambda?: number; method?: 'uniform' | 'cotan' } = {}) { smoothMesh(m(), { iterations: opts.iterations ?? 5, lambda: opts.lambda ?? 0.5, method: opts.method ?? 'uniform', only: opts.verts }, trace('Smooth')); return api; },
+      geodesic(from: number | number[]) { return Array.from(heatGeodesic(m(), Array.isArray(from) ? from : [from], trace('Heat method', o))); },
+      smooth(opts: { verts?: number[]; iterations?: number; lambda?: number; method?: 'uniform' | 'cotan' } = {}) { smoothMesh(m(), { iterations: opts.iterations ?? 5, lambda: opts.lambda ?? 0.5, method: opts.method ?? 'uniform', only: opts.verts }, trace('Smooth', o)); return api; },
       /** The cotan Laplacian as rows of [neighbour, weight] pairs, and each vertex's area (mass). */
       laplacian() { const { C, mass } = operators(m()); return { rows: C.rows.map((r) => [...r.entries()]), mass: Array.from(mass) }; },
       /** Colour the mesh by a field: "geodesic" (with from), "mean", "gaussian", "x", "y", "z", or your own values. */
@@ -153,7 +168,7 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       get seams() { return (o.seams ?? []).map((k) => k.split('-').map(Number)); },
       seamsFromSharp(degrees = 60) { o.seams = [...new Set([...(o.seams ?? []), ...sharpEdges(m(), degrees)])]; return api; },
       unwrap(opts: { method?: 'lscm' | 'planar' } = {}) {
-        o.uv = opts.method === 'planar' ? planarUV(m()) : unwrapMesh(m(), new Set(o.seams ?? []), trace('Unwrap (LSCM)'));
+        o.uv = opts.method === 'planar' ? planarUV(m()) : unwrapMesh(m(), new Set(o.seams ?? []), trace('Unwrap (LSCM)', o));
         return api;
       },
       /** UVs per face corner: uv[f][i] = [u, v] of corner i of face f (null if none, or if the mesh changed since). */
@@ -244,6 +259,8 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       },
       delete() { scene().remove(o.id); },
       duplicate() { return objHandle(editor.duplicateOne(o)); },
+      /** Statistics of the mesh as shown: modifiers (and skinning) applied. mesh.stats() is the cage you edit. */
+      evaluatedStats() { if (!o.mesh) throw new Error(`${o.name} has no mesh`); return evaluatedMesh(scene(), o).stats(); },
       // Animation: keys pin a channel to a value at a frame; frames in between are interpolated.
       keyframe(frame: number, values: { position?: Vec3 | Vec3Handle; rotation?: Vec3 | Vec3Handle; scale?: Vec3 | Vec3Handle; interp?: Interp } = {}) {
         if (!Number.isFinite(frame)) throw new Error('keyframe: the frame must be a number');
@@ -275,7 +292,7 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       removeBone(name: string) { if (!o.bones) throw new Error(`${o.name} is not an armature`); removeBone(scene(), o, name); return h; },
       resetPose() { for (const b of o.bones ?? []) b.pose = [0, 0, 0]; return h; },
       // Skinning.
-      bindTo(arm: { id: string }) { const a = scene().get(arm.id); if (!a) throw new Error('bindTo: no such armature'); bindSkin(scene(), o, a, trace('Automatic weights')); return h; },
+      bindTo(arm: { id: string }) { const a = scene().get(arm.id); if (!a) throw new Error('bindTo: no such armature'); bindSkin(scene(), o, a, trace('Automatic weights', o)); return h; },
       unbind() { o.skin = undefined; return h; },
       /** How bone motions are blended: "linear" (averages points) or "dual-quaternion" (averages rigid motions). */
       get skinning() { return o.skin?.method ?? 'linear'; },

@@ -191,3 +191,19 @@ describe('edit-mode details', () => {
     expect(e.trace?.phases().length).toBe(4);
   });
 });
+
+describe('the GUI → code log follows undo and redo', () => {
+  it('an undone step leaves the log; redo puts it back; replay matches the scene either way', () => {
+    const e = new Editor(); e.newScene();
+    e.addPrimitive('torus');
+    e.addPrimitive('cone');
+    expect(e.log.length).toBe(2);
+    e.undo();
+    expect(e.log.length).toBe(1);
+    const replay = () => { const e2 = new Editor(); e2.newScene(); runScript(e2, e.log.map((l) => l.code).join('\n')); return e2.scene.objects.map((o) => o.name); };
+    expect(replay()).toEqual(e.scene.objects.map((o) => o.name));
+    e.redo();
+    expect(e.log.length).toBe(2);
+    expect(replay()).toEqual(e.scene.objects.map((o) => o.name));
+  });
+});

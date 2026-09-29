@@ -34,6 +34,7 @@ export function catmullClark(mesh: EditMesh, trace?: Trace): EditMesh {
         phase: 'Face points', label: `Face ${fi}: F = average of ${f.length} corners = ${fmtV(facePts[fi])}`,
         detail: 'F = (v₁ + v₂ + … + vₖ) / k', faces: [fi],
         points: [{ p: facePts[fi], label: `F${fi}`, color: '#38bdf8' }],
+        quiz: fi < 2 ? { prompt: `Face ${fi} has ${f.length} corners: ${f.map((v) => fmtV(V[v])).join(', ')}. Where is its face point F${fi}?`, answer: facePts[fi], labels: ['x', 'y', 'z'], rule: 'The face point is the average of the corners: add them and divide by how many there are.' } : undefined,
       }));
     } else {
       trace.step({ phase: 'Face points', label: `${F.length} face points, each the average of its face's corners`, points: facePts.slice(0, 200).map((p) => ({ p, color: '#38bdf8' })) });
@@ -50,8 +51,13 @@ export function catmullClark(mesh: EditMesh, trace?: Trace): EditMesh {
   });
   if (trace) {
     if (trace.detailed(edgeList.length)) {
+      let asked = 0;
       edgeList.forEach((e, i) => {
         const inside = e.faces.length === 2;
+        const quiz = inside && asked < 2 ? (asked++, {
+          prompt: `Edge ${e.a}–${e.b} runs from ${fmtV(V[e.a])} to ${fmtV(V[e.b])}. The face points beside it are F${e.faces[0]} = ${fmtV(facePts[e.faces[0]])} and F${e.faces[1]} = ${fmtV(facePts[e.faces[1]])}. Where is its edge point E?`,
+          answer: edgePts[i], labels: ['x', 'y', 'z'], rule: 'E = (a + b + F₁ + F₂) / 4: the average of the two ends and the two face points beside the edge. It is pulled off the edge toward the faces.',
+        }) : undefined;
         trace.step({
           phase: 'Edge points',
           label: `Edge ${e.a}–${e.b}: E = ${fmtV(edgePts[i])}`,
@@ -61,6 +67,7 @@ export function catmullClark(mesh: EditMesh, trace?: Trace): EditMesh {
             ...(inside ? e.faces.map((f) => ({ p: facePts[f], label: `F${f}`, color: '#38bdf8' })) : []),
             { p: edgePts[i], label: 'E', color: '#a855f7' },
           ],
+          quiz,
         });
       });
     } else {
@@ -89,9 +96,15 @@ export function catmullClark(mesh: EditMesh, trace?: Trace): EditMesh {
   });
   if (trace) {
     if (trace.detailed(V.length)) {
+      let asked = 0;
       V.forEach((P, v) => {
         if (!vFaces[v].length) return;
         const n = vEdges[v].length, bnd = vEdges[v].some((i) => edgeList[i].faces.length === 1);
+        const Fb = avg(vFaces[v].map((fi) => facePts[fi])), Rb = avg(vEdges[v].map((i) => scale(add(V[edgeList[i].a], V[edgeList[i].b]), 0.5)));
+        const quiz = !bnd && asked < 2 ? (asked++, {
+          prompt: `v${v} is at V = ${fmtV(P)} with n = ${n} edges. The face points around it average F̄ = ${fmtV(Fb)}; the midpoints of its edges average R̄ = ${fmtV(Rb)}. Where does v${v} move?`,
+          answer: moved[v], labels: ['x', 'y', 'z'], rule: `V′ = (F̄ + 2·R̄ + (n − 3)·V) / n. With n = ${n}: ${fmt(1 / n)}·F̄ + ${fmt(2 / n)}·R̄ + ${fmt((n - 3) / n)}·V. A vertex is pulled toward its neighbourhood, less so the more edges it has.`,
+        }) : undefined;
         trace.step({
           phase: 'Move vertices',
           label: `v${v}: ${fmtV(P)} → ${fmtV(moved[v])}`,
@@ -101,6 +114,7 @@ export function catmullClark(mesh: EditMesh, trace?: Trace): EditMesh {
           verts: [v],
           arrows: [{ from: P, to: moved[v], color: '#f59e0b' }],
           values: [['n', String(n)], ['weights', bnd ? '¾ V, ⅛ each neighbour' : `F̄ ${fmt(1 / n)}, R̄ ${fmt(2 / n)}, V ${fmt((n - 3) / n)}`]],
+          quiz,
         });
       });
     } else {

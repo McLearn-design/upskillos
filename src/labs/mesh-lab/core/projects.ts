@@ -22,6 +22,8 @@ export interface ProjectSetup {
   bone?: string;
   /** Open in weight paint mode on the selected mesh, painting this bone. */
   weightPaint?: string;
+  /** Turn on Predict mode in the trace player (learning). */
+  predict?: boolean;
   /** Record traces while it is built (so the Algorithm trace panel has the build's algorithms). */
   trace?: boolean;
   /** Which bottom panel to open. */
@@ -34,7 +36,7 @@ export interface ExampleProject {
   id: string;
   title: string;
   icon: string;
-  group: 'Modelling' | 'Animation' | 'Rigging' | 'Geometry & heat maps' | 'UVs & materials' | 'Scripting';
+  group: 'Learning' | 'Modelling' | 'Animation' | 'Rigging' | 'Geometry & heat maps' | 'UVs & materials' | 'Scripting';
   desc: string;
   lang: 'js' | 'python';
   code: string;
@@ -43,9 +45,32 @@ export interface ExampleProject {
 }
 
 const rigCode = EXAMPLES.find((x) => x.id === 'rig-character')!.code;
+/** The rigged character without the wave. */
+const rigOnly = rigCode.slice(0, rigCode.indexOf('\n// 8.'));
 const slerpCode = EXAMPLES.find((x) => x.id === 'euler-vs-slerp')!.code;
 
 export const PROJECTS: ExampleProject[] = [
+  // ── Learning ────────────────────────────────────────────────────────────
+  {
+    id: 'predict-catmull-clark',
+    title: 'Predict Catmull–Clark',
+    icon: '🎯',
+    group: 'Learning',
+    desc: 'A cube is subdivided while the trace records. The trace player is in Predict mode: before it shows a face point, an edge point or a moved vertex, you work it out.',
+    lang: 'js',
+    setup: { select: 'Cube to subdivide', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Press Show in viewport, then Play in the Algorithm trace. It stops at each 🎯 question: the inputs are in the question and highlighted in the viewport; the answer is hidden.',
+      'Type x, y and z and press Check (Enter works). Wrong numbers turn red; try again or press Show me. The rule appears once it is answered.',
+      'Face points first: the average of a face\u2019s corners. Then edge points: the average of the two ends and the two face points beside the edge. Then the old vertices move: (F̄ + 2R̄ + (n − 3)V) / n.',
+      'The 🎯 Predict button shows how many you got right first time. Predict works on any trace: turn on Record traces, extrude or inset something, and the questions are there too.',
+    ],
+    code: `// A cube, subdivided once with Record traces on: every step of Catmull–Clark is recorded.
+const cube = scene.add.cube({ name: 'Cube to subdivide', size: 2, position: [0, 1, 0] })
+cube.mesh.subdivide(1)
+log('6 faces became', cube.mesh.faces.length, 'quads. Open the Algorithm trace and predict each step.')`,
+  },
+
   // ── Modelling ───────────────────────────────────────────────────────────
   {
     id: 'island',
@@ -60,6 +85,7 @@ export const PROJECTS: ExampleProject[] = [
       'Heat map › Mean curvature on the island: red where the ground bulges (hilltops), blue where it dips (valleys).',
       'Click a tree. It is an empty with two children, a trunk and leaves: the inspector shows World = Tree · part. Rotate the tree and both follow.',
       'Script tab: change the seed on the first line, undo (Ctrl+Z), run: a different island.',
+      'The grass is a texture on UVs projected straight down (UV › Project from above): for terrain that is all the unwrapping it needs. Open the UV tab to see the grid laid flat.',
     ],
     code: `// A low-poly island. Everything here is placed by arithmetic: change a number, rerun.
 let seed = 11
@@ -74,11 +100,14 @@ const height = (x, z) => {
 // 1. Land: a flat grid, each vertex raised to height(x, z) plus a little noise.
 const land = scene.add.grid({ name: 'Island', size: 12, subdivisions: 24 })
 for (const v of land.mesh.verts) v.y = height(v.x, v.z) + 0.2 * (rand() - 0.5)
-land.material.color = '#8fbf5a'
+land.material.color = '#ffffff'
 land.material.roughness = 0.95
+land.mesh.unwrap({ method: 'planar' })   // UVs straight down from above: the natural map for terrain
+land.material.texture = 'grass'
+land.material.textureScale = 3
 
 // 2. Sea: one flat plane at height 0 hides everything below it.
-const sea = scene.add.plane({ name: 'Sea', size: 11 })
+const sea = scene.add.plane({ name: 'Sea', size: 14 })   // wider than the land (12): its edges sink half a unit, so from an angle you would see under a sea only as wide
 sea.material.color = '#2f7fc1'
 sea.material.roughness = 0.15
 sea.material.metalness = 0.2
@@ -120,7 +149,7 @@ log(land.mesh, '·', trees, 'trees · 6 rocks')`,
     guide: [
       'The selected chair sits inside "Dining set": the inspector shows its world matrix = Dining set · Chair 2. Its rotation of 180° is the only thing that differs from Chair 1.',
       'Select "Dining set" and rotate it (R): the table and every chair turn together about its origin.',
-      'Select the table top and press Tab: its top face was inset (an inner ring) and pushed down 2 cm, making a lip. Face select, click the middle face.',
+      'Select the table top and press Tab: its edges were bevelled (two segments, 2.5 cm) so they catch the light, then the top face was inset (an inner ring) and pushed down 2 cm, making a lip.',
       'Every chair is made by one function in the script, called four times with a different place and turn.',
       'The wood grain is a texture: each box was cut along its sharp edges and unwrapped (the grain() function). Select the table top and open the UV tab to see its six pieces.',
     ],
@@ -128,11 +157,12 @@ log(land.mesh, '·', trees, 'trees · 6 rocks')`,
 const set = scene.add.empty({ name: 'Dining set' })
 const wood = '#ffffff', dark = '#8a6040'
 // Wood grain needs UVs: cut each box along its sharp edges and unwrap it, then use the wood texture.
-const grain = (part) => { part.mesh.seamsFromSharp(60); part.mesh.unwrap(); part.material.texture = 'wood'; part.material.roughness = 0.7 }
+const grain = (part) => { part.mesh.seamsFromSharp(20); part.mesh.unwrap(); part.material.texture = 'wood'; part.material.roughness = 0.7 }
 
 // The table top: a cube squashed flat. Its top face is inset and pushed down a little.
 const top = scene.add.cube({ name: 'Table top', size: 1, parent: set, position: [0, 0.75, 0] })
 for (const v of top.mesh.verts) { v.x *= 2; v.y *= 0.08; v.z *= 1.2 }
+top.mesh.bevel(top.mesh.edges.map((e) => [e.a, e.b]), 0.025, 2)   // softened edges, two segments round
 const tf = top.mesh.faces.top()
 top.mesh.inset(tf, 0.06).extrude(tf, -0.02)
 top.material.color = wood
@@ -185,6 +215,70 @@ log(scene.objects.length, 'objects in one hierarchy')`,
     ],
     code: CHARACTER + `
 body.material.color = '#d9a47a'`,
+  },
+
+  {
+    id: 'crate',
+    title: 'Hard-surface crate',
+    icon: '📦',
+    group: 'Modelling',
+    desc: 'A cube with rounded bevelled edges and a recessed panel on every side: bevel, inset and extrude, the everyday hard-surface tools.',
+    lang: 'js',
+    setup: { select: 'Crate', view: 'selected', trace: true },
+    guide: [
+      'Tab into edit mode: the edges were bevelled with two segments (Ctrl+B), which is why they catch the light as a rounded band, not a sharp line.',
+      'Each side was inset as a region (I) and the inset panel pushed in (E with a negative distance). Select a side\u2019s panel face and press I again: the Adjust panel lets you change the thickness afterwards.',
+      'Select a few edges and press Ctrl+B yourself; then change Width and Segments in the Adjust panel. The Algorithm trace records each bevel.',
+      'Select two neighbouring faces of a frame and press Ctrl+X: dissolve merges them into one face without changing the shape.',
+    ],
+    code: `// A crate: bevel the edges, inset a panel on each side, push the panels in.
+const crate = scene.add.cube({ name: 'Crate', size: 1.6, position: [0, 0.8, 0] })
+const m = crate.mesh
+m.bevel(m.edges.map((e) => [e.a, e.b]), 0.08, 2)            // every edge, 8 cm, two segments
+
+// The six big faces are the sides (each still one quad, shrunk by the bevel).
+const sides = m.faces.where((f) => f.area > 1)
+for (const f of sides) m.insetRegion([f], 0.14)            // a frame 14 cm wide round each side
+m.extrude(sides, -0.05)                                      // and the panel pushed 5 cm in
+
+// Wood: cut along every edge sharper than 20°, unwrap, texture.
+m.seamsFromSharp(20)
+m.unwrap()
+crate.material.texture = 'wood'
+crate.material.roughness = 0.75
+log(m, '· closed:', m.stats().closed)`,
+  },
+  {
+    id: 'support-loops',
+    title: 'Support loops and subdivision',
+    icon: '🧊',
+    group: 'Modelling',
+    desc: 'Three cubes, the same subdivision modifier. Plain, it melts into a blob; bevelled, it keeps some shape; with support loops close to each edge, it stays a box with softened edges.',
+    lang: 'js',
+    setup: { select: 'Support loops', view: 'all', tab: 'script' },
+    guide: [
+      'Catmull\u2013Clark moves every vertex toward the average of its neighbours. With nothing near an edge to hold it, the whole cube rounds off (left).',
+      'A support loop is an extra ring of edges close to a sharp edge: the average then stays near the edge, so it stays sharp (right). Here each face was inset by 10 cm to make them.',
+      'The output panel prints each cube\u2019s volume after subdivision against the plain cube\u2019s 2.744: the closer, the more box-like.',
+      'Tab into "Support loops", select the four inset edges round one face (edge select, Shift-click) and press Ctrl+X: that side\u2019s support is dissolved and it softens again.',
+    ],
+    code: `// The same subdivision on three cages. Only what is near the edges differs.
+function cube(name, x) {
+  const c = scene.add.cube({ name, size: 1.4, position: [x, 0.9, 0] })
+  c.modifiers.add('subsurf', { levels: 2 })
+  c.smooth = true
+  c.material.color = '#9aa7b8'
+  return c
+}
+const plain = cube('No support loops', -2.4)
+const bevelled = cube('Bevelled edges', 0)
+bevelled.mesh.bevel(bevelled.mesh.edges.map((e) => [e.a, e.b]), 0.12)
+const looped = cube('Support loops', 2.4)
+for (const f of looped.mesh.faces.map((f) => f.index)) looped.mesh.insetRegion([f], 0.1)
+
+const box = 1.4 ** 3
+for (const c of [plain, bevelled, looped])
+  log(c.name.padEnd(18), 'volume after subdivision', c.evaluatedStats().volume.toFixed(3), 'of', box.toFixed(3), '(' + Math.round((100 * c.evaluatedStats().volume) / box) + '%)')`,
   },
 
   // ── Animation ───────────────────────────────────────────────────────────
@@ -455,6 +549,56 @@ forearm('Dual quaternion', 0.8, 'dual-quaternion', '#ff9f1c')
 log('Same bones, same weights, same keys. Frame 36: the wrist is turned 172°.')`,
   },
 
+  {
+    id: 'walk-cycle',
+    title: 'Walk cycle',
+    icon: '🚶‍♂️',
+    group: 'Animation',
+    desc: 'The rigged character walks: the four classic key poses (contact, down, passing, up) per step, hips that dip and rise, forward motion, and a loop that joins seamlessly.',
+    lang: 'js',
+    setup: { select: 'Rig', bone: 'Thigh.L', tab: 'timeline', frame: 1, play: true, view: 'all' },
+    guide: [
+      'One step takes 12 frames: contact (heel down, legs apart), down (the weight lands, the hips dip), passing (the free leg swings past, knee bent), up (pushing off, the hips rise). Two steps make the 24-frame cycle.',
+      'Timeline › bone Thigh.L: the thigh swings forward and back once per cycle. Thigh.R is the same curve half a cycle (12 frames) later.',
+      'Select the Rig object and look at its position keys: y dips after each contact and rises at passing; z moves forward at a steady speed (linear keys), so the walk does not surge.',
+      'Frame 1 and frame 25 are the same pose, so the cycle loops. Try it yourself: add arm swing, each arm swinging opposite its leg, and key it every 6 frames.',
+    ],
+    code: rigOnly + `
+
+// 9. A walk: 24-frame cycle, keys every 6 frames: contact, passing, contact, passing.
+//    A positive x turn swings a thigh forward (toward +z, where the character walks).
+const cycle = 24, cycles = 4
+scene.setTimeline({ start: 1, end: 1 + cycle * cycles })
+const legs = {
+  //           contact   pass     contact   pass       (frames 0, 6, 12, 18 of the cycle)
+  'Thigh.L': [0.45,     0.0,     -0.45,    -0.05],
+  'Shin.L':  [-0.05,    -0.2,    -0.35,    -0.9],
+  'Thigh.R': [-0.45,    -0.05,   0.45,     0.0],
+  'Shin.R':  [-0.35,    -0.9,    -0.05,    -0.2],
+}
+for (let c = 0; c <= cycles; c++) for (let k = 0; k < 4; k++) {
+  const f = 1 + c * cycle + k * 6
+  if (f > 1 + cycle * cycles) break
+  for (const [bone, poses] of Object.entries(legs)) rig.bone(bone).keyframe(f, { rotation: [poses[k], 0, 0], interp: 'ease' })
+}
+// Arms relaxed at the sides.
+rig.bone('UpperArm.L').keyframe(1, { rotation: [0, 0, -1.2] })
+rig.bone('UpperArm.R').keyframe(1, { rotation: [0, 0, 1.2] })
+
+// The hips: down 3 frames after each contact, up at passing. Forward at a steady 0.9 per cycle.
+const stride = 0.9
+for (let c = 0; c < cycles * 2; c++) {
+  const f = 1 + c * 12
+  rig.keyframe(f, { position: [3, 1.1, (c * stride) / 2] })
+  rig.keyframe(f + 3, { position: [3, 1.04, (c * stride) / 2 + stride / 8] })
+  rig.keyframe(f + 9, { position: [3, 1.15, (c * stride) / 2 + (3 * stride) / 8] })
+}
+rig.keyframe(1 + cycle * cycles, { position: [3, 1.1, cycles * stride] })
+for (const k of rig.animation.position) rig.setInterpolation(k.frame, 'linear')
+body.material.color = '#d9a47a'
+log('4 cycles of 24 frames; press Space')`,
+  },
+
   // ── Geometry & heat maps ─────────────────────────────────────────────────
   {
     id: 'curvature-gallery',
@@ -712,7 +856,7 @@ print('angle distortion: mean', round(sum(d) / len(d), 3), 'worst', round(max(d)
   },
 ];
 
-export const PROJECT_GROUPS = ['Modelling', 'Animation', 'Rigging', 'Geometry & heat maps', 'UVs & materials', 'Scripting'] as const;
+export const PROJECT_GROUPS = ['Learning', 'Modelling', 'Animation', 'Rigging', 'Geometry & heat maps', 'UVs & materials', 'Scripting'] as const;
 
 /**
  * Build a project on a new scene (the default cube removed, the sun kept) and
@@ -742,6 +886,7 @@ export function openProject(editor: Editor, p: ExampleProject, py?: PyodideLike)
   if (s.bone) editor.activeBone = s.bone;
   if (s.pose) editor.enterPose();
   if (s.weightPaint) { editor.activeBone = s.weightPaint; editor.enterWeightPaint(); }
+  editor.predict = !!s.predict;
   editor.message = `${p.title}: see the guide in the viewport`;
   editor.emit('select');
   return { error: null, output: r.output };

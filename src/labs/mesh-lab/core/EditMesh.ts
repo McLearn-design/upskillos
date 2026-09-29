@@ -404,6 +404,19 @@ export class EditMesh {
     return this.touch();
   }
 
+  /** The pieces of a set of faces: faces sharing an edge are in one piece. */
+  faceRegions(faceIdxs: number[]): number[][] {
+    const sel = new Set(faceIdxs), parent = new Map(faceIdxs.map((f) => [f, f]));
+    const find = (x: number): number => (parent.get(x) === x ? x : (parent.set(x, find(parent.get(x)!)), parent.get(x)!));
+    for (const e of this.edges().values()) {
+      const fs = e.faces.filter((f) => sel.has(f));
+      for (let i = 1; i < fs.length; i++) parent.set(find(fs[0]), find(fs[i]));
+    }
+    const groups = new Map<number, number[]>();
+    for (const f of faceIdxs) { const r = find(f); (groups.get(r) ?? groups.set(r, []).get(r)!).push(f); }
+    return [...groups.values()];
+  }
+
   /**
    * Extrude a region of faces along the region's average normal.
    *
@@ -414,6 +427,10 @@ export class EditMesh {
    */
   extrudeFaces(faceIdxs: number[], distance: number, trace?: Trace, opts: { skipWall?: (a: number, b: number) => boolean } = {}): this {
     if (!faceIdxs.length) return this;
+    // Separate pieces of the selection (not sharing an edge) each move along their own normal,
+    // as Blender extrudes regions: six opposite sides of a box would otherwise average to nothing.
+    const regions = this.faceRegions(faceIdxs);
+    if (regions.length > 1) { for (const r of regions) this.extrudeFaces(r, distance, trace, opts); return this; }
     const region = new Set(faceIdxs);
 
     // Area-weighted average normal, so a big face in the selection counts for
@@ -463,6 +480,7 @@ export class EditMesh {
     if (trace) {
       trace.step({
         phase: 'Copy vertices', label: `${moved.size} new vertices, each v' = v + d·n`,
+        quiz: (() => { const [o0, c0] = [...moved][0]; return { prompt: `The region moves along n = ${fmtV(n)} by d = ${fmt(distance)}. Where does the copy of v${o0} = ${fmtV(this.verts[o0])} go?`, answer: this.verts[c0], labels: ['x', 'y', 'z'], rule: 'v′ = v + d·n: every vertex of the region is copied the same distance along the same direction.' }; })(),
         detail: 'The originals stay where they are: they become the bottom of the walls.',
         verts: [...moved.values()],
         points: [...moved.values()].slice(0, 60).map((v) => ({ p: this.verts[v], label: `v${v}`, color: '#f59e0b' })),
@@ -563,6 +581,7 @@ export class EditMesh {
           detail: `Each inner corner = corner + t·(centre − corner), t = ${fmt(t)}.`,
           faces: [fi], points: [{ p: c, label: 'centre', color: '#38bdf8' }, ...inner.map((v) => ({ p: this.verts[v], color: '#f59e0b' }))],
           values: [['centre', fmtV(c)], ['t', fmt(t)]],
+          quiz: fi === faceIdxs[0] ? { prompt: `Face ${fi}'s centre is ${fmtV(c)} and the inset amount is t = ${fmt(t)}. Where does the inner copy of its corner ${fmtV(this.verts[ring[0]])} go?`, answer: this.verts[inner[0]], labels: ['x', 'y', 'z'], rule: 'inner = corner + t·(centre − corner): each corner slides the fraction t of the way to the face\'s centre.' } : undefined,
         }, this);
       }
       this.faces[fi] = inner;

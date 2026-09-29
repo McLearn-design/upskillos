@@ -23,6 +23,7 @@ import { CHANNELS, hasKeys, posesAt, removeBoneKey, removeKey, setBoneKey, setKe
 import { cloneBones, limitWeights, moveJoint, orderBones, type Bone, type JointSel } from './armature';
 import { DEFAULT_PAINT, dab, neighbourLists, type PaintSettings } from './weightPaint';
 import { angleDistortion, planarUV, sharpEdges, unwrap as unwrapMesh, uvFits } from './uv';
+import { bevelEdges, dissolveEdges, dissolveFaces, dissolveVerts, insetRegion } from './modelling';
 
 export type Mode = 'object' | 'edit' | 'pose' | 'weight' | 'bones';
 export type SelectMode = 'vert' | 'edge' | 'face';
@@ -48,10 +49,13 @@ export class Editor {
   selected = new Set<string>();
   active: string | null = null;
   sel = { verts: new Set<number>(), edges: new Set<string>(), faces: new Set<number>() };
-  undoStack: { label: string; before: SceneJSON; after: SceneJSON }[] = [];
-  redoStack: { label: string; before: SceneJSON; after: SceneJSON }[] = [];
+  /** Each step keeps the log line it wrote, so undo takes the line back out and redo puts it back. */
+  undoStack: { label: string; before: SceneJSON; after: SceneJSON; log?: LogEntry }[] = [];
+  redoStack: { label: string; before: SceneJSON; after: SceneJSON; log?: LogEntry }[] = [];
   log: LogEntry[] = [];
   traceEnabled = false;
+  /** Learning mode: the trace player stops before each quiz step for a prediction. */
+  predict = false;
   trace: Trace | null = null;
   /** The object the current trace was recorded on. */
   traceTarget: string | null = null;
@@ -124,10 +128,11 @@ export class Editor {
   private commit(label: string, before: SceneJSON, code: string | null) {
     const after = this.scene.toJSON();
     if (JSON.stringify(before) === JSON.stringify(after)) { this.emit('scene'); return; }
-    this.undoStack.push({ label, before, after });
+    const entry = code && !this.scripting ? { label, code } : undefined;
+    this.undoStack.push({ label, before, after, log: entry });
     if (this.undoStack.length > 200) this.undoStack.shift();
     this.redoStack = [];
-    if (code && !this.scripting) this.log.push({ label, code });
+    if (entry) this.log.push(entry);
     this.message = label;
     this.emit('scene');
   }
@@ -149,6 +154,8 @@ export class Editor {
     if (!e) return;
     this.redoStack.push(e);
     this.restore(e.before);
+    // The log is how to rebuild the scene; an undone step is no longer part of it.
+    if (e.log && this.log.at(-1) === e.log) this.log.pop();
     this.message = `Undo: ${e.label}`;
     this.emit('scene');
   }
@@ -159,6 +166,7 @@ export class Editor {
     if (!e) return;
     this.undoStack.push(e);
     this.restore(e.after);
+    if (e.log) this.log.push(e.log);
     this.message = `Redo: ${e.label}`;
     this.emit('scene');
   }
@@ -626,8 +634,11 @@ export class Editor {
   }
 
   /** Remember an operation so its parameters can be changed afterwards (undo, then redo with new values). */
-  private remember(label: string, params: Record<string, number>, again: (p: Record<string, number>) => boolean): void {
-    const mode = this.selectMode, sel = { verts: new Set(this.sel.verts), edges: new Set(this.sel.edges), faces: new Set(this.sel.faces) };
+  private snapshotSel() { return { mode: this.selectMode, sel: { verts: new Set(this.sel.verts), edges: new Set(this.sel.edges), faces: new Set(this.sel.faces) } }; }
+
+  /** `before` is the selection as it was before the operation, for operations that change it. */
+  private remember(label: string, params: Record<string, number>, again: (p: Record<string, number>) => boolean, before = this.snapshotSel()): void {
+    const { mode, sel } = before;
     const depth = this.undoStack.length;
     this.lastOp = {
       label, params, depth,
@@ -662,6 +673,38 @@ export class Editor {
     const ok = this.insetRaw(amount);
     if (ok) this.remember('Inset', { amount }, (p) => this.inset(p.amount));
     return ok;
+  }
+
+  /** Inset the selected faces as one region by a distance (Blender's I). Adjustable afterwards. */
+  insetRegion(thickness = 0.1): boolean {
+    const faces = this.selectedFaces();
+    const ok = this.meshOp('Inset', 'faces', (o, m, fs, t) => { insetRegion(m, fs as number[], thickness, t); return `${ref(o)}.mesh.insetRegion(${lit(fs)}, ${lit(thickness)})`; }, 'Inset (region)');
+    if (ok && faces.length) this.remember('Inset', { thickness }, (p) => this.insetRegion(Math.max(0, p.thickness)));
+    return ok;
+  }
+
+  /** Bevel the selected edges (Blender's Ctrl+B): width along the neighbouring edges, and segments across. */
+  bevel(width = 0.1, segments = 1): boolean {
+    const n = Math.max(1, Math.min(12, Math.round(segments)));
+    const before = this.snapshotSel();
+    const ok = this.meshOp('Bevel', 'edges', (o, m, es, t) => {
+      bevelEdges(m, es as [number, number][], width, n, t);
+      this.clearElements(false);
+      return `${ref(o)}.mesh.bevel(${lit(es)}, ${lit(width)}${n > 1 ? `, ${n}` : ''})`;
+    }, 'Bevel');
+    if (ok) this.remember('Bevel', { width, segments: n }, (p) => this.bevel(Math.max(0, p.width), p.segments), before);
+    return ok;
+  }
+
+  /** Dissolve what is selected (Blender's Ctrl+X): vertices, edges or faces, keeping the shape. */
+  dissolve(): boolean {
+    const kind = this.selectMode;
+    return this.meshOp('Dissolve', kind === 'face' ? 'faces' : kind === 'edge' ? 'edges' : 'verts', (o, m, items, t) => {
+      this.clearElements(false);
+      if (kind === 'face') { dissolveFaces(m, items as number[], t); return `${ref(o)}.mesh.dissolve({ faces: ${lit(items)} })`; }
+      if (kind === 'edge') { dissolveEdges(m, items as [number, number][], t); return `${ref(o)}.mesh.dissolve({ edges: ${lit(items)} })`; }
+      dissolveVerts(m, items as number[], t); return `${ref(o)}.mesh.dissolve({ verts: ${lit(items)} })`;
+    }, 'Dissolve');
   }
 
   private insetRaw(amount: number): boolean {

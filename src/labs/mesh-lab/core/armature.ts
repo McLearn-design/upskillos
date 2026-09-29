@@ -210,6 +210,7 @@ export function deform(mesh: EditMesh, skin: Skin, bones: Bone[], toArm = new Ma
     const r = out.verts[explain];
     trace.step({
       phase: 'Blend', label: `v' = Σ w·S·v = ${fmtV(r)}`,
+      quiz: { prompt: `Each bone puts vertex ${explain} somewhere: ${parts.map((x) => `${x.n} at ${fmtV([x.p.x, x.p.y, x.p.z])} with weight ${fmt(x.w)}`).join('; ')}. Where does it end up?`, answer: r, labels: ['x', 'y', 'z'], rule: 'Linear blend skinning: v′ = Σ w·(S·v), the weighted average of the points the bones would put it at (weights summing to 1).' },
       detail: 'The weighted average of the candidates. Averaging points (not rotations) is what makes it linear, and why a twisted joint loses volume: the "candy wrapper".',
       verts: [explain], points: [...parts.map((x) => ({ p: [x.p.x, x.p.y, x.p.z] as Vec3, color: '#38bdf8' })), { p: r, label: 'blend', color: '#f59e0b' }],
       arrows: [{ from: v, to: r, color: '#f59e0b' }],

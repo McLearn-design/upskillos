@@ -38,7 +38,7 @@ const COL = {
   traceFace: 0xf59e0b, traceEdge: 0xfbbf24, traceVert: 0xfde047,
 };
 
-interface ObjView { matKey?: string; bones?: THREE.Group; bonesSig?: string; group: THREE.Group; body?: THREE.Mesh; outline?: THREE.LineSegments; wire?: THREE.LineSegments; normals?: THREE.LineSegments; axes?: THREE.AxesHelper; light?: THREE.DirectionalLight; helper?: THREE.Object3D; sig: string }
+interface ObjView { matKey?: string; bones?: THREE.Group; bonesSig?: string; group: THREE.Group; body?: THREE.Mesh; outline?: THREE.Mesh; wire?: THREE.LineSegments; normals?: THREE.LineSegments; axes?: THREE.AxesHelper; light?: THREE.DirectionalLight; helper?: THREE.Object3D; sig: string }
 
 function signature(o: SceneObject): string {
   if (!o.mesh) return 'none';
@@ -126,7 +126,7 @@ export class Viewport {
   private traceLabels: { p: THREE.Vector3; text: string; color: string; parent: THREE.Object3D }[] = [];
   private proxy = new THREE.Object3D();
   private drag: { kind: 'object' | 'verts' | 'bone' | 'joint'; start: Vec3[]; startMatrix: THREE.Matrix4; verts: number[]; bone?: string; base?: THREE.Quaternion; from?: THREE.Vector3 } | null = null;
-  private traceView: { trace: Trace; step: number } | null = null;
+  private traceView: { trace: Trace; step: number; hide: boolean } | null = null;
   private fieldGroup = new THREE.Group();
   private pathGroup = new THREE.Group();
   private textures = new Map<TextureName, THREE.DataTexture>();
@@ -390,10 +390,20 @@ export class Viewport {
           v.body.userData.id = o.id;
           g.add(v.body);
         } else { v.body.geometry.dispose(); v.body.geometry = geo; }
+        // The selection outline: an "inverted hull", the mesh pushed out along its smooth normals by a
+        // fixed fraction of its distance from the eye and drawn back faces only, so just a rim shows at
+        // the silhouette (as Blender outlines), however dense the mesh.
         v.outline?.geometry.dispose();
-        const eg = edgeLines(ev);
-        if (!v.outline) { v.outline = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ color: COL.select, transparent: true, opacity: 0.9 })); g.add(v.outline); }
-        else v.outline.geometry = eg;
+        const hull = toGeometry(ev).geo;
+        if (!v.outline) {
+          v.outline = new THREE.Mesh(hull, new THREE.ShaderMaterial({
+            side: THREE.BackSide,
+            uniforms: { uColor: { value: new THREE.Color(COL.select) }, uThickness: { value: 0.0035 } },
+            vertexShader: 'uniform float uThickness; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vec3 n = normalize(normalMatrix * normal); mv.xyz += n * uThickness * -mv.z; gl_Position = projectionMatrix * mv; }',
+            fragmentShader: 'uniform vec3 uColor; void main() { gl_FragColor = vec4(uColor, 1.0);\n#include <colorspace_fragment>\n}',
+          }));
+          g.add(v.outline);
+        } else v.outline.geometry = hull;
         v.wire?.geometry.dispose();
         const wg = edgeLines(ev);
         if (!v.wire) { v.wire = new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35 })); g.add(v.wire); }
@@ -404,7 +414,7 @@ export class Viewport {
       this.syncMaterial(o, v, editing);
       v.body.visible = !(this.traceView && this.traceTargetId() === o.id) && this.editor.field?.objectId !== o.id;
       v.outline!.visible = selected && !editing && v.body.visible;
-      (v.outline!.material as THREE.LineBasicMaterial).color.set(active ? COL.active : COL.select);
+      ((v.outline!.material as THREE.ShaderMaterial).uniforms.uColor.value as THREE.Color).set(active ? COL.active : COL.select);
       v.wire!.visible = this.options.wire && v.body.visible;
       if (this.options.normals && !v.normals) v.normals = this.normalLines(evaluatedMesh(this.editor.scene, o, 3), g);
       if (v.normals) v.normals.visible = this.options.normals;
@@ -1008,8 +1018,9 @@ export class Viewport {
   private traceTargetId(): string | null { return this.editor.traceTarget; }
 
   /** Show one step of a trace over its object, or pass null to go back to the live scene. */
-  setTrace(trace: Trace | null, step = 0): void {
-    this.traceView = trace ? { trace, step } : null;
+  /** `hideAnswer`: a quiz step not yet answered: show its inputs but not its result. */
+  setTrace(trace: Trace | null, step = 0, hideAnswer = false): void {
+    this.traceView = trace ? { trace, step, hide: hideAnswer } : null;
     this.sync();
   }
 
@@ -1025,7 +1036,8 @@ export class Viewport {
     const steps = tv.trace.steps, s: TraceStep | undefined = steps[tv.step];
     if (!s) return;
     let snap: MeshSnapshot | undefined = tv.trace.before;
-    for (let i = 0; i <= tv.step; i++) if (steps[i].mesh) snap = steps[i].mesh;
+    // An unanswered prediction shows the mesh as it was before this step.
+    for (let i = 0; i <= tv.step - (tv.hide ? 1 : 0); i++) if (steps[i].mesh) snap = steps[i].mesh;
     const G = this.traceGroup;
     if (snap) {
       const m = EditMesh.fromSnapshot(snap);
@@ -1056,12 +1068,12 @@ export class Viewport {
       }
     }
     const scale = snap ? Math.max(0.02, Math.cbrt(Math.max(1e-6, EditMesh.fromSnapshot(snap).area())) * 0.03) : 0.04;
-    for (const p of s.points ?? []) {
+    for (const p of tv.hide ? [] : s.points ?? []) {
       const dot = new THREE.Mesh(new THREE.SphereGeometry(scale, 12, 8), new THREE.MeshBasicMaterial({ color: p.color ?? '#f59e0b', depthTest: false }));
       dot.position.set(...p.p); dot.renderOrder = 5; G.add(dot);
       if (p.label) this.traceLabels.push({ p: new THREE.Vector3(...p.p), text: p.label, color: p.color ?? '#f59e0b', parent: v.group });
     }
-    for (const a of s.arrows ?? []) {
+    for (const a of tv.hide ? [] : s.arrows ?? []) {
       const from = new THREE.Vector3(...a.from), dir = new THREE.Vector3(...a.to).sub(from);
       const len = dir.length();
       if (len < 1e-9) continue;

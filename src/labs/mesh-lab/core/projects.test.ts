@@ -172,3 +172,81 @@ describe('UV and material projects', () => {
     for (const o of parts) { expect(o.material.texture).toBe('wood'); expect(uvFits(o.mesh!, o.uv)).toBe(true); }
   });
 });
+
+describe('hard-surface projects', () => {
+  const open = (id: string) => { const e = new Editor(); const r = openProject(e, PROJECTS.find((p) => p.id === id)!, py); return { e, r }; };
+
+  it('the crate is closed, bevelled, panelled and fully unwrapped', async () => {
+    const { uvFits, angleDistortion } = await import('./uv');
+    const { e } = open('crate');
+    const c = e.scene.get('Crate')!, s = c.mesh!.stats();
+    expect(s.closed).toBe(true); expect(s.euler).toBe(2);
+    expect(s.volume).toBeLessThan(1.6 ** 3); expect(s.volume).toBeGreaterThan(0.85 * 1.6 ** 3); // six 5 cm recesses and the bevels take about 11%
+    expect(uvFits(c.mesh!, c.uv)).toBe(true);
+    const d = angleDistortion(c.mesh!, c.uv!);
+    expect(d.reduce((a, b) => a + b, 0) / d.length).toBeLessThan(1.1);
+  });
+
+  it('support loops: the more support near the edges, the closer the subdivided volume stays to the box', () => {
+    const { r } = open('support-loops');
+    const pct = (name: string) => Number(r.output.find((l) => l.startsWith(name))!.match(/\((\d+)%\)/)![1]);
+    const a = pct('No support loops'), b = pct('Bevelled edges'), c = pct('Support loops');
+    expect(a).toBeLessThan(b); expect(b).toBeLessThan(c); expect(c).toBeGreaterThan(90); expect(a).toBeLessThan(80);
+  });
+});
+
+import { readFileSync, readdirSync } from 'fs';
+import { CHALLENGES } from './challenges';
+
+describe('guides name things that exist', () => {
+  it('every "Menu › Item" in a guide or hint is a real menu item; every other "A › B" is text in the interface', () => {
+    const dir = new URL('..', import.meta.url).pathname;
+    const meshlab = readFileSync(dir + 'MeshLab.tsx', 'utf8');
+    const ui = meshlab + readdirSync(dir + 'ui').map((f) => readFileSync(dir + 'ui/' + f, 'utf8')).join('\n');
+    // The menus: `Name: [ ... ],` or `'Name': [ ... ],` inside the menus object, with their item labels.
+    const block = meshlab.slice(meshlab.indexOf('const menus'), meshlab.indexOf('const stats'));
+    const menus = new Map<string, string>();
+    const keys = [...block.matchAll(/\n {4}'?([A-Z][A-Za-z ]+)'?: \[/g)];
+    keys.forEach((k, i) => menus.set(k[1], block.slice(k.index!, keys[i + 1]?.index ?? block.length)));
+    expect([...menus.keys()]).toEqual(expect.arrayContaining(['File', 'Mesh', 'UV', 'Heat map', 'Object']));
+    const stale = (texts: string[]) => {
+      const refs = texts.flatMap((t) => [...t.matchAll(/([A-Z][A-Za-z]+(?: [a-z]+)?) › ([A-Z][^.,:;()"]*?)(?=[.,:;()"]|$| (?:and|then|or|on|with|to|in)\b)/g)].map((m) => [m[1], m[2].trim()] as const));
+      const bad: string[] = [];
+      for (const [a, b] of refs) {
+        const lead = b.split(' ').slice(0, 2).join(' ');
+        if (menus.has(a)) { if (!menus.get(a)!.includes(lead)) bad.push(`${a} › ${b} (no such item in the ${a} menu)`); }
+        else if (!ui.includes(lead)) bad.push(`${a} › ${b} (no such text in the interface)`);
+      }
+      return { refs, bad };
+    };
+    // The check itself catches a made-up item and a made-up panel.
+    expect(stale(['Use Heat map › Banana split here.', 'See Frobnicator panel › Zork.']).bad.length).toBe(2);
+    const { refs, bad } = stale([...PROJECTS.flatMap((p) => [...p.guide, p.desc]), ...CHALLENGES.flatMap((c) => [...c.hints, c.brief])]);
+    expect(refs.length).toBeGreaterThan(10);
+    expect(bad).toEqual([]);
+  });
+});
+
+describe('the walk cycle', () => {
+  it('loops, dips after each contact, and moves forward at a steady speed', () => {
+    const e = new Editor();
+    expect(openProject(e, PROJECTS.find((p) => p.id === 'walk-cycle')!).error).toBeNull();
+    const rig = () => e.scene.get('Rig')!;
+    const pose = (f: number) => { e.setFrame(f); return rig().bones!.map((b) => b.pose.map((x) => +x.toFixed(9))); };
+    expect(pose(25)).toEqual(pose(1));                  // one cycle later, the same pose
+    expect(pose(49)).toEqual(pose(1));
+    const at = (f: number) => { e.setFrame(f); return [...rig().position]; };
+    expect(at(4)[1]).toBeLessThan(at(1)[1]); expect(at(10)[1]).toBeGreaterThan(at(1)[1]); // down, then up
+    // Steady forward speed: the same distance every 6 frames.
+    const z = [1, 7, 13, 19, 25, 31].map((f) => at(f)[2]);
+    const steps = z.slice(1).map((v, i) => v - z[i]);
+    for (const d of steps) expect(d).toBeCloseTo(steps[0], 9);
+  });
+
+  it('the island is grass on planar UVs', async () => {
+    const { uvFits } = await import('./uv');
+    const e = new Editor(); openProject(e, PROJECTS.find((p) => p.id === 'island')!);
+    const land = e.scene.get('Island')!;
+    expect(land.material.texture).toBe('grass'); expect(uvFits(land.mesh!, land.uv)).toBe(true);
+  });
+});

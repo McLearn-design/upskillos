@@ -14,8 +14,8 @@
 
 export type ShaderModel = 'pbr' | 'lambert' | 'blinn-phong' | 'toon' | 'normals' | 'uv' | 'custom';
 export const SHADER_MODELS: ShaderModel[] = ['pbr', 'lambert', 'blinn-phong', 'toon', 'normals', 'uv', 'custom'];
-export type TextureName = 'none' | 'checker' | 'grid' | 'bricks' | 'wood' | 'stripes';
-export const TEXTURES: TextureName[] = ['none', 'checker', 'grid', 'bricks', 'wood', 'stripes'];
+export type TextureName = 'none' | 'checker' | 'grid' | 'bricks' | 'wood' | 'stripes' | 'grass';
+export const TEXTURES: TextureName[] = ['none', 'checker', 'grid', 'bricks', 'wood', 'stripes', 'grass'];
 
 export const SHADER_INFO: Record<ShaderModel, { label: string; equation: string; about: string }> = {
   pbr: { label: 'PBR (three.js)', equation: 'Cook–Torrance: diffuse + D·F·G / (4 (N·L)(N·V)), with roughness and metalness', about: 'Physically based: energy is conserved, rough surfaces spread highlights, metals tint them. What glTF and Blender\'s Principled BSDF use.' },
@@ -62,6 +62,11 @@ export function textureRGBA(name: TextureName, size = 256): Uint8Array {
       const r = Math.hypot(u - 0.5, (v - 0.5) * 0.25 + 1.2) * 24 + 0.8 * Math.sin(u * 13) + 0.4 * Math.sin(v * 31);
       const t = 0.5 + 0.5 * Math.sin(r * 2 * Math.PI);
       put(i, Math.round(150 + 50 * t), Math.round(98 + 35 * t), Math.round(52 + 22 * t));
+    } else if (name === 'grass') {
+      // Speckled greens: two sine patterns at odd frequencies stand in for noise (repeatable, seamless).
+      const n = Math.sin(u * 91.7 + v * 13.3) * Math.sin(v * 77.1 - u * 7.9) + 0.5 * Math.sin((u + v) * 211.3) * Math.sin((u - v) * 173.9);
+      const t = 0.5 + 0.35 * n;
+      put(i, Math.round(70 + 60 * t), Math.round(120 + 70 * t), Math.round(45 + 25 * t));
     } else if (name === 'stripes') {
       Math.floor(u * 10) % 2 ? put(i, 255, 159, 28) : put(i, 36, 40, 48);
     } else put(i, 255, 255, 255);

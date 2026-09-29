@@ -24,6 +24,9 @@ interface Mesh {
   stats(): MeshStats; nearest(p: Vec3): number;
   /** Flat typed arrays, as sent to the GPU. */ buffer(): { positions: Float32Array; indices: Uint32Array };
   extrude(faces: number[], distance?: number): Mesh; inset(faces: number[], amount?: number): Mesh;
+  /** Inset faces as one region by a distance (Blender's I). */ insetRegion(faces: number[], thickness?: number): Mesh;
+  /** Bevel edges: width along the neighbouring edges; segments across (more = rounder). */ bevel(edges: [number, number][], width?: number, segments?: number): Mesh;
+  /** Remove vertices, edges or faces, keeping the shape. */ dissolve(what: { verts?: number[]; edges?: [number, number][]; faces?: number[] }): Mesh;
   loopCut(a: number, b: number, t?: number): Mesh; split(faces?: number[]): Mesh;
   /** Catmull–Clark subdivision. */ subdivide(levels?: number): Mesh;
   delete(what: { faces?: number[]; verts?: number[]; edges?: [number, number][] }): Mesh;
@@ -42,12 +45,13 @@ interface Mesh {
 interface SceneObject {
   readonly id: string; name: string; readonly kind: 'mesh' | 'empty' | 'light';
   position: Vec3Handle; /** Radians, XYZ order. */ rotation: Vec3Handle; scale: Vec3Handle;
-  visible: boolean; smooth: boolean; material: { color: string; roughness: number; metalness: number; shader: 'pbr' | 'lambert' | 'blinn-phong' | 'toon' | 'normals' | 'uv' | 'custom'; texture: 'none' | 'checker' | 'grid' | 'bricks' | 'wood' | 'stripes'; textureScale: number; shininess: number; /** GLSL body of shade(N, L, V, uv, base, light) */ glsl: string };
+  visible: boolean; smooth: boolean; material: { color: string; roughness: number; metalness: number; shader: 'pbr' | 'lambert' | 'blinn-phong' | 'toon' | 'normals' | 'uv' | 'custom'; texture: 'none' | 'checker' | 'grid' | 'bricks' | 'wood' | 'stripes' | 'grass'; textureScale: number; shininess: number; /** GLSL body of shade(N, L, V, uv, base, light) */ glsl: string };
   parent: SceneObject | null; readonly children: SceneObject[];
   readonly mesh: Mesh | null; readonly geometry: Mesh | null;
   /** Column-major 4×4, like three.js Matrix4.elements. */ readonly localMatrix: number[]; readonly worldMatrix: number[];
   modifiers: { add(type: 'mirror' | 'subsurf', opts?: object): SceneObject; set(i: number, patch: object): SceneObject; remove(i: number): SceneObject; apply(): SceneObject; readonly list: object[] };
   delete(): void; duplicate(): SceneObject;
+  /** Stats of the mesh as shown, modifiers applied (mesh.stats() is the cage). */ evaluatedStats(): MeshStats;
   /** How bone motions are blended on a bound mesh: averaging points, or averaging rigid motions (no candy wrapper). */ skinning: 'linear' | 'dual-quaternion';
   /** Weight paint by script: brush dabs at points (the mesh's own space) on one bone. */
   paintWeights(bone: string, opts: { points: Vec3[]; brush?: 'draw' | 'add' | 'subtract' | 'blur'; radius?: number; strength?: number; value?: number; normalize?: boolean; mirror?: boolean }): SceneObject;
