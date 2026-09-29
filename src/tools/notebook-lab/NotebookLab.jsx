@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Plus, Trash2, Download, Upload, Link, FileText, ChevronLeft, Pencil, Check } from 'lucide-react'
+import { Plus, Trash2, Download, Upload, Link, FileText, ChevronLeft, Pencil, Check, BookOpen } from 'lucide-react'
 import PythonNotebook from '../../components/notebooks/PythonNotebook.jsx'
 import {
   listNotebooks, getNotebook, saveNotebook, deleteNotebook, createNotebook,
 } from './notebookStorage.js'
 import { downloadIpynb, fromIpynb, fetchColabNotebook } from './ipynbConverter.js'
+import mlSeriesData from './series-ml-ds.json'
+import dsaSeriesData from './series-dsa.json'
 
 function timeAgo(ts) {
   const s = Math.floor((Date.now() - ts) / 1000)
@@ -65,6 +67,38 @@ export default function NotebookLab() {
     if (!nb) return
     saveNotebook({ ...nb, name: nameInput.trim() || nb.name })
     setEditingName(false)
+    refresh()
+  }
+
+  const handleLoadSeries = (seriesId) => {
+    const prefix = seriesId === 'ml_ds' ? 'ml-ds-' : 'dsa-'
+    const data = seriesId === 'ml_ds' ? mlSeriesData : dsaSeriesData
+    
+    // Clear existing notebooks with this series prefix to prevent duplicates if clicked twice
+    const existing = listNotebooks()
+    for (const nb of existing) {
+      if (nb.id.startsWith(prefix)) {
+        deleteNotebook(nb.id)
+      }
+    }
+    for (const nb of data) {
+      saveNotebook(nb)
+    }
+    refresh()
+    if (data.length > 0) {
+      openNotebook(data[0].id)
+    }
+  }
+
+  const handleClearSeries = (seriesId) => {
+    const prefix = seriesId === 'ml_ds' ? 'ml-ds-' : 'dsa-'
+    const existing = listNotebooks()
+    for (const nb of existing) {
+      if (nb.id.startsWith(prefix)) {
+        deleteNotebook(nb.id)
+      }
+    }
+    setActiveId(null)
     refresh()
   }
 
@@ -163,6 +197,42 @@ export default function NotebookLab() {
               </button>
             </div>
           ))}
+        </div>
+
+        <div className="shrink-0 border-t border-slate-800 p-3 space-y-1.5">
+          <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider mb-2 px-1">Curated Series</p>
+          <div className="flex gap-1">
+            <button
+              onClick={() => handleLoadSeries('ml_ds')}
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-700 transition-colors"
+              title="Load the Machine Learning Series"
+            >
+              <BookOpen className="w-3.5 h-3.5" /> Load ML Series
+            </button>
+            <button
+              onClick={() => handleClearSeries('ml_ds')}
+              className="shrink-0 flex items-center justify-center px-2 py-2 rounded-lg text-xs font-medium text-slate-500 hover:bg-red-900/40 hover:text-red-400 transition-colors"
+              title="Remove ML Series from Notebooks"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => handleLoadSeries('dsa')}
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-700 transition-colors"
+              title="Load the DSA & Design Patterns Series"
+            >
+              <BookOpen className="w-3.5 h-3.5" /> Load DSA Series
+            </button>
+            <button
+              onClick={() => handleClearSeries('dsa')}
+              className="shrink-0 flex items-center justify-center px-2 py-2 rounded-lg text-xs font-medium text-slate-500 hover:bg-red-900/40 hover:text-red-400 transition-colors"
+              title="Remove DSA Series from Notebooks"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
         {/* Sidebar footer: import buttons */}

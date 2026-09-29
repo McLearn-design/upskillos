@@ -1,0 +1,2429 @@
+[
+  {
+    "id": "ml-ds-1",
+    "name": "01 - Python to Numerical Computing",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## The Transition",
+          "Welcome to Machine Learning and Data Science! The first major mental model shift you need to make is moving away from basic Python lists and standard loops, and thinking in **numerical arrays**.",
+          "If you've ever written a `for` loop to add two lists together, you're about to see a much better way. In scientific computing, we treat collections of numbers as singular mathematical objects.",
+          "Let's start with the basics.",
+          "## 1. Scalars",
+          "A scalar is just a single numerical value. It has magnitude, but no direction."
+        ],
+        "code": "x = 7\ny = 3\nprint(f\"Our scalar result is: {x + y}\")",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "This is standard Python. But ML operates on thousands of numbers at once.",
+          "## 2. Vectors and Vectorization",
+          "A **vector** is a 1-dimensional array of numbers. Instead of looping over elements, NumPy allows us to perform operations on the *entire vector at once*. This is called **vectorization**."
+        ],
+        "code": "import numpy as np\n\n# This creates a NumPy vector\nx = np.array([2, 4, 6])\nprint(\"Original vector:\", x)\n\n# Vectorized addition: Adds 10 to EVERY element instantly!\nprint(\"Vector + 10:\", x + 10)\n\n# Vectorized multiplication\nprint(\"Vector * 2:\", x * 2)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "To do this in standard Python, you'd have to write `[xi + 10 for xi in x]`. NumPy does this in highly optimized C code under the hood, making it vastly faster.",
+          "## 3. Shape, Type, and Dimensions",
+          "Every ML model requires strict data formats. The three most fundamental properties of any NumPy array are its shape, its data type, and its number of dimensions."
+        ],
+        "code": "print(\"Shape (elements per dimension):\", x.shape)\nprint(\"Data Type:\", x.dtype)\nprint(\"Number of Dimensions:\", x.ndim)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": [
+          "If your neural network expects a shape of `(100, 20)` and you give it `(100, 21)`, it will crash. Getting comfortable with `.shape` is a superpower.",
+          "## 4. The Dot Product",
+          "When you have two vectors, you can multiply them in a special way called the **dot product**. It multiplies the corresponding elements and sums them all up."
+        ],
+        "code": "a = np.array([1, 2, 3])\nb = np.array([10, 20, 30])\n\n# Element-wise addition\nprint(\"Element-wise addition:\", a + b)\n\n# Element-wise product\nprint(\"Element-wise product:\", a * b)\n\n# The Dot Product!\nprint(\"Dot Product:\", a @ b)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 5,
+        "prose": "The dot product is the mathematical engine behind neural networks. `1(10) + 2(20) + 3(30) = 140`.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 6,
+        "prose": [
+          "Now it's your turn! Create two NumPy vectors, `v1` and `v2`, each containing exactly 5 numbers of your choice.",
+          "Then, compute the following and store them in the exact variable names below:\n1. `v_sum`: the element-wise sum of the two vectors.\n2. `v_prod`: the element-wise product of the two vectors.\n3. `v_dot`: the dot product of the two vectors.\n4. `v1_mean`: the mean (average) of the first vector.\n5. `v2_max`: the maximum value in the second vector."
+        ],
+        "code": "import numpy as np\n\n# Write your solution here\nv1 = np.array([1, 2, 3, 4, 5])\nv2 = np.array([5, 4, 3, 2, 1])\n\nv_sum = v1 + v2\nv_prod = v1 * v2\nv_dot = v1 @ v2\nv1_mean = v1.mean()\nv2_max = v2.max()",
+        "testCode": "",
+        "challengeType": "write",
+        "starterBlock": "# Write your solution here",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675064659,
+    "updatedAt": 1790675164660
+  },
+  {
+    "id": "ml-ds-2",
+    "name": "02 — Vectors Are Geometry",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Goal",
+          "Understand vectors as both numerical containers and geometric objects."
+        ],
+        "code": "import numpy as np\n\na = np.array([3, 4])\nprint(np.linalg.norm(a))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "The norm is vector length:",
+          "\\[\n||a|| = \\sqrt{3^2 + 4^2}=5\n\\]",
+          "## Dot product"
+        ],
+        "code": "b = np.array([1, 2])\nprint(a @ b)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "\\[\na\\cdot b = 3(1)+4(2)=11\n\\]",
+          "For vectors:",
+          "\\[\na\\cdot b = ||a||||b||\\cos\\theta\n\\]",
+          "Therefore the dot product contains information about angle as well as magnitude.",
+          "## Projection",
+          "The projection of `a` onto `b` is:",
+          "\\[\nproj_b(a)=\\frac{a\\cdot b}{b\\cdot b}b\n\\]"
+        ],
+        "code": "projection = (a @ b) / (b @ b) * b\nprint(projection)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": "## Why ML cares\n\nA feature vector is a point in a coordinate space.\n\nA model can measure:\n\n- length;\n- distance;\n- angle;\n- projection;\n- similarity.\n\nLater, these become the machinery behind nearest-neighbor models, linear models, PCA, embeddings, and attention.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 5,
+        "prose": [
+          "Create:"
+        ],
+        "code": "a = np.array([2, 1])\nb = np.array([-1, 3])",
+        "testCode": "",
+        "challengeType": "write",
+        "starterBlock": "# Write your solution here",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 6,
+        "prose": [
+          "Calculate:",
+          "1. both lengths;\n2. their dot product;\n3. the projection of `a` onto `b`;\n4. the Euclidean distance between them.",
+          "Do not use a machine-learning library.",
+          "## Verification",
+          "Change `b` to `[4, 2]`. Notice that it points in the same direction as `a`. What happens to the angle and normalized dot product?",
+          "That observation will matter later."
+        ],
+        "code": "",
+        "testCode": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675063660,
+    "updatedAt": 1790675163660
+  },
+  {
+    "id": "ml-ds-3",
+    "name": "03 — Functions Are Models",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Goal",
+          "Treat a model as a function with parameters.",
+          "Start with:"
+        ],
+        "code": "def model(x):\n    return 2 * x + 1",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "This is:",
+          "\\[\nf(x)=2x+1\n\\]",
+          "The `2` and `1` are parameters.",
+          "## Parameters"
+        ],
+        "code": "def model(x, w, b):\n    return w * x + b\n\nprint(model(5, 2, 1))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "The structure is now:",
+          "\\[\n\\hat y = wx+b\n\\]",
+          "`x` is input, `w` and `b` are parameters, and `ŷ` is the prediction.",
+          "## Multiple inputs"
+        ],
+        "code": "def model(x, w, b):\n    return x @ w + b\n\nx = np.array([2, 3, 4])\nw = np.array([10, 20, 30])\n\nprint(model(x, w, 5))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": "The dot product combines multiple features into one prediction.\n\n## Model vs algorithm\n\nDo not confuse:\n\n- **model** — mathematical function producing predictions;\n- **parameters** — values inside the model;\n- **loss** — measures prediction error;\n- **optimization algorithm** — changes parameters to reduce loss.\n\nThis separation is foundational.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675062660,
+    "updatedAt": 1790675162660
+  },
+  {
+    "id": "ml-ds-4",
+    "name": "04 — Probability as a Computational Object",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Goal",
+          "Use probability precisely rather than treating it as vague uncertainty.",
+          "A probability is a number from 0 to 1.",
+          "## A finite experiment"
+        ],
+        "code": "import numpy as np\n\noutcomes = np.array([0, 1, 0, 1, 1, 0, 1, 1])\n\nprint(outcomes.mean())",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "Because the values are 0 and 1, the mean is the observed probability of `1`.",
+          "## Conditional probability",
+          "Suppose two variables describe events:"
+        ],
+        "code": "weather = np.array([\"sun\", \"rain\", \"sun\", \"sun\", \"rain\", \"sun\"])\nlate = np.array([0, 1, 0, 1, 1, 0])",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "We can ask:",
+          "\\[\nP(late=1 \\mid weather=rain)\n\\]"
+        ],
+        "code": "mask = weather == \"rain\"\nprint(late[mask].mean())",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": "This is conditional probability estimated from observations.\n\n## Bayes' rule\n\n\\[\nP(A|B)=\\frac{P(B|A)P(A)}{P(B)}\n\\]\n\nThis is not a philosophical statement. It is an algebraic relationship between probabilities.\n\n## Why ML cares\n\nClassification often estimates a conditional probability:\n\n\\[\nP(y|x)\n\\]\n\nA model may therefore output a probability rather than a class label.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675061660,
+    "updatedAt": 1790675161660
+  },
+  {
+    "id": "ml-ds-5",
+    "name": "05 — Statistics, Sampling, and Variation",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Mean"
+        ],
+        "code": "x = np.array([2, 4, 4, 6, 9])\nprint(x.mean())",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "## Variance",
+          "Variance measures average squared deviation from the mean:",
+          "\\[\nVar(X)=\\frac{1}{n}\\sum_i(x_i-\\bar x)^2\n\\]"
+        ],
+        "code": "print(np.mean((x - x.mean()) ** 2))\nprint(x.var())",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "## Standard deviation",
+          "\\[\n\\sigma = \\sqrt{Var(X)}\n\\]"
+        ],
+        "code": "print(x.std())",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": [
+          "## Population vs sample",
+          "For a sample, the common unbiased variance estimator uses `n-1`:"
+        ],
+        "code": "print(x.var(ddof=1))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 5,
+        "prose": [
+          "Know which quantity your code is calculating.",
+          "## Sampling experiment"
+        ],
+        "code": "rng = np.random.default_rng(42)\n\npopulation = rng.normal(50, 10, 100000)\n\nsample_means = []\nfor _ in range(1000):\n    sample = rng.choice(population, size=30)\n    sample_means.append(sample.mean())\n\nsample_means = np.array(sample_means)\n\nprint(population.mean())\nprint(sample_means.mean())\nprint(sample_means.std())",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 6,
+        "prose": "The distribution of sample means is itself a random quantity.\n\n## Why ML cares\n\nSampling appears in:\n\n- train/test splits;\n- cross-validation;\n- bootstrap;\n- confidence intervals;\n- stochastic optimization;\n- experimental design.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675060660,
+    "updatedAt": 1790675160660
+  },
+  {
+    "id": "ml-ds-6",
+    "name": "06 — Matrices and Linear Transformations",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Matrix"
+        ],
+        "code": "A = np.array([\n    [1, 2],\n    [3, 4]\n])\n\nx = np.array([10, 20])\n\nprint(A @ x)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "Manual calculation:",
+          "\\[\nAx =\n\\begin{bmatrix}\n1(10)+2(20)\\\\\n3(10)+4(20)\n\\end{bmatrix}\n=\n\\begin{bmatrix}\n50\\\\\n110\n\\end{bmatrix}\n\\]",
+          "## Matrix as transformation",
+          "A matrix maps one vector to another."
+        ],
+        "code": "import matplotlib.pyplot as plt\n\npoints = np.array([\n    [1, 0],\n    [0, 1],\n    [1, 1],\n    [-1, 0]\n])\n\nB = np.array([\n    [2, 0],\n    [0, 0.5]\n])\n\ntransformed = points @ B.T\n\nplt.scatter(points[:,0], points[:,1])\nplt.scatter(transformed[:,0], transformed[:,1])\nplt.axis(\"equal\")\nplt.show()",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "The matrix stretches one axis and compresses the other.",
+          "## Transpose"
+        ],
+        "code": "print(A.T)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": [
+          "The transpose swaps rows and columns.",
+          "This matters because matrix dimensions determine which multiplications are legal.",
+          "## Shape discipline",
+          "If:",
+          "- `X` has shape `(100, 3)`;\n- `w` has shape `(3,)`;",
+          "then:"
+        ],
+        "code": "X @ w",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 5,
+        "prose": "produces shape `(100,)`.\n\nThat is exactly the structure of multiple linear regression.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675059660,
+    "updatedAt": 1790675159660
+  },
+  {
+    "id": "ml-ds-7",
+    "name": "07 — Tabular Data Without Losing the Mathematics",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Goal",
+          "Use pandas as a data representation tool, not as a replacement for understanding arrays."
+        ],
+        "code": "import pandas as pd\nimport numpy as np\n\ndf = pd.DataFrame({\n    \"x1\": [1, 2, 3, 4, 5],\n    \"x2\": [10, 8, 7, 5, 4],\n    \"y\":  [3, 5, 7, 8, 11]\n})\n\nprint(df)\nprint(df.describe())",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "## Selecting features"
+        ],
+        "code": "X = df[[\"x1\", \"x2\"]].to_numpy()\ny = df[\"y\"].to_numpy()\n\nprint(X.shape)\nprint(y.shape)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "This distinction is important:",
+          "- pandas gives you labeled tabular data;\n- NumPy gives you numerical arrays;\n- a model consumes a mathematical representation.",
+          "## Correlation is not causation"
+        ],
+        "code": "print(df.corr(numeric_only=True))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": "Correlation measures linear association. It does not establish causal direction.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675058660,
+    "updatedAt": 1790675158660
+  },
+  {
+    "id": "ml-ds-8",
+    "name": "08 — The Machine Learning Problem",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## The abstraction",
+          "A supervised learning problem consists of:",
+          "- observations `x`;\n- targets `y`;\n- a model `f(x; θ)`;\n- a loss function `L`;\n- an optimization procedure.",
+          "The training objective is generally:",
+          "\\[\n\\theta^* = \\arg\\min_\\theta \\frac{1}{n}\\sum_i L(f(x_i;\\theta),y_i)\n\\]",
+          "This equation is the backbone of supervised learning.",
+          "## Tiny example"
+        ],
+        "code": "x = np.array([1, 2, 3, 4])\ny = np.array([2, 4, 6, 8])\n\ndef predict(x, w, b):\n    return w*x + b\n\ndef mse(y, yhat):\n    return np.mean((y-yhat)**2)\n\nprint(mse(y, predict(x, 1, 0)))\nprint(mse(y, predict(x, 2, 0)))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": "The model with `w=2` has lower loss.\n\n## Training means\n\nFind parameter values that make the objective small.\n\nIt does **not** mean:\n\n- memorizing examples;\n- finding a magical pattern;\n- making the training score as high as possible.\n\nThe central issue is **generalization**: performance on data not used to fit the parameters.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "Try all integer values:"
+        ],
+        "code": "w = -5 ... 5\nb = -5 ... 5",
+        "testCode": "",
+        "challengeType": "write",
+        "starterBlock": "# Write your solution here",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": [
+          "Find the combination with the smallest MSE.",
+          "This brute-force search is intentionally inefficient. Later, gradient descent will solve the same optimization problem systematically."
+        ],
+        "code": "",
+        "testCode": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675057660,
+    "updatedAt": 1790675157660
+  },
+  {
+    "id": "ml-ds-9",
+    "name": "09 — Linear Regression From Scratch",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Data"
+        ],
+        "code": "rng = np.random.default_rng(1)\n\nx = np.linspace(0, 10, 50)\ny = 3*x + 5 + rng.normal(0, 2, size=len(x))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "## Model",
+          "\\[\n\\hat y = wx+b\n\\]",
+          "## Loss",
+          "\\[\nMSE=\\frac{1}{n}\\sum_i(\\hat y_i-y_i)^2\n\\]",
+          "## Brute-force parameter search"
+        ],
+        "code": "best = None\n\nfor w in np.linspace(0, 6, 121):\n    for b in np.linspace(0, 10, 121):\n        yhat = w*x+b\n        loss = np.mean((y-yhat)**2)\n\n        if best is None or loss < best[0]:\n            best = (loss, w, b)\n\nprint(best)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": "This makes the optimization problem visible.\n\n## Closed-form solution\n\nFor one feature, ordinary least squares can be solved analytically.\n\nFor multiple features:\n\n\\[\n\\hat\\beta = (X^TX)^{-1}X^Ty\n\\]\n\nwhen the inverse exists.\n\nDo not memorize this yet. In later lessons you will understand where the equation comes from.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675056660,
+    "updatedAt": 1790675156660
+  },
+  {
+    "id": "ml-ds-10",
+    "name": "10 — Loss Functions Define What \"Wrong\" Means",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Squared error",
+          "\\[\nL=(y-\\hat y)^2\n\\]"
+        ],
+        "code": "errors = np.array([-3, -1, 1, 3])\nprint(errors**2)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "Large errors receive disproportionately large penalties.",
+          "## Absolute error",
+          "\\[\nL=|y-\\hat y|\n\\]"
+        ],
+        "code": "print(np.abs(errors))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "## Compare"
+        ],
+        "code": "e = np.linspace(-5, 5, 100)\n\nmse = e**2\nmae = np.abs(e)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": [
+          "Plot them.",
+          "Notice the shapes.",
+          "## Why the choice matters",
+          "A loss function is not merely a scoring function. During training it defines which parameter values are preferred.",
+          "Squared loss is sensitive to large residuals.",
+          "Absolute loss is more robust to isolated large residuals.",
+          "## Classification losses",
+          "For a probability `p` assigned to the true class:",
+          "\\[\nL=-\\log(p)\n\\]",
+          "Examples:"
+        ],
+        "code": "p = np.array([0.99, 0.9, 0.5, 0.1, 0.01])\nloss = -np.log(p)\nprint(loss)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 5,
+        "prose": "A confidently wrong prediction receives a very large penalty.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675055660,
+    "updatedAt": 1790675155660
+  },
+  {
+    "id": "ml-ds-11",
+    "name": "11 — Gradient Descent",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## The problem",
+          "We have:",
+          "\\[\nJ(w)= (w-3)^2\n\\]",
+          "The minimum occurs at `w=3`.",
+          "Its derivative is:",
+          "\\[\n\\frac{dJ}{dw}=2(w-3)\n\\]",
+          "## One update"
+        ],
+        "code": "w = 0\nlearning_rate = 0.1\n\ngradient = 2*(w-3)\nw = w - learning_rate*gradient\n\nprint(w)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "The update rule is:",
+          "\\[\nw_{new}=w-\\eta\\nabla J(w)\n\\]",
+          "## Repeat"
+        ],
+        "code": "w = 0\n\nfor _ in range(20):\n    gradient = 2*(w-3)\n    w -= 0.1*gradient\n    print(w)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "The derivative gives the direction of increasing loss. Subtracting it moves toward decreasing loss.",
+          "## Linear regression gradients",
+          "For:",
+          "\\[\n\\hat y=wx+b\n\\]",
+          "and",
+          "\\[\nJ=\\frac1n\\sum(\\hat y-y)^2\n\\]",
+          "the gradients are:",
+          "\\[\n\\frac{\\partial J}{\\partial w}\n=\n\\frac{2}{n}\\sum x_i(\\hat y_i-y_i)\n\\]",
+          "\\[\n\\frac{\\partial J}{\\partial b}\n=\n\\frac{2}{n}\\sum(\\hat y_i-y_i)\n\\]",
+          "## Implement it"
+        ],
+        "code": "w = 0.0\nb = 0.0\nlr = 0.01\n\nfor epoch in range(1000):\n    yhat = w*x + b\n\n    dw = (2/len(x)) * np.sum(x*(yhat-y))\n    db = (2/len(x)) * np.sum(yhat-y)\n\n    w -= lr*dw\n    b -= lr*db\n\nprint(w, b)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": "You have now trained a model without scikit-learn.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675054661,
+    "updatedAt": 1790675154661
+  },
+  {
+    "id": "ml-ds-12",
+    "name": "12 — Multiple Linear Regression and Matrix Form",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Model",
+          "For three features:",
+          "\\[\n\\hat y=w_1x_1+w_2x_2+w_3x_3+b\n\\]",
+          "Matrix form:",
+          "\\[\n\\hat y=Xw+b\n\\]",
+          "## Example"
+        ],
+        "code": "X = np.array([\n    [1, 10, 2],\n    [2, 8,  3],\n    [3, 6,  5],\n    [4, 5,  4]\n])\n\nw = np.array([2, 1, 3])\nb = 5\n\nyhat = X @ w + b\nprint(yhat)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "One matrix multiplication replaces multiple scalar equations.",
+          "## Why this matters",
+          "The same operation appears in:",
+          "- linear regression;\n- neural network layers;\n- transformations;\n- embeddings;\n- attention;\n- dimensionality reduction.",
+          "## Add a bias column"
+        ],
+        "code": "Xb = np.column_stack([np.ones(len(X)), X])\nprint(Xb)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": "Now:\n\n\\[\n\\hat y=X_b\\beta\n\\]\n\nwith the intercept included in the parameter vector.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675053661,
+    "updatedAt": 1790675153661
+  },
+  {
+    "id": "ml-ds-13",
+    "name": "13 — Generalization, Training, Validation, Test",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## The central problem",
+          "A model can perform well on the data used to fit it and poorly on new data.",
+          "This is overfitting.",
+          "## Split the data"
+        ],
+        "code": "from sklearn.model_selection import train_test_split\n\nX_train, X_test, y_train, y_test = train_test_split(\n    X, y, test_size=0.2, random_state=42\n)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "The training set is used to fit parameters.",
+          "The test set estimates performance on unseen data.",
+          "## Validation",
+          "When choosing among models or hyperparameters, use validation data or cross-validation.",
+          "Do not repeatedly tune against the final test set.",
+          "## Demonstration",
+          "Create polynomial features of increasing degree and fit them to noisy data.",
+          "Observe training and test error."
+        ],
+        "code": "from sklearn.preprocessing import PolynomialFeatures\nfrom sklearn.linear_model import LinearRegression\nfrom sklearn.pipeline import make_pipeline",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "Try degrees:"
+        ],
+        "code": "for degree in [1, 2, 5, 15, 30]:\n    model = make_pipeline(\n        PolynomialFeatures(degree),\n        LinearRegression()\n    )\n    model.fit(X_train, y_train)\n    print(degree, model.score(X_train, y_train),\n          model.score(X_test, y_test))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675052661,
+    "updatedAt": 1790675152661
+  },
+  {
+    "id": "ml-ds-14",
+    "name": "14 — Feature Scaling and Preprocessing",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Why scale?",
+          "Suppose:"
+        ],
+        "code": "X = np.array([\n    [0.2, 10000],\n    [0.4, 12000],\n    [0.7, 9000],\n    [0.9, 15000]\n])",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "The numerical scales differ substantially.",
+          "Distance-based algorithms and gradient-based optimization can be affected by this.",
+          "## Standardization",
+          "\\[\nz=\\frac{x-\\mu}{\\sigma}\n\\]"
+        ],
+        "code": "from sklearn.preprocessing import StandardScaler\n\nscaler = StandardScaler()\nX_scaled = scaler.fit_transform(X)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "## Important rule",
+          "Fit preprocessing on training data only."
+        ],
+        "code": "X_train_scaled = scaler.fit_transform(X_train)\nX_test_scaled = scaler.transform(X_test)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": [
+          "Otherwise information from the test set leaks into training.",
+          "## Pipeline"
+        ],
+        "code": "from sklearn.pipeline import Pipeline\n\npipe = Pipeline([\n    (\"scale\", StandardScaler()),\n    (\"model\", LinearRegression())\n])",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 5,
+        "prose": "A pipeline keeps preprocessing and model fitting together.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675051661,
+    "updatedAt": 1790675151661
+  },
+  {
+    "id": "ml-ds-15",
+    "name": "15 — Logistic Regression",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## From score to probability",
+          "A linear score is:",
+          "\\[\nz=w^Tx+b\n\\]",
+          "The sigmoid function converts it to `(0,1)`:",
+          "\\[\n\\sigma(z)=\\frac{1}{1+e^{-z}}\n\\]"
+        ],
+        "code": "def sigmoid(z):\n    return 1/(1+np.exp(-z))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "Try:"
+        ],
+        "code": "z = np.array([-5, -2, 0, 2, 5])\nprint(sigmoid(z))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "## Classification",
+          "The model estimates:",
+          "\\[\nP(y=1|x)\n\\]",
+          "A threshold such as `0.5` can turn probability into a class label.",
+          "The threshold is a decision rule, not part of the underlying probability model.",
+          "## Binary cross entropy",
+          "\\[\nL=-[y\\log(p)+(1-y)\\log(1-p)]\n\\]"
+        ],
+        "code": "def binary_cross_entropy(y, p):\n    eps = 1e-12\n    p = np.clip(p, eps, 1-eps)\n    return -(y*np.log(p)+(1-y)*np.log(1-p))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": [
+          "## Train with scikit-learn"
+        ],
+        "code": "from sklearn.linear_model import LogisticRegression\n\nmodel = LogisticRegression()\nmodel.fit(X_train, y_train)\n\nprobabilities = model.predict_proba(X_test)[:,1]\npredictions = model.predict(X_test)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675050661,
+    "updatedAt": 1790675150661
+  },
+  {
+    "id": "ml-ds-16",
+    "name": "16 — Metrics Are Functions of the Problem",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Confusion matrix",
+          "For binary classification:",
+          "- true positive;\n- true negative;\n- false positive;\n- false negative."
+        ],
+        "code": "from sklearn.metrics import confusion_matrix\n\nprint(confusion_matrix(y_test, predictions))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "## Precision",
+          "\\[\nPrecision=\\frac{TP}{TP+FP}\n\\]",
+          "## Recall",
+          "\\[\nRecall=\\frac{TP}{TP+FN}\n\\]",
+          "## F1",
+          "\\[\nF1=2\\frac{precision\\cdot recall}{precision+recall}\n\\]",
+          "## Thresholds"
+        ],
+        "code": "for threshold in [0.1, 0.3, 0.5, 0.7, 0.9]:\n    pred = (probabilities >= threshold).astype(int)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": "Changing the threshold changes the confusion matrix.\n\nTherefore \"the accuracy of the model\" is incomplete without specifying:\n\n- dataset;\n- split;\n- metric;\n- threshold;\n- population.\n\n## ROC and precision-recall\n\nUse scikit-learn to calculate curves and then inspect what the curves actually represent.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675049661,
+    "updatedAt": 1790675149661
+  },
+  {
+    "id": "ml-ds-17",
+    "name": "17 — Regularization",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Problem",
+          "Flexible models can fit noise.",
+          "One way to control this is to add a penalty to the objective.",
+          "Ridge regression:",
+          "\\[\nJ = MSE+\\lambda\\sum_jw_j^2\n\\]",
+          "Lasso:",
+          "\\[\nJ = MSE+\\lambda\\sum_j|w_j|\n\\]",
+          "## Experiment"
+        ],
+        "code": "from sklearn.linear_model import Ridge, Lasso",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "Generate many correlated or noisy features.",
+          "Fit:"
+        ],
+        "code": "for alpha in [0.001, 0.01, 0.1, 1, 10, 100]:\n    model = Ridge(alpha=alpha)\n    model.fit(X_train, y_train)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": "Measure validation error.\n\n## What changes?\n\nIncreasing regularization increases the cost of large parameters.\n\nIt constrains the hypothesis space.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675048661,
+    "updatedAt": 1790675148661
+  },
+  {
+    "id": "ml-ds-18",
+    "name": "18 — The Practical scikit-learn Workflow",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Goal",
+          "Turn the previous concepts into a reproducible training pipeline."
+        ],
+        "code": "from sklearn.pipeline import Pipeline\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.linear_model import LogisticRegression\n\nmodel = Pipeline([\n    (\"scale\", StandardScaler()),\n    (\"classifier\", LogisticRegression())\n])",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "Fit:"
+        ],
+        "code": "model.fit(X_train, y_train)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "Evaluate:"
+        ],
+        "code": "model.score(X_test, y_test)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": [
+          "## Why pipelines matter",
+          "A real ML workflow contains transformations before the estimator.",
+          "Pipelines make the sequence explicit and reduce accidental leakage.",
+          "## Cross-validation"
+        ],
+        "code": "from sklearn.model_selection import cross_val_score\n\nscores = cross_val_score(model, X, y, cv=5)\nprint(scores)\nprint(scores.mean())",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675047661,
+    "updatedAt": 1790675147661
+  },
+  {
+    "id": "ml-ds-19",
+    "name": "19 — Decision Trees",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Core idea",
+          "A decision tree recursively partitions the feature space.",
+          "Example rule:",
+          "```text\nif x1 < 4.2:\n    ...\nelse:\n    ...\n```",
+          "## Impurity",
+          "For classification, one common criterion is Gini impurity:",
+          "\\[\nG=1-\\sum_kp_k^2\n\\]",
+          "For a pure node, one class has probability 1, so `G=0`."
+        ],
+        "code": "from sklearn.tree import DecisionTreeClassifier\n\nmodel = DecisionTreeClassifier(max_depth=3, random_state=42)\nmodel.fit(X_train, y_train)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": "## Complexity\n\nIncrease `max_depth`.\n\nObserve:\n\n- training score;\n- validation score;\n- decision boundary.\n\nTrees can represent nonlinear interactions without requiring manual polynomial features.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675046661,
+    "updatedAt": 1790675146661
+  },
+  {
+    "id": "ml-ds-20",
+    "name": "20 — Ensembles, Random Forests, Gradient Boosting",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Random forest",
+          "A random forest trains many decision trees using randomized sampling/features and aggregates their predictions."
+        ],
+        "code": "from sklearn.ensemble import RandomForestClassifier\n\nmodel = RandomForestClassifier(\n    n_estimators=200,\n    max_depth=None,\n    random_state=42\n)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "## Gradient boosting",
+          "Boosting builds models sequentially, with later models emphasizing errors left by earlier models."
+        ],
+        "code": "from sklearn.ensemble import HistGradientBoostingClassifier\n\nmodel = HistGradientBoostingClassifier(random_state=42)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": "## Important distinction\n\nRandom forests primarily reduce variance through aggregation and randomization.\n\nBoosting constructs an additive model sequentially to reduce loss.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675045661,
+    "updatedAt": 1790675145661
+  },
+  {
+    "id": "ml-ds-21",
+    "name": "21 — Nearest Neighbors",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Distance",
+          "Euclidean distance:",
+          "\\[\nd(x,z)=\\sqrt{\\sum_i(x_i-z_i)^2}\n\\]"
+        ],
+        "code": "def distance(a, b):\n    return np.sqrt(np.sum((a-b)**2))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "## k-nearest neighbors",
+          "A new point is classified according to nearby training points."
+        ],
+        "code": "from sklearn.neighbors import KNeighborsClassifier\n\nmodel = KNeighborsClassifier(n_neighbors=5)\nmodel.fit(X_train, y_train)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": "## Why scaling matters\n\nIf one feature is measured in thousands and another in tenths, distance can be dominated by the first feature.\n\nStandardize and compare.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675044661,
+    "updatedAt": 1790675144661
+  },
+  {
+    "id": "ml-ds-22",
+    "name": "22 — Clustering",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Goal",
+          "Learn without target labels.",
+          "Generate data:"
+        ],
+        "code": "from sklearn.datasets import make_blobs\n\nX, _ = make_blobs(\n    n_samples=300,\n    centers=4,\n    cluster_std=0.8,\n    random_state=42\n)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "## K-means",
+          "K-means alternates between:",
+          "1. assigning points to the nearest centroid;\n2. recomputing each centroid as the mean of assigned points."
+        ],
+        "code": "from sklearn.cluster import KMeans\n\nmodel = KMeans(n_clusters=4, random_state=42, n_init=\"auto\")\nlabels = model.fit_predict(X)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": "## Objective\n\nK-means minimizes within-cluster squared distance:\n\n\\[\n\\sum_i ||x_i-\\mu_{c_i}||^2\n\\]\n\n## Important limitation\n\nThe number of clusters must be chosen.\n\nThe geometric assumptions of the method matter.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675043662,
+    "updatedAt": 1790675143662
+  },
+  {
+    "id": "ml-ds-23",
+    "name": "23 — PCA and Dimensionality Reduction",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Goal",
+          "Understand PCA as linear algebra, not a button called `PCA()`.",
+          "Given centered data, PCA finds directions of maximum variance.",
+          "## Center"
+        ],
+        "code": "X_centered = X - X.mean(axis=0)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "## Covariance matrix",
+          "\\[\nC=\\frac{1}{n-1}X^TX\n\\]"
+        ],
+        "code": "C = np.cov(X_centered, rowvar=False)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "## Eigenvectors"
+        ],
+        "code": "values, vectors = np.linalg.eigh(C)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": [
+          "The eigenvectors provide principal directions.",
+          "The eigenvalues describe variance along those directions.",
+          "Sort them:"
+        ],
+        "code": "order = np.argsort(values)[::-1]\nvalues = values[order]\nvectors = vectors[:, order]",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 5,
+        "prose": [
+          "## Project"
+        ],
+        "code": "Z = X_centered @ vectors[:, :2]",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 6,
+        "prose": "That is dimensionality reduction.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675042662,
+    "updatedAt": 1790675142662
+  },
+  {
+    "id": "ml-ds-24",
+    "name": "24 — Representation Is Part of the Model",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## A raw variable is not automatically a useful feature.",
+          "Suppose:",
+          "\\[\ny=x^2+\\epsilon\n\\]",
+          "A linear model using only `x` cannot represent the relationship.",
+          "Create:"
+        ],
+        "code": "X2 = np.column_stack([x, x**2])",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "Now the linear model is linear in the parameters while representing a nonlinear relationship in the original variable.",
+          "## Interactions"
+        ],
+        "code": "interaction = x1 * x2",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": "An interaction feature allows the model to represent effects involving two variables together.\n\n## Transformations\n\nCommon transformations include:\n\n- logarithm;\n- square root;\n- ratios;\n- differences;\n- rolling statistics;\n- polynomial terms;\n- categorical encodings.\n\n## Important distinction\n\nFeature engineering changes the representation available to the model.\n\nIt does not magically create information absent from the data.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675041662,
+    "updatedAt": 1790675141662
+  },
+  {
+    "id": "ml-ds-25",
+    "name": "25 — Cross-Validation and Hyperparameters",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Parameters vs hyperparameters",
+          "Parameters are learned during fitting.",
+          "Examples:",
+          "- regression coefficients;\n- neural-network weights.",
+          "Hyperparameters control the training/model procedure.",
+          "Examples:",
+          "- tree depth;\n- regularization strength;\n- number of neighbors.",
+          "## K-fold cross-validation",
+          "Split the data into `k` folds.",
+          "For each fold:",
+          "- train on the other folds;\n- evaluate on the held-out fold."
+        ],
+        "code": "from sklearn.model_selection import cross_validate\n\nresults = cross_validate(\n    model,\n    X,\n    y,\n    cv=5,\n    scoring=\"neg_mean_squared_error\"\n)\n\nprint(-results[\"test_score\"])",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "## Grid search"
+        ],
+        "code": "from sklearn.model_selection import GridSearchCV\n\nsearch = GridSearchCV(\n    model,\n    {\"classifier__C\": [0.01, 0.1, 1, 10]},\n    cv=5\n)\n\nsearch.fit(X, y)\nprint(search.best_params_)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675040662,
+    "updatedAt": 1790675140662
+  },
+  {
+    "id": "ml-ds-26",
+    "name": "26 — From Linear Models to Neural Networks",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Perceptron",
+          "A neuron can be written:",
+          "\\[\nz=w^Tx+b\n\\]",
+          "followed by an activation:",
+          "\\[\na=\\phi(z)\n\\]",
+          "For a ReLU:",
+          "\\[\nReLU(z)=max(0,z)\n\\]"
+        ],
+        "code": "def relu(z):\n    return np.maximum(0, z)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "## One layer"
+        ],
+        "code": "X = np.array([\n    [1, 2],\n    [2, 1],\n    [3, 4]\n])\n\nW = np.array([\n    [0.5, -1.0, 2.0],\n    [1.0,  0.5, -0.5]\n])\n\nb = np.array([0.1, 0.2, 0.3])\n\nZ = X @ W + b\nA = relu(Z)\n\nprint(A)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": "Shape:\n\n```text\nX: (samples, input_features)\nW: (input_features, neurons)\nb: (neurons,)\nA: (samples, neurons)\n```\n\n## Why depth matters\n\nOne linear layer is still a linear transformation.\n\nNonlinear activation between layers makes composition capable of representing nonlinear functions.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675039662,
+    "updatedAt": 1790675139662
+  },
+  {
+    "id": "ml-ds-27",
+    "name": "27 — Backpropagation",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## The essential idea",
+          "A neural network is a composition of functions.",
+          "If:",
+          "\\[\nz=wx+b\n\\]",
+          "and",
+          "\\[\nL=(z-y)^2\n\\]",
+          "then:",
+          "\\[\n\\frac{dL}{dw}\n=\n\\frac{dL}{dz}\n\\frac{dz}{dw}\n\\]",
+          "This is the chain rule.",
+          "## Scalar example"
+        ],
+        "code": "x = 3.0\ny = 10.0\nw = 2.0\nb = 1.0\n\nz = w*x+b\nloss = (z-y)**2\n\ndL_dz = 2*(z-y)\ndz_dw = x\n\ndL_dw = dL_dz * dz_dw\n\nprint(z, loss, dL_dw)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": "## Why backprop scales\n\nFor a computation graph, derivatives can be reused.\n\nFor a multilayer network, backpropagation computes gradients from the output toward the inputs using the chain rule.\n\n## Finite-difference verification\n\nFor a parameter `w`, approximate:\n\n\\[\n\\frac{dL}{dw}\\approx\n\\frac{L(w+\\epsilon)-L(w-\\epsilon)}{2\\epsilon}\n\\]\n\nUse this to verify your analytic gradient.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675038662,
+    "updatedAt": 1790675138662
+  },
+  {
+    "id": "ml-ds-28",
+    "name": "28 — PyTorch Tensors and Autograd",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Tensor"
+        ],
+        "code": "import torch\n\nx = torch.tensor([1., 2., 3.])\nprint(x)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "A tensor generalizes scalar/vector/matrix arrays to arbitrary dimensions.",
+          "## Gradient tracking"
+        ],
+        "code": "w = torch.tensor(2.0, requires_grad=True)\n\ny = (w-3)**2\ny.backward()\n\nprint(w.grad)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "PyTorch computed the derivative.",
+          "## Tensor operations"
+        ],
+        "code": "X = torch.randn(10, 3)\nW = torch.randn(3, 1)\nb = torch.randn(1)\n\nyhat = X @ W + b",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": "The same linear algebra you implemented with NumPy now participates in an automatic differentiation system.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675037662,
+    "updatedAt": 1790675137662
+  },
+  {
+    "id": "ml-ds-29",
+    "name": "29 — Training a Neural Network Properly",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Dataset",
+          "Use a synthetic nonlinear classification problem."
+        ],
+        "code": "from sklearn.datasets import make_moons\n\nX, y = make_moons(\n    n_samples=1000,\n    noise=0.2,\n    random_state=42\n)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "## Model"
+        ],
+        "code": "import torch\nfrom torch import nn\n\nmodel = nn.Sequential(\n    nn.Linear(2, 16),\n    nn.ReLU(),\n    nn.Linear(16, 1)\n)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "## Loss and optimizer"
+        ],
+        "code": "loss_fn = nn.BCEWithLogitsLoss()\noptimizer = torch.optim.Adam(model.parameters(), lr=0.01)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": [
+          "## Training loop",
+          "The essential loop is:"
+        ],
+        "code": "for epoch in range(1000):\n    optimizer.zero_grad()\n\n    logits = model(X_tensor)\n    loss = loss_fn(logits.squeeze(), y_tensor)\n\n    loss.backward()\n    optimizer.step()",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 5,
+        "prose": "Every training iteration is:\n\n**forward → loss → backward → parameter update**",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675036662,
+    "updatedAt": 1790675136662
+  },
+  {
+    "id": "ml-ds-30",
+    "name": "30 — Convolution",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## One-dimensional convolution",
+          "A kernel slides across a signal."
+        ],
+        "code": "x = np.array([1, 2, 3, 4, 5])\nkernel = np.array([1, 0, -1])",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "A local operation can detect changes.",
+          "Compute the valid convolution manually.",
+          "## Why images",
+          "An image is a tensor:",
+          "\\[\n(height,width,channels)\n\\]",
+          "A convolution kernel operates over local neighborhoods.",
+          "## PyTorch"
+        ],
+        "code": "layer = nn.Conv2d(\n    in_channels=1,\n    out_channels=4,\n    kernel_size=3\n)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": "The output contains learned feature maps.\n\n## Key idea\n\nConvolution introduces:\n\n- local connectivity;\n- parameter sharing;\n- translation-related inductive bias.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675035662,
+    "updatedAt": 1790675135662
+  },
+  {
+    "id": "ml-ds-31",
+    "name": "31 — Embeddings and Representation Learning",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Goal",
+          "Understand an embedding as a learned vector representation.",
+          "A lookup table can map an integer ID to a vector:"
+        ],
+        "code": "embedding = nn.Embedding(10, 4)\n\nids = torch.tensor([2, 5, 2, 7])\nprint(embedding(ids))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "Each ID gets a 4-dimensional vector.",
+          "## Similarity",
+          "Cosine similarity:",
+          "\\[\ncos(\\theta)=\\frac{x\\cdot y}{||x||||y||}\n\\]"
+        ],
+        "code": "import torch.nn.functional as F\n\na = torch.tensor([[1., 2.]])\nb = torch.tensor([[2., 4.]])\n\nprint(F.cosine_similarity(a, b))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": "## Why embeddings matter\n\nThey convert discrete objects into continuous vector spaces where distance and direction can encode learned relationships.\n\nThis idea appears in:\n\n- NLP;\n- recommendation;\n- retrieval;\n- images;\n- multimodal models.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675034662,
+    "updatedAt": 1790675134662
+  },
+  {
+    "id": "ml-ds-32",
+    "name": "32 — Attention",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## The core computation",
+          "Given queries `Q`, keys `K`, and values `V`:",
+          "\\[\nAttention(Q,K,V)\n=\nsoftmax\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V\n\\]",
+          "This is the central equation.",
+          "## Small numerical example"
+        ],
+        "code": "import numpy as np\n\nQ = np.array([[1., 0.]])\nK = np.array([\n    [1., 0.],\n    [0., 1.],\n    [1., 1.]\n])\n\nV = np.array([\n    [10., 0.],\n    [0., 20.],\n    [5., 5.]\n])\n\nscores = Q @ K.T\nscores = scores / np.sqrt(K.shape[1])",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "Implement softmax yourself:"
+        ],
+        "code": "def softmax(x):\n    e = np.exp(x - np.max(x, axis=-1, keepdims=True))\n    return e / e.sum(axis=-1, keepdims=True)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "Then:"
+        ],
+        "code": "weights = softmax(scores)\noutput = weights @ V",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": "## What happened?\n\nThe query produced a score for every key.\n\nSoftmax converted scores into weights.\n\nThe output is a weighted combination of values.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675033663,
+    "updatedAt": 1790675133663
+  },
+  {
+    "id": "ml-ds-33",
+    "name": "33 — Transformers: The Essential Mechanics",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Transformer block",
+          "At a conceptual level, a transformer block contains:",
+          "1. token/position representation;\n2. self-attention;\n3. residual connection;\n4. normalization;\n5. feed-forward network;\n6. another residual connection;\n7. normalization.",
+          "## Self-attention",
+          "The attention equation from Lesson 32 is the key.",
+          "For self-attention:",
+          "```text\nQ = XWq\nK = XWk\nV = XWv\n```",
+          "Then:",
+          "\\[\nA=softmax(QK^T/\\sqrt{d_k})\n\\]",
+          "\\[\nY=AV\n\\]",
+          "## Feed-forward network",
+          "Typically:",
+          "\\[\nFFN(x)=W_2\\phi(W_1x+b_1)+b_2\n\\]",
+          "## Residual connection"
+        ],
+        "code": "y = x + attention_output",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": "This preserves a direct path through the block.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675032663,
+    "updatedAt": 1790675132663
+  },
+  {
+    "id": "ml-ds-34",
+    "name": "34 — Data Cleaning Is Model Construction",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Principle",
+          "Cleaning changes the representation of the data.",
+          "Therefore cleaning decisions are modeling decisions.",
+          "## Missing values"
+        ],
+        "code": "df.isna().sum()",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "Possible strategies:",
+          "- remove;\n- impute;\n- add missingness indicators;\n- model missingness explicitly.",
+          "The correct choice depends on why the values are missing.",
+          "## Outliers",
+          "Do not automatically delete extreme observations.",
+          "First determine whether they are:",
+          "- measurement errors;\n- valid rare cases;\n- different population;\n- target phenomenon.",
+          "## Duplicate records"
+        ],
+        "code": "df.duplicated().sum()",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": "Duplicates can distort frequency-based methods and evaluation.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675031663,
+    "updatedAt": 1790675131663
+  },
+  {
+    "id": "ml-ds-35",
+    "name": "35 — Missing Data and Categorical Variables",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Categorical variables",
+          "A model cannot directly multiply `\"red\"` by a weight.",
+          "One-hot encoding represents categories as indicator variables."
+        ],
+        "code": "from sklearn.preprocessing import OneHotEncoder\n\nencoder = OneHotEncoder(handle_unknown=\"ignore\")",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "## Missing values"
+        ],
+        "code": "from sklearn.impute import SimpleImputer",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "Common numerical imputation:",
+          "\\[\nx_{missing}\\leftarrow median(X_{observed})\n\\]",
+          "## Combine transformations"
+        ],
+        "code": "from sklearn.compose import ColumnTransformer\nfrom sklearn.pipeline import Pipeline\n\nnumeric = Pipeline([\n    (\"imputer\", SimpleImputer(strategy=\"median\")),\n    (\"scale\", StandardScaler())\n])\n\ncategorical = Pipeline([\n    (\"imputer\", SimpleImputer(strategy=\"most_frequent\")),\n    (\"onehot\", OneHotEncoder(handle_unknown=\"ignore\"))\n])\n\npreprocess = ColumnTransformer([\n    (\"num\", numeric, numeric_columns),\n    (\"cat\", categorical, categorical_columns)\n])",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675030663,
+    "updatedAt": 1790675130663
+  },
+  {
+    "id": "ml-ds-36",
+    "name": "36 — Time Series and Temporal Validation",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Why random splitting can fail",
+          "If future information can influence training, random splitting can leak information backward through time.",
+          "Generate a time-indexed dataset."
+        ],
+        "code": "t = np.arange(500)\ny = 0.01*t + np.sin(t/10) + np.random.default_rng(1).normal(0, .2, 500)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "## Temporal split",
+          "Train on early observations and test on later observations."
+        ],
+        "code": "cut = 400\ntrain = y[:cut]\ntest = y[cut:]",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "## Lag features",
+          "A lag feature:",
+          "\\[\nx_t=y_{t-1}\n\\]"
+        ],
+        "code": "lag1 = y[:-1]\ntarget = y[1:]",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": "## Rolling features\n\nA rolling mean can be:\n\n\\[\nm_t=\\frac1k\\sum_{i=1}^{k}y_{t-i}\n\\]\n\nBe careful not to include future values.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675029663,
+    "updatedAt": 1790675129663
+  },
+  {
+    "id": "ml-ds-37",
+    "name": "37 — Experimental Design and Causal Thinking",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Prediction is not causation",
+          "A predictive model estimates relationships useful for prediction.",
+          "A causal claim requires stronger assumptions and design.",
+          "## Confounding example",
+          "Generate:"
+        ],
+        "code": "rng = np.random.default_rng(42)\n\nage = rng.normal(40, 10, 1000)\ntreatment = (age > 45).astype(int)\noutcome = 0.5*age + 2*treatment + rng.normal(0, 2, 1000)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": "Treatment is associated with age.\n\nA naive comparison of treated and untreated outcomes mixes the treatment effect with age differences.\n\n## Randomized experiment\n\nRandom assignment breaks the relationship between treatment and pre-existing variables in expectation.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675028663,
+    "updatedAt": 1790675128663
+  },
+  {
+    "id": "ml-ds-38",
+    "name": "38 — Bootstrap and Uncertainty",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Point estimate",
+          "Suppose:"
+        ],
+        "code": "x = np.array([4, 5, 6, 8, 10])\nprint(x.mean())",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "The mean is a point estimate.",
+          "But how variable would the estimate be across samples?",
+          "## Bootstrap",
+          "Repeatedly sample with replacement from the observed data."
+        ],
+        "code": "rng = np.random.default_rng(42)\n\nmeans = []\n\nfor _ in range(10000):\n    sample = rng.choice(x, size=len(x), replace=True)\n    means.append(sample.mean())\n\nmeans = np.array(means)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": [
+          "Estimate an interval using quantiles:"
+        ],
+        "code": "print(np.quantile(means, [0.025, 0.975]))",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 4,
+        "prose": "## Important distinction\n\nA bootstrap interval is not automatically a universal guarantee about the population.\n\nIts interpretation depends on the bootstrap method and assumptions.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675027663,
+    "updatedAt": 1790675127663
+  },
+  {
+    "id": "ml-ds-39",
+    "name": "39 — Error Analysis and Model Interpretation",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Aggregate metrics hide structure",
+          "A model can have acceptable average performance while failing systematically on a subgroup or region of feature space.",
+          "## Residuals",
+          "For regression:",
+          "\\[\nr_i=y_i-\\hat y_i\n\\]",
+          "Inspect residuals against predictions and important features.",
+          "## Classification errors",
+          "Separate:",
+          "- false positives;\n- false negatives;\n- high-confidence errors;\n- low-confidence errors.",
+          "## Permutation importance",
+          "A simple idea:",
+          "1. measure baseline performance;\n2. shuffle one feature;\n3. measure performance again;\n4. compare the degradation."
+        ],
+        "code": "from sklearn.inspection import permutation_importance",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675026663,
+    "updatedAt": 1790675126663
+  },
+  {
+    "id": "ml-ds-40",
+    "name": "40 — Distribution Shift",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Training distribution",
+          "A model is trained using observations from some distribution:",
+          "\\[\nP_{train}(X,Y)\n\\]",
+          "Deployment may involve:",
+          "\\[\nP_{test}(X,Y)\\neq P_{train}(X,Y)\n\\]",
+          "## Covariate shift",
+          "The input distribution changes:",
+          "\\[\nP(X)\n\\]",
+          "while the conditional relationship may remain similar.",
+          "## Experiment",
+          "Generate training data:"
+        ],
+        "code": "rng = np.random.default_rng(1)\n\nX_train = rng.normal(0, 1, (1000, 2))\ny_train = (X_train[:,0] + X_train[:,1] > 0).astype(int)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": [
+          "Generate test data with shifted inputs:"
+        ],
+        "code": "X_test = rng.normal(2, 1, (1000, 2))\ny_test = (X_test[:,0] + X_test[:,1] > 0).astype(int)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 3,
+        "prose": "Train and evaluate.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675025663,
+    "updatedAt": 1790675125663
+  },
+  {
+    "id": "ml-ds-41",
+    "name": "41 — Bayes and Probabilistic Modeling",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Bayes' rule",
+          "\\[\nP(\\theta|D)=\n\\frac{P(D|\\theta)P(\\theta)}{P(D)}\n\\]",
+          "Interpretation:",
+          "- prior: belief/model before data;\n- likelihood: how compatible data are with a parameter/model;\n- posterior: updated distribution after observing data.",
+          "## Coin example",
+          "Suppose a coin has unknown probability `p` of heads.",
+          "Generate observations:"
+        ],
+        "code": "rng = np.random.default_rng(42)\ndata = rng.binomial(1, 0.7, size=20)\nk = data.sum()\nn = len(data)\nprint(k, n)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": "A Beta prior:\n\n\\[\np\\sim Beta(\\alpha,\\beta)\n\\]\n\nwith Bernoulli observations gives:\n\n\\[\np|D\\sim Beta(\\alpha+k,\\beta+n-k)\n\\]",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675024664,
+    "updatedAt": 1790675124664
+  },
+  {
+    "id": "ml-ds-42",
+    "name": "42 — Gaussian Models and Generative Thinking",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Gaussian density",
+          "\\[\np(x)=\n\\frac{1}{\\sqrt{2\\pi\\sigma^2}}\ne^{-\\frac{(x-\\mu)^2}{2\\sigma^2}}\n\\]",
+          "The parameters are mean `μ` and variance `σ²`.",
+          "## Multivariate Gaussian",
+          "For vector `x`:",
+          "\\[\np(x)=\n\\frac{1}{\\sqrt{(2\\pi)^d|\\Sigma|}}\ne^{-\\frac12(x-\\mu)^T\\Sigma^{-1}(x-\\mu)}\n\\]",
+          "Notice the same objects learned earlier:",
+          "- vectors;\n- matrices;\n- transpose;\n- matrix inverse;\n- quadratic form.",
+          "## Why this is useful",
+          "A Gaussian model describes a probability distribution over vectors.",
+          "This connects linear algebra and probability directly.",
+          "## Experiment",
+          "Generate a 2D Gaussian with correlated variables."
+        ],
+        "code": "mean = np.array([0, 0])\ncov = np.array([\n    [3, 2],\n    [2, 3]\n])\n\nsamples = np.random.default_rng(42).multivariate_normal(\n    mean, cov, size=1000\n)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": "Plot it.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675023664,
+    "updatedAt": 1790675123664
+  },
+  {
+    "id": "ml-ds-43",
+    "name": "43 — Optimization Beyond Basic Gradient Descent",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Gradient descent is not the whole story",
+          "Common optimizers include:",
+          "- SGD;\n- momentum;\n- RMSprop;\n- Adam;\n- quasi-Newton methods.",
+          "## Momentum",
+          "A simplified momentum update:",
+          "\\[\nv_t=\\beta v_{t-1}+g_t\n\\]",
+          "\\[\n\\theta_t=\\theta_{t-1}-\\eta v_t\n\\]",
+          "The accumulated direction can reduce oscillation.",
+          "## Experiment",
+          "Construct a narrow curved quadratic:",
+          "\\[\nJ(x,y)=100x^2+y^2\n\\]",
+          "Gradient descent can oscillate strongly because curvature differs by direction."
+        ],
+        "code": "def grad(x, y):\n    return np.array([200*x, 2*y])",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": "Simulate updates.\n\n## Conditioning\n\nThe ratio of curvature across directions affects optimization difficulty.\n\nThis connects directly to feature scaling and why normalization can make optimization easier.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675022664,
+    "updatedAt": 1790675122664
+  },
+  {
+    "id": "ml-ds-44",
+    "name": "44 — Ensembles and Stacking",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Multiple models",
+          "Suppose several models produce predictions:"
+        ],
+        "code": "p1 = model1.predict_proba(X)[:,1]\np2 = model2.predict_proba(X)[:,1]\np3 = model3.predict_proba(X)[:,1]",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": "A simple ensemble:\n\n\\[\np=\\frac{p_1+p_2+p_3}{3}\n\\]\n\n## Why averaging can help\n\nIf models make partially independent errors, averaging can reduce variance.\n\nBut correlated errors limit the benefit.\n\n## Stacking\n\nA second-level model learns how to combine base-model predictions.\n\nImportant: training the meta-model on predictions produced from the same data used to train base models can leak information.\n\nOut-of-fold predictions solve this problem.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675021664,
+    "updatedAt": 1790675121664
+  },
+  {
+    "id": "ml-ds-45",
+    "name": "45 — Representation Learning",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Hand-designed features vs learned features",
+          "Earlier you created:",
+          "- polynomial features;\n- interactions;\n- transformations.",
+          "Neural networks can learn representations automatically.",
+          "## Tiny autoencoder",
+          "An autoencoder maps:",
+          "\\[\nx\\rightarrow z\\rightarrow \\hat x\n\\]",
+          "where `z` is a lower-dimensional representation."
+        ],
+        "code": "class Autoencoder(nn.Module):\n    def __init__(self):\n        super().__init__()\n        self.encoder = nn.Linear(10, 2)\n        self.decoder = nn.Linear(2, 10)\n\n    def forward(self, x):\n        z = self.encoder(x)\n        return self.decoder(z), z",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": "Train with reconstruction loss.\n\n## Why this matters\n\nThe model is learning a representation useful for reconstructing the input.\n\nThis introduces:\n\n- latent variables;\n- bottlenecks;\n- representation learning;\n- unsupervised objectives.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675020664,
+    "updatedAt": 1790675120664
+  },
+  {
+    "id": "ml-ds-46",
+    "name": "46 — Generative Models",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Two directions",
+          "Discriminative modeling often focuses on:",
+          "\\[\nP(y|x)\n\\]",
+          "Generative modeling can model:",
+          "\\[\nP(x)\n\\]",
+          "or the joint distribution:",
+          "\\[\nP(x,y)\n\\]",
+          "## Sampling",
+          "A generative model must provide a way to generate new samples.",
+          "For a simple Gaussian:"
+        ],
+        "code": "rng = np.random.default_rng(42)\n\nsamples = rng.normal(\n    loc=0,\n    scale=1,\n    size=(1000, 2)\n)",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      },
+      {
+        "id": 2,
+        "prose": "That is already a generative model: it defines a distribution and a sampling procedure.\n\n## Latent-variable idea\n\nA model may generate data by:\n\n\\[\nz\\sim P(z)\n\\]\n\n\\[\nx\\sim P(x|z)\n\\]\n\nThe latent variable `z` provides a lower-dimensional generative representation.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675019664,
+    "updatedAt": 1790675119664
+  },
+  {
+    "id": "ml-ds-47",
+    "name": "47 — Reinforcement Learning",
+    "cells": [
+      {
+        "id": 1,
+        "prose": "## Core objects\n\nA reinforcement-learning problem contains:\n\n- state `s`;\n- action `a`;\n- reward `r`;\n- next state `s'`;\n- policy;\n- value function.\n\nA value function estimates expected future reward.\n\n## Tiny environment\n\nCreate a one-dimensional world:\n\n```text\n0 -- 1 -- 2 -- 3 -- 4\n```\n\nThe agent starts at 0.\n\nActions:\n\n- left;\n- right.\n\nReward +1 at position 4.\n\n## Q-learning\n\nA common update is:\n\n\\[\nQ(s,a)\\leftarrow Q(s,a)+\n\\alpha[\nr+\\gamma\\max_{a'}Q(s',a')-Q(s,a)]\n\\]\n\nImplement this table directly.",
+        "code": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675018664,
+    "updatedAt": 1790675118664
+  },
+  {
+    "id": "ml-ds-48",
+    "name": "48 — Capstone: From Data to a Defensible Model",
+    "cells": [
+      {
+        "id": 1,
+        "prose": [
+          "## Objective",
+          "Choose a small real-world dataset that interests you.",
+          "Do not choose a dataset because it is traditionally used in ML courses.",
+          "Good sources include measurements, experiments, sensors, manufacturing, physics, sports, text, images, or any other domain where you can explain what the variables mean.",
+          "## Requirements",
+          "### 1. Define the prediction problem",
+          "State:",
+          "- input variables;\n- target;\n- unit of observation;\n- prediction time;\n- intended use;\n- what information is available at prediction time.",
+          "### 2. Inspect the data",
+          "Document:",
+          "- shape;\n- types;\n- missingness;\n- duplicates;\n- distributions;\n- unusual values;\n- categorical variables.",
+          "### 3. Establish a baseline",
+          "Use the simplest defensible model.",
+          "Examples:",
+          "- mean predictor;\n- majority classifier;\n- linear regression;\n- logistic regression.",
+          "### 4. Build at least three model families",
+          "Use models with different assumptions.",
+          "For example:",
+          "- linear/logistic;\n- tree ensemble;\n- neural network.",
+          "### 5. Validate correctly",
+          "Choose the split based on how the data will actually be encountered.",
+          "If the problem is temporal, use temporal validation.",
+          "If grouped observations exist, consider group-aware splitting.",
+          "### 6. Evaluate with appropriate metrics",
+          "Explain why each metric matters.",
+          "Do not report a metric without interpreting what it measures.",
+          "### 7. Perform error analysis",
+          "Find:",
+          "- largest regression errors;\n- false positives;\n- false negatives;\n- systematic subgroups;\n- high-confidence failures.",
+          "### 8. Test robustness",
+          "Change something meaningful:",
+          "- feature subset;\n- preprocessing;\n- model complexity;\n- threshold;\n- training sample;\n- time period.",
+          "Determine whether conclusions remain stable.",
+          "### 9. Explain the model",
+          "Use appropriate methods such as:",
+          "- coefficients;\n- permutation importance;\n- partial dependence;\n- feature attribution;\n- residual analysis.",
+          "Do not claim explanations that the method cannot support.",
+          "### 10. Final report",
+          "Your final notebook should answer:",
+          "1. What problem was solved?\n2. What data represented the problem?\n3. What assumptions were made?\n4. What baseline was used?\n5. What models were compared?\n6. How was validation performed?\n7. What metrics were used and why?\n8. Where does the model fail?\n9. What evidence supports the final conclusions?\n10. What would you investigate next?",
+          "## Mastery test",
+          "Without looking up the answer, explain these mathematically:",
+          "- linear regression;\n- logistic regression;\n- gradient descent;\n- regularization;\n- decision trees;\n- random forests;\n- boosting;\n- KNN;\n- K-means;\n- PCA;\n- neural-network layers;\n- backpropagation;\n- convolution;\n- embeddings;\n- attention;\n- Bayesian updating.",
+          "Then choose one unfamiliar algorithm from a tutorial.",
+          "Before watching its explanation, write down:",
+          "- inputs;\n- outputs;\n- parameters;\n- objective;\n- assumptions;\n- optimization procedure.",
+          "After studying it, implement a small version or derive its central equation.",
+          "That is the point of this curriculum: unfamiliar ML should become a new composition of familiar abstractions rather than an entirely new subject."
+        ],
+        "code": "",
+        "testCode": "",
+        "cellTitle": "",
+        "status": "idle",
+        "output": "",
+        "matplotlibImages": []
+      }
+    ],
+    "createdAt": 1790675017664,
+    "updatedAt": 1790675117664
+  }
+]
