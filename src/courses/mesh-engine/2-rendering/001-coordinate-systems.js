@@ -1151,7 +1151,7 @@ export default {
   coreConcept:
     'A transform converts one description of a point into another, and the same physical corner has to be describable in part, setup, world, camera and screen space at once. Three things go wrong here and none of them raises an error. Three angles lose a degree of freedom at pitch 90 - genuinely rank-2, measured - and the conditioning is already worse than 10:1 by 78.6 degrees, so eleven degrees of orientation are degraded before the lock. Interpolating those angles travels 17.6% further than necessary at a speed that varies 1.59x, which is what a lurching view is. And an axis swap that stands a Z-up part upright in a Y-up viewer has determinant -1, so it mirrors the part: same shape, same bounding box, holes on the wrong side. Orthogonality alone accepts it; only the determinant rejects it.',
   prerequisites: ['mesh-engine-1-12-attribution'],
-  nextLesson: null,
+  nextLesson: 'mesh-engine-2-2-manual-alignment',
 
   semantics: {
     core: [

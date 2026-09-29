@@ -29,15 +29,9 @@ function parseMarkdownToNotebook(filePath, index) {
 
     if (line.toLowerCase().startsWith('## challenge')) {
       isChallenge = true
-      // Flush anything before
+      // Inherit any existing prose into the challenge instructions
       if (currentProse.length > 0) {
-        cells.push({
-          id: cells.length + 1,
-          prose: formatProse(currentProse),
-          code: '',
-          cellTitle: '',
-          status: 'idle',
-        })
+        challengeInstructions = currentProse.join('\n') + '\n\n'
         currentProse = []
       }
       continue
