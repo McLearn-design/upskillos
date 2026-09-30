@@ -6,6 +6,7 @@
 // frame, which panel), and `guide` lists things to look at and try.
 
 import type { Editor } from './Editor';
+import type { Vec3 } from './EditMesh';
 import { runScript } from './api';
 import { CHARACTER, EXAMPLES } from './examples';
 import { runPython, type PyodideLike } from './python';
@@ -32,6 +33,47 @@ export interface ProjectSetup {
   view?: 'all' | 'selected';
 }
 
+/** An object as it was when the project opened, so a guide step can tick when you change it. */
+export interface StartObject { position: Vec3; rotation: Vec3; scale: Vec3; verts: Vec3[] | null; bones: number; glsl: string | undefined }
+export interface StartState {
+  obj(name: string): StartObject | undefined;
+  /** The heat map shown at the start, as JSON, or null. */
+  field: string | null;
+  /** How long the GUI → code log was: steps look only at what you did after. */
+  log: number;
+}
+
+/**
+ * A guide step: plain text, or text with a check that ticks it when you have done
+ * it. Checks read only the scene, the mode and the GUI → code log, never the UI.
+ */
+export type GuideStep = string | { text: string; done: (e: Editor, start: StartState) => boolean };
+export const stepText = (g: GuideStep): string => (typeof g === 'string' ? g : g.text);
+const step = (text: string, done: (e: Editor, start: StartState) => boolean): GuideStep => ({ text, done });
+
+/** Record the scene as it is now, for guide steps to compare against. */
+export function startState(e: Editor): StartState {
+  const objs = new Map(e.scene.objects.map((o) => [o.name, {
+    position: [...o.position] as Vec3, rotation: [...o.rotation] as Vec3, scale: [...o.scale] as Vec3,
+    verts: o.mesh ? o.mesh.verts.map((v) => [...v] as Vec3) : null, bones: o.bones?.length ?? 0, glsl: o.material?.glsl,
+  }]));
+  return { obj: (n) => objs.get(n), field: e.field ? JSON.stringify(e.field.spec) : null, log: e.log.length };
+}
+
+// What guide checks ask.
+/** You did this operation (its label in the GUI → code log) since the project opened. */
+const did = (e: Editor, s: StartState, label: string, times = 1) => e.log.slice(s.log).filter((l) => l.label === label).length >= times;
+/** Weight-paint strokes since the project opened (each is logged as "Paint <bone>"). */
+const strokes = (e: Editor, s: StartState) => e.log.slice(s.log).filter((l) => l.label.startsWith('Paint ') && l.code?.includes('.paintWeights(')).length;
+/** The object's position, rotation or scale is not what it was. */
+const moved = (e: Editor, s: StartState, name: string) => {
+  const o = e.scene.get(name), was = s.obj(name);
+  const same = (a: Vec3, b: Vec3) => a.every((x, i) => Math.abs(x - b[i]) < 1e-6);
+  return !!o && !!was && !(same(o.position, was.position) && same(o.rotation, was.rotation) && same(o.scale, was.scale));
+};
+/** The heat map of this kind is showing on this object. */
+const showing = (e: Editor, name: string, kind: string) => !!e.field && e.scene.get(e.field.objectId)?.name === name && e.field.spec.kind === kind;
+
 export interface ExampleProject {
   id: string;
   title: string;
@@ -41,7 +83,7 @@ export interface ExampleProject {
   lang: 'js' | 'python';
   code: string;
   setup: ProjectSetup;
-  guide: string[];
+  guide: GuideStep[];
 }
 
 const rigCode = EXAMPLES.find((x) => x.id === 'rig-character')!.code;
@@ -49,86 +91,8 @@ const rigCode = EXAMPLES.find((x) => x.id === 'rig-character')!.code;
 const rigOnly = rigCode.slice(0, rigCode.indexOf('\n// 8.'));
 const slerpCode = EXAMPLES.find((x) => x.id === 'euler-vs-slerp')!.code;
 
-export const PROJECTS: ExampleProject[] = [
-  // ── Learning ────────────────────────────────────────────────────────────
-  {
-    id: 'predict-catmull-clark',
-    title: 'Predict Catmull–Clark',
-    icon: '🎯',
-    group: 'Learning',
-    desc: 'A cube is subdivided while the trace records. The trace player is in Predict mode: before it shows a face point, an edge point or a moved vertex, you work it out.',
-    lang: 'js',
-    setup: { select: 'Cube to subdivide', trace: true, predict: true, tab: 'trace', view: 'all' },
-    guide: [
-      'Press Show in viewport, then Play in the Algorithm trace. It stops at each 🎯 question: the inputs are in the question and highlighted in the viewport; the answer is hidden.',
-      'Type x, y and z and press Check (Enter works). Wrong numbers turn red; try again or press Show me. The rule appears once it is answered.',
-      'Face points first: the average of a face\u2019s corners. Then edge points: the average of the two ends and the two face points beside the edge. Then the old vertices move: (F̄ + 2R̄ + (n − 3)V) / n.',
-      'The 🎯 Predict button shows how many you got right first time. Predict works on any trace: turn on Record traces, extrude or inset something, and the questions are there too.',
-    ],
-    code: `// A cube, subdivided once with Record traces on: every step of Catmull–Clark is recorded.
-const cube = scene.add.cube({ name: 'Cube to subdivide', size: 2, position: [0, 1, 0] })
-cube.mesh.subdivide(1)
-log('6 faces became', cube.mesh.faces.length, 'quads. Open the Algorithm trace and predict each step.')`,
-  },
-  {
-    id: 'two-lists',
-    title: 'A mesh is two lists',
-    icon: '🔺',
-    group: 'Learning',
-    desc: 'Two square pyramids typed in as a vertex list and a face list. One shares its corners between faces; the other gives every face its own copies. Pull the tip of each and see which one tears.',
-    lang: 'js',
-    setup: { select: 'Pyramid', tab: 'script', view: 'all' },
-    guide: [
-      'The Script tab shows the two lists that built both pyramids. The left one shares its corners: 5 vertices. The right one gives each face its own copies: 16.',
-      'Select the left Pyramid, press Tab for edit mode, click its tip and press G, then move the mouse up and click. All four sides follow the tip: they all name vertex 4.',
-      'Press Tab, select the right pyramid and do the same. Only one side’s corner moves and the pyramid tears open: nothing joins the four copies of the tip.',
-      'Undo, then in the Script change the tip’s height 1.5 to 3 and press Run. Only the vertex list changed; the face list is the same and the faces follow.',
-    ],
-    code: `// A square pyramid, typed in as two lists.
-// 1. Where each corner is: vertex i is the point [x, y, z].
-const vertices = [
-  [-1, 0, -1],   // vertex 0
-  [ 1, 0, -1],   // vertex 1
-  [ 1, 0,  1],   // vertex 2
-  [-1, 0,  1],   // vertex 3
-  [ 0, 1.5, 0],  // vertex 4: the tip
-]
-// 2. Which corners make each face, in order around its edge.
-const faces = [
-  [0, 1, 2, 3],  // face 0: the square base
-  [1, 0, 4],     // faces 1-4: the sides, all using the tip, vertex 4
-  [2, 1, 4],
-  [3, 2, 4],
-  [0, 3, 4],
-]
-scene.add.mesh({ name: 'Pyramid', verts: vertices, faces, position: [-1.6, 0, 0] })
-
-// The same five faces with nothing shared: each face gets its own copies of its corners.
-const copies = [], ownFaces = []
-for (const f of faces) ownFaces.push(f.map((i) => copies.push([...vertices[i]]) - 1))
-scene.add.mesh({ name: 'Pyramid, separate faces', verts: copies, faces: ownFaces, position: [1.6, 0, 0] })
-
-log('Shared corners:', vertices.length, 'vertices,', faces.length, 'faces')
-log('Separate faces:', copies.length, 'vertices,', ownFaces.length, 'faces:', JSON.stringify(ownFaces))`,
-  },
-
-  // ── Modelling ───────────────────────────────────────────────────────────
-  {
-    id: 'island',
-    title: 'Low-poly island',
-    icon: '🏝️',
-    group: 'Modelling',
-    desc: 'Terrain from a height formula, a sea, palm trees built from primitives and grouped under empties, and rounded rocks.',
-    lang: 'js',
-    setup: { view: 'all', select: 'Island' },
-    guide: [
-      'The land is a flat 24 × 24 grid. Every vertex got its height from one formula, height(x, z): Heat map › Height (y) colours it by that number.',
-      'Heat map › Mean curvature on the island: red where the ground bulges (hilltops), blue where it dips (valleys).',
-      'Click a tree. It is an empty with two children, a trunk and leaves: the inspector shows World = Tree · part. Rotate the tree and both follow.',
-      'Script tab: change the seed on the first line, undo (Ctrl+Z), run: a different island.',
-      'The grass is a texture on UVs projected straight down (UV › Project from above): for terrain that is all the unwrapping it needs. Open the UV tab to see the grid laid flat.',
-    ],
-    code: `// A low-poly island. Everything here is placed by arithmetic: change a number, rerun.
+/** The island, shared by the island project and its fly-through. */
+const islandCode = `// A low-poly island. Everything here is placed by arithmetic: change a number, rerun.
 let seed = 11
 const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647   // a repeatable random number, 0–1
 
@@ -177,7 +141,88 @@ for (let i = 0; i < 6; i++) {
   for (const v of rock.mesh.verts) { v.x += 0.12 * (rand() - 0.5); v.y *= 0.7; v.z += 0.12 * (rand() - 0.5) }
   rock.material.color = '#8a8d91'
 }
-log(land.mesh, '·', trees, 'trees · 6 rocks')`,
+log(land.mesh, '·', trees, 'trees · 6 rocks')`;
+
+export const PROJECTS: ExampleProject[] = [
+  // ── Learning ────────────────────────────────────────────────────────────
+  {
+    id: 'predict-catmull-clark',
+    title: 'Predict Catmull–Clark',
+    icon: '🎯',
+    group: 'Learning',
+    desc: 'A cube is subdivided while the trace records. The trace player is in Predict mode: before it shows a face point, an edge point or a moved vertex, you work it out.',
+    lang: 'js',
+    setup: { select: 'Cube to subdivide', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Press Show in viewport, then Play in the Algorithm trace. It stops at each 🎯 question: the inputs are in the question and highlighted in the viewport; the answer is hidden.',
+      'Type x, y and z and press Check (Enter works). Wrong numbers turn red; try again or press Show me. The rule appears once it is answered.',
+      'Face points first: the average of a face\u2019s corners. Then edge points: the average of the two ends and the two face points beside the edge. Then the old vertices move: (F̄ + 2R̄ + (n − 3)V) / n.',
+      'The 🎯 Predict button shows how many you got right first time. Predict works on any trace: turn on Record traces, extrude or inset something, and the questions are there too.',
+    ],
+    code: `// A cube, subdivided once with Record traces on: every step of Catmull–Clark is recorded.
+const cube = scene.add.cube({ name: 'Cube to subdivide', size: 2, position: [0, 1, 0] })
+cube.mesh.subdivide(1)
+log('6 faces became', cube.mesh.faces.length, 'quads. Open the Algorithm trace and predict each step.')`,
+  },
+  {
+    id: 'two-lists',
+    title: 'A mesh is two lists',
+    icon: '🔺',
+    group: 'Learning',
+    desc: 'Two square pyramids typed in as a vertex list and a face list. One shares its corners between faces; the other gives every face its own copies. Pull the tip of each and see which one tears.',
+    lang: 'js',
+    setup: { select: 'Pyramid', tab: 'script', view: 'all' },
+    guide: [
+      'The Script tab shows the two lists that built both pyramids. The left one shares its corners: 5 vertices. The right one gives each face its own copies: 16.',
+      step('Select the left Pyramid, press Tab for edit mode, click its tip and press G, then move the mouse up and click. All four sides follow the tip: they all name vertex 4.', (e, s) => { const m = e.scene.get('Pyramid')?.mesh; return !!m && m.verts[4][1] > s.obj('Pyramid')!.verts![4][1] + 0.05; }),
+      step('Press Tab, select the right pyramid and do the same. Only one side’s corner moves and the pyramid tears open: nothing joins the four copies of the tip.', (e) => { const m = e.scene.get('Pyramid, separate faces')?.mesh; if (!m) return false; const ys = [6, 9, 12, 15].map((i) => m.verts[i][1]); return Math.max(...ys) - Math.min(...ys) > 0.05; }),
+      'Open GUI → code: each pull you made is one mesh.setVerts line, which changes positions only. No line touches the face list. Ctrl+Z undoes a pull.',
+    ],
+    code: `// A square pyramid, typed in as two lists.
+// 1. Where each corner is: vertex i is the point [x, y, z].
+const vertices = [
+  [-1, 0, -1],   // vertex 0
+  [ 1, 0, -1],   // vertex 1
+  [ 1, 0,  1],   // vertex 2
+  [-1, 0,  1],   // vertex 3
+  [ 0, 1.5, 0],  // vertex 4: the tip
+]
+// 2. Which corners make each face, in order around its edge.
+const faces = [
+  [0, 1, 2, 3],  // face 0: the square base
+  [1, 0, 4],     // faces 1-4: the sides, all using the tip, vertex 4
+  [2, 1, 4],
+  [3, 2, 4],
+  [0, 3, 4],
+]
+scene.add.mesh({ name: 'Pyramid', verts: vertices, faces, position: [-1.6, 0, 0] })
+
+// The same five faces with nothing shared: each face gets its own copies of its corners.
+const copies = [], ownFaces = []
+for (const f of faces) ownFaces.push(f.map((i) => copies.push([...vertices[i]]) - 1))
+scene.add.mesh({ name: 'Pyramid, separate faces', verts: copies, faces: ownFaces, position: [1.6, 0, 0] })
+
+log('Shared corners:', vertices.length, 'vertices,', faces.length, 'faces')
+log('Separate faces:', copies.length, 'vertices,', ownFaces.length, 'faces:', JSON.stringify(ownFaces))`,
+  },
+
+  // ── Modelling ───────────────────────────────────────────────────────────
+  {
+    id: 'island',
+    title: 'Low-poly island',
+    icon: '🏝️',
+    group: 'Modelling',
+    desc: 'Terrain from a height formula, a sea, palm trees built from primitives and grouped under empties, and rounded rocks.',
+    lang: 'js',
+    setup: { view: 'all', select: 'Island' },
+    guide: [
+      'The land is a flat 24 × 24 grid. Every vertex got its height from one formula, height(x, z): Heat map › Height (y) colours it by that number.',
+      'Heat map › Mean curvature on the island: red where the ground bulges (hilltops), blue where it dips (valleys).',
+      step('Click a tree. It is an empty with two children, a trunk and leaves: the inspector shows World = Tree · part. Rotate the tree and both follow.', (e, s) => e.scene.objects.some((o) => /^Tree \d+$/.test(o.name) && moved(e, s, o.name))),
+      'Script tab: change the seed on the first line, undo (Ctrl+Z), run: a different island.',
+      'The grass is a texture on UVs projected straight down (UV › Project from above): for terrain that is all the unwrapping it needs. Open the UV tab to see the grid laid flat.',
+    ],
+    code: islandCode,
   },
   {
     id: 'dining-set',
@@ -189,7 +234,7 @@ log(land.mesh, '·', trees, 'trees · 6 rocks')`,
     setup: { view: 'all', select: 'Chair 2' },
     guide: [
       'The selected chair sits inside "Dining set": the inspector shows its world matrix = Dining set · Chair 2. Its rotation of 180° is the only thing that differs from Chair 1.',
-      'Select "Dining set" and rotate it (R): the table and every chair turn together about its origin.',
+      step('Select "Dining set" and rotate it (R): the table and every chair turn together about its origin.', (e, s) => moved(e, s, 'Dining set')),
       'Select the table top and press Tab: its edges were bevelled (two segments, 2.5 cm) so they catch the light, then the top face was inset (an inner ring) and pushed down 2 cm, making a lip.',
       'Every chair is made by one function in the script, called four times with a different place and turn.',
       'The wood grain is a texture: each box was cut along its sharp edges and unwrapped (the grain() function). Select the table top and open the UV tab to see its six pieces.',
@@ -250,9 +295,9 @@ log(scene.objects.length, 'objects in one hierarchy')`,
     setup: { view: 'all', select: 'Character', trace: true },
     guide: [
       'Press Tab: the black cage is what you edit, 33 quads for half a body. The mirror makes the other half and subdivision smooths it.',
-      'In the inspector, turn the mirror and subdivision modifiers off and on to see what each one does.',
+      step('In the inspector, turn the mirror and subdivision modifiers off and on to see what each one does.', (e, s) => did(e, s, 'Modifier setting')),
       'The Algorithm trace panel holds the last operation recorded while it was built: step through it.',
-      'Heat map › Mean curvature: the smooth body is red where it is most curved (the thin limbs).',
+      step('Heat map › Mean curvature: the smooth body is red where it is most curved (the thin limbs).', (e) => showing(e, 'Character', 'mean')),
     ],
     code: CHARACTER + `
 body.material.color = '#d9a47a'`,
@@ -269,8 +314,8 @@ body.material.color = '#d9a47a'`,
     guide: [
       'Tab into edit mode: the edges were bevelled with two segments (Ctrl+B), which is why they catch the light as a rounded band, not a sharp line.',
       'Each side was inset as a region (I) and the inset panel pushed in (E with a negative distance). Select a side\u2019s panel face and press I again: the Adjust panel lets you change the thickness afterwards.',
-      'Select a few edges and press Ctrl+B yourself; then change Width and Segments in the Adjust panel. The Algorithm trace records each bevel.',
-      'Select two neighbouring faces of a frame and press Ctrl+X: dissolve merges them into one face without changing the shape.',
+      step('Select a few edges and press Ctrl+B yourself; then change Width and Segments in the Adjust panel. The Algorithm trace records each bevel.', (e, s) => did(e, s, 'Bevel')),
+      step('Select two neighbouring faces of a frame and press Ctrl+X: dissolve merges them into one face without changing the shape.', (e, s) => did(e, s, 'Dissolve')),
     ],
     code: `// A crate: bevel the edges, inset a panel on each side, push the panels in.
 const crate = scene.add.cube({ name: 'Crate', size: 1.6, position: [0, 0.8, 0] })
@@ -301,7 +346,7 @@ log(m, '· closed:', m.stats().closed)`,
       'Catmull\u2013Clark moves every vertex toward the average of its neighbours. With nothing near an edge to hold it, the whole cube rounds off (left).',
       'A support loop is an extra ring of edges close to a sharp edge: the average then stays near the edge, so it stays sharp (right). Here each face was inset by 10 cm to make them.',
       'The output panel prints each cube\u2019s volume after subdivision against the plain cube\u2019s 2.744: the closer, the more box-like.',
-      'Tab into "Support loops", select the four inset edges round one face (edge select, Shift-click) and press Ctrl+X: that side\u2019s support is dissolved and it softens again.',
+      step('Tab into "Support loops", select the four inset edges round one face (edge select, Shift-click) and press Ctrl+X: that side\u2019s support is dissolved and it softens again.', (e, s) => did(e, s, 'Dissolve')),
     ],
     code: `// The same subdivision on three cages. Only what is near the edges differs.
 function cube(name, x) {
@@ -333,7 +378,7 @@ for (const c of [plain, bevelled, looped])
     setup: { select: 'Ball', tab: 'timeline', frame: 1, play: true, view: 'all' },
     guide: [
       'Timeline › position: the y curve is a string of parabolas. Only the tops and the bounces are keys; the rest is computed.',
-      'Go to a top key and set it to "ease" instead of ease-in: the ball now hangs at the floor. Gravity is quadratic, s = t², not the S-curve.',
+      step('Go to a top key and set it to "ease" instead of ease-in: the ball now hangs at the floor. Gravity is quadratic, s = t², not the S-curve.', (e) => (e.scene.get('Ball')?.anim?.position ?? []).some((k) => k.interp === 'ease')),
       'The frame counts come from t = √(2h / g) in the script: a lower bounce is quicker.',
       'Scale: stretched just before each contact, squashed on it, round again after: the oldest rule of animation.',
     ],
@@ -377,7 +422,7 @@ log('keys at', ball.animation.position.map((k) => k.frame).join(', '))`,
     guide: [
       'The blue line is the gripper’s motion path. No key is on the gripper itself: it moves because its parents turn.',
       'Inspector › World = Base · Turret · Shoulder · Elbow · Wrist · Gripper: the chain of matrices, multiplied in that order.',
-      'Select Shoulder and look at the Timeline graph: one angle, eased between keys. Watch how it swings everything below it.',
+      step('Select Shoulder and look at the Timeline graph: one angle, eased between keys. Watch how it swings everything below it.', (e) => e.activeObject?.name === 'Shoulder'),
       'Each part hangs off a joint empty, so a part’s scale never stretches the parts below it.',
       'The block is not a child of the arm: the script reads the gripper’s world position every 3 frames and keys the block there ("baking"). Select the block to see its keys.',
     ],
@@ -462,9 +507,9 @@ log(scene.objects.length, 'objects,', poses.length, 'poses keyed on 6 of them; t
     lang: 'js',
     setup: { select: 'Rig', bone: 'UpperArm.L', tab: 'timeline', frame: 1, play: true, view: 'all', trace: true },
     guide: [
-      'Press Space to pause, then Ctrl+Tab: pose mode. Click a bone and drag the gizmo rings; I keys the pose at this frame. (Tab instead edits the bones themselves: their joints and roll.)',
+      step('Press Space to pause, then Ctrl+Tab: pose mode. Click a bone and drag the gizmo rings; I keys the pose at this frame. (Tab instead edits the bones themselves: their joints and roll.)', (e, s) => did(e, s, 'Pose bone')),
       'Select Character and press Ctrl+Tab: weight paint mode. The "Fix a bad rig" project walks through repairing the chest.',
-      'Select Character and use Heat map › Bone weights (or the Skin panel): red is where a bone moves the skin fully.',
+      step('Select Character and use Heat map › Bone weights (or the Skin panel): red is where a bone moves the skin fully.', (e) => showing(e, 'Character', 'weight')),
       'The Algorithm trace panel shows how the weights were computed: heat spreading from each bone over the surface.',
       'Tab into edit mode on Character, select a vertex on the hand and press "Explain skinning here": each bone’s idea of where it goes, and the blend.',
     ],
@@ -492,8 +537,8 @@ body.material.color = '#d9a47a'`,
     setup: { select: 'Character', frame: 24, weightPaint: 'Spine', view: 'all' },
     guide: [
       'The heat map is the Spine\u2019s weights: the left chest is blue, so the spine barely moves it; the raised arm pulls it up instead. Automatic weights gave it to UpperArm.L, the nearest bone through the air.',
-      'Brush Draw, Value 1: drag over the left chest. It turns red, and the chest drops back into place. Each stroke is one undo step and one paintWeights line in GUI → code.',
-      'Turn on X-mirror, then paint the right chest too: the other side\u2019s bone is painted at the mirrored spot.',
+      step('Brush Draw, Value 1: drag over the left chest. It turns red, and the chest drops back into place. Each stroke is one undo step and one paintWeights line in GUI → code.', (e, s) => strokes(e, s) >= 1),
+      step('Turn on X-mirror, then paint the right chest too: the other side\u2019s bone is painted at the mirrored spot.', (e, s) => e.paint.mirror && strokes(e, s) >= 2),
       'Pick UpperArm.L in the panel and use Blur along the shoulder to soften the crease; scrub the Timeline to see it bend.',
     ],
     code: rigCode + `
@@ -509,9 +554,9 @@ body.material.color = '#d9a47a'`,
     setup: { select: 'Tentacle rig', bone: 'Seg 1', tab: 'timeline', frame: 1, play: true, view: 'all' },
     guide: [
       'Every bone has the same kind of key: a turn about its own x axis. The wave comes from giving each bone the same swing a little later than the one below.',
-      'Pause (Space) and press Tab on the rig: Edit bones. Click a joint and drag it: the joints that touch move with it. Select the top tail and press E to grow a sixth segment.',
-      'Still in Edit bones, set Roll to 90 on Seg 1 in the inspector, then play: that segment now bends sideways under the same keys. Roll decides which way a bone’s x axis faces, and so its bending plane.',
-      'Ctrl+Tab for pose mode: bend a segment yourself and key it with I. Moving bones after binding changes the rest pose; "Bind again" in the tentacle’s Skin panel refreshes the weights.',
+      step('Pause (Space) and press Tab on the rig: Edit bones. Click a joint and drag it: the joints that touch move with it. Select the top tail and press E to grow a sixth segment.', (e, s) => (e.scene.get('Tentacle rig')?.bones?.length ?? 0) > s.obj('Tentacle rig')!.bones),
+      step('Still in Edit bones, set Roll to 90 on Seg 1 in the inspector, then play: that segment now bends sideways under the same keys. Roll decides which way a bone’s x axis faces, and so its bending plane.', (e) => Math.abs((e.scene.get('Tentacle rig')?.bones?.find((b) => b.name === 'Seg 1')?.roll ?? 0) - Math.PI / 2) < 0.02),
+      step('Ctrl+Tab for pose mode: bend a segment yourself and key it with I. Moving bones after binding changes the rest pose; "Bind again" in the tentacle’s Skin panel refreshes the weights.', (e, s) => did(e, s, 'Pose bone')),
     ],
     code: `// A tentacle: a tapered tube and a chain of five bones, curling in a travelling wave.
 scene.setTimeline({ start: 1, end: 96, fps: 24 })
@@ -591,6 +636,39 @@ log('Same bones, same weights, same keys. Frame 36: the wrist is turned 172°.')
   },
 
   {
+    id: 'island-flythrough',
+    title: 'Fly-through of the island',
+    icon: '🎥',
+    group: 'Animation',
+    desc: 'A camera circles the island once in ten seconds, rising and falling, always looking at the peak. Look through it, play, and render a still to a PNG.',
+    lang: 'js',
+    setup: { select: 'Camera', view: 'all' },
+    guide: [
+      'The white pyramid is the camera: it looks down its own −z axis, and the triangle marks its up. The blue line is its path.',
+      step('Press 0 to look through the camera, then Space to play: the view flies round the island. Drag or scroll to leave the camera view.', (e) => e.scene.timeline.frame !== 1),
+      'Each key is the camera’s position plus a rotation from lookAt(peak). Its rotation mode is quaternion, so between keys it turns by slerp: the shortest way, with no spin where the angle wraps from 180° to −180°.',
+      step('In the Inspector, set Field of view to 25: a longer lens, so the island fills more of the frame and looks flatter.', (e) => (e.scene.get('Camera')?.camera?.fov ?? 40) < 30),
+      'Pick a frame you like and press Render still (PNG) in the Inspector (or View › Render still): only the models are drawn, from the camera, at the render size.',
+    ],
+    code: islandCode + `
+
+// ── The fly-through ─────────────────────────────────────────────────
+// Once round in 240 frames (10 s at 24 fps). Frame 241 is frame 1 again, so it loops.
+scene.setTimeline({ start: 1, end: 240, fps: 24 })
+const cam = scene.add.camera({ name: 'Camera', fov: 40 })
+cam.rotationMode = 'quaternion'                      // between keys, turn by slerp
+const peak = [0, 1.2, 0]
+for (let f = 1; f <= 241; f += 6) {
+  const a = 2 * Math.PI * (f - 1) / 240               // the angle round the island
+  const r = 8.5 - 1.5 * Math.cos(2 * a)               // nearer on two sides, farther on the others
+  cam.position = [r * Math.sin(a), 2.6 + 1.2 * Math.sin(2 * a), r * Math.cos(a)]
+  cam.lookAt(peak)                                    // point −z at the peak
+  cam.keyframe(f, { position: cam.position, rotation: cam.rotation, interp: 'linear' })
+}
+scene.frame = 1
+log('Camera keyed every 6 frames:', 41, 'keys; the scene camera is', scene.camera.name)`,
+  },
+  {
     id: 'walk-cycle',
     title: 'Walk cycle',
     icon: '🚶‍♂️',
@@ -651,7 +729,7 @@ log('4 cycles of 24 frames; press Space')`,
     setup: { select: 'Torus', view: 'all', tab: 'script' },
     guide: [
       'The torus is coloured by Gaussian curvature K: red outside (dome-like), blue inside (saddle-like), white along the top and bottom circles.',
-      'Select each shape and switch Heat map between H and K. The cylinder: H is not zero, K is. It bends in one direction only.',
+      step('Select each shape and switch Heat map between H and K. The cylinder: H is not zero, K is. It bends in one direction only.', (e) => showing(e, 'Cylinder', 'mean')),
       'The output panel: K summed over each closed surface is 2π·(V − E + F). Sphere, cylinder and cube give 4π; the torus gives 0, however you bend it.',
       'The saddle (y = x² − z² scaled) is blue for K everywhere: it curves up one way and down the other.',
     ],
@@ -688,7 +766,7 @@ torus.mesh.showField('gaussian')`,
       'The colours are walking distance on the tube from the white dot, not straight-line distance: follow a line of equal colour round the knot.',
       'The Algorithm trace panel holds the heat method step by step: heat spreading for a short time, the direction it flows, the divergence, then the Poisson solve. "Show in viewport" colours the knot at each step.',
       'Script tab: the knot is (sin t + 2 sin 2t, cos t − 2 cos 2t, −sin 3t), with a ring of vertices around each point. Change the 3 in sin 3t, undo, run.',
-      'Tab into edit mode, select a different vertex, and Heat map › Distance from selected vertices.',
+      step('Tab into edit mode, select a different vertex, and Heat map › Distance from selected vertices.', (e, s) => e.field?.spec.kind === 'geodesic' && JSON.stringify(e.field.spec) !== s.field),
     ],
     code: `// A trefoil knot: a curve c(t), and a tube of radius r around it.
 const N = 160, M = 12, r = 0.35
@@ -729,8 +807,8 @@ knot.mesh.showField('geodesic', { from: 0 })`,
     guide: [
       'The bumpy sphere is coloured by mean curvature: every bump is a red spot with a blue rim.',
       'The output panel: after 5 smoothing steps the bumps are mostly gone, but the volume is smaller; after 40 it has shrunk a lot. That is the cost of plain Laplacian smoothing.',
-      'Select "Smoothed ×5" and Heat map › Mean curvature: nearly one colour, like a sphere.',
-      'Tab into edit mode on "Bumpy", select some vertices, Mesh › Smooth vertices, then change the iterations in the Adjust panel.',
+      step('Select "Smoothed ×5" and Heat map › Mean curvature: nearly one colour, like a sphere.', (e) => showing(e, 'Smoothed ×5', 'mean')),
+      step('Tab into edit mode on "Bumpy", select some vertices, Mesh › Smooth vertices, then change the iterations in the Adjust panel.', (e, s) => did(e, s, 'Smooth vertices')),
     ],
     code: `// Smoothing = moving each vertex part way to the average of its neighbours.
 let seed = 3
@@ -767,7 +845,7 @@ bumpy.mesh.showField('mean')`,
       'On the cube every checker square is square and the same size: no distortion at all (the output panel prints 1.0000).',
       'On the sphere the squares stay square (LSCM keeps angles) but not the same size: near the poles they are squeezed. The printed area ratio is how much. No cut can fix it everywhere; that is the Gauss–Bonnet idea from the curvature gallery.',
       'Heat map › Mean curvature, then UV › Angle distortion heat map, on the sphere: the distortion is highest where the seam ends, at the poles.',
-      'Try it yourself: Tab into edit mode on a new cube, select edges (2), UV › Mark seam, then U to unwrap.',
+      step('Try it yourself: Tab into edit mode on a new cube, select edges (2), UV › Mark seam, then U to unwrap.', (e, s) => did(e, s, 'Unwrap')),
     ],
     code: `// 1. A cube, cut along its twelve sharp edges: six squares.
 const cube = scene.add.cube({ name: 'Box', size: 1.6, position: [-2, 1, 0] })
@@ -802,10 +880,10 @@ log('sphere: texture per unit area varies', (Math.max(...ratios) / Math.min(...r
     lang: 'js',
     setup: { select: 'Custom', view: 'all', tab: 'shader' },
     guide: [
-      'The Shader tab shows the selected sphere\u2019s GLSL. "Custom" is editable: change a number in the body, press Apply (or Ctrl+Enter), and the sphere changes.',
+      step('The Shader tab shows the selected sphere\u2019s GLSL. "Custom" is editable: change a number in the body, press Apply (or Ctrl+Enter), and the sphere changes.', (e, s) => { const g = e.scene.get('Custom')?.material?.glsl; return g !== undefined && g !== s.obj('Custom')!.glsl; }),
       'Compare Lambert and Blinn–Phong: the same matte base, plus a highlight where N·H is near 1. Shininess 10 spreads it, 120 makes it a small hot spot.',
       'Normals colours each point by its direction; UV by its texture coordinate (a seam shows as a jump). Both are how you check a model, not how you light it.',
-      'Move the Light object (it is the sun): every shader but Normals and UV follows it. Break the custom GLSL on purpose: the error shows below the code and the sphere falls back to Lambert.',
+      step('Move the Light object (it is the sun): every shader but Normals and UV follows it. Break the custom GLSL on purpose: the error shows below the code and the sphere falls back to Lambert.', (e, s) => moved(e, s, 'Light')),
     ],
     code: `// One sphere per shading model. Each needs UVs for the UV view, so open each along a meridian.
 function sphereAt(name, x, z) {
@@ -851,7 +929,7 @@ log(models.length, 'spheres; the sun is the Light object')`,
       'The script is in the Script panel, in Python. Press "Step through" to run it line by line: the verts list grows, and at the end the vase appears.',
       'radius(y) is the profile. Change the numbers in it (the 0.25 and the 2.2), undo, run: a different vase.',
       'Tab into edit mode: every ring of vertices is one height; every column one angle.',
-      'Heat map › Height (y) shows the rings; Heat map › Mean curvature shows the neck and the belly.',
+      step('Heat map › Height (y) shows the rings; Heat map › Mean curvature shows the neck and the belly.', (e) => showing(e, 'Vase', 'coord') || showing(e, 'Vase', 'mean')),
       'The stripes are a texture on UVs made at the end of the script: a seam down one side and around the base, then an unwrap. Open the UV tab: the side is a curved band, the base a disc.',
     ],
     code: `# A surface of revolution: a profile r(y) turned around the y axis.

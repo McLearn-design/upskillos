@@ -319,6 +319,100 @@ A new Learning example, `two-lists`, for lesson 1.1 of the modelling course. It 
 a vertex list and a face list. One shares its corners (5 vertices); the other gives every face its own copies
 (16), and tears when its tip moves. The test checks both counts and the tear.
 
+## Done (2026-09-30): Fill, three more challenges, guides that tick
+
+- **Fill (F in edit mode, Mesh › Fill).** Closes the hole round the selected vertices with one face. The corners
+  come from the hole's boundary loop, not the click order. The face is wound opposite to its neighbours' boundary
+  edges, so it points the same way they do. If the selection isn't one hole, it says why and changes nothing.
+  Logged as `mesh.fill([...])`. F frames the selection in object mode, as before; in edit mode, `.` frames.
+- **Challenges, now one per project group:**
+  - Learning: "Close the box". The check fails a lid wound the wrong way (the volume comes out negative).
+  - Geometry: "The farthest point". Put a flag at the point farthest along the surface from a start on the
+    inside of a ring. The tempting answer, straight across the hole, is only 73% of the way; the tests check
+    this.
+  - Scripting: "Script a staircase". The checklist names the wrong steps.
+- **Guides that tick.** A guide step can carry a `done(editor, start)` check. `start` is the scene when the
+  project opened. It only uses what the editor already keeps: the GUI → code log labels since opening, object
+  transforms, bones, materials, the heat map shown and the mode. The guide shows ✓/○ per step and "n/m ✓".
+  26 steps across 17 projects have checks. The tests prove each is unticked when its project opens and ticked
+  after the action it describes.
+- **Bug the tests found:** paint strokes are logged as "Paint <bone>", so a check looking for "Paint weights"
+  would never have ticked.
+
+## Done (2026-09-30): cameras, looking through, rendering a still, the island fly-through
+
+- **Cameras are objects** (`core/camera.ts`, kind `camera`). A camera has a vertical field of view in degrees,
+  plus near and far planes. It looks down its own −z axis with +y up, as in three.js and glTF.
+  `scene.activeCamera` is the one stills are rendered from. It is saved in scene files, and it is cleared if
+  that camera is deleted.
+- **Script API:**
+  - `scene.add.camera({ position, fov, lookAt })`; the first camera becomes the scene camera.
+  - `obj.lookAt(target)`, which works on any object and respects a turned parent.
+  - `cam.fov`, and `scene.camera = cam`.
+- **Editor:** Add › Camera, and Add › Camera from this view. The View menu gains:
+  - Look through the scene camera (0). Dragging or zooming leaves it, keeping the view.
+  - Align the scene camera to this view (Ctrl+Alt+0).
+  - Render still (PNG).
+
+  All of these are undoable and logged as code. The tests replay the log and get the same camera.
+- **Viewport:**
+  - The camera is drawn as the pyramid it sees, in the render's shape, with an up triangle.
+  - Looking through follows an animated camera every frame. The render's frame is marked, and the rest of the
+    view is dimmed.
+  - The Inspector's Camera section has field of view (with the wide angle it implies), render size, "Make it
+    the scene camera", Look through and Render still.
+- **Render still:** a second WebGL renderer at the render size draws only the models and lights, then
+  downloads `meshlab-render.png`.
+  - The gizmo sets its own parts' visibility while drawing, so it is hidden as a whole. Before that, it
+    showed up as a blue disc in the render.
+  - Browser check: a 1280 × 720 PNG with 136 colours, and no overlays.
+- **Project "Fly-through of the island" (Animation).**
+  - It shares the island's code, and keys the camera every 6 frames with lookAt(peak) and quaternion
+    rotation (slerp).
+  - Test: frame 241 equals frame 1, and between keys the camera stays within 2.6° of the peak (cos > 0.999).
+- **Fixed:** `dispose()` now also removes the camera-frame overlay. React mounts twice in development, and a
+  second one was left behind.
+- **Not done:** cameras are not exported to glTF yet, and the render has no sky (it uses the viewport's
+  background colour).
+
+## Done (2026-09-30): loop select, the knife, outlines in creases, smooth UV subdivision
+
+- **Loop select (Alt+click, Edit › Select loop).** `EditMesh.edgeLoop` goes straight on at each 4-edge vertex:
+  it takes the edge that shares no face with the one it arrived along. Along a boundary it follows the
+  boundary through 3-edge vertices, and it stops at poles, triangles and n-gons. In face mode it selects the
+  ring of faces. Tests: torus loops close at 48 and 12 edges; a grid's inside loop runs edge to edge; a UV
+  sphere's meridian stops where the pole triangles begin.
+- **The knife (K in edit mode, Mesh › Knife).** Drag a line; the cut is the plane through the eye and the
+  line's two ends, kept to the wedge between them (`core/knife.ts`).
+  - Faces crossed twice are split. New edge vertices go into the neighbouring faces as well, so there are no
+    cracks.
+  - Only faces facing the eye are cut, unless X-ray is on (then it cuts through).
+  - Logged as `mesh.knife({ eye, from, to, through })`, which needs no view; the tests replay it and get the
+    same mesh.
+  - Tests: a cut all the way round a cube gives 10 faces, 12 vertices, closed, volume 8, with every new vertex
+    on the plane. A front-only cut leaves the side faces with 5 corners but the cube closed. A diagonal cut
+    uses the existing corners. A short line cuts only between its ends. Esc cancels.
+  - Browser: K, then a drag, cut the default cube's front face; it stayed closed and the new edge was
+    selected.
+- **Outline in concave creases.** The selection outline is an inverted hull, and in a crease its back faces
+  could come in front of the body. Now each selected body writes 1 into the stencil buffer (the renderer asks
+  for one), and the outline draws only where the stencil is not 1: outside the silhouette. Measured on the
+  crate's recessed panels: the lines inside the panels are gone, and outline pixels inside the silhouette
+  fell from 1214 to 481. Those 481 were the move gizmo, which that count did not hide; the diff image, which
+  hides it, shows none.
+- **Smooth UV subdivision.** The subdivision modifier has "Smooth UVs", on by default as in Blender ("keep
+  boundaries"). The UVs are subdivided as a mesh of their own, with Catmull–Clark's rules. Corners with the
+  same vertex and the same UV are one UV vertex, so seams are boundaries, and boundaries stay linear.
+  - Tests: on a flat grid with UVs projected from above, every smoothed UV equals its new vertex's (x, z),
+    border included. Islands that are flat squares come out the same as linear. On a sphere with one seam, at
+    level 2, the mean angle distortion drops from 1.49 to 1.32 and the worst from 4.89 to 2.89.
+  - The old linear UVs are `uvSmooth: false`.
+- **Bug fixed on the way (subdivision):** the corners of an open mesh, such as a plane, were rounded off,
+  because a corner has two boundary edges and got the along-the-edge rule. Blender keeps them ("keep
+  corners"). Now a boundary vertex on only one face stays put, and the trace says so.
+- **Not yet:** an example project for loop select, the knife and smooth UVs. They are planned alongside
+  lessons 4.3, 4.5 and 6.5, with challenges.
+
 ## Verification
 
 - `npx vitest run src/labs/mesh-lab`: 7 files, 98 tests (session 1). They cover primitives (closed, outward, Euler,
@@ -384,9 +478,13 @@ seam sat inside the mirrored solid (now skipped, as Blender does); trace markers
 
 ## Next, in order
 
-1. More challenges (one per project group), and guides whose steps tick themselves like a challenge's checklist.
-2. A camera object and a fly-through of the island; render a still to a PNG.
-3. Knife and loop select; the outline showing through concave creases; UV smooth (Catmull–Clark on UVs, not only linear).
+These come before the lessons of the course in `docs/modelling-course-plan.md`, whose lessons 3.7, 4.3, 4.5
+and 6.5 need them. That plan's "MeshLab tool coverage" table must gain a row for each new tool.
+
+
+1. ~~More challenges (one per project group), and guides whose steps tick themselves.~~ Done 2026-09-30.
+2. ~~A camera object and a fly-through of the island; render a still to a PNG.~~ Done 2026-09-30.
+3. ~~Knife and loop select; the outline showing through concave creases; UV smooth.~~ Done 2026-09-30.
 
 ## Example projects: plan
 

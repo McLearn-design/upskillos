@@ -10,7 +10,8 @@ import { Trace, fmt } from './trace';
 export type Axis = 'x' | 'y' | 'z';
 export type Modifier =
   | { type: 'mirror'; axis: Axis; merge: number; clip: boolean; enabled: boolean }
-  | { type: 'subsurf'; levels: number; enabled: boolean };
+  /** uvSmooth: subdivide the UVs with the surface (Blender's "keep boundaries"); false = linear. Missing means smooth. */
+  | { type: 'subsurf'; levels: number; enabled: boolean; uvSmooth?: boolean };
 
 export const defaultModifier = (type: Modifier['type']): Modifier =>
   type === 'mirror' ? { type, axis: 'x', merge: 0.001, clip: true, enabled: true } : { type, levels: 2, enabled: true };

@@ -9,8 +9,8 @@
   },
   "counts": {
     "courses": 43,
-    "chapters": 214,
-    "lessons": 1225,
+    "chapters": 217,
+    "lessons": 1231,
     "labs": 51,
     "games": 15
   },
@@ -252,14 +252,14 @@
       "label": "Mesh Engine",
       "domain": "engineering",
       "description": "Computational geometry for a CAM application — meshes, surface queries, and comparing two models to find what was cut",
-      "chapters": 1,
-      "lessons": 11
+      "chapters": 4,
+      "lessons": 17
     },
     {
       "id": "modelling-geometry",
-      "label": "Modelling & Geometry Processing",
+      "label": "3D Modelling, Geometry & Graphics",
       "domain": "creative",
-      "description": "How 3D modelling tools work inside: meshes, transforms, modelling operations, subdivision, curvature, UVs, shading, animation and skinning, each built by hand in a notebook and then used in MeshLab",
+      "description": "The maths, algorithms, computer graphics and tools behind 3D modelling: meshes, transforms, the rendering pipeline, picking, modelling operations, subdivision, curvature, UVs, shading, animation and skinning, each built by hand in a notebook and then used in MeshLab",
       "chapters": 1,
       "lessons": 1
     },

@@ -1,7 +1,7 @@
 {
-  "label": "Modelling & Geometry Processing",
+  "label": "3D Modelling, Geometry & Graphics",
   "icon": "🔺",
-  "description": "How 3D modelling tools work inside: meshes, transforms, modelling operations, subdivision, curvature, UVs, shading, animation and skinning, each built by hand in a notebook and then used in MeshLab",
+  "description": "The maths, algorithms, computer graphics and tools behind 3D modelling: meshes, transforms, the rendering pipeline, picking, modelling operations, subdivision, curvature, UVs, shading, animation and skinning, each built by hand in a notebook and then used in MeshLab",
   "domain": "creative",
   "color": "violet"
 }

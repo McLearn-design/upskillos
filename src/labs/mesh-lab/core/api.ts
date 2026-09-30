@@ -28,6 +28,9 @@ import { BRUSHES, DEFAULT_PAINT, dab, neighbourLists, type PaintSettings } from 
 import { angleDistortion, planarUV, sharpEdges, unwrap as unwrapMesh, uvFits } from './uv';
 import { bevelEdges, dissolveEdges, dissolveFaces, dissolveVerts, insetRegion } from './modelling';
 import { SHADER_MODELS, TEXTURES, type ShaderModel, type TextureName } from './shading';
+import { DEFAULT_CAMERA, lookAtRotation } from './camera';
+import { knife as knifeCut, knifeFaces } from './knife';
+import { Quaternion } from 'three';
 
 type Vec3Handle = { x: number; y: number; z: number; set(x: number, y: number, z: number): Vec3Handle; toArray(): Vec3 };
 
@@ -136,6 +139,17 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
         return api;
       },
       merge(verts: number[], at?: Vec3) { m().mergeVerts(verts, at, trace('Merge', o)); return api; },
+      /**
+       * The knife: cut along the plane through eye, from and to, between the rays eye→from and
+       * eye→to (all in the mesh's own coordinates). Only faces facing the eye, unless through.
+       * Returns the new edges.
+       */
+      knife(p: { eye: Vec3; from: Vec3; to: Vec3; through?: boolean }) {
+        const line = { eye: vec(p.eye), from: vec(p.from), to: vec(p.to) };
+        return knifeCut(m(), line, knifeFaces(m(), line.eye, !!p.through), trace('Knife', o));
+      },
+      /** Close a hole with one face: the vertices round it, in any order. Returns the new face's index. */
+      fill(verts: number[]) { return m().fill(verts); },
       flip(faces?: number[]) { m().flip(faces); return api; },
       weld(tol = 0) { m().weld(tol); return api; },
       translate(verts: number[], d: Vec3) { m().translateVerts(verts, d); return api; },
@@ -226,6 +240,16 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       get scale() { return scl; }, set scale(v: ArrayLike<number> | Vec3Handle) { assign(o.scale, v); },
       get visible() { return o.visible; }, set visible(v: boolean) { o.visible = !!v; },
       get smooth() { return o.smooth; }, set smooth(v: boolean) { o.smooth = !!v; },
+      /** Turn to face a point (world coordinates): a camera or light looks at it along its −z axis. */
+      lookAt(target: ArrayLike<number> | Vec3Handle) {
+        const world = scene().worldMatrix(o), eye = [world.elements[12], world.elements[13], world.elements[14]] as Vec3;
+        const parent = o.parent ? new Quaternion().setFromRotationMatrix(scene().worldMatrix(scene().get(o.parent)!)) : undefined;
+        o.rotation = lookAtRotation(eye, vec(target as Vec3), parent);
+        return h;
+      },
+      /** A camera's vertical field of view in degrees (null for other objects). */
+      get fov() { return o.camera?.fov ?? null; },
+      set fov(v: number | null) { if (!o.camera) throw new Error(`${o.name} is not a camera`); if (v === null || !(v > 1 && v < 179)) throw new Error('fov: between 1 and 179 degrees'); o.camera.fov = Number(v); },
       material: {
         get color() { return o.material.color; }, set color(v: string) { o.material.color = String(v); },
         get roughness() { return o.material.roughness; }, set roughness(v: number) { o.material.roughness = v; },
@@ -328,7 +352,7 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
         if (i >= 0) sk.weights[i] = values.map(Number); else { sk.bones.push(bone); sk.weights.push(values.map(Number)); }
         return h;
       },
-      toString: () => `${o.kind === 'mesh' ? 'Mesh' : o.kind === 'light' ? 'Light' : o.kind === 'armature' ? 'Armature' : 'Empty'} "${o.name}"`,
+      toString: () => `${o.kind === 'mesh' ? 'Mesh' : o.kind === 'light' ? 'Light' : o.kind === 'armature' ? 'Armature' : o.kind === 'camera' ? 'Camera' : 'Empty'} "${o.name}"`,
     };
     return h;
   }
@@ -352,6 +376,14 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
     position: p.position === undefined ? undefined : vec(p.position as Vec3), rotation: p.rotation === undefined ? undefined : vec(p.rotation as Vec3),
     scale: p.scale === undefined ? undefined : vec(p.scale as Vec3), parent: (p.parent as { id: string } | undefined)?.id ?? null,
   });
+  /** A camera: position it, then point it with lookAt, or pass lookAt: [x, y, z]. The first one becomes the scene's camera. */
+  add.camera = (p: Record<string, unknown> = {}) => {
+    const o = scene().add({ name: String(p.name ?? 'Camera'), kind: 'camera', camera: { ...DEFAULT_CAMERA, ...(p.fov !== undefined ? { fov: Number(p.fov) } : {}), ...(p.near !== undefined ? { near: Number(p.near) } : {}), ...(p.far !== undefined ? { far: Number(p.far) } : {}) }, ...placed(p) });
+    if (!scene().activeCamera) scene().activeCamera = o.id;
+    const h = objHandle(o);
+    if (p.lookAt) h.lookAt(p.lookAt as Vec3);
+    return h;
+  };
   add.empty = (p: Record<string, unknown> = {}) => objHandle(scene().add({ name: String(p.name ?? 'Empty'), kind: 'empty', ...placed(p) }));
   add.mesh = (p: Record<string, unknown> = {}) => objHandle(scene().add({ name: String(p.name ?? 'Mesh'), mesh: new EditMesh(((p.verts as Vec3[]) ?? []).map((v) => vec(v)), ((p.faces as number[][]) ?? []).map((f) => Array.from(f, Number))), ...placed(p) }));
 
@@ -366,6 +398,14 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
     get selected() { return [...editor.selected].map((id) => scene().get(id)).filter(Boolean).map((o) => objHandle(o!)); },
     get active() { const o = editor.activeObject; return o ? objHandle(o) : null; },
     delete(h: { id: string }) { scene().remove(h.id); },
+    /** The camera stills are rendered from (View › Render still). Set it to any camera object. */
+    get camera() { const c = scene().activeCamera ? scene().get(scene().activeCamera!) : undefined; return c ? objHandle(c) : null; },
+    set camera(h: { id: string } | null) {
+      if (h === null) { scene().activeCamera = null; return; }
+      const o = scene().get(h.id);
+      if (o?.kind !== 'camera') throw new Error('scene.camera: that object is not a camera');
+      scene().activeCamera = o.id;
+    },
     /** Stop showing a heat map. */
     hideField() { editor.clearField(); },
     /** The current frame. Setting it moves every animated object to its keyed transform. */

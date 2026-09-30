@@ -27,6 +27,7 @@ import { hasKeys, keyFrames } from '../core/animation';
 import { evaluateUV, uvFits, type UVLayer } from '../core/uv';
 import { DEFAULT_CUSTOM, VERTEX_SHADER, fragmentShader, textureRGBA, type TextureName } from '../core/shading';
 import { boneLength, boneMatrices } from '../core/armature';
+import { DEFAULT_CAMERA, frustumCorners } from '../core/camera';
 
 export type GizmoMode = 'translate' | 'rotate' | 'scale';
 export interface ViewOptions { grid: boolean; axes: boolean; localAxes: boolean; normals: boolean; wire: boolean; xray: boolean }
@@ -38,7 +39,7 @@ const COL = {
   traceFace: 0xf59e0b, traceEdge: 0xfbbf24, traceVert: 0xfde047,
 };
 
-interface ObjView { matKey?: string; bones?: THREE.Group; bonesSig?: string; group: THREE.Group; body?: THREE.Mesh; outline?: THREE.Mesh; wire?: THREE.LineSegments; normals?: THREE.LineSegments; axes?: THREE.AxesHelper; light?: THREE.DirectionalLight; helper?: THREE.Object3D; sig: string }
+interface ObjView { frustum?: THREE.LineSegments; frustumSig?: string; matKey?: string; bones?: THREE.Group; bonesSig?: string; group: THREE.Group; body?: THREE.Mesh; outline?: THREE.Mesh; wire?: THREE.LineSegments; normals?: THREE.LineSegments; axes?: THREE.AxesHelper; light?: THREE.DirectionalLight; helper?: THREE.Object3D; sig: string }
 
 function signature(o: SceneObject): string {
   if (!o.mesh) return 'none';
@@ -113,6 +114,24 @@ export class Viewport {
   options: ViewOptions = { grid: true, axes: true, localAxes: true, normals: false, wire: false, xray: false };
   gizmoMode: GizmoMode = 'translate';
   boxArmed = false;
+  /** The knife (K) is armed: the next drag in edit mode draws a cut line. */
+  knifeArmed = false;
+  /** Called when the knife is armed or used, so the UI can show it. */
+  onKnifeChange?: (armed: boolean) => void;
+  /** The image size stills are rendered at. The camera's frame in the viewport has this shape. */
+  renderSize = { width: 1280, height: 720 };
+  /** Called when looking through the camera starts or stops, so the UI can show it. */
+  onThroughChange?: (on: boolean) => void;
+  /** Looking through the scene camera (0): the view to go back to. Orbiting or zooming leaves it. */
+  private through: { position: THREE.Vector3; target: THREE.Vector3 } | null = null;
+  /** The gizmo as drawn. It sets its own parts' visibility as it draws, so it is hidden as a whole. */
+  private gizmoHelper: THREE.Object3D;
+  /** A press while looking through: dragging from it orbits, which leaves the camera view. */
+  private throughDown: { x: number; y: number } | null = null;
+  /** The camera's frame when looking through it: the render's shape, the rest dimmed. */
+  private passepartout: HTMLDivElement;
+  /** The knife's line while it is dragged. */
+  private knifeLine: SVGSVGElement;
   /** Called when the box-select state changes, so the UI can show it. */
   onBoxChange?: (armed: boolean) => void;
 
@@ -143,13 +162,14 @@ export class Viewport {
   private raf = 0;
   private resize: ResizeObserver;
   private unsub: () => void;
-  private down: { x: number; y: number; shift: boolean; ctrl: boolean } | null = null;
+  private down: { x: number; y: number; shift: boolean; ctrl: boolean; alt?: boolean } | null = null;
   private box: HTMLDivElement;
   private hover = { x: -1, y: -1 };
   private ownsCanvas: boolean;
 
   constructor(private container: HTMLElement, private editor: Editor, canvas?: HTMLCanvasElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, canvas });
+    // A stencil buffer: the selection outline is drawn only outside the selected objects' silhouettes.
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, canvas, stencil: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.ownsCanvas = !canvas;
     if (!canvas) container.appendChild(this.renderer.domElement);
@@ -192,7 +212,8 @@ export class Viewport {
 
     this.gizmo = new TransformControls(this.camera, el);
     const g = this.gizmo as unknown as { getHelper?: () => THREE.Object3D };
-    this.scene.add(typeof g.getHelper === 'function' ? g.getHelper() : (this.gizmo as unknown as THREE.Object3D));
+    this.gizmoHelper = typeof g.getHelper === 'function' ? g.getHelper() : (this.gizmo as unknown as THREE.Object3D);
+    this.scene.add(this.gizmoHelper);
     this.gizmo.addEventListener('dragging-changed', (e) => { this.orbit.enabled = !(e as unknown as { value: boolean }).value; });
     this.gizmo.addEventListener('mouseDown', () => this.dragStart());
     this.gizmo.addEventListener('objectChange', () => this.dragMove());
@@ -203,12 +224,19 @@ export class Viewport {
     this.box = document.createElement('div');
     Object.assign(this.box.style, { position: 'absolute', border: '1px dashed #ffb347', background: 'rgba(255,179,71,0.08)', display: 'none', pointerEvents: 'none' });
     container.style.position = container.style.position || 'relative';
-    container.append(this.labels, this.box);
+    this.passepartout = document.createElement('div');
+    Object.assign(this.passepartout.style, { position: 'absolute', display: 'none', pointerEvents: 'none', border: '1px solid #ffb347', boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)' });
+    this.passepartout.dataset.testid = 'camera-frame';
+    this.knifeLine = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    Object.assign(this.knifeLine.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none', display: 'none' });
+    this.knifeLine.innerHTML = '<line stroke="#ffb347" stroke-width="2" stroke-dasharray="6 4" />';
+    container.append(this.labels, this.box, this.passepartout, this.knifeLine);
 
     el.addEventListener('pointerdown', this.onDown);
     el.addEventListener('pointermove', this.onMove);
     el.addEventListener('pointerup', this.onUp);
     el.addEventListener('pointerleave', () => { this.hover = { x: -1, y: -1 }; });
+    el.addEventListener('wheel', () => { if (this.through) this.lookThrough(false, true); }, { passive: true });
 
     this.resize = new ResizeObserver(() => this.fit());
     this.resize.observe(container);
@@ -216,7 +244,12 @@ export class Viewport {
     this.unsub = editor.subscribe((k) => { if (k !== 'trace') this.sync(); });
     this.sync();
     this.frameAll();
-    const loop = () => { this.raf = requestAnimationFrame(loop); this.orbit.update(); this.renderer.render(this.scene, this.camera); this.drawLabels(); };
+    const loop = () => {
+      this.raf = requestAnimationFrame(loop);
+      if (this.through) this.applyThrough(); else this.orbit.update();
+      this.renderer.render(this.scene, this.camera);
+      this.drawLabels();
+    };
     loop();
   }
 
@@ -239,7 +272,7 @@ export class Viewport {
     // Remove the canvas we created: React mounts twice in development, and a
     // left-over canvas would sit on top of the live one, frozen and deaf to clicks.
     if (this.ownsCanvas) el.remove();
-    this.labels.remove(); this.box.remove();
+    this.labels.remove(); this.box.remove(); this.passepartout.remove(); this.knifeLine.remove();
   }
 
   private fit(): void {
@@ -401,7 +434,11 @@ export class Viewport {
             uniforms: { uColor: { value: new THREE.Color(COL.select) }, uThickness: { value: 0.0035 } },
             vertexShader: 'uniform float uThickness; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vec3 n = normalize(normalMatrix * normal); mv.xyz += n * uThickness * -mv.z; gl_Position = projectionMatrix * mv; }',
             fragmentShader: 'uniform vec3 uColor; void main() { gl_FragColor = vec4(uColor, 1.0);\n#include <colorspace_fragment>\n}',
+            // Test the stencil (write nothing): draw only where no selected body is.
+            stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc,
+            stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp,
           }));
+          v.outline.renderOrder = 1;   // after the bodies have marked the stencil
           g.add(v.outline);
         } else v.outline.geometry = hull;
         v.wire?.geometry.dispose();
@@ -412,6 +449,13 @@ export class Viewport {
         if (this.options.normals) v.normals = this.normalLines(ev, g);
       }
       this.syncMaterial(o, v, editing);
+      // A selected body marks its pixels (stencil 1). The outline is an inverted hull, pushed out
+      // along the normals and drawn back faces only; in a concave crease the hull's back faces can
+      // come in front of the body. Drawing the hull only where the stencil is not 1 keeps it to the
+      // silhouette, outside the object.
+      const bm = v.body.material as THREE.Material;
+      bm.stencilWrite = selected && !editing;
+      bm.stencilRef = 1; bm.stencilFunc = THREE.AlwaysStencilFunc; bm.stencilZPass = THREE.ReplaceStencilOp;
       v.body.visible = !(this.traceView && this.traceTargetId() === o.id) && this.editor.field?.objectId !== o.id;
       v.outline!.visible = selected && !editing && v.body.visible;
       ((v.outline!.material as THREE.ShaderMaterial).uniforms.uColor.value as THREE.Color).set(active ? COL.active : COL.select);
@@ -445,12 +489,154 @@ export class Viewport {
       v.helper = pick; g.add(h, pick);
     }
     if (o.kind === 'empty' && v.helper) ((v.helper as THREE.Mesh).material as THREE.MeshBasicMaterial).color.set(selected ? COL.select : 0x9aa4b2);
+    if (o.kind === 'camera') this.syncCamera(o, v, selected);
 
     // Local axes of the active object: its own x, y, z after rotation and scale.
     if (active && this.options.localAxes && o.kind === 'mesh') {
       if (!v.axes) { v.axes = new THREE.AxesHelper(1); (v.axes.material as THREE.Material).depthTest = false; v.axes.renderOrder = 3; g.add(v.axes); }
       v.axes.visible = true;
     } else if (v.axes) v.axes.visible = false;
+  }
+
+  // ── cameras ────────────────────────────────────────────────────────────
+
+  /**
+   * A camera is drawn as the pyramid it sees, cut off 0.8 m in front of it, with a
+   * triangle over the top edge showing which way is up. The pyramid's shape is the
+   * render's: its field of view and the render size's aspect ratio.
+   */
+  private syncCamera(o: SceneObject, v: ObjView, selected: boolean): void {
+    const fov = o.camera?.fov ?? DEFAULT_CAMERA.fov, aspect = this.renderSize.width / this.renderSize.height;
+    const sig = `${fov}/${aspect}`;
+    if (v.frustumSig !== sig) {
+      v.frustumSig = sig;
+      const c = frustumCorners(fov, aspect, 0.8), h = c[2][1], w = c[2][0];
+      const lines: number[] = [];
+      const seg = (a: number[], b: number[]) => lines.push(...a, ...b);
+      for (let i = 0; i < 4; i++) { seg([0, 0, 0], c[i]); seg(c[i], c[(i + 1) % 4]); }
+      const up = [[-w * 0.5, h * 1.1, -0.8], [w * 0.5, h * 1.1, -0.8], [0, h * 1.1 + w * 0.45, -0.8]];
+      for (let i = 0; i < 3; i++) seg(up[i], up[(i + 1) % 3]);
+      const lg = new THREE.BufferGeometry();
+      lg.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
+      // An invisible solid pyramid to click on.
+      const tri = [[0, 0, 0], c[0], c[1], [0, 0, 0], c[1], c[2], [0, 0, 0], c[2], c[3], [0, 0, 0], c[3], c[0], c[0], c[1], c[2], c[0], c[2], c[3]].flat();
+      const pg = new THREE.BufferGeometry();
+      pg.setAttribute('position', new THREE.Float32BufferAttribute(tri, 3));
+      if (!v.frustum) {
+        v.frustum = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x8a93a3 }));
+        const pick = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+        pick.userData.id = o.id;
+        v.helper = pick;
+        v.group.add(v.frustum, pick);
+      } else {
+        v.frustum.geometry.dispose(); v.frustum.geometry = lg;
+        (v.helper as THREE.Mesh).geometry.dispose(); (v.helper as THREE.Mesh).geometry = pg;
+      }
+    }
+    const scene = this.editor.scene.activeCamera === o.id;
+    (v.frustum!.material as THREE.LineBasicMaterial).color.set(selected ? COL.select : scene ? 0xe6ebf2 : 0x8a93a3);
+    // Looking through a camera, its own drawing would sit on the lens.
+    v.frustum!.visible = !(this.through && scene);
+  }
+
+  /** Whether the view is looking through the scene camera. */
+  get lookingThrough(): boolean { return !!this.through; }
+
+  /**
+   * Look through the scene camera (on), or go back (off). Leaving by orbiting or
+   * zooming keeps the camera's view as the new starting point (keepView).
+   */
+  lookThrough(on = !this.through, keepView = false): boolean {
+    if (on) {
+      const sc = this.editor.scene;
+      if (!sc.activeCamera || !sc.get(sc.activeCamera)) { this.editor.say('There is no scene camera: Add › Camera first'); return false; }
+      if (!this.through) this.through = { position: this.camera.position.clone(), target: this.orbit.target.clone() };
+      this.orbit.enabled = false;
+    } else if (this.through) {
+      const back = this.through;
+      this.through = null;
+      this.orbit.enabled = true;
+      if (keepView) {
+        const d = back.position.distanceTo(back.target) || 8;
+        this.orbit.target.copy(this.camera.position).addScaledVector(new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion), d);
+      } else { this.camera.position.copy(back.position); this.orbit.target.copy(back.target); }
+      this.camera.fov = 45;
+      this.camera.updateProjectionMatrix();
+      this.gizmoHelper.visible = true;
+    }
+    this.passepartout.style.display = this.through ? 'block' : 'none';
+    this.sync();
+    this.onThroughChange?.(!!this.through);
+    return true;
+  }
+
+  /**
+   * Every frame while looking through: put the view camera where the scene camera
+   * is (so an animated camera flies the view), and frame the render's rectangle.
+   * The field of view is vertical; if the viewport is narrower than the render,
+   * widen it so the render's full width still fits.
+   */
+  private applyThrough(): void {
+    const sc = this.editor.scene, o = sc.activeCamera ? sc.get(sc.activeCamera) : undefined;
+    if (!o?.camera) { this.lookThrough(false); return; }
+    const pos = new THREE.Vector3(), q = new THREE.Quaternion(), sz = new THREE.Vector3();
+    sc.worldMatrix(o).decompose(pos, q, sz);
+    this.camera.position.copy(pos);
+    this.camera.quaternion.copy(q);
+    const W = this.container.clientWidth || 1, H = this.container.clientHeight || 1;
+    const a = this.renderSize.width / this.renderSize.height, view = W / H, fov = o.camera.fov;
+    const vfov = view >= a ? fov : (2 * Math.atan(Math.tan((fov * Math.PI) / 360) * (a / view)) * 180) / Math.PI;
+    if (Math.abs(this.camera.fov - vfov) > 1e-9) { this.camera.fov = vfov; this.camera.updateProjectionMatrix(); }
+    this.camera.near = o.camera.near; this.camera.far = o.camera.far;
+    // The camera's own gizmo would sit on the lens.
+    this.gizmoHelper.visible = this.editor.active !== o.id;
+    this.camera.updateMatrixWorld();
+    const fw = view >= a ? H * a : W, fh = view >= a ? H : W / a;
+    Object.assign(this.passepartout.style, { left: `${(W - fw) / 2}px`, top: `${(H - fh) / 2}px`, width: `${fw}px`, height: `${fh}px` });
+  }
+
+  /** Where the view is and which way it faces, as an object's position and rotation (for "camera from this view"). */
+  viewPose(): { position: Vec3; rotation: Vec3 } {
+    const e = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'XYZ');
+    return { position: this.camera.position.toArray() as Vec3, rotation: [e.x, e.y, e.z] };
+  }
+
+  /**
+   * Render a still from the scene camera, at a size, to a PNG. Only the models and
+   * lights are drawn: grid, gizmos, outlines, helpers and heat maps are hidden for
+   * the render and put back straight after.
+   */
+  async renderStill(width = this.renderSize.width, height = this.renderSize.height): Promise<Blob> {
+    const sc = this.editor.scene, o = sc.activeCamera ? sc.get(sc.activeCamera) : undefined;
+    if (!o?.camera) throw new Error('There is no scene camera: Add › Camera first');
+    this.sync();
+    const cam = new THREE.PerspectiveCamera(o.camera.fov, width / height, o.camera.near, o.camera.far);
+    const sz = new THREE.Vector3();
+    sc.worldMatrix(o).decompose(cam.position, cam.quaternion, sz);
+    cam.updateMatrixWorld();
+    const keep = new Set<THREE.Object3D>(), restore: [THREE.Object3D, boolean][] = [];
+    for (const [id, v] of this.views) if (v.body) { keep.add(v.body); restore.push([v.body, v.body.visible]); v.body.visible = !!sc.get(id)?.visible; }
+    this.scene.traverse((x) => {
+      const drawable = (x as THREE.Mesh).isMesh || (x as THREE.Line).isLine || (x as THREE.Points).isPoints || (x as THREE.Sprite).isSprite;
+      if (drawable && !keep.has(x) && x.visible) { restore.push([x, true]); x.visible = false; }
+    });
+    restore.push([this.gizmoHelper, this.gizmoHelper.visible]);
+    this.gizmoHelper.visible = false;
+    const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    try {
+      r.setPixelRatio(1);
+      r.setSize(width, height, false);
+      r.outputColorSpace = this.renderer.outputColorSpace;
+      r.toneMapping = this.renderer.toneMapping;
+      r.toneMappingExposure = this.renderer.toneMappingExposure;
+      r.render(this.scene, cam);
+    } finally {
+      for (const [x, vis] of restore) x.visible = vis;
+    }
+    const blob = await new Promise<Blob | null>((res) => r.domElement.toBlob(res, 'image/png'));
+    r.dispose(); r.forceContextLoss();
+    if (!blob) throw new Error('The browser could not make the PNG');
+    return blob;
   }
 
   private texture(name: TextureName): THREE.DataTexture {
@@ -781,6 +967,7 @@ export class Viewport {
 
   private onDown = (e: PointerEvent) => {
     if (e.button !== 0) return;
+    if (this.through) this.throughDown = { x: e.offsetX, y: e.offsetY };
     if (this.editor.mode === 'weight') {
       // A press on the mesh paints; anywhere else it orbits as usual.
       const h = this.paintHit(e.offsetX, e.offsetY);
@@ -791,12 +978,46 @@ export class Viewport {
         return;
       }
     }
-    this.down = { x: e.offsetX, y: e.offsetY, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey };
+    this.down = { x: e.offsetX, y: e.offsetY, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, alt: e.altKey };
     if (this.boxArmed) { this.orbit.enabled = false; Object.assign(this.box.style, { display: 'block', left: `${e.offsetX}px`, top: `${e.offsetY}px`, width: '0px', height: '0px' }); }
+    if (this.knifeArmed && this.editor.mode === 'edit') { this.orbit.enabled = false; this.drawKnife(e.offsetX, e.offsetY, e.offsetX, e.offsetY); }
   };
+
+  private drawKnife(x0: number, y0: number, x1: number, y1: number): void {
+    const l = this.knifeLine.firstElementChild!;
+    l.setAttribute('x1', String(x0)); l.setAttribute('y1', String(y0)); l.setAttribute('x2', String(x1)); l.setAttribute('y2', String(y1));
+    this.knifeLine.style.display = 'block';
+  }
+
+  armKnife(on = !this.knifeArmed): void {
+    if (on && this.editor.mode !== 'edit') { this.editor.say('Knife: enter edit mode (Tab) on a mesh first'); return; }
+    this.knifeArmed = on;
+    if (!on) this.knifeLine.style.display = 'none';
+    this.onKnifeChange?.(on);
+  }
+
+  /**
+   * Cut along a line drawn on the screen from (x0, y0) to (x1, y1): the knife is the plane through
+   * the eye and the rays through the two ends, taken into the mesh's own coordinates. Only faces
+   * facing the eye are cut, unless X-ray is on (then it cuts through, as in Blender).
+   */
+  knifeCut(x0: number, y0: number, x1: number, y1: number): boolean {
+    const o = this.editor.editObject, g = o && this.views.get(o.id)?.group;
+    if (!o?.mesh || !g) return false;
+    const inv = new THREE.Matrix4().copy(g.matrixWorld).invert();
+    const local = (p: THREE.Vector3): Vec3 => p.clone().applyMatrix4(inv).toArray() as Vec3;
+    const a = this.ray(x0, y0).ray, b = this.ray(x1, y1).ray;
+    return this.editor.knife({ eye: local(a.origin), from: local(a.origin.clone().add(a.direction)), to: local(b.origin.clone().add(b.direction)) }, this.options.xray);
+  }
 
   private onMove = (e: PointerEvent) => {
     this.hover = { x: e.offsetX, y: e.offsetY };
+    // Dragging in the camera view orbits away from it, as in Blender.
+    const td = this.throughDown;
+    if (this.through && td && (e.buttons & 1) && !this.gizmo.dragging && Math.hypot(e.offsetX - td.x, e.offsetY - td.y) > 4) {
+      this.throughDown = null;
+      this.lookThrough(false, true);
+    }
     if (this.editor.mode === 'weight') {
       this.updateBrush(e.offsetX, e.offsetY);
       if (this.painting) {
@@ -806,6 +1027,7 @@ export class Viewport {
         return;
       }
     } else if (this.brushRing) this.brushRing.visible = false;
+    if (this.knifeArmed && this.down && this.editor.mode === 'edit') this.drawKnife(this.down.x, this.down.y, e.offsetX, e.offsetY);
     if (this.boxArmed && this.down) {
       const x = Math.min(this.down.x, e.offsetX), y = Math.min(this.down.y, e.offsetY);
       Object.assign(this.box.style, { left: `${x}px`, top: `${y}px`, width: `${Math.abs(e.offsetX - this.down.x)}px`, height: `${Math.abs(e.offsetY - this.down.y)}px` });
@@ -813,10 +1035,18 @@ export class Viewport {
   };
 
   private onUp = (e: PointerEvent) => {
+    this.throughDown = null;
     if (this.painting) { this.painting = null; this.orbit.enabled = true; this.editor.endStroke(); this.down = null; return; }
     const d = this.down;
     this.down = null;
     if (!d || e.button !== 0) return;
+    if (this.knifeArmed && this.editor.mode === 'edit') {
+      this.knifeLine.style.display = 'none';
+      this.orbit.enabled = true;
+      if (Math.hypot(e.offsetX - d.x, e.offsetY - d.y) > 4) this.knifeCut(d.x, d.y, e.offsetX, e.offsetY);
+      this.armKnife(false);
+      return;
+    }
     if (this.boxArmed) {
       this.box.style.display = 'none';
       this.orbit.enabled = true;
@@ -829,6 +1059,12 @@ export class Viewport {
     // it is detached, so only trust it while something is attached.
     const gz = this.gizmo as unknown as { dragging: boolean; axis: string | null; object?: THREE.Object3D };
     if (gz.object && (gz.dragging || gz.axis)) return;
+    // Alt+click in edit mode: the loop through the edge under the pointer.
+    if (d.alt && this.editor.mode === 'edit') {
+      const edge = this.hoveredEdge();
+      if (edge) this.editor.selectLoop(edge[0], edge[1], d.shift);
+      return;
+    }
     this.pick(e.offsetX, e.offsetY, d.shift);
   };
 

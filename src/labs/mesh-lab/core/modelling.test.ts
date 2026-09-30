@@ -125,3 +125,95 @@ describe('in the editor', () => {
     expect(e.undoStack.length).toBe(n - 1);
   });
 });
+
+describe('fill (F): close a hole with one face', () => {
+  const openBox = () => {
+    const m = makePrimitive('cube', { size: 2 });
+    m.deleteFaces([m.faces.findIndex((_, i) => m.faceNormal(i)[1] > 0.9)]);
+    const rim = m.verts.map((p, i) => [p, i] as const).filter(([p]) => p[1] > 0.9).map(([, i]) => i);
+    return { m, rim };
+  };
+
+  it('closes an open box with a face wound like its neighbours: closed, facing up, positive volume', () => {
+    const { m, rim } = openBox();
+    expect(rim.length).toBe(4);
+    expect(m.stats().closed).toBe(false);
+    // Any click order: the loop comes from the hole, not from the order of the selection.
+    const f = m.fill([rim[2], rim[0], rim[3], rim[1]]);
+    expect(m.stats()).toMatchObject({ faces: 6, closed: true });
+    expect(m.faceNormal(f)[1]).toBeCloseTo(1);
+    expect(m.volume()).toBeCloseTo(8);
+  });
+
+  it('says why when the selection is not one hole, and changes nothing', () => {
+    expect(makePrimitive('cube', { size: 2 }).fillPlan([0, 1, 2])).toMatch(/not all on one hole/); // no hole at all
+    const { m, rim } = openBox();
+    expect(m.fillPlan(rim.slice(0, 2))).toMatch(/at least three/);
+    expect(m.fillPlan(rim.slice(0, 3))).toMatch(/not all on one hole|one loop/);
+    expect(() => m.fill(rim.slice(0, 3))).toThrow();
+    expect(m.faces.length).toBe(5);
+  });
+
+  it('is one undo step from the editor, and logs mesh.fill', () => {
+    const e = new Editor();
+    runScript(e, `const b = scene.add.cube({ name: 'Box', size: 2 })
+b.mesh.delete({ faces: b.mesh.faces.top() })`);
+    e.selectObject(e.scene.get('Box')!.id);
+    e.enterEdit();
+    e.setSelectMode('vert');
+    const m = e.scene.get('Box')!.mesh!;
+    m.verts.forEach((p, i) => { if (p[1] > 0.9) e.sel.verts.add(i); });
+    expect(e.fill()).toBe(true);
+    expect(m.stats().closed).toBe(true);
+    expect(e.log.at(-1)!.code).toMatch(/mesh\.fill\(\[/);
+    e.undo();
+    expect(e.scene.get('Box')!.mesh!.stats().closed).toBe(false);
+  });
+});
+
+describe('loop select (Alt+click)', () => {
+  it('on a torus, both loops through a vertex close all the way round', () => {
+    const t = makePrimitive('torus', { segments: 48, tubeSegments: 12 });   // vertex i*12 + j
+    const round = t.edgeLoop(0, 12);          // along the main circle
+    expect(round).toMatchObject({ closed: true });
+    expect(round.edges).toHaveLength(48);
+    const tube = t.edgeLoop(0, 1);            // round the tube
+    expect(tube.closed).toBe(true);
+    expect(tube.edges).toHaveLength(12);
+    expect(new Set(tube.edges.flat()).size).toBe(12);
+  });
+
+  it('on a grid, an inside loop runs edge to edge and a border loop stops at the corners', () => {
+    const g = makePrimitive('grid', { subdivisions: 4 });                  // 5 × 5 vertices, id = j*5 + i
+    const inside = g.edgeLoop(11, 12);                                      // row j = 2, i = 1 → 2
+    expect(inside.closed).toBe(false);
+    expect(inside.edges.map(([a, b]) => [a, b])).toEqual([[10, 11], [11, 12], [12, 13], [13, 14]]);
+    const border = g.edgeLoop(1, 2);                                        // the j = 0 side
+    expect(border.edges.flat().sort((a, b) => a - b)).toEqual([0, 1, 1, 2, 2, 3, 3, 4]);
+  });
+
+  it('on a UV sphere, a meridian stops where the triangles at the poles begin', () => {
+    const s = makePrimitive('uvSphere', { segments: 8, rings: 6 });
+    // Pick an edge between two rings, away from the poles: its loop is part of a meridian.
+    const e = [...s.edges().values()].find((x) => x.faces.every((f) => s.faces[f].length === 4) && Math.abs(s.verts[x.a][1] - s.verts[x.b][1]) > 1e-6 && Math.abs(s.verts[x.a][0]) + Math.abs(s.verts[x.a][2]) > 0.1)!;
+    const loop = s.edgeLoop(e.a, e.b);
+    expect(loop.closed).toBe(false);
+    expect(loop.edges.length).toBe(6 - 2);   // the quad rings only
+    const xs = new Set(loop.edges.flat().map((v) => Math.atan2(s.verts[v][2], s.verts[v][0]).toFixed(6)));
+    expect(xs.size).toBe(1);                 // all at one longitude
+  });
+
+  it('in the editor: edge mode selects the loop, face mode the ring of faces, Shift adds', () => {
+    const e = new Editor();
+    runScript(e, `scene.add.torus({ name: 'T', segments: 48, tubeSegments: 12 })`);
+    e.selectObject(e.scene.get('T')!.id); e.enterEdit();
+    e.setSelectMode('edge');
+    e.selectLoop(0, 12);
+    expect(e.sel.edges.size).toBe(48);
+    e.selectLoop(0, 1, true);
+    expect(e.sel.edges.size).toBe(60);
+    e.setSelectMode('face');
+    e.selectLoop(0, 1);
+    expect(e.sel.faces.size).toBe(48);       // the faces the tube edge (0, 1) crosses, all round
+  });
+});

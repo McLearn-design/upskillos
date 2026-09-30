@@ -11,6 +11,8 @@ import { runScript } from './api';
 import { sampleKeys } from './animation';
 import { charts, uvFits, angleDistortion } from './uv';
 import { evaluatedMesh, skinSource } from './evaluate';
+import { heatGeodesic } from './geometry';
+import { Box3, Vector3 } from 'three';
 import { EXAMPLES } from './examples';
 import { fmt } from './trace';
 
@@ -153,6 +155,109 @@ for (const f of m.faces.map((f) => f.index)) m.insetRegion([f], 0.1)   // a supp
         { label: 'The subdivision modifier is still on', ok: sub },
         { label: 'The cage is still one closed surface', ok: b.mesh.stats().closed },
         { label: 'After subdivision it keeps 90% of the box\'s volume', ok: sub && vol >= 0.9 * full, detail: `${fmt((100 * vol) / full, 1)}%` },
+      ];
+    },
+  },
+  {
+    id: 'close-the-box',
+    title: 'Close the box',
+    icon: '📦',
+    brief: 'This box has lost its lid: the top face is gone and you can see inside. Close it with one new face, so the box is a closed solid again with every face pointing outwards.',
+    select: 'Box',
+    setup: `const box = scene.add.cube({ name: 'Box', size: 1.4, position: [0, 0.7, 0] })
+box.mesh.delete({ faces: box.mesh.faces.top() })`,
+    hints: [
+      'A face is a list of the vertices round it. Here they are the four corners round the hole.',
+      'Tab for edit mode, press 1 for vertex select, then click one corner of the hole and Shift-click the other three.',
+      'Press F (Mesh › Fill). The new face is wound the same way as the faces beside it, so it points outwards.',
+    ],
+    solution: `const m = scene.get('Box').mesh
+m.fill(m.verts.filter((v) => v.y > 0.6).map((v) => v.index))   // the four corners round the hole`,
+    check(e) {
+      const b = e.scene.get('Box'), m = b?.mesh;
+      if (!m) return [{ label: 'The box is there', ok: false }];
+      const s = m.stats(), full = 1.4 ** 3, vol = m.volume();
+      return [
+        { label: 'Six faces', ok: s.faces === 6, detail: `${s.faces} face${s.faces === 1 ? '' : 's'}` },
+        { label: 'Closed: every edge has a face on each side', ok: s.closed, detail: s.closed ? undefined : `${m.boundaryEdges().length} edges have a face on one side only` },
+        { label: 'Every face points outwards (the volume comes out positive)', ok: s.closed && Math.abs(vol - full) < 1e-6, detail: s.closed ? `volume ${fmt(vol, 3)}; a box 1.4 on a side holds ${fmt(full, 3)}` : undefined },
+      ];
+    },
+  },
+  {
+    id: 'farthest-point',
+    title: 'The farthest point',
+    icon: '🚩',
+    brief: 'An ant starts at the red ball on the inside of the ring and can only walk on the surface. Put the yellow flag on the point it would take longest to reach.',
+    select: 'Ring',
+    setup: `const ring = scene.add.torus({ name: 'Ring', radius: 1, tube: 0.35, segments: 48, tubeSegments: 16 })
+const start = ring.mesh.verts[8]                     // on the inside of the ring
+const ball = scene.add.uvSphere({ name: 'Start', radius: 0.1, position: [start.x, start.y, start.z] })
+ball.material.color = '#e4572e'
+const flag = scene.add.uvSphere({ name: 'Flag', radius: 0.1, position: [0, 1, 0] })
+flag.material.color = '#f2c14e'`,
+    hints: [
+      'Walking on the surface is not a straight line through the air, so measure it on the surface: Tab, click the vertex at the red ball, then Heat map › Distance from selected vertices.',
+      'Red is far and blue is near. The contour lines join points at the same distance, so the farthest point is where they close round nothing.',
+      'Tab back to object mode, select the Flag and move it there: drag with G, or type the vertex’s position into the Inspector.',
+    ],
+    solution: `const ring = scene.get('Ring')
+const d = ring.mesh.geodesic(8)                      // surface distance from the start, by the heat method
+const far = d.indexOf(Math.max(...d))
+const p = ring.mesh.verts[far]
+scene.get('Flag').position = [p.x, p.y, p.z]
+log('farthest vertex', far, 'at distance', d[far].toFixed(3))`,
+    check(e) {
+      const ring = e.scene.get('Ring'), flag = e.scene.get('Flag');
+      if (!ring?.mesh || !flag) return [{ label: 'The ring and the flag are there', ok: false }];
+      const d = heatGeodesic(ring.mesh, [8]), max = Math.max(...d);
+      const world = ring.mesh.verts.map((v) => new Vector3(...v).applyMatrix4(e.scene.worldMatrix(ring)));
+      const at = new Vector3(...flag.position);
+      let near = 0;
+      world.forEach((p, i) => { if (p.distanceTo(at) < world[near].distanceTo(at)) near = i; });
+      const gap = world[near].distanceTo(at), share = d[near] / max;
+      return [
+        { label: 'The flag is on the ring’s surface (within 0.1 of a vertex)', ok: gap < 0.1, detail: `${fmt(gap, 3)} from the nearest vertex` },
+        { label: 'It is at the farthest point: at least 97% of the longest walk', ok: gap < 0.1 && share >= 0.97, detail: `${fmt(share * 100, 1)}% of the farthest distance` },
+      ];
+    },
+  },
+  {
+    id: 'staircase',
+    title: 'Script a staircase',
+    icon: '🪜',
+    brief: 'Build a staircase of ten steps from code: each step a block 1 wide, 0.3 deep and 0.2 higher than the one before, standing on the floor and climbing towards +z from z = 0. Name them Step 1 to Step 10.',
+    setup: `scene.add.plane({ name: 'Floor', size: 8, position: [0, 0, 1.5] }).material.color = '#3a3f47'`,
+    hints: [
+      'Open the Script tab. A loop with k from 1 to 10 adds one step each time round.',
+      'scene.add.cube({ size: 1 }) makes a cube from -0.5 to 0.5 on each axis. Its scale stretches it, and its position moves its centre.',
+      'Step k is h = 0.2 k high, so its centre is at y = h / 2. It covers z from 0.3 (k - 1) to 0.3 k, so its centre is at z = 0.3 k - 0.15.',
+    ],
+    solution: `for (let k = 1; k <= 10; k++) {
+  const h = 0.2 * k
+  scene.add.cube({ name: 'Step ' + k, size: 1, position: [0, h / 2, 0.3 * k - 0.15], scale: [1, h, 0.3] })
+}`,
+    check(e) {
+      const steps = e.scene.objects.filter((o) => o.mesh && /^Step \d+$/.test(o.name));
+      const box = (o: typeof steps[number]) => {
+        const b = new Box3();
+        for (const v of o.mesh!.verts) b.expandByPoint(new Vector3(...v).applyMatrix4(e.scene.worldMatrix(o)));
+        return b;
+      };
+      const k = (o: typeof steps[number]) => Number(o.name.slice(5));
+      const ok = (a: number, b: number) => Math.abs(a - b) < 1e-3;
+      const bad = (test: (b: Box3, k: number) => boolean) => steps.filter((o) => !test(box(o), k(o))).map((o) => o.name);
+      const names = new Set(steps.map(k));
+      const allNamed = names.size === 10 && [...names].every((n) => n >= 1 && n <= 10);
+      const size = bad((b) => ok(b.max.x - b.min.x, 1) && ok(b.max.z - b.min.z, 0.3));
+      const height = bad((b, n) => ok(b.min.y, 0) && ok(b.max.y, 0.2 * n));
+      const place = bad((b, n) => ok(b.min.z, 0.3 * (n - 1)) && ok(b.min.x, -0.5));
+      const list = (xs: string[]) => (xs.length ? `wrong: ${xs.slice(0, 3).join(', ')}${xs.length > 3 ? '…' : ''}` : undefined);
+      return [
+        { label: 'Ten steps, named Step 1 to Step 10', ok: allNamed, detail: `${steps.length} found` },
+        { label: 'Each step is 1 wide and 0.3 deep', ok: allNamed && !size.length, detail: list(size) },
+        { label: 'Step k stands on the floor and is 0.2 × k high', ok: allNamed && !height.length, detail: list(height) },
+        { label: 'Each starts where the one before ends, climbing from z = 0', ok: allNamed && !place.length, detail: list(place) },
       ];
     },
   },

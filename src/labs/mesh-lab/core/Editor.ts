@@ -24,6 +24,8 @@ import { cloneBones, limitWeights, moveJoint, orderBones, type Bone, type JointS
 import { DEFAULT_PAINT, dab, neighbourLists, type PaintSettings } from './weightPaint';
 import { angleDistortion, planarUV, sharpEdges, unwrap as unwrapMesh, uvFits } from './uv';
 import { bevelEdges, dissolveEdges, dissolveFaces, dissolveVerts, insetRegion } from './modelling';
+import { DEFAULT_CAMERA, lookAtRotation } from './camera';
+import { knife as knifeCut, knifeFaces } from './knife';
 
 export type Mode = 'object' | 'edit' | 'pose' | 'weight' | 'bones';
 export type SelectMode = 'vert' | 'edge' | 'face';
@@ -245,6 +247,49 @@ export class Editor {
     const o = this.run('Add empty', `scene.add.empty(${lit({ name: unique })})`, () => this.scene.add({ name: unique, kind: 'empty' }));
     this.selectObject(o.id);
     return o;
+  }
+
+  /**
+   * Add a camera. With no pose it stands 8 m out, 2 m up, looking at the origin;
+   * the viewport passes its own view instead ("add a camera where I am looking").
+   * The first camera becomes the scene's camera.
+   */
+  addCamera(pose?: { position: Vec3; rotation: Vec3 }, name = 'Camera'): SceneObject {
+    if (this.mode === 'edit') this.exitEdit();
+    const unique = this.scene.uniqueName(name);
+    const position = pose?.position ?? [0, 2, 8];
+    const rotation = pose?.rotation ?? lookAtRotation(position, [0, 0.5, 0]);
+    const o = this.run('Add camera', `scene.add.camera(${lit({ name: unique, position, rotation })})`, () => {
+      const c = this.scene.add({ name: unique, kind: 'camera', camera: { ...DEFAULT_CAMERA }, position, rotation });
+      if (!this.scene.activeCamera) this.scene.activeCamera = c.id;
+      return c;
+    });
+    this.selectObject(o.id);
+    return o;
+  }
+
+  /** Make a camera the one stills are rendered from. */
+  setActiveCamera(id: string): boolean {
+    const o = this.scene.get(id);
+    if (o?.kind !== 'camera') { this.say('Select a camera first'); return false; }
+    this.run('Set scene camera', `scene.camera = ${ref(o)}`, () => { this.scene.activeCamera = o.id; });
+    return true;
+  }
+
+  /** Move the scene's camera to a view (Blender's Ctrl+Alt+Numpad 0). */
+  alignCamera(position: Vec3, rotation: Vec3): boolean {
+    const o = this.scene.activeCamera ? this.scene.get(this.scene.activeCamera) : undefined;
+    if (!o) { this.say('There is no scene camera: Add › Camera first'); return false; }
+    const r: Vec3 = rotation.map((x) => +x.toFixed(6)) as Vec3, p: Vec3 = position.map((x) => +x.toFixed(6)) as Vec3;
+    this.run('Align camera to view', `${ref(o)}.position = ${lit(p)}\n${ref(o)}.rotation = ${lit(r)}`, () => { o.position = p; o.rotation = r; });
+    return true;
+  }
+
+  /** A camera's field of view, in degrees. */
+  setCameraFov(id: string, fov: number): void {
+    const o = this.scene.get(id);
+    if (!o?.camera || !(fov > 1 && fov < 179)) return;
+    this.run('Camera setting', `${ref(o)}.fov = ${lit(fov)}`, () => { o.camera = { ...o.camera!, fov }; });
   }
 
   deleteObjects(ids = [...this.selected]): void {
@@ -528,6 +573,30 @@ export class Editor {
     this.endLive(`Paint ${st.bone}`, `${ref(st.o)}.paintWeights(${lit(st.bone)}, ${lit({ brush, radius, strength, value, normalize, mirror, points: st.points })})`);
   }
 
+  /**
+   * Alt+click: select the loop through an edge. Vertex and edge modes take the edge
+   * loop; face mode takes the ring of faces the edge crosses. Shift adds to the selection.
+   */
+  selectLoop(a: number, b: number, additive = false): boolean {
+    const m = this.editObject?.mesh;
+    if (!m) return false;
+    if (!additive) this.clearElements(false);
+    if (this.selectMode === 'face') {
+      const ring = m.edgeRing(a, b);
+      ring.faces.forEach((f) => this.sel.faces.add(f));
+      this.say(`Face loop: ${ring.faces.length} faces${ring.closed ? ', all the way round' : ''}`);
+    } else {
+      const loop = m.edgeLoop(a, b);
+      for (const [x, y] of loop.edges) {
+        if (this.selectMode === 'edge') this.sel.edges.add(EditMesh.edgeKey(x, y));
+        else { this.sel.verts.add(x); this.sel.verts.add(y); }
+      }
+      this.say(`Edge loop: ${loop.edges.length} edges${loop.closed ? ', all the way round' : ''}`);
+    }
+    this.emit('select');
+    return true;
+  }
+
   setSelectMode(m: SelectMode): void {
     const mesh = this.editObject?.mesh;
     if (mesh) {
@@ -759,6 +828,39 @@ export class Editor {
       if (this.selectMode === 'vert') this.sel.verts.add(keep - below);
       return `${ref(o)}.mesh.merge(${lit(vs)})`;
     }, 'Merge');
+  }
+
+  /** The knife (K): cut the edited mesh along a line (see core/knife.ts). Selects the new edges. */
+  knife(line: { eye: Vec3; from: Vec3; to: Vec3 }, through = false): boolean {
+    const o = this.editObject;
+    if (!o?.mesh) { this.say('Knife: enter edit mode (Tab) on a mesh first'); return false; }
+    const r = (v: Vec3): Vec3 => v.map((x) => +x.toFixed(6)) as Vec3;
+    const l = { eye: r(line.eye), from: r(line.from), to: r(line.to) };
+    if (!knifeCut(o.mesh.clone(), l, knifeFaces(o.mesh, l.eye, through)).length) { this.say('Knife: the line crosses no face'); return false; }
+    return this.meshOp('Knife', 'none', (o, m, _items, t) => {
+      const cut = knifeCut(m, l, knifeFaces(m, l.eye, through), t);
+      this.clearElements(false);
+      for (const [a, b] of cut) {
+        if (this.selectMode === 'edge') this.sel.edges.add(EditMesh.edgeKey(a, b));
+        else if (this.selectMode === 'vert') { this.sel.verts.add(a); this.sel.verts.add(b); }
+      }
+      this.say(`Knife: ${cut.length} face${cut.length === 1 ? '' : 's'} cut`);
+      return `${ref(o)}.mesh.knife(${lit({ ...l, ...(through ? { through } : {}) })})`;
+    }, 'Knife');
+  }
+
+  /** Close the hole round the selected vertices with one face (F in edit mode). */
+  fill(): boolean {
+    const o = this.editObject;
+    if (o?.mesh) {
+      const plan = o.mesh.fillPlan(this.selectedVerts());
+      if (typeof plan === 'string') { this.say(`Fill: ${plan}`); return false; }
+    }
+    return this.meshOp('Fill', 'verts', (o, m, verts) => {
+      const f = m.fill(verts as number[]);
+      if (this.selectMode === 'face') { this.sel.faces.clear(); this.sel.faces.add(f); }
+      return `${ref(o)}.mesh.fill(${lit(verts)})`;
+    });
   }
 
   flip(): boolean {

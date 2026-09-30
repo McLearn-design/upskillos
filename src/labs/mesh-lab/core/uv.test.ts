@@ -168,3 +168,55 @@ describe('shading', () => {
     expect(at(0, 0)).toBe(235); expect(at(8, 0)).not.toBe(235); expect(at(8, 8)).toBe(235); expect(at(63, 63)).toBe(235);
   });
 });
+
+describe('smooth UV subdivision (keep boundaries)', () => {
+  const planar = (m: EditMesh) => ({ faces: m.faces.map((f) => f.map((v) => [m.verts[v][0], m.verts[v][2]] as [number, number])) });
+
+  it('reproduces a straight projection exactly: on a flat grid the smoothed UV of every corner is its new vertex’s (x, z)', async () => {
+    const { subdivide } = await import('./subdivision');
+    const g = makePrimitive('grid', { size: 2, subdivisions: 4 });
+    const sub = subdivide(g, 1), uv = subdivideUV(planar(g), 1, g, true);
+    expect(uv.faces.length).toBe(sub.faces.length);
+    let checked = 0;
+    sub.faces.forEach((f, fi) => f.forEach((v, k) => {
+      const p = sub.verts[v];
+      expect(uv.faces[fi][k][0]).toBeCloseTo(p[0], 12);
+      expect(uv.faces[fi][k][1]).toBeCloseTo(p[2], 12);
+      checked++;
+    }));
+    expect(checked).toBe(sub.faces.length * 4);
+  });
+
+  it('keeps island boundaries: a cube cut into six islands gets exactly the linear UVs', () => {
+    const cube = makePrimitive('cube');
+    const layer = unwrap(cube, new Set(sharpEdges(cube)));
+    // Level 1: every UV vertex is on an island edge. Level 2 has inside points, but each island is a flat
+    // square, and the smoothing rules reproduce a flat square grid exactly: the same, up to rounding.
+    const a = subdivideUV(layer, 2, cube, true), b = subdivideUV(layer, 2, cube, false);
+    a.faces.forEach((f, i) => f.forEach((p, k) => { expect(p[0]).toBeCloseTo(b.faces[i][k][0], 12); expect(p[1]).toBeCloseTo(b.faces[i][k][1], 12); }));
+  });
+
+  it('on a sphere, smooth UVs distort the texture less than linear ones on the smoothed surface', async () => {
+    const { subdivide } = await import('./subdivision');
+    const sphere = makePrimitive('uvSphere', { segments: 12, rings: 8 });
+    // One seam, pole to pole along the +x side: a single island.
+    const seam = [...sphere.edges().values()].filter((e) => [e.a, e.b].every((v) => Math.abs(sphere.verts[v][2]) < 1e-9 && sphere.verts[v][0] >= -1e-9)).map((e) => `${e.a}-${e.b}`);
+    expect(seam).toHaveLength(8);
+    const layer = unwrap(sphere, new Set(seam)), surface = subdivide(sphere, 2);
+    const stats = (smooth: boolean) => { const d = angleDistortion(surface, subdivideUV(layer, 2, sphere, smooth)); return { mean: d.reduce((a, b) => a + b, 0) / d.length, max: Math.max(...d) }; };
+    const lin = stats(false), smo = stats(true);
+    // Measured: mean 1.49 → 1.32, worst 4.89 → 2.89 (1 is no distortion).
+    expect(smo.mean).toBeLessThan(lin.mean - 0.1);
+    expect(smo.max).toBeLessThan(lin.max * 0.7);
+  });
+
+  it('is the default in the modifier stack, and uvSmooth: false gives the old linear UVs', () => {
+    const g = makePrimitive('grid', { size: 2, subdivisions: 3 });
+    const bumpy = new EditMesh(g.verts.map((v) => [v[0], 0.3 * Math.sin(3 * v[0]) * Math.cos(2 * v[2]), v[2]] as Vec3), g.faces.map((f) => [...f]));
+    const uv = planar(bumpy);
+    const sub = (uvSmooth?: boolean) => evaluateUV(bumpy, uv, [{ type: 'subsurf', levels: 1, enabled: true, ...(uvSmooth === undefined ? {} : { uvSmooth }) }], 3, false);
+    expect(sub()).toEqual(subdivideUV(uv, 1, bumpy, true));
+    expect(sub(false)).toEqual(subdivideUV(uv, 1));
+    expect(sub()).not.toEqual(sub(false));
+  });
+});

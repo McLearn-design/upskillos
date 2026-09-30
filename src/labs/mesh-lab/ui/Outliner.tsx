@@ -6,7 +6,7 @@ import type { Editor } from '../core/Editor';
 import type { SceneObject } from '../core/Scene';
 import { C, useEditorVersion } from './kit';
 
-const ICON: Record<string, string> = { mesh: '▲', empty: '✛', light: '☀' };
+const ICON: Record<string, string> = { mesh: '▲', empty: '✛', light: '☀', camera: '🎥' };
 
 export function Outliner({ editor }: { editor: Editor }) {
   useEditorVersion(editor);

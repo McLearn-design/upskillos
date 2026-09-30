@@ -11,11 +11,21 @@ import { evaluatedMesh } from '../core/evaluate';
 import { Btn, C, MatrixView, NumberField, Row, Section, useEditorVersion } from './kit';
 import { ArmaturePanel, SkinPanel, VertexSkin, WeightPaintPanel } from './Rig';
 import { SHADER_INFO, SHADER_MODELS, TEXTURES, type ShaderModel, type TextureName } from '../core/shading';
+import { RENDER_SIZES, horizontalFov } from '../core/camera';
+
+/** What the camera section can ask of the viewport: look through, render, and the render size. */
+export interface CameraControls {
+  through: boolean;
+  lookThrough(): void;
+  render(): void;
+  renderSize: { width: number; height: number };
+  setRenderSize(width: number, height: number): void;
+}
 
 const f3 = (v: Vec3) => `(${v.map((x) => (Math.abs(x) < 5e-7 ? 0 : +x.toFixed(3))).join(', ')})`;
 const DEG = 180 / Math.PI;
 
-export function Inspector({ editor }: { editor: Editor }) {
+export function Inspector({ editor, camera }: { editor: Editor; camera?: CameraControls }) {
   useEditorVersion(editor);
   const o = editor.activeObject;
   return (
@@ -27,6 +37,7 @@ export function Inspector({ editor }: { editor: Editor }) {
         <>
           {o.bones && <ArmaturePanel editor={editor} />}
           {o.skin && <SkinPanel editor={editor} />}
+          {o.kind === 'camera' && camera && <CameraPanel editor={editor} controls={camera} />}
           <ObjectInspector editor={editor} />
         </>
       )}
@@ -163,7 +174,10 @@ function Modifiers({ editor }: { editor: Editor }) {
               <Row label="Merge"><NumberField value={m.merge} step={0.001} digits={4} onCommit={(v) => upd(i, { merge: Math.max(0, v) })} /></Row>
             </>
           ) : (
-            <Row label="Levels"><NumberField value={m.levels} step={1} digits={0} onCommit={(v) => upd(i, { levels: Math.min(4, Math.max(0, Math.round(v))) })} /><span style={{ color: C.faint, fontSize: 11 }}>each level ×4 faces</span></Row>
+            <>
+              <Row label="Levels"><NumberField value={m.levels} step={1} digits={0} onCommit={(v) => upd(i, { levels: Math.min(4, Math.max(0, Math.round(v))) })} /><span style={{ color: C.faint, fontSize: 11 }}>each level ×4 faces</span></Row>
+              <Row label="Smooth UVs"><input type="checkbox" checked={m.uvSmooth !== false} onChange={(e) => upd(i, { uvSmooth: e.target.checked })} /><span style={{ color: C.faint, fontSize: 11 }}>texture follows the smoothed surface; island edges stay</span></Row>
+            </>
           )}
         </div>
       ))}
@@ -264,5 +278,31 @@ function GpuData({ m }: { m: EditMesh }) {
       {t.faceIndex.length > nt && <div style={{ color: C.faint }}>… {t.faceIndex.length - nt} more</div>}
       <div style={{ color: C.faint, fontFamily: 'system-ui', marginTop: 6 }}>The GPU only draws triangles. Each quad is fanned into two triangles that share its first corner; the model keeps the quad.</div>
     </div>
+  );
+}
+
+/** A camera: its lens, the render size, and the buttons to look through it and render a still. */
+function CameraPanel({ editor, controls }: { editor: Editor; controls: CameraControls }) {
+  const o = editor.activeObject!;
+  const fov = o.camera?.fov ?? 50, { width, height } = controls.renderSize;
+  const isScene = editor.scene.activeCamera === o.id;
+  return (
+    <Section title="CAMERA">
+      <Row label="Field of view"><NumberField value={fov} digits={1} step={1} onCommit={(v) => editor.setCameraFov(o.id, v)} /><span style={{ color: C.dim }}>° tall, {horizontalFov(fov, width / height).toFixed(1)}° wide</span></Row>
+      <Row label="Render size">
+        <select data-testid="render-size" value={`${width}x${height}`} onChange={(e) => { const [w, h] = e.target.value.split('x').map(Number); controls.setRenderSize(w, h); }}
+          style={{ background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 3, fontSize: 12 }}>
+          {RENDER_SIZES.map((r) => <option key={r.label} value={`${r.width}x${r.height}`}>{r.label}</option>)}
+        </select>
+      </Row>
+      <div style={{ color: C.dim, margin: '6px 0' }}>
+        {isScene ? '✓ The scene camera: stills are rendered from it.' : <Btn small onClick={() => editor.setActiveCamera(o.id)}>Make it the scene camera</Btn>}
+      </div>
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+        <Btn small onClick={controls.lookThrough} title="0">{controls.through ? 'Leave the camera view (0)' : 'Look through (0)'}</Btn>
+        <Btn small onClick={controls.render} title="Render the scene camera's view to a PNG">Render still (PNG)</Btn>
+      </div>
+      <div style={{ color: C.faint, marginTop: 6, lineHeight: 1.5 }}>A camera looks down its own −z axis. The pyramid is what it sees (its field of view, in the render’s shape); the triangle marks its up. Tall and wide angles are related by tan(wide/2) = tan(tall/2) × width/height.</div>
+    </Section>
   );
 }

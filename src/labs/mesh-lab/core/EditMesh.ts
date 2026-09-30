@@ -608,6 +608,44 @@ export class EditMesh {
     return this.removeVerts([...touched].filter((v) => !used.has(v)));
   }
 
+  /**
+   * The face that would close a hole: the selected vertices, in order round
+   * the hole, wound opposite to the faces beside it so the new face points the
+   * same way as its neighbours. A string says why there is no such face.
+   *
+   * Every edge of the hole is a boundary edge (one face). If its face walks it
+   * a → b, the new face must walk it b → a, so following "b comes before a"
+   * round the loop gives the corners in order.
+   */
+  fillPlan(verts: number[]): number[] | string {
+    const chosen = new Set(verts);
+    if (chosen.size < 3) return 'Select at least three vertices round a hole';
+    const before = new Map<number, number>(); // before.get(b) = a: the new face goes b → a
+    for (const e of this.boundaryEdges()) {
+      if (!chosen.has(e.a) || !chosen.has(e.b)) continue;
+      const f = this.faces[e.faces[0]], i = f.indexOf(e.a);
+      const [a, b] = f[(i + 1) % f.length] === e.b ? [e.a, e.b] : [e.b, e.a];
+      if (before.has(b)) return 'The selection branches: select the vertices round one hole';
+      before.set(b, a);
+    }
+    if (before.size !== chosen.size) return 'Those vertices are not all on one hole’s edge: select every vertex round the hole';
+    const loop = [verts[0]];
+    for (let v = before.get(verts[0])!; v !== verts[0]; v = before.get(v)!) {
+      if (v === undefined || loop.length > chosen.size) return 'The selected edges do not close into one loop';
+      loop.push(v);
+    }
+    return loop.length === chosen.size ? loop : 'The selection is more than one hole: fill them one at a time';
+  }
+
+  /** Close a hole with one face (Blender's F). Returns the new face's index. */
+  fill(verts: number[]): number {
+    const plan = this.fillPlan(verts);
+    if (typeof plan === 'string') throw new Error(plan);
+    this.faces.push(plan);
+    this.touch();
+    return this.faces.length - 1;
+  }
+
   /** Remove vertices and every face that uses any of them. */
   deleteVerts(vertIdxs: number[]): this {
     const drop = new Set(vertIdxs);
@@ -660,6 +698,44 @@ export class EditMesh {
    * each quad in turn. Returns the edges crossed, each oriented so that its
    * first vertex is on the same side of the ring, and the quads in order.
    */
+  /**
+   * The edge loop through the edge (a, b), as Blender's Alt+click finds it. At a vertex
+   * with four edges, go straight on: take the one edge that shares no face with the
+   * edge you arrived along. Along a boundary, a vertex with three edges continues to
+   * the next boundary edge. A pole (any other count) or a triangle or n-gon stops the
+   * walk, which then runs the other way from (a, b).
+   */
+  edgeLoop(a: number, b: number): { edges: [number, number][]; closed: boolean } {
+    const map = this.edges(), startKey = EditMesh.edgeKey(a, b);
+    if (!map.has(startKey)) return { edges: [], closed: false };
+    const around = new Map<number, EdgeInfo[]>();
+    for (const e of map.values()) for (const v of [e.a, e.b]) { let l = around.get(v); if (!l) around.set(v, (l = [])); l.push(e); }
+    const walk = (from: number, to: number) => {
+      const out: [number, number][] = [];
+      const seen = new Set([startKey]);
+      let prev = from, cur = to;
+      for (;;) {
+        const came = map.get(EditMesh.edgeKey(prev, cur))!, inc = around.get(cur)!;
+        const quads = inc.every((e) => e.faces.every((f) => this.faces[f].length === 4));
+        let next: EdgeInfo[] = [];
+        if (came.faces.length === 2 && inc.length === 4 && quads) next = inc.filter((e) => e !== came && !e.faces.some((f) => came.faces.includes(f)));
+        else if (came.faces.length === 1 && inc.length === 3 && quads) next = inc.filter((e) => e !== came && e.faces.length === 1);
+        if (next.length !== 1) return { out, closed: false };
+        const key = EditMesh.edgeKey(next[0].a, next[0].b);
+        if (key === startKey) return { out, closed: true };
+        if (seen.has(key)) return { out, closed: false };
+        seen.add(key);
+        const n = next[0].a === cur ? next[0].b : next[0].a;
+        out.push([cur, n]);
+        prev = cur; cur = n;
+      }
+    };
+    const fwd = walk(a, b);
+    if (fwd.closed) return { edges: [[a, b], ...fwd.out], closed: true };
+    const back = walk(b, a);
+    return { edges: [...back.out.map(([x, y]) => [y, x] as [number, number]).reverse(), [a, b], ...fwd.out], closed: false };
+  }
+
   edgeRing(a: number, b: number): { edges: [number, number][]; faces: number[]; closed: boolean } {
     const map = this.edges();
     const start = map.get(EditMesh.edgeKey(a, b));

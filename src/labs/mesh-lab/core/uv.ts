@@ -305,19 +305,98 @@ export function mirrorUV(mesh: EditMesh, uv: UVLayer, axis: 'x' | 'y' | 'z', mer
   return { faces };
 }
 
-/** Catmull–Clark's new faces, with UVs averaged linearly the same way (corner, edge midpoint, centre, edge midpoint). */
-export function subdivideUV(uv: UVLayer, levels: number): UVLayer {
-  let faces = uv.faces;
+/**
+ * The UVs of Catmull–Clark's new faces. Each face becomes one quad per corner:
+ * (corner, edge point to the next corner, face point, edge point from the previous
+ * corner), the same order `subdivide` makes its faces in.
+ *
+ * Linear (smooth = false): edge points are midpoints and corners stay, so the
+ * texture is laid on the smoothed surface exactly as it was on the cage and slides
+ * where the surface moves most.
+ *
+ * Smooth (Blender's "keep boundaries", the default): the UVs are subdivided with the
+ * same rules as the surface, so the texture follows it. They are treated as a mesh of
+ * their own. A UV vertex is the set of corners with the same mesh vertex AND the same
+ * UV, so the two sides of a seam are separate vertices, and a seam is a boundary.
+ * Boundary edges and vertices are kept linear: an island's outline does not shrink
+ * or move, so textures still meet along seams.
+ */
+export function subdivideUV(uv: UVLayer, levels: number, mesh?: EditMesh, smooth = false): UVLayer {
+  let faces = uv.faces, m = mesh;
   for (let l = 0; l < levels; l++) {
-    const out: UV[][] = [];
-    for (const f of faces) {
-      const n = f.length, c: UV = [f.reduce((s, p) => s + p[0], 0) / n, f.reduce((s, p) => s + p[1], 0) / n];
-      const mid = (a: UV, b: UV): UV => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-      for (let i = 0; i < n; i++) out.push([f[i], mid(f[i], f[(i + 1) % n]), c, mid(f[(i - 1 + n) % n], f[i])]);
-    }
-    faces = out;
+    faces = smooth && m ? smoothUVLevel(m, faces) : linearUVLevel(faces);
+    if (m && l + 1 < levels) m = subdivide(m, 1);
   }
   return { faces };
+}
+
+function linearUVLevel(faces: UV[][]): UV[][] {
+  const out: UV[][] = [];
+  const mid = (a: UV, b: UV): UV => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  for (const f of faces) {
+    const n = f.length, c: UV = [f.reduce((s, p) => s + p[0], 0) / n, f.reduce((s, p) => s + p[1], 0) / n];
+    for (let i = 0; i < n; i++) out.push([f[i], mid(f[i], f[(i + 1) % n]), c, mid(f[(i - 1 + n) % n], f[i])]);
+  }
+  return out;
+}
+
+function smoothUVLevel(m: EditMesh, faces: UV[][]): UV[][] {
+  // 1. UV vertices: corners with the same mesh vertex and the same UV are one vertex.
+  const ids = new Map<string, number>(), pos: UV[] = [];
+  const corner = m.faces.map((f, fi) => f.map((v, k) => {
+    const p = faces[fi][k], key = `${v}:${p[0].toFixed(9)}:${p[1].toFixed(9)}`;
+    let id = ids.get(key);
+    if (id === undefined) { id = pos.length; ids.set(key, id); pos.push([p[0], p[1]]); }
+    return id;
+  }));
+  // 2. Face points, and the UV edges with the faces on each side.
+  const facePt: UV[] = corner.map((f) => [f.reduce((s, i) => s + pos[i][0], 0) / f.length, f.reduce((s, i) => s + pos[i][1], 0) / f.length]);
+  const ek = (a: number, b: number) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+  const edges = new Map<string, { a: number; b: number; faces: number[] }>();
+  corner.forEach((f, fi) => f.forEach((a, k) => {
+    const b = f[(k + 1) % f.length], key = ek(a, b);
+    const e = edges.get(key);
+    if (e) e.faces.push(fi); else edges.set(key, { a, b, faces: [fi] });
+  }));
+  // 3. Edge points: with a face on each side, the average of the two ends and the two face
+  //    points; on a boundary (a seam or the mesh's edge), the midpoint.
+  const edgePt = new Map<string, UV>();
+  const boundary = new Set<number>();
+  for (const [key, e] of edges) {
+    const A = pos[e.a], B = pos[e.b];
+    if (e.faces.length === 2) {
+      const F1 = facePt[e.faces[0]], F2 = facePt[e.faces[1]];
+      edgePt.set(key, [(A[0] + B[0] + F1[0] + F2[0]) / 4, (A[1] + B[1] + F1[1] + F2[1]) / 4]);
+    } else {
+      edgePt.set(key, [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2]);
+      boundary.add(e.a); boundary.add(e.b);
+    }
+  }
+  // 4. Vertex points: a boundary vertex stays; an interior one moves to (F̄ + 2R̄ + (n − 3)P) / n.
+  const around = pos.map(() => ({ f: [] as number[], mids: [] as UV[] }));
+  corner.forEach((f, fi) => f.forEach((i) => around[i].f.push(fi)));
+  for (const e of edges.values()) {
+    const mid: UV = [(pos[e.a][0] + pos[e.b][0]) / 2, (pos[e.a][1] + pos[e.b][1]) / 2];
+    around[e.a].mids.push(mid); around[e.b].mids.push(mid);
+  }
+  const vertPt: UV[] = pos.map((P, i) => {
+    if (boundary.has(i)) return P;
+    const n = around[i].f.length;
+    const Fb = around[i].f.reduce((s, fi) => [s[0] + facePt[fi][0] / n, s[1] + facePt[fi][1] / n], [0, 0]);
+    const k = around[i].mids.length;
+    const Rb = around[i].mids.reduce((s, q) => [s[0] + q[0] / k, s[1] + q[1] / k], [0, 0]);
+    return [(Fb[0] + 2 * Rb[0] + (n - 3) * P[0]) / n, (Fb[1] + 2 * Rb[1] + (n - 3) * P[1]) / n];
+  });
+  // 5. The new faces, in subdivide's order.
+  const out: UV[][] = [];
+  corner.forEach((f, fi) => {
+    const n = f.length;
+    for (let i = 0; i < n; i++) {
+      const a = f[i], next = f[(i + 1) % n], prev = f[(i - 1 + n) % n];
+      out.push([vertPt[a], edgePt.get(ek(a, next))!, facePt[fi], edgePt.get(ek(prev, a))!]);
+    }
+  });
+  return out;
 }
 
 /**
@@ -330,7 +409,7 @@ export function evaluateUV(mesh: EditMesh, uv: UVLayer, modifiers: Modifier[], m
   for (const mod of order) {
     if (!mod.enabled) continue;
     if (mod.type === 'mirror') { u = mirrorUV(m, u, mod.axis, mod.merge); m = mirror(m, mod.axis, mod.merge); }
-    else if (mod.type === 'subsurf') { const lv = Math.min(maxLevels, Math.max(0, Math.round(mod.levels))); u = subdivideUV(u, lv); m = subdivide(m, lv); }
+    else if (mod.type === 'subsurf') { const lv = Math.min(maxLevels, Math.max(0, Math.round(mod.levels))); u = subdivideUV(u, lv, m, mod.uvSmooth !== false); m = subdivide(m, lv); }
   }
   return u;
 }

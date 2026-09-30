@@ -12,8 +12,9 @@ import { DEFAULT_TIMELINE, cloneAnimation, transformAt, type Animation, type Tim
 import { cloneBones, cloneSkin, type Bone, type Skin } from './armature';
 import type { ShaderModel, TextureName } from './shading';
 import type { UVLayer } from './uv';
+import type { CameraSettings } from './camera';
 
-export type ObjectKind = 'mesh' | 'empty' | 'light' | 'armature';
+export type ObjectKind = 'mesh' | 'empty' | 'light' | 'armature' | 'camera';
 export interface Material {
   color: string; roughness: number; metalness: number;
   /** How the surface is lit (default PBR). */
@@ -44,6 +45,8 @@ export interface SceneObject {
   /** Smooth shading (averaged vertex normals) instead of flat faces. */
   smooth: boolean;
   light?: { type: 'point' | 'sun'; intensity: number; color: string };
+  /** A camera's lens: field of view and clipping distances. */
+  camera?: CameraSettings;
   /** Keyframes on the transform channels, if the object is animated. */
   anim?: Animation;
   /** An armature's bones (rest positions and current pose). */
@@ -63,6 +66,8 @@ export interface SceneJSON {
   objects: (Omit<SceneObject, 'mesh'> & { mesh: MeshSnapshot | null })[];
   /** Frame range, speed and current frame. Missing in files written before animation existed. */
   timeline?: Timeline;
+  /** The camera stills are rendered from. Missing in files written before cameras existed. */
+  activeCamera?: string | null;
 }
 
 const v3 = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
@@ -71,6 +76,8 @@ export class Scene {
   objects: SceneObject[] = [];
   nextId = 1;
   timeline: Timeline = { ...DEFAULT_TIMELINE };
+  /** The camera that "look through" and Render still use. */
+  activeCamera: string | null = null;
   /** An armature whose bones are being edited: meshes bound to it are shown in the rest pose. Not saved. */
   restPose: string | null = null;
 
@@ -105,6 +112,7 @@ export class Scene {
       modifiers: init.modifiers ?? [],
       smooth: init.smooth ?? false,
       light: init.light,
+      camera: init.camera ? { ...init.camera } : undefined,
       anim: cloneAnimation(init.anim),
       bones: init.bones ? cloneBones(init.bones) : undefined,
       skin: cloneSkin(init.skin),
@@ -122,6 +130,7 @@ export class Scene {
     if (!o) return;
     for (const c of this.children(o.id)) this.setParent(c.id, o.parent, true);
     this.objects = this.objects.filter((x) => x.id !== o.id);
+    if (this.activeCamera === o.id) this.activeCamera = null;
   }
 
   localMatrix(o: SceneObject): Matrix4 {
@@ -187,10 +196,10 @@ export class Scene {
 
   toJSON(): SceneJSON {
     return {
-      format: 'meshlab-scene', version: 1, nextId: this.nextId, timeline: { ...this.timeline },
+      format: 'meshlab-scene', version: 1, nextId: this.nextId, timeline: { ...this.timeline }, activeCamera: this.activeCamera,
       objects: this.objects.map((o) => ({
         ...o, position: v3(o.position), rotation: v3(o.rotation), scale: v3(o.scale),
-        material: { ...o.material }, modifiers: o.modifiers.map((m) => ({ ...m })), light: o.light ? { ...o.light } : undefined,
+        material: { ...o.material }, modifiers: o.modifiers.map((m) => ({ ...m })), light: o.light ? { ...o.light } : undefined, camera: o.camera ? { ...o.camera } : undefined,
         mesh: o.mesh ? o.mesh.toSnapshot() : null, anim: cloneAnimation(o.anim),
         bones: o.bones ? cloneBones(o.bones) : undefined, skin: cloneSkin(o.skin),
         seams: o.seams ? [...o.seams] : undefined, uv: o.uv ? { faces: o.uv.faces.map((f) => f.map((p) => [p[0], p[1]] as [number, number])) } : undefined,
@@ -203,9 +212,10 @@ export class Scene {
     const s = new Scene();
     s.nextId = j.nextId;
     s.timeline = { ...DEFAULT_TIMELINE, ...j.timeline };
+    s.activeCamera = j.activeCamera ?? null;
     s.objects = j.objects.map((o) => ({
       ...o, position: v3(o.position), rotation: v3(o.rotation), scale: v3(o.scale),
-      material: { ...o.material }, modifiers: o.modifiers.map((m) => ({ ...m })), light: o.light ? { ...o.light } : undefined,
+      material: { ...o.material }, modifiers: o.modifiers.map((m) => ({ ...m })), light: o.light ? { ...o.light } : undefined, camera: o.camera ? { ...o.camera } : undefined,
       mesh: o.mesh ? EditMesh.fromSnapshot(o.mesh) : null, anim: cloneAnimation(o.anim),
       bones: o.bones ? cloneBones(o.bones) : undefined, skin: cloneSkin(o.skin),
       seams: o.seams ? [...o.seams] : undefined, uv: o.uv ? { faces: o.uv.faces.map((f) => f.map((p) => [p[0], p[1]] as [number, number])) } : undefined,

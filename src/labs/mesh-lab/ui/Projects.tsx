@@ -1,8 +1,8 @@
 // The example project gallery, and the guide shown beside the viewport once a
 // project is open.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { Editor } from '../core/Editor';
-import { PROJECTS, PROJECT_GROUPS, type ExampleProject } from '../core/projects';
+import { PROJECTS, PROJECT_GROUPS, startState, stepText, type ExampleProject } from '../core/projects';
 import { CHALLENGES, type Challenge, type Check } from '../core/challenges';
 import { Btn, C, useEditorVersion } from './kit';
 
@@ -52,14 +52,20 @@ export function ProjectGallery({ onOpen, onClose, busy, onChallenge }: { onOpen:
   );
 }
 
-/** What to look at in the open project. Collapses to its title. */
-export function ProjectGuide({ project, onClose, onShowScript }: { project: ExampleProject; onClose: () => void; onShowScript: () => void }) {
+/** What to look at in the open project. Steps you can do tick themselves when you have done them. Collapses to its title. */
+export function ProjectGuide({ editor, project, onClose, onShowScript }: { editor: Editor; project: ExampleProject; onClose: () => void; onShowScript: () => void }) {
   const [open, setOpen] = useState(true);
+  useEditorVersion(editor);
+  // The scene as the project opened: steps tick when you change it.
+  const start = useMemo(() => startState(editor), [project]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ticks = project.guide.map((g) => { if (typeof g === 'string') return null; try { return g.done(editor, start); } catch { return false; } });
+  const tried = ticks.filter((t) => t !== null), done = tried.filter(Boolean).length;
   return (
     <div data-testid="project-guide" style={{ position: 'absolute', right: 10, top: 8, width: 320, maxWidth: 'calc(100% - 20px)', background: '#16181cee', border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 12, color: C.dim, zIndex: 2, lineHeight: 1.5 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span>{project.icon}</span>
         <b style={{ color: C.text, flex: 1 }}>{project.title}</b>
+        {tried.length > 0 && <span data-testid="guide-progress" title="Steps you have tried" style={{ color: done === tried.length ? C.ok : C.faint, fontSize: 11 }}>{done}/{tried.length} ✓</span>}
         <button onClick={() => setOpen(!open)} title={open ? 'Collapse' : 'Show the guide'} style={{ background: 'none', border: 'none', color: C.dim, cursor: 'pointer' }}>{open ? '▾' : '▸'}</button>
         <button onClick={onClose} title="Close the guide" style={{ background: 'none', border: 'none', color: C.dim, cursor: 'pointer', fontSize: 14 }}>×</button>
       </div>
@@ -68,7 +74,12 @@ export function ProjectGuide({ project, onClose, onShowScript }: { project: Exam
           <div style={{ margin: '4px 0 6px' }}>{project.desc}</div>
           <div style={{ color: C.text, fontWeight: 600, fontSize: 11, letterSpacing: 0.4 }}>LOOK AND TRY</div>
           <ol style={{ margin: '4px 0 8px 18px', padding: 0 }}>
-            {project.guide.map((g, i) => <li key={i} style={{ marginBottom: 4 }}>{g}</li>)}
+            {project.guide.map((g, i) => (
+              <li key={i} data-testid="guide-step" data-done={ticks[i] === null ? undefined : String(ticks[i])} style={{ marginBottom: 4, color: ticks[i] ? C.text : undefined }}>
+                {ticks[i] !== null && <span style={{ color: ticks[i] ? C.ok : C.faint, marginRight: 4 }}>{ticks[i] ? '✓' : '○'}</span>}
+                {stepText(g)}
+              </li>
+            ))}
           </ol>
           <Btn small onClick={onShowScript}>Show how it was built (script)</Btn>
         </>

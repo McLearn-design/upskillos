@@ -56,11 +56,14 @@ export default function MeshLab({ onBack }: MeshLabProps) {
   useEditorVersion(editor);
   const viewRef = useRef<HTMLDivElement>(null);
   const [vp, setVp] = useState<Viewport | null>(null);
+  const [through, setThrough] = useState(false);
+  const [renderSize, setRenderSize] = useState({ width: 1280, height: 720 });
   const [gizmo, setGizmo] = useState<GizmoMode>('translate');
   const [space, setSpace] = useState<'local' | 'world'>('local');
   const [snap, setSnap] = useState(false);
   const [opts, setOpts] = useState<ViewOptions>({ grid: true, axes: true, localAxes: true, normals: false, wire: false, xray: false });
   const [boxArmed, setBoxArmed] = useState(false);
+  const [knifeArmed, setKnifeArmed] = useState(false);
   const [tab, setTab] = useState<'trace' | 'script' | 'timeline' | 'uv' | 'shader' | 'log'>('trace');
   // Other panels can ask for a tab (the inspector's "show the shader code").
   useEffect(() => { const f = (e: Event) => setTab((e as CustomEvent).detail); window.addEventListener('meshlab:tab', f); return () => window.removeEventListener('meshlab:tab', f); }, []);
@@ -84,12 +87,26 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     try { v = new Viewport(viewRef.current, editor); }
     catch (e) { editor.say(`3D view unavailable: ${e instanceof Error ? e.message : e}`); return; }
     v.onBoxChange = setBoxArmed;
+    v.onKnifeChange = setKnifeArmed;
+    v.onThroughChange = setThrough;
     setVp(v);
     // A handle for debugging and browser tests, in development only.
     if (import.meta.env?.DEV) (window as unknown as { __meshlab?: unknown }).__meshlab = { editor, viewport: v };
     return () => { v.dispose(); setVp(null); };
   }, [editor]);
   useEffect(() => { vp?.setGizmoMode(gizmo); }, [vp, gizmo]);
+  useEffect(() => { if (vp) { vp.renderSize = renderSize; vp.sync(); } }, [vp, renderSize]);
+  const renderStill = useCallback(async () => {
+    if (!vp) return;
+    try {
+      const blob = await vp.renderStill();
+      download('meshlab-render.png', blob, 'image/png');
+      const cam = editor.scene.get(editor.scene.activeCamera!);
+      editor.say(`Rendered ${vp.renderSize.width} × ${vp.renderSize.height} from ${cam?.name}: meshlab-render.png`);
+    } catch (e) { editor.say(e instanceof Error ? e.message : String(e)); }
+  }, [vp, editor]);
+  const cameraFromView = () => { if (vp) editor.addCamera(vp.viewPose()); };
+  const alignCamera = () => { if (vp) { const p = vp.viewPose(); if (vp.lookingThrough) vp.lookThrough(false); editor.alignCamera(p.position, p.rotation); } };
   useEffect(() => { vp?.setSpace(space); }, [vp, space]);
   useEffect(() => { vp?.setSnap(snap); }, [vp, snap]);
   useEffect(() => { vp?.setOptions(opts); }, [vp, opts]);
@@ -153,15 +170,19 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       if (e.key === 'Tab') return act(() => ed.toggleEdit());
       if (ed.mode === 'pose' && e.altKey && k === 'r') return act(() => ed.resetPose());
       if (e.key === '?') return act(() => setHelp((h) => !h));
-      if (e.key === 'Escape') { setHelp(false); setMenu(null); return; }
+      if (e.key === 'Escape') { setHelp(false); setMenu(null); if (vp?.knifeArmed) vp.armKnife(false); return; }
       if (edit && ['1', '2', '3'].includes(k)) return act(() => ed.setSelectMode((['vert', 'edge', 'face'] as const)[+k - 1]));
       if (k === 'g') return act(() => setGizmo('translate'));
       if (k === 'r') return act(() => setGizmo('rotate'));
       if (k === 's') return act(() => setGizmo('scale'));
       if (k === 'a') return act(() => (edit ? ed.selectAllElements(!e.altKey) : ed.selectAllObjects(!e.altKey)));
       if (k === 'b') return act(() => vp?.armBoxSelect());
+      if (edit && k === 'k') return act(() => vp?.armKnife());
+      if (edit && k === 'f') return act(() => ed.fill());
       if (k === 'f' || k === '.') return act(() => vp?.frameSelected());
       if (e.key === 'Home') return act(() => vp?.frameAll());
+      if (k === '0' && mod && e.altKey) return act(alignCamera);
+      if (k === '0' && !mod) return act(() => vp?.lookThrough());
       if (k === 'x' || e.key === 'Delete') return act(() => (edit ? ed.deleteElements() : ed.deleteObjects()));
       if (edit && k === 'e') return act(() => { ed.extrude(0.5); setGizmo('translate'); });
       if (edit && k === 'i') return act(() => ed.insetRegion(0.1));
@@ -264,12 +285,12 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       ['Export OBJ (keeps quads, for Blender)', () => download('scene.obj', exportOBJ(editor.modelScene), 'text/plain')],
       ['Export GLB', exportGlb],
     ],
-    Edit: [['Undo', () => editor.undo(), 'Ctrl+Z'], ['Redo', () => editor.redo(), 'Ctrl+Shift+Z'], ['Duplicate', () => editor.duplicate(), 'Shift+D'], ['Delete', () => (edit ? editor.deleteElements() : editor.deleteObjects()), 'X'], ['Select all', () => (edit ? editor.selectAllElements() : editor.selectAllObjects()), 'A'], ['Select linked', () => editor.selectLinked(), 'Ctrl+L']],
-    Add: [...PRIMS.map(([t, label]) => [label, () => editor.addPrimitive(t)] as [string, () => void]), ['Empty', () => editor.addEmpty()], ['Armature (one bone)', () => editor.addArmature()]],
+    Edit: [['Undo', () => editor.undo(), 'Ctrl+Z'], ['Redo', () => editor.redo(), 'Ctrl+Shift+Z'], ['Duplicate', () => editor.duplicate(), 'Shift+D'], ['Delete', () => (edit ? editor.deleteElements() : editor.deleteObjects()), 'X'], ['Select all', () => (edit ? editor.selectAllElements() : editor.selectAllObjects()), 'A'], ['Select loop (Alt+click an edge)', () => { const e = vp?.hoveredEdge() ?? editor.selectedEdges()[0]; if (e) editor.selectLoop(e[0], e[1], false); else editor.say('Select loop: Alt+click an edge in edit mode'); }, 'Alt+click'], ['Select linked', () => editor.selectLinked(), 'Ctrl+L']],
+    Add: [...PRIMS.map(([t, label]) => [label, () => editor.addPrimitive(t)] as [string, () => void]), ['Empty', () => editor.addEmpty()], ['Armature (one bone)', () => editor.addArmature()], ['Camera', () => editor.addCamera()], ['Camera from this view', cameraFromView]],
     Mesh: [
-      ['Extrude', () => editor.extrude(0.5), 'E'], ['Inset (region)', () => editor.insetRegion(0.1), 'I'], ['Inset individual faces', () => editor.inset(0.25)], ['Bevel edges', () => editor.bevel(0.1, 1), 'Ctrl+B'], ['Loop cut', loopCut, 'Ctrl+R'],
+      ['Extrude', () => editor.extrude(0.5), 'E'], ['Inset (region)', () => editor.insetRegion(0.1), 'I'], ['Inset individual faces', () => editor.inset(0.25)], ['Bevel edges', () => editor.bevel(0.1, 1), 'Ctrl+B'], ['Loop cut', loopCut, 'Ctrl+R'], ['Knife (drag a line)', () => vp?.armKnife(true), 'K'],
       ['Subdivide faces', () => editor.split()], ['Subdivide smooth (Catmull–Clark)', () => editor.smoothSubdivide()],
-      ['Merge at centre', () => editor.merge(), 'M'], ['Smooth vertices', () => editor.smoothVerts(5, 0.5)], ['Flip normals', () => editor.flip()], ['Dissolve', () => editor.dissolve(), 'Ctrl+X'], ['Delete', () => editor.deleteElements(), 'X'],
+      ['Fill (close a hole)', () => editor.fill(), 'F'], ['Merge at centre', () => editor.merge(), 'M'], ['Smooth vertices', () => editor.smoothVerts(5, 0.5)], ['Flip normals', () => editor.flip()], ['Dissolve', () => editor.dissolve(), 'Ctrl+X'], ['Delete', () => editor.deleteElements(), 'X'],
     ],
     UV: [
       ['Mark seam (selected edges)', () => editor.markSeams(true)], ['Clear seam', () => editor.markSeams(false)],
@@ -294,7 +315,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       ['Bind to armature (automatic weights)', () => editor.bindToArmature(), 'Ctrl+P'], ['Unbind from armature', () => o?.skin && editor.unbind(o.id)],
       ['Pose mode (armature)', () => editor.enterPose(), 'Tab'], ['Clear pose', () => editor.resetPose(), 'Alt+R'],
     ],
-    View: [['Frame selected', () => vp?.frameSelected(), 'F'], ['Frame all', () => vp?.frameAll(), 'Home'], ['Front', () => vp?.view('front')], ['Right', () => vp?.view('right')], ['Top', () => vp?.view('top')], ['Perspective', () => vp?.view('persp')]],
+    View: [['Frame selected', () => vp?.frameSelected(), 'F (object) / .'], ['Frame all', () => vp?.frameAll(), 'Home'], ['Front', () => vp?.view('front')], ['Right', () => vp?.view('right')], ['Top', () => vp?.view('top')], ['Perspective', () => vp?.view('persp')], ['Look through the scene camera', () => vp?.lookThrough(), '0'], ['Align the scene camera to this view', alignCamera, 'Ctrl+Alt+0'], ['Render still (PNG)', renderStill]],
     Script: [['Open script panel', () => setTab('script')], ['Show the GUI → code log', () => setTab('log')]],
     Examples: [['Browse example projects and challenges…', () => setGallery(true)], ...PROJECTS.map((p) => [`${p.icon}  ${p.title}`, () => openExample(p)] as [string, () => void])],
     Help: [['Keyboard shortcuts', () => setHelp(true), '?']],
@@ -376,9 +397,9 @@ export default function MeshLab({ onBack }: MeshLabProps) {
         </div>
         <FieldLegend editor={editor} />
         {challenge && <ChallengeCard editor={editor} challenge={challenge} onClose={() => setChallenge(null)} onSolution={() => { setIncoming({ code: `// One way to do "${challenge.title}". Press Run to try it (Ctrl+Z takes it back).\n${challenge.solution}`, lang: 'js', n: Date.now() }); setTab('script'); }} />}
-        {project && !challenge && <ProjectGuide project={project} onClose={() => setProject(null)} onShowScript={() => { setIncoming({ code: project.code, lang: project.lang, n: Date.now() }); setTab('script'); }} />}
+        {project && !challenge && <ProjectGuide editor={editor} project={project} onClose={() => setProject(null)} onShowScript={() => { setIncoming({ code: project.code, lang: project.lang, n: Date.now() }); setTab('script'); }} />}
       </div>
-      <div style={{ gridColumn: 3, gridRow: 3, borderLeft: `1px solid ${C.border}`, minHeight: 0 }}><Inspector editor={editor} /></div>
+      <div style={{ gridColumn: 3, gridRow: 3, borderLeft: `1px solid ${C.border}`, minHeight: 0 }}><Inspector editor={editor} camera={{ through, lookThrough: () => vp?.lookThrough(), render: renderStill, renderSize, setRenderSize: (width, height) => setRenderSize({ width, height }) }} /></div>
 
       {/* Bottom panel */}
       <div style={{ gridColumn: '1 / -1', gridRow: 4, display: 'flex', flexDirection: 'column', borderTop: `1px solid ${C.border}`, background: C.panel, minHeight: 0, position: 'relative' }}>
@@ -406,6 +427,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
         <span style={{ color: C.text }}>{editor.message}</span>
         <span style={{ flex: 1 }} />
         {boxArmed && <span style={{ color: C.accent }}>Drag a box to select</span>}
+        {knifeArmed && <span style={{ color: C.accent }}>Knife: drag a line across the mesh (Esc cancels)</span>}
         <span>{stats}</span>
       </div>
 
@@ -419,8 +441,8 @@ function Help({ onClose }: { onClose: () => void }) {
   const keys: [string, string][] = [
     ['Tab', 'Object / Edit mode'], ['1 2 3', 'Vertex / edge / face select (edit mode)'], ['Click, Shift+click', 'Select, add to selection'],
     ['B then drag', 'Box select'], ['A, Alt+A', 'Select all, none'], ['Ctrl+L', 'Select linked'], ['G R S', 'Move / rotate / scale gizmo'],
-    ['U (edit mode)', 'Unwrap: LSCM on the pieces the seams cut'], ['Ctrl+B', 'Bevel the selected edges'], ['Ctrl+X', 'Dissolve the selection (keep the shape)'], ['E', 'Extrude faces'], ['I', 'Inset the selection as one region (edit mode); insert keyframe (object mode)'], ['Space', 'Play / pause the animation'], ['← →', 'Previous / next frame'], ['Ctrl+R', 'Loop cut at the edge under the pointer'], ['M', 'Merge vertices at centre'],
-    ['X, Delete', 'Delete'], ['Shift+D', 'Duplicate object'], ['H', 'Hide object'], ['F, Home', 'Frame selected, frame all'],
+    ['U (edit mode)', 'Unwrap: LSCM on the pieces the seams cut'], ['Ctrl+B', 'Bevel the selected edges'], ['Ctrl+X', 'Dissolve the selection (keep the shape)'], ['E', 'Extrude faces'], ['I', 'Inset the selection as one region (edit mode); insert keyframe (object mode)'], ['Space', 'Play / pause the animation'], ['← →', 'Previous / next frame'], ['Ctrl+R', 'Loop cut at the edge under the pointer'], ['M', 'Merge vertices at centre'], ['K (edit mode)', 'Knife: drag a line; it cuts the faces facing you (all of them with X-ray)'], ['Alt+click', 'Select the edge loop (face mode: the ring of faces)'],
+    ['X, Delete', 'Delete'], ['Shift+D', 'Duplicate object'], ['H', 'Hide object'], ['F, Home', 'Frame selected, frame all (. in edit mode)'], ['0', 'Look through the scene camera (drag or zoom to leave)'], ['Ctrl+Alt+0', 'Move the scene camera to this view'], ['F (edit mode)', 'Fill: close the hole round the selected vertices with a face'],
     ['Tab on an armature', 'Edit bones: click a joint, drag it; E extrudes a bone'], ['Ctrl+Tab on an armature', 'Pose mode: click a bone, rotate it'], ['Ctrl+Tab on a bound mesh', 'Weight paint: brush a bone\'s weights'], ['Ctrl+P', 'Bind the selected mesh to the active armature'], ['Alt+R (pose mode)', 'Clear the pose'],
     ['Ctrl+Z, Ctrl+Shift+Z', 'Undo, redo'], ['Ctrl+S', 'Save the scene file'], ['Ctrl+Enter', 'Run the script'],
   ];

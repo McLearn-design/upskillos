@@ -85,7 +85,10 @@ export function catmullClark(mesh: EditMesh, trace?: Trace): EditMesh {
     if (!vFaces[v].length) return P;                    // a loose vertex is left alone
     const boundary = vEdges[v].filter((i) => edgeList[i].faces.length === 1);
     if (boundary.length) {
-      if (boundary.length !== 2) return P;              // a corner or a non-manifold junction: keep sharp
+      // A corner (a boundary vertex on only one face, like a plane's corner) or a non-manifold
+      // junction stays where it is, as in Blender ("keep corners"). Otherwise the along-the-edge
+      // rule below would round a plane's corners off.
+      if (boundary.length !== 2 || vFaces[v].length === 1) return P;
       const [b1, b2] = boundary.map((i) => (edgeList[i].a === v ? edgeList[i].b : edgeList[i].a));
       return add(scale(P, 0.75), scale(add(V[b1], V[b2]), 0.125));
     }
@@ -109,7 +112,7 @@ export function catmullClark(mesh: EditMesh, trace?: Trace): EditMesh {
           phase: 'Move vertices',
           label: `v${v}: ${fmtV(P)} → ${fmtV(moved[v])}`,
           detail: bnd
-            ? 'Boundary vertex: V′ = ¾·V + ⅛·(b₁ + b₂), which keeps an open edge from shrinking away from its neighbours.'
+            ? (moved[v] === P ? 'Corner: a boundary vertex on only one face stays where it is, so the corner stays sharp.' : 'Boundary vertex: V′ = ¾·V + ⅛·(b₁ + b₂), which keeps an open edge from shrinking away from its neighbours.')
             : `Valence n = ${n}: V′ = (F̄ + 2·R̄ + (n − 3)·V) / n = (F̄ + 2·R̄ + ${n - 3}·V) / ${n}. F̄ averages the ${vFaces[v].length} face points around it, R̄ the ${n} edge midpoints.`,
           verts: [v],
           arrows: [{ from: P, to: moved[v], color: '#f59e0b' }],

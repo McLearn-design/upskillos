@@ -1,7 +1,10 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadPyodide } from 'pyodide';
 import { Editor } from './Editor';
-import { PROJECTS, PROJECT_GROUPS, openProject } from './projects';
+import { EditMesh } from './EditMesh';
+import { runScript } from './api';
+import { skinSource, skinnedSource } from './evaluate';
+import { PROJECTS, PROJECT_GROUPS, openProject, startState, stepText } from './projects';
 import { sampleKeys } from './animation';
 import type { PyodideLike } from './python';
 
@@ -139,6 +142,24 @@ describe('bone edit mode shows the rest pose', () => {
 describe('UV and material projects', () => {
   const open = (id: string) => { const e = new Editor(); const r = openProject(e, PROJECTS.find((p) => p.id === id)!, py); return { e, r }; };
 
+  it('the fly-through loops: frame 241 is frame 1, and the camera always looks at the peak', () => {
+    const { e, r } = open('island-flythrough');
+    expect(r.output.at(-1)).toBe('Camera keyed every 6 frames: 41 keys; the scene camera is Camera');
+    const cam = e.scene.get('Camera')!;
+    expect(e.scene.activeCamera).toBe(cam.id);
+    expect(cam.anim!.rotationMode).toBe('quaternion');
+    const at = (f: number) => e.scene.worldMatrixAt(cam, f);
+    const pos = (f: number) => at(f).elements.slice(12, 15);
+    pos(241).forEach((x, i) => expect(x).toBeCloseTo(pos(1)[i], 9));
+    // Between keys too, −z points close to the peak (slerp between two aimed rotations stays near aimed).
+    for (const f of [1, 4, 100, 157, 238]) {
+      const m = at(f).elements, look = [-m[8], -m[9], -m[10]], p = pos(f);
+      const to = [0 - p[0], 1.2 - p[1], 0 - p[2]], n = Math.hypot(...to);
+      const cos = (look[0] * to[0] + look[1] * to[1] + look[2] * to[2]) / n;
+      expect(cos).toBeGreaterThan(0.999);
+    }
+  });
+
   it('two lists: the shared pyramid is closed with 5 vertices; the separate one has 16 and tears when its tip moves', () => {
     const { e, r } = open('two-lists');
     expect(r.output).toEqual(['Shared corners: 5 vertices, 5 faces', 'Separate faces: 16 vertices, 5 faces: [[0,1,2,3],[4,5,6],[7,8,9],[10,11,12],[13,14,15]]']);
@@ -235,7 +256,7 @@ describe('guides name things that exist', () => {
     };
     // The check itself catches a made-up item and a made-up panel.
     expect(stale(['Use Heat map › Banana split here.', 'See Frobnicator panel › Zork.']).bad.length).toBe(2);
-    const { refs, bad } = stale([...PROJECTS.flatMap((p) => [...p.guide, p.desc]), ...CHALLENGES.flatMap((c) => [...c.hints, c.brief])]);
+    const { refs, bad } = stale([...PROJECTS.flatMap((p) => [...p.guide.map(stepText), p.desc]), ...CHALLENGES.flatMap((c) => [...c.hints, c.brief])]);
     expect(refs.length).toBeGreaterThan(10);
     expect(bad).toEqual([]);
   });
@@ -263,4 +284,70 @@ describe('the walk cycle', () => {
     const land = e.scene.get('Island')!;
     expect(land.material.texture).toBe('grass'); expect(uvFits(land.mesh!, land.uv)).toBe(true);
   });
+});
+
+describe('guide steps that tick themselves', () => {
+  // For every step with a check: the action it asks for, done the way the GUI does it.
+  const obj = (e: Editor, n: string) => e.scene.get(n)!;
+  const edit = (e: Editor, name: string, mode: 'vert' | 'edge' | 'face', keys: (number | string)[]) => {
+    e.selectObject(obj(e, name).id); e.enterEdit(); e.setSelectMode(mode);
+    keys.forEach((k, i) => e.selectElement(k, i > 0));
+  };
+  /** Where the left chest is drawn now (the character is posed), for a brush dab to land on. */
+  const chest = (e: Editor) => {
+    const c = obj(e, 'Character'), rest = skinSource(c).verts, now = skinnedSource(e.scene, c).verts;
+    return now[rest.findIndex((v) => v[0] > 0.2 && v[0] < 0.65 && v[1] > 0.8 && v[1] < 1.25)];
+  };
+  const firstEdge = (e: Editor, name: string) => [...obj(e, name).mesh!.edges().values()].find((x) => x.faces.length === 2)!;
+  const act: Record<string, (e: Editor) => void> = {
+    'Select the left Pyramid': (e) => { runScript(e, `scene.get('Pyramid').mesh.translate([4], [0, 1, 0])`); },
+    'Press Tab, select the right pyramid': (e) => { runScript(e, `scene.get('Pyramid, separate faces').mesh.translate([6], [0, 1, 0])`); },
+    'Click a tree.': (e) => { runScript(e, `scene.get('Tree 3').rotation = [0, 1, 0]`); },
+    'Select "Dining set" and rotate it': (e) => { runScript(e, `scene.get('Dining set').rotation = [0, 0.5, 0]`); },
+    'Select a few edges and press Ctrl+B yourself': (e) => { const x = firstEdge(e, 'Crate'); edit(e, 'Crate', 'edge', [EditMesh.edgeKey(x.a, x.b)]); expect(e.bevel(0.02, 1)).toBe(true); },
+    'Select two neighbouring faces of a frame': (e) => { edit(e, 'Crate', 'face', firstEdge(e, 'Crate').faces); expect(e.dissolve()).toBe(true); },
+    'Tab into "Support loops"': (e) => { edit(e, 'Support loops', 'face', firstEdge(e, 'Support loops').faces); expect(e.dissolve()).toBe(true); },
+    'Go to a top key and set it to "ease"': (e) => { obj(e, 'Ball').anim!.position![0].interp = 'ease'; },
+    'Select Shoulder and look at the Timeline': (e) => { e.selectObject(obj(e, 'Shoulder').id); },
+    'Press Space to pause, then Ctrl+Tab': (e) => { e.selectObject(obj(e, 'Rig').id); e.enterPose(); e.setBonePose('Head', [0.3, 0, 0]); },
+    'Select Character and use Heat map › Bone weights': (e) => { e.activeBone = 'Spine'; expect(e.showField({ kind: 'weight', bone: 'Spine' }, obj(e, 'Character').id)).toBe(true); },
+    'Brush Draw, Value 1': (e) => { e.beginStroke(); e.strokeDab(chest(e)); e.endStroke(); },
+    'Turn on X-mirror': (e) => { e.paint = { ...e.paint, mirror: true }; for (let k = 0; k < 2; k++) { e.beginStroke(); e.strokeDab(chest(e)); e.endStroke(); } },
+    'Pause (Space) and press Tab on the rig': (e) => { runScript(e, `scene.get('Tentacle rig').addBone({ name: 'Seg 6', parent: 'Seg 5', head: [0, 2.5, 0], tail: [0, 3, 0] })`); },
+    'Still in Edit bones, set Roll to 90': (e) => { e.selectObject(obj(e, 'Tentacle rig').id); e.enterBoneEdit(); e.setBone('Seg 1', { roll: Math.PI / 2 }); },
+    'Ctrl+Tab for pose mode: bend a segment': (e) => { e.selectObject(obj(e, 'Tentacle rig').id); e.enterPose(); e.setBonePose('Seg 2', [0.4, 0, 0]); },
+    'Select each shape and switch Heat map': (e) => { expect(e.showField({ kind: 'mean' }, obj(e, 'Cylinder').id)).toBe(true); },
+    'Tab into edit mode, select a different vertex': (e) => { expect(e.showField({ kind: 'geodesic', sources: [40] }, obj(e, 'Trefoil').id)).toBe(true); },
+    'Select "Smoothed ×5" and Heat map': (e) => { expect(e.showField({ kind: 'mean' }, obj(e, 'Smoothed ×5').id)).toBe(true); },
+    'Tab into edit mode on "Bumpy"': (e) => { edit(e, 'Bumpy', 'vert', [0, 1, 2, 3]); expect(e.smoothVerts(5, 0.5)).toBe(true); },
+    'Try it yourself: Tab into edit mode on a new cube': (e) => { runScript(e, `scene.add.cube({ name: 'Mine' }).mesh.seamsFromSharp(60)`); edit(e, 'Mine', 'face', [0, 1, 2, 3, 4, 5]); expect(e.unwrap()).toBe(true); },
+    'The Shader tab shows the selected sphere': (e) => { runScript(e, `scene.get('Custom').material.glsl = 'return base * 0.5;'`); },
+    'Move the Light object': (e) => { runScript(e, `scene.get('Light').position = [2, 6, 1]`); },
+    'In the inspector, turn the mirror and subdivision': (e) => { const c = obj(e, 'Character'); e.updateModifier(c.id, 0, { enabled: false }); },
+    'Heat map › Mean curvature: the smooth body': (e) => { expect(e.showField({ kind: 'mean' }, obj(e, 'Character').id)).toBe(true); },
+    'Press 0 to look through the camera': (e) => { e.setFrame(60); },
+    'In the Inspector, set Field of view to 25': (e) => { e.setCameraFov(obj(e, 'Camera').id, 25); },
+    'Heat map › Height (y) shows the rings': (e) => { expect(e.showField({ kind: 'coord', axis: 1 }, obj(e, 'Vase').id)).toBe(true); },
+  };
+
+  it('every action above belongs to exactly one checked step', () => {
+    const checked = PROJECTS.flatMap((p) => p.guide.filter((g) => typeof g !== 'string').map(stepText));
+    for (const k of Object.keys(act)) expect(checked.filter((t) => t.startsWith(k)), k).toHaveLength(1);
+    expect(checked.length).toBe(Object.keys(act).length);
+  });
+
+  for (const p of PROJECTS) {
+    p.guide.forEach((g, i) => {
+      if (typeof g === 'string') return;
+      it(`${p.id}, step ${i + 1}: not ticked when the project opens; ticked once you do it`, () => {
+        const e = new Editor();
+        expect(openProject(e, p, py).error).toBeNull();
+        const start = startState(e);
+        expect(g.done(e, start)).toBe(false);
+        const key = Object.keys(act).find((k) => g.text.startsWith(k))!;
+        act[key](e);
+        expect(g.done(e, start)).toBe(true);
+      });
+    });
+  }
 });
