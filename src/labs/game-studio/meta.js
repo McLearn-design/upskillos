@@ -4,7 +4,7 @@ export default {
   color: 'indigo',
   kind: 'builder',
   subject: 'Creative',
-  desc: 'Build playable browser games in a visual scene editor, learn each system through working examples, and connect art from Sprite Forge and levels from Tile Mapper.',
+  desc: 'A browser game engine in the spirit of Godot: a scene tree of nodes, an Inspector, real JavaScript scripts, and a Phaser runtime. Every editor action is shown as the code that does the same thing.',
   path: '/lab/game-studio',
   tags: ['Game Dev', 'Phaser', 'Creative', 'Programming', 'Physics', 'Learning'],
   cover: {

@@ -10,7 +10,7 @@
   "counts": {
     "courses": 43,
     "chapters": 217,
-    "lessons": 1231,
+    "lessons": 1232,
     "labs": 51,
     "games": 15
   },
@@ -253,7 +253,7 @@
       "domain": "engineering",
       "description": "Computational geometry for a CAM application — meshes, surface queries, and comparing two models to find what was cut",
       "chapters": 4,
-      "lessons": 17
+      "lessons": 18
     },
     {
       "id": "modelling-geometry",

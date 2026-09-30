@@ -1,0 +1,357 @@
+# Game Studio: Phase 0 architecture decisions
+
+Status: **decided**, 2026-09-30. This record comes before any Phase 1 code. The product specification is
+[`docs/game-plan.md`](game-plan.md); this record fixes the contract that the specification leaves open, and
+records where this build differs from it. Progress is tracked in
+[`docs/game-studio-status.md`](game-studio-status.md).
+
+A decision here changes only by a new entry in "Changes to these decisions" at the end, with the reason.
+
+## Contents
+
+1. [Replace the prototype](#adr-1-replace-the-prototype)
+2. [Layers and the boundaries between them](#adr-2-layers-and-the-boundaries-between-them)
+3. [The runtime runs in its own iframe](#adr-3-the-runtime-runs-in-its-own-iframe)
+4. [The script contract](#adr-4-the-script-contract)
+5. [The engine API is the only surface user code sees](#adr-5-the-engine-api-is-the-only-surface-user-code-sees)
+6. [Nodes, not a separate component system](#adr-6-nodes-not-a-separate-component-system)
+7. [Units and conventions](#adr-7-units-and-conventions)
+8. [Editor commands: undo and GUI → code are the same thing](#adr-8-editor-commands-undo-and-gui--code-are-the-same-thing)
+9. [Inspectability](#adr-9-inspectability)
+10. [Persistence and export](#adr-10-persistence-and-export)
+11. [Assets: Kenney CC0 as the starter library](#adr-11-assets-kenney-cc0-as-the-starter-library)
+12. [Example games are engineering tests](#adr-12-example-games-are-engineering-tests)
+13. [Phase 1 and its acceptance test](#adr-13-phase-1-and-its-acceptance-test)
+14. [How it is verified](#adr-14-how-it-is-verified)
+15. [Deferred on purpose](#adr-15-deferred-on-purpose)
+
+---
+
+## ADR 1: Replace the prototype
+
+**Decision.** Rebuild Game Studio (`src/labs/game-studio`) on a new model. The current app is a prototype:
+- scenes are flat lists of coloured shapes;
+- behaviour comes from hard-coded presets (`topDown`, `bounce`) and gameplay roles read by the runtime;
+- scripts are a single update body with loops, functions and classes forbidden.
+
+None of that fits a node tree, real scripts or real assets.
+
+**Kept:** the lab's route and entry, IndexedDB storage (rewritten), and the teaching text of the example
+walkthroughs (reused where the new examples teach the same idea). The Sprite Forge and Tile Mapper
+integrations are kept as import paths (ADR 10).
+
+**Not kept:** the old project format (`upskillos-game-project` v2). There is no converter, because there are
+no projects worth converting. Old saved projects are left alone in storage, not deleted, and are not
+opened.
+
+## ADR 2: Layers and the boundaries between them
+
+```text
+        EDITOR (React)                  Scene tree · Viewport · Inspector · Files · Script editor · Code · Output
+            │ commands only
+            ▼
+     PROJECT MODEL (pure TS)            Project · Scene · Node · Resource · Asset · InputMap · Settings
+            │ serialize (deterministic, versioned JSON)
+            ▼
+     RUNTIME PROJECT (JSON + assets)
+            │ postMessage protocol
+            ▼
+ ┌─ sandboxed iframe ───────────────────────────────────────────────┐
+ │   USER SCRIPTS  →  GAME API  →  ENGINE  →  PHASER ADAPTER  →  Phaser │
+ └──────────────────────────────────────────────────────────────────┘
+```
+
+Rules, each enforced by where code lives and by import checks in tests:
+- **The model** (`core/`) imports neither React nor Phaser. It is tested in Node.
+- **The editor** changes the project only through commands (ADR 8). No React component owns project data.
+- **The editor viewport** draws the model with its own renderer. It reads model state; it is not a running
+  game. (A viewport that is secretly a Phaser game is how editor and runtime state get tangled.)
+- **The engine** (`runtime/engine/`) owns the node tree at run time, the lifecycle, input, signals and
+  physics stepping. It talks to Phaser only through `runtime/phaser/`, the adapter. Replacing Phaser means
+  replacing that folder.
+- **User scripts** see only the Game API (ADR 5).
+
+## ADR 3: The runtime runs in its own iframe
+
+**Decision.** Run and Run Scene create a sandboxed iframe (`sandbox="allow-scripts"`, no same-origin) and send
+it the serialized runtime project. Stop destroys the iframe.
+
+**Why:**
+- **Isolation.** Editor state cannot be changed by the game. Stop cannot leak timers, listeners, audio or
+  WebGL state, because the whole document goes away.
+- **Safety.** User code cannot reach the app's storage or the page.
+- **Export is the same thing.** An exported game is this runtime, as `index.html` plus the project, without
+  the editor.
+
+**Protocol** (all messages are plain JSON):
+
+| Direction | Message |
+|---|---|
+| editor → runtime | `load { project, assets, scene }` · `pause` · `resume` · `restart` · `inspect { nodeId }` |
+| runtime → editor | `ready` · `log { level, args, source }` · `error { message, file, line, column, stack }` · `state { nodeId, props }` (answer to inspect) · `stopped { reason }` |
+
+- **Assets** go in as blobs and become object URLs inside the iframe.
+- **Stop** is the editor removing the iframe. No message is needed, so a hung game can always be stopped.
+- **Runtime changes never flow back into the project** (the specification's §29). A "Keep this state"
+  command may be added later; it would be an explicit command, applied by the editor.
+
+## ADR 4: The script contract
+
+**Language:** JavaScript, as ES modules. TypeScript is added later, by transpiling in the browser, without
+changing this contract.
+
+**Shape.** A script is a module whose default export is a class extending the node type it is attached to.
+The classes are provided by the engine, as in Godot:
+
+```javascript
+export default class Player extends CharacterBody2D {
+  speed = 200;                      // plain fields are fine
+
+  ready() {                         // once, after the node and its children are in the tree
+    this.jumps = 0;
+  }
+
+  update(dt) {                      // every frame; dt in seconds
+    const x = input.axis('move_left', 'move_right');
+    this.velocity.x = x * this.speed;
+  }
+
+  physicsUpdate(dt) {               // fixed 60 Hz, before physics moves bodies
+    this.moveAndSlide();
+  }
+
+  destroyed() { }                   // once, when removed
+}
+```
+
+**Lifecycle, in this order every frame:**
+1. Input is sampled.
+2. `physicsUpdate(dt)` runs zero or more times at a fixed 1/60 s, followed each time by the physics step.
+3. `update(dt)` runs once with the frame time.
+4. The frame is drawn.
+
+`ready()` runs children-first, as in Godot, so a parent's `ready` can use its children.
+
+**Globals in a script:**
+
+| Global | What it is |
+|---|---|
+| `input` | The input map (ADR 7) |
+| `scene` | The running scene's tree |
+| `time` | `now` and `frame` |
+| `console` | Forwarded to the Output panel |
+| `math` | Vector helpers |
+| The node classes | Every registered node type |
+
+**Imports:** scripts may import each other by project path (`import { clamp } from './util.js'`). There is no
+network access and no other imports.
+
+**Errors:**
+- **Where:** each script is loaded with a `//# sourceURL` of its project path, so stack traces name the file
+  and line. The Output panel shows `file:line:column message`, and clicking it opens the script there.
+- **What happens:** a script that throws in `update` is reported once and its node stops updating. The game
+  keeps running, so one bug does not freeze the rest.
+
+**Why classes that extend nodes, not a free-standing object with `this.node`:**
+- `this.position` works directly, as in the specification's examples.
+- It matches Godot, which the product is modelled on.
+- The Inspector can show a script's own public fields as properties.
+
+## ADR 5: The engine API is the only surface user code sees
+
+User code talks to the Game API, never to Phaser. There is no escape hatch to Phaser objects in version 1.
+
+Every property and method a script can use is documented in `runtime/api.md`, which is generated from the
+node registry, and shown in the script editor's reference. Anything not documented there is not API.
+
+Why: the renderer, the physics and even Phaser itself can then change without breaking user projects. It
+also keeps the API teachable, because it is small, consistent and in plain terms.
+
+## ADR 6: Nodes, not a separate component system
+
+**Decision.** Composition is by child nodes, as in Godot: a `CharacterBody2D` has a child `CollisionShape2D`
+and a child `Sprite2D`. There is no parallel component system.
+
+**Why:**
+- One mechanism, not two.
+- The scene tree shows everything an object is made of.
+- Scene instancing (Phase 7) works on one kind of thing.
+
+The specification's "components where useful" is met by node types, which the registry defines.
+
+**The node registry** (in `core/nodes/`) defines each type. The Inspector, the save format, the Game API
+reference and the runtime are all generated from it. Each entry holds:
+- a type name and a base type (for inheritance);
+- a property schema: name, type, default, range and help text;
+- the runtime class.
+
+A property in the schema that the runtime does not use fails a test (ADR 14). That is the specification's
+"no fake functionality" rule, made checkable.
+
+**Identity and paths:**
+- Every node has a stable id, which is never shown and never reused.
+- Sibling names are unique: a clash gets a number added (`Enemy2`). That makes paths
+  (`scene.get('Player/Sprite')`) unambiguous for scripts.
+
+## ADR 7: Units and conventions
+
+| Quantity | Convention |
+|---|---|
+| Distance | Pixels; +x right, **+y down** (screen convention, as Phaser and Godot 2D) |
+| Rotation | In the API, **radians**, clockwise-positive on screen, with `rotationDegrees` alongside. The Inspector shows degrees. (Godot does the same, and the maths lessons need radians.) |
+| Time | Seconds everywhere (`dt`, timers, animation) |
+| Colour | `'#rrggbb'` strings, with optional alpha as a number |
+| Input | Named actions only, in scripts: `isPressed(a)`, `isJustPressed(a)`, `isJustReleased(a)`, `axis(neg, pos)`, `vector(left, right, up, down)`. Keys, mouse buttons and gamepad buttons are bound to actions in Project Settings. |
+
+## ADR 8: Editor commands: undo and GUI → code are the same thing
+
+Every change to the project is a command. A command:
+- applies itself to the model;
+- stores what it needs to undo itself (a before and after patch of the objects it touched);
+- has a **label** ("Move Player");
+- has **code**: the Scene API call that makes the same change.
+
+```text
+Drag Player        →  command "Move Player"  →  code:  scene.get('Player').position = { x: 200, y: 150 }
+Add a Sprite       →  command "Add Sprite"   →  code:  scene.add('Sprite2D', { name: 'Sprite', parent: 'Player', texture: 'assets/player.png' })
+```
+
+- **The log is replayable:** the tests run the log against an empty project and get the same project. This is
+  how MeshLab proves its GUI → code panel is honest.
+- **The Code panel** shows this log, one line per action, and the selected node's creation code (ADR 9).
+- **A drag is one command:** it updates live, and is committed as one undo step on release.
+
+The Scene API that the log uses is the editor-time twin of the runtime Game API: the same names and the same
+property paths, so what you learn from the log works in a script.
+
+## ADR 9: Inspectability
+
+Selecting a node shows, besides its properties:
+- **Code:** the call that would create this node as it is now (`scene.add('CharacterBody2D', { … })`), and
+  its script, if any.
+- **While running:** the live values from the runtime (`inspect` / `state` in ADR 3), next to the saved
+  values, marked as not saved.
+
+The teaching loop the product exists for: **visual action → model → API → JavaScript → runtime behaviour.**
+Every step of it is visible.
+
+## ADR 10: Persistence and export
+
+- **Storage:** IndexedDB. A project is one JSON document (`formatVersion: 1`, with a migration table from day
+  one) plus asset blobs keyed by stable asset id.
+- **Saving:**
+  - **Explicit save** (Ctrl/Cmd+S) is the "saved" state; there is an unsaved marker, and a warning before
+    losing work.
+  - **Autosave** writes a separate recovery copy, never the saved project.
+- **Project export and import:** a `.zip` (`project.json`, `scenes/`, `scripts/`, `assets/`). A project is
+  never trapped in one browser.
+- **Game export:** a `.zip` holding `index.html`, the runtime bundle, `project.json` and the assets. It runs
+  from any static host, including a GitHub Pages subpath, because every path is relative.
+- **Build:** the runtime is a separate Vite entry built to one file. The editor loads that same file into its
+  iframe, so the game you test is the game you export.
+- **Bringing art in:** Sprite Forge and Tile Mapper export into a project as assets (images, and Tiled-format
+  JSON for maps).
+
+## ADR 11: Assets: Kenney CC0 as the starter library
+
+- **Licence, verified 2026-09-30 at kenney.nl/support:** "all game assets on the asset pages are public
+  domain licensed (CC0) … even in commercial projects". Attribution is optional. The Kenney logo is reserved
+  and is not used.
+- **What gets bundled:** each pack's own licence file goes in with it. A `CREDITS.md` names every pack and
+  where it came from, even though credit is not required.
+- **How much:** a curated subset (characters, tiles, items, UI, a few sounds), aiming for under 10 MB. Each
+  example game uses only bundled art.
+- **Anything not CC0:**
+  - It is bundled only after its licence is checked and recorded in `CREDITS.md`.
+  - GPL code or art is not bundled, because it would bind the whole app to the GPL.
+  - MIT or Apache code can be adapted, with credit.
+- **Names:** the classics are rebuilt under our own names. "Pac-Man" is a trademark, so the game is a maze
+  chase. The open-source versions we learned from are credited and linked.
+
+## ADR 12: Example games are engineering tests
+
+Each example is an ordinary project built with the editor and its API, never hand-coded around it.
+
+> **Rule:** if an example needs a capability the engine lacks, the engine gains that capability, for any
+> project, and not only for the example.
+
+| Game | Engine capabilities it proves | Phase it lands |
+|---|---|---|
+| **Platformer** | Sprite, CharacterBody2D, gravity, collision, input, sprite animation, camera follow, scripting | 4–5 |
+| **Maze chase** | Tilemap, tile collision, enemies with scripted or grid pathing, collectibles, game state, UI | 6 |
+| **Top-down shooter** | Mouse and gamepad input, projectiles, spawning, health, audio, collision layers | 4–7 |
+| **Breakout** | Rigid bodies and bounces, instanced bricks (scene instancing), UI, game state | 4, 7 |
+| **Puzzle** | Grid logic, reusable pieces, tweening, state, win detection | 5, 7 |
+
+- **Tests:** each example has an automated test, which builds it, runs a scripted input sequence in the
+  browser, and checks an outcome (the player reached the flag; the bricks cleared).
+- **When an example counts as done:** only once its test passes.
+
+## ADR 13: Phase 1 and its acceptance test
+
+**Phase 1 is:**
+- the model;
+- the editor shell (scene tree, viewport, Inspector, files, script editor, Output, Code);
+- commands with undo and the log;
+- assets: image import, and the Kenney starter set;
+- Sprite2D, Node2D and CharacterBody2D with movement only (no collision yet);
+- scripts;
+- input actions;
+- the iframe runtime with Run, Stop, pause and resume;
+- saving to IndexedDB.
+
+**Acceptance test.** One workflow proves that the model, editor, scripting, runtime, persistence and undo are
+connected:
+
+```text
+Create Project → Create Scene → Add Node → Add Sprite → Import a real image → Attach JavaScript → Edit the
+script → Use the input API → Run in the sandboxed runtime → Move the sprite with keys → Stop (the editor
+state is unchanged) → Modify the sprite in the editor → Undo → Redo → Save → Close → Reopen → everything
+restored, including the script and the image
+```
+
+It runs as an automated browser test with real clicks and keys. It is also checked by hand before Phase 1 is
+called done.
+
+## ADR 14: How it is verified
+
+- **Model:** Vitest in Node covers every command (apply, undo, redo), serialization round trips, migrations,
+  replay of the code log, and the registry. The registry check fails if a property is declared and never
+  read by the runtime.
+- **Engine:** Vitest covers the parts that do not need Phaser: lifecycle order, input map, signals,
+  fixed-step timing, and the script loader's error mapping.
+- **Runtime and editor:** Playwright tests in the repository (not scratch scripts) cover the acceptance
+  workflows and each example game. They run against the dev server, which is stopped afterwards.
+- **Reporting:** every phase ends with its acceptance test run and the results written to the status file.
+
+## ADR 15: Deferred on purpose
+
+- dockable panels and workspaces;
+- capsule and polygon collision (rectangle and circle first);
+- Matter physics (Arcade first; Matter only if Breakout or a later game needs it);
+- TypeScript scripts;
+- multiplayer;
+- a 3D mode.
+
+---
+
+## Changes to these decisions
+
+Recorded during Phase 1 (2026-09-30). None of them change a boundary.
+
+1. **Folder names (ADR 2).** The engine lives in `engine/`, not `runtime/engine/`. `runtime/` holds what runs in
+   the iframe: the entry (`main.ts`), the message protocol, the script loader, and the Phaser adapter
+   (`runtime/phaserRenderer.ts`, not `runtime/phaser/`). The rule is unchanged: only the adapter imports Phaser.
+2. **Undo snapshots (ADR 8).** Each command stores the whole project model, before and after, not a patch of
+   what it touched. A project model is small: a thousand nodes is a few hundred kilobytes, and asset bytes are
+   never in it. Snapshots cannot miss a field that a patch forgot. Revisit if large projects make undo slow.
+3. **A command that changes nothing is not a step (ADR 8).** Setting a value to what it already is adds no undo
+   entry and no GUI → code line. The acceptance test found a text field that committed twice; this rule
+   stops any such double-fire from reaching the history.
+4. **Scripts are syntax-checked before they run (ADR 4).** When a module fails to parse, a browser reports
+   "Unexpected token" with no line number. So the editor parses every script (with acorn) before Run, and
+   reports `file:line:column`, and the game does not start. The runtime checks too, so an exported game
+   reports the same way.
+5. **The browser tests (ADR 14)** are Node scripts using the Playwright library
+   (`npm run game:acceptance`), because the repository has no Playwright test runner. Each one starts and
+   stops its own dev server.

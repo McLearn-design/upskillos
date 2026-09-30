@@ -29,7 +29,7 @@ npm install
 npm run dev
 ```
 
-`npm run dev` first regenerates a few data files (lesson titles, lesson ids, the project inventory and some manifests), then starts the development server. Open the address it prints, normally http://localhost:5173.
+`npm run dev` first regenerates a few data files (lesson titles, lesson ids, the project inventory and some manifests) and builds Game Studio's game runtime (`npm run game:runtime`), then starts the development server. Open the address it prints, normally http://localhost:5173.
 
 The server uses port 5173 only and stops with an error if it's already in use, because the browser caches some large downloads per port. If you need a second server, run `npx vite --port 5174`.
 
@@ -46,6 +46,8 @@ Undo that edit when you're done, or use it as your first change: see [first-chan
 | Command | What it does |
 |---|---|
 | `npm run build` | Production build into `dist/`. Takes a few minutes and several GB of memory |
+| `npm run game:runtime` | Builds Game Studio's game runtime (the engine and Phaser, run inside a sandboxed iframe) into `src/labs/game-studio/runtime/dist/`. `dev` and `build` run it for you |
+| `npm run game:acceptance` | Game Studio's end-to-end test in a real browser. Starts and stops its own dev server |
 | `npm run preview` | Serves the last build, to check it the way the live site runs |
 | `npx vitest run <folder>` | Runs the tests in a folder once |
 | `npm test` | Runs all tests and re-runs them as you edit |

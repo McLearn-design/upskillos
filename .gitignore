@@ -35,3 +35,6 @@ captures/
 .cxx/
 .externalNativeBuild/
 src/docs/projects/android_kotlin/**/build/
+
+# Built by npm run game:runtime (part of dev and build)
+src/labs/game-studio/runtime/dist/

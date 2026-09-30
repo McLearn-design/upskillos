@@ -1,4 +1,4 @@
-import GameStudio from './GameStudio';
+import GameStudio from './GameStudio.tsx';
 
 export { default as meta } from './meta';
 

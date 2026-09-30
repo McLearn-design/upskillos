@@ -1,0 +1,25 @@
+// Messages between the editor and the game's iframe (ADR 3). Plain JSON (plus asset
+// bytes), sent with postMessage. Stop is the editor removing the iframe, so it needs
+// no message and works even when a game has hung.
+
+import type { Project } from '../core/types';
+
+export type ToRuntime =
+  | { type: 'load'; project: Project; scene: string; assets: { path: string; mime: string; bytes: ArrayBuffer }[] }
+  | { type: 'pause' }
+  | { type: 'resume' }
+  | { type: 'restart' }
+  | { type: 'inspect'; path: string };
+
+export type LogLevel = 'log' | 'info' | 'warn' | 'error';
+
+export type FromRuntime =
+  | { type: 'ready' }
+  | { type: 'running'; scene: string }
+  | { type: 'log'; level: LogLevel; text: string }
+  | { type: 'error'; message: string; file: string | null; line: number | null; column: number | null; node: string | null; phase: string | null }
+  | { type: 'state'; path: string; props: Record<string, unknown> | null }
+  | { type: 'paused'; paused: boolean };
+
+/** Every message carries this, so the editor ignores anything else posted to the window. */
+export const CHANNEL = 'upskillos-game-studio';
