@@ -11,6 +11,7 @@ import { Viewport } from './editor/Viewport';
 import { SceneTree } from './editor/SceneTree';
 import { Files } from './editor/Files';
 import { StarterArt } from './editor/StarterArt';
+import { Guide } from './editor/Guide';
 import { Inspector } from './editor/Inspector';
 import { ScriptEditor } from './editor/ScriptEditor';
 import { BottomPanel } from './editor/BottomPanel';
@@ -55,7 +56,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
   const store = useMemo(() => new Store(), []);
   useStore(store);
   const gameBox = useRef<HTMLDivElement>(null);
-  const frameFns = useRef<{ frameAll: () => void; frameSelected: () => void } | null>(null);
+  const frameFns = useRef<{ frameAll: () => void; frameSelected: () => void; frameGameArea: () => void } | null>(null);
   const [dialog, setDialog] = useState<'projects' | 'settings' | null>(null);
   const [booting, setBooting] = useState(true);
   const [left, setLeft] = useState<'files' | 'art'>('files');
@@ -110,7 +111,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
   const noProject = !store.project;
   const menus: Record<string, MenuItem[]> = {
     Project: [
-      ['Projects…', () => setDialog('projects')],
+      ['Projects and examples…', () => setDialog('projects')],
       ['Save', () => void store.save(), 'Ctrl+S', noProject],
       ['Project settings…', () => setDialog('settings'), '', noProject],
       ['Close project', closeProject, '', noProject],
@@ -124,7 +125,8 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
     Scene: [
       ['New scene', () => { const n = store.project!.scenes.length; store.createScene(n ? `scenes/scene_${n + 1}.scene` : 'scenes/main.scene'); }, '', noProject],
       ['Frame selected', () => frameFns.current?.frameSelected(), 'F'],
-      ['Frame the game area', () => frameFns.current?.frameAll()],
+      ['Frame all', () => frameFns.current?.frameAll()],
+      ['Frame the game area', () => frameFns.current?.frameGameArea()],
     ],
     Run: [
       ['Run project', () => run('project'), 'F5', noProject],
@@ -200,6 +202,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
           <div style={{ position: 'absolute', inset: 0, visibility: !running && store.tab.kind === 'scene' ? 'visible' : 'hidden' }}>
             <Viewport store={store} onFrameRef={(f) => { frameFns.current = f; }} />
           </div>
+          {!running && <Guide store={store} />}
           {!running && store.tab.kind === 'script' && <div style={{ position: 'absolute', inset: 0 }}><ScriptEditor key={store.tab.path} store={store} path={store.tab.path} /></div>}
           <div ref={gameBox} data-testid="game-box" style={{ position: 'absolute', inset: 0, display: running ? 'block' : 'none', background: '#000' }} />
         </div>

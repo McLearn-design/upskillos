@@ -6,7 +6,8 @@
 
 import type { PropValue } from './types';
 
-export type PropType = 'number' | 'angle' | 'vec2' | 'bool' | 'string' | 'color' | 'texture';
+/** 'enum' is one of `options`; 'layers' is a set of collision layers 1–16, stored as bits (layer n is bit n − 1). */
+export type PropType = 'number' | 'angle' | 'vec2' | 'bool' | 'string' | 'color' | 'texture' | 'enum' | 'layers';
 
 export interface PropDef {
   name: string;
@@ -17,6 +18,8 @@ export interface PropDef {
   min?: number;
   max?: number;
   step?: number;
+  /** For 'enum': the allowed values. */
+  options?: string[];
 }
 
 export interface NodeTypeDef {
@@ -65,6 +68,8 @@ const TYPES: NodeTypeDef[] = [
       { name: 'current', type: 'bool', default: true, help: 'Whether this camera is the one used. The first current camera in the tree wins.' },
       { name: 'zoom', type: 'number', default: 1, min: 0.1, max: 10, step: 0.1, help: 'How close it is. 2 shows everything twice as big (half as much of the world).' },
       { name: 'smoothing', type: 'number', default: 0, min: 0, max: 30, step: 0.5, help: 'How gently it catches up: 0 follows exactly; around 5 lags a little behind, which feels smooth.' },
+      { name: 'limitTopLeft', type: 'vec2', default: { x: -10000000, y: -10000000 }, step: 16, help: 'The camera never shows anything left of or above this point: set it to the level\u2019s top-left corner.' },
+      { name: 'limitBottomRight', type: 'vec2', default: { x: 10000000, y: 10000000 }, step: 16, help: 'The camera never shows anything right of or below this point: set it to the level\u2019s bottom-right corner.' },
     ],
   },
   {
@@ -84,9 +89,44 @@ const TYPES: NodeTypeDef[] = [
     ],
   },
   {
+    type: 'CollisionShape2D', base: 'Node2D', icon: '▭', addable: true,
+    help: 'The solid part of a body or area: a rectangle or a circle, centred on its position. Put it under a StaticBody2D, CharacterBody2D, RigidBody2D or Area2D.',
+    props: [
+      { name: 'shape', type: 'enum', default: 'rectangle', options: ['rectangle', 'circle'], help: 'A rectangle, or a circle as wide as the size.' },
+      { name: 'size', type: 'vec2', default: { x: 16, y: 16 }, step: 1, help: 'Width and height in pixels. A circle uses the width as its diameter.' },
+    ],
+  },
+  {
+    type: 'StaticBody2D', base: 'Node2D', icon: '🧱', addable: true,
+    help: 'Something solid that does not move by itself: walls, floors, platforms. Other bodies stop against its collision shapes.',
+    props: [
+      { name: 'collisionLayer', type: 'layers', default: 1, help: 'The layers this body is on. Other bodies and areas only notice it if their mask includes one of these layers.' },
+    ],
+  },
+  {
     type: 'CharacterBody2D', base: 'Node2D', icon: '🏃', addable: true,
-    help: 'A body you move from a script: set its velocity, then call moveAndSlide() in physicsUpdate. (Collision arrives in Phase 4.)',
-    props: [],
+    help: 'A body you move from a script: set velocity, then call moveAndSlide() in physicsUpdate. It stops at solid bodies, slides along them, and knows isOnFloor().',
+    props: [
+      { name: 'collisionLayer', type: 'layers', default: 1, help: 'The layers this body is on.' },
+      { name: 'collisionMask', type: 'layers', default: 1, help: 'The layers it collides with: it stops only at bodies on one of these layers.' },
+    ],
+  },
+  {
+    type: 'RigidBody2D', base: 'Node2D', icon: '⚽', addable: true,
+    help: 'A body that moves by itself: gravity pulls it, it keeps its velocity, and it bounces off solid bodies. Set its velocity from a script to throw it.',
+    props: [
+      { name: 'collisionLayer', type: 'layers', default: 1, help: 'The layers this body is on.' },
+      { name: 'collisionMask', type: 'layers', default: 1, help: 'The layers it collides with.' },
+      { name: 'gravityScale', type: 'number', default: 1, step: 0.1, help: 'How much gravity pulls it: 1 is normal, 0 floats (a Breakout ball), −1 falls up.' },
+      { name: 'bounce', type: 'number', default: 0, min: 0, max: 1, step: 0.05, help: 'How much speed it keeps when it hits something: 0 stops dead against it, 1 bounces back as fast as it came.' },
+    ],
+  },
+  {
+    type: 'Area2D', base: 'Node2D', icon: '◌', addable: true,
+    help: 'A region that notices bodies coming in and going out (its script\u2019s bodyEntered and bodyExited), without stopping them: pickups, goals, danger zones.',
+    props: [
+      { name: 'collisionMask', type: 'layers', default: 1, help: 'The layers of the bodies it notices.' },
+    ],
   },
 ];
 
@@ -151,5 +191,9 @@ export function checkProp(def: PropDef, v: unknown): string | null {
       return typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? null : `${def.name} must be a colour like "#ff8800"`;
     case 'texture':
       return v === null || typeof v === 'string' ? null : `${def.name} must be an image path, or null`;
+    case 'enum':
+      return typeof v === 'string' && def.options!.includes(v) ? null : `${def.name} must be one of ${def.options!.map((o) => `"${o}"`).join(', ')}`;
+    case 'layers':
+      return Number.isInteger(v) && (v as number) >= 0 && (v as number) < 2 ** 16 ? null : `${def.name} must be a set of layers 1–16 (a whole number of bits, 0 to 65535)`;
   }
 }

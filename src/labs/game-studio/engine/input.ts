@@ -3,6 +3,11 @@
 //   input.isPressed('jump')        held down this frame
 //   input.isJustPressed('jump')    went down since the last frame
 //   input.isJustReleased('jump')   came up since the last frame
+//
+// "Since the last frame" means since the last update() when asked in update(), and since
+// the last physics step when asked in physicsUpdate(). The two run at different rates (a
+// 144 Hz screen draws two or three frames per physics step, some with no step at all),
+// so one shared "just" would lose presses that fell in a frame with no physics step.
 //   input.axis('move_left', 'move_right')          −1, 0 or 1
 //   input.vector('move_left', 'move_right', 'move_up', 'move_down')   length at most 1
 //
@@ -16,6 +21,10 @@ export class Input {
   private held = new Set<string>();
   private down = new Set<string>();
   private up = new Set<string>();
+  private physicsDown = new Set<string>();
+  private physicsUp = new Set<string>();
+  /** True while physicsUpdate runs: "just" then means since the last physics step. */
+  inPhysics = false;
   private actions = new Map<string, string[]>();
 
   constructor(actions: InputAction[]) {
@@ -24,15 +33,18 @@ export class Input {
 
   /** Feed a key event (from the page). */
   key(code: string, pressed: boolean): void {
-    if (pressed && !this.held.has(code)) { this.held.add(code); this.down.add(code); }
-    if (!pressed && this.held.has(code)) { this.held.delete(code); this.up.add(code); }
+    if (pressed && !this.held.has(code)) { this.held.add(code); this.down.add(code); this.physicsDown.add(code); }
+    if (!pressed && this.held.has(code)) { this.held.delete(code); this.up.add(code); this.physicsUp.add(code); }
   }
 
   /** Forget "just" presses and releases: called once at the end of each frame. */
   endFrame(): void { this.down.clear(); this.up.clear(); }
 
+  /** The same for physicsUpdate: called after each physics step. */
+  endPhysicsStep(): void { this.physicsDown.clear(); this.physicsUp.clear(); }
+
   /** Release everything (the game lost focus, so keys would otherwise stick). */
-  releaseAll(): void { for (const k of this.held) this.up.add(k); this.held.clear(); }
+  releaseAll(): void { for (const k of this.held) { this.up.add(k); this.physicsUp.add(k); } this.held.clear(); }
 
   private keys(action: string): string[] {
     const k = this.actions.get(action);
@@ -41,8 +53,8 @@ export class Input {
   }
 
   isPressed(action: string): boolean { return this.keys(action).some((k) => this.held.has(k)); }
-  isJustPressed(action: string): boolean { return this.keys(action).some((k) => this.down.has(k)); }
-  isJustReleased(action: string): boolean { return this.keys(action).some((k) => this.up.has(k)); }
+  isJustPressed(action: string): boolean { const d = this.inPhysics ? this.physicsDown : this.down; return this.keys(action).some((k) => d.has(k)); }
+  isJustReleased(action: string): boolean { const u = this.inPhysics ? this.physicsUp : this.up; return this.keys(action).some((k) => u.has(k)); }
 
   axis(negative: string, positive: string): number {
     return Number(this.isPressed(positive)) - Number(this.isPressed(negative));

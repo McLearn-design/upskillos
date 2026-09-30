@@ -17,7 +17,8 @@ import type { NodeData, Project, PropValue, SceneData } from '../core/types';
 import { propsOf } from '../core/registry';
 import { decompose } from '../core/math2d';
 import { Input } from './input';
-import { NODE_CLASSES, Camera2D, CanvasLayer, Label, Node, Node2D, Sprite2D } from './nodes';
+import { NODE_CLASSES, Area2D, Camera2D, CanvasLayer, CharacterBody2D, Label, Node, Node2D, PhysicsBody2D, RigidBody2D, Sprite2D } from './nodes';
+import { scans, separate } from './physics';
 import { Vec2 } from './vec2';
 
 export const PHYSICS_DT = 1 / 60;
@@ -63,6 +64,8 @@ export class Game {
   private ids = new WeakMap<Node, number>();
   private nextDrawId = 1;
   private started = false;
+  /** Pixels per second per second, downward (the project's setting). */
+  readonly gravity: number;
   /** Where the camera is looking (it eases toward its target when it has smoothing). */
   private view: View;
   private readonly screenSize: { w: number; h: number };
@@ -70,6 +73,7 @@ export class Game {
   constructor(project: Project, scene: SceneData, private renderer: Renderer, private opts: GameOptions = {}) {
     this.input = new Input(project.input);
     this.screenSize = { w: project.settings.width, h: project.settings.height };
+    this.gravity = project.settings.gravity ?? 980;
     // With no camera, the screen shows the world from (0, 0) to (width, height).
     this.view = { x: this.screenSize.w / 2, y: this.screenSize.h / 2, zoom: 1 };
     this.root = this.build(scene.root);
@@ -115,7 +119,11 @@ export class Game {
     this.accumulator = Math.min(this.accumulator + dt, 0.25);
     while (this.accumulator >= PHYSICS_DT - 1e-12) {
       this.stepDelta = PHYSICS_DT;
+      this.input.inPhysics = true;
       this.each((n) => this.call(n, 'physicsUpdate', PHYSICS_DT));
+      this.input.inPhysics = false;
+      this.input.endPhysicsStep();
+      this.physicsStep(PHYSICS_DT);
       this.accumulator -= PHYSICS_DT;
     }
     this.stepDelta = dt;
@@ -132,14 +140,75 @@ export class Game {
     visit(this.root);
   }
 
-  private call(n: Node, phase: 'ready' | 'update' | 'physicsUpdate' | 'destroyed', dt?: number): void {
+  private call(n: Node, phase: string, ...args: unknown[]): void {
     if (n._broken) return;
-    try { (n[phase] as (dt?: number) => void).call(n, dt); }
+    try { ((n as unknown as Record<string, (...a: unknown[]) => void>)[phase]).apply(n, args); }
     catch (e) {
       n._broken = true;
       const err = e instanceof Error ? e : new Error(String(e));
       this.opts.onError?.({ message: err.message, stack: err.stack ?? '', file: n._script, node: n.path, phase });
     }
+  }
+
+  // ── physics ────────────────────────────────────────────────────────────
+
+  /** Every body in the tree now (not freed). */
+  private bodies(): PhysicsBody2D[] {
+    const out: PhysicsBody2D[] = [];
+    this.each((n) => { if (n instanceof PhysicsBody2D) out.push(n); });
+    return out;
+  }
+
+  /**
+   * Move a character or rigid body by velocity × stepDelta, in steps of at most 4 pixels
+   * so it cannot pass through a thin wall, pushing it out of every solid body on its
+   * mask's layers. `hit` is told each body touched and the surface normal (pointing away
+   * from that body, towards the mover).
+   */
+  _moveBody(body: CharacterBody2D | RigidBody2D, hit: (other: PhysicsBody2D, normal: Vec2) => void): void {
+    const others = this.bodies().filter((o) => o !== body && scans(body.collisionMask, o.collisionLayer));
+    const dist = body.velocity.length() * this.stepDelta;
+    const steps = Math.max(1, Math.ceil(dist / 4));
+    for (let i = 0; i < steps; i++) {
+      body.globalPosition = body.globalPosition.add(body.velocity.scale(this.stepDelta / steps));
+      // Push out of one overlap at a time, recomputing where the shapes are after each
+      // push (pushing out of one body can push into another), up to eight times.
+      for (let pass = 0; pass < 8; pass++) {
+        let found: { o: PhysicsBody2D; nx: number; ny: number; depth: number } | null = null;
+        search: for (const mine of body.shapes()) for (const o of others) for (const theirs of o.shapes()) {
+          const p = separate(mine, theirs);
+          if (p) { found = { o, ...p }; break search; }
+        }
+        if (!found) break;
+        body.globalPosition = body.globalPosition.add({ x: found.nx * found.depth, y: found.ny * found.depth });
+        hit(found.o, new Vec2(found.nx, found.ny));
+      }
+    }
+  }
+
+  /** After every physicsUpdate: rigid bodies fall, move and bounce; areas notice who came and went. */
+  private physicsStep(dt: number): void {
+    for (const b of this.bodies()) {
+      if (!(b instanceof RigidBody2D) || b._broken) continue;
+      b.velocity = { x: b.velocity.x, y: b.velocity.y + this.gravity * b.gravityScale * dt };
+      const touched = new Map<PhysicsBody2D, Vec2>();
+      this._moveBody(b, (other, n) => {
+        const vn = b.velocity.dot(n);
+        // Reflect the part of the velocity going into the surface, keeping `bounce` of it.
+        if (vn < 0) b.velocity = b.velocity.sub(n.scale((1 + b.bounce) * vn));
+        if (!touched.has(other)) touched.set(other, n);
+      });
+      for (const [other, n] of touched) this.call(b, 'onCollision', other, n);
+    }
+    const all = this.bodies();
+    this.each((n) => {
+      if (!(n instanceof Area2D)) return;
+      const mine = n.shapes();
+      const now = new Set(all.filter((b) => scans(n.collisionMask, b.collisionLayer) && b.shapes().some((s) => mine.some((m) => separate(s, m)))));
+      for (const b of n._inside) if (!now.has(b)) this.call(n, 'bodyExited', b);
+      for (const b of now) if (!n._inside.has(b)) this.call(n, 'bodyEntered', b);
+      n._inside = now;
+    });
   }
 
   /** A node added while running (addChild). */
@@ -176,9 +245,20 @@ export class Game {
   private updateCamera(dt: number, snap = false): void {
     const cam = this.camera;
     if (!cam) { this.view = { x: this.screenSize.w / 2, y: this.screenSize.h / 2, zoom: 1 }; return; }
-    const target = cam.globalPosition;
+    const target = this.limit(cam, cam.globalPosition);
     const f = snap || cam.smoothing <= 0 ? 1 : 1 - Math.exp(-cam.smoothing * dt);
-    this.view = { x: this.view.x + (target.x - this.view.x) * f, y: this.view.y + (target.y - this.view.y) * f, zoom: cam.zoom };
+    this.view = { ...this.limit(cam, { x: this.view.x + (target.x - this.view.x) * f, y: this.view.y + (target.y - this.view.y) * f }), zoom: cam.zoom };
+  }
+
+  /**
+   * Keep the camera's view inside its limits: the centre may go no closer to a limit than
+   * half the view's width (or height). A level smaller than the view is centred.
+   */
+  private limit(cam: Camera2D, c: { x: number; y: number }): { x: number; y: number } {
+    const hw = this.screenSize.w / (2 * cam.zoom), hh = this.screenSize.h / (2 * cam.zoom);
+    const tl = cam.limitTopLeft, br = cam.limitBottomRight;
+    const axis = (v: number, lo: number, hi: number, half: number) => (lo + half > hi - half ? (lo + hi) / 2 : Math.min(hi - half, Math.max(lo + half, v)));
+    return { x: axis(c.x, tl.x, br.x, hw), y: axis(c.y, tl.y, br.y, hh) };
   }
 
   /** The draw list: visible sprites with a texture and visible labels, in world (or screen) coordinates. */
@@ -220,7 +300,7 @@ export function applyProps(node: Node, type: string, props: Record<string, PropV
 
 /** The globals a script sees (ADR 4). */
 export function scriptGlobals(game: Game): Record<string, unknown> {
-  return { input: game.input, scene: game.sceneApi, time: game.time, math: MATH, Vec2, ...NODE_CLASSES };
+  return { input: game.input, scene: game.sceneApi, time: game.time, math: MATH, physics: { gravity: game.gravity }, Vec2, ...NODE_CLASSES };
 }
 
 /** Small maths helpers scripts use all the time. */

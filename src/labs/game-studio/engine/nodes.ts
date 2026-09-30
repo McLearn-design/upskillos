@@ -13,6 +13,7 @@
 import { Vec2 } from './vec2';
 import { IDENTITY, local, multiply, apply, type Mat2D } from '../core/math2d';
 import type { Game } from './game';
+import type { WorldShape } from './physics';
 
 export class Node {
   name = 'Node';
@@ -141,6 +142,13 @@ export class Camera2D extends Node2D {
   zoom = 1;
   /** 0 follows exactly; higher values catch up more gently. */
   smoothing = 0;
+  private _limitTopLeft = new Vec2(-10000000, -10000000);
+  private _limitBottomRight = new Vec2(10000000, 10000000);
+  /** The camera never shows anything outside this rectangle. */
+  get limitTopLeft(): Vec2 { return this._limitTopLeft; }
+  set limitTopLeft(v: { x: number; y: number }) { this._limitTopLeft = new Vec2(v.x, v.y); }
+  get limitBottomRight(): Vec2 { return this._limitBottomRight; }
+  set limitBottomRight(v: { x: number; y: number }) { this._limitBottomRight = new Vec2(v.x, v.y); }
 }
 
 /** Text. Its position is its top-left corner. */
@@ -151,26 +159,111 @@ export class Label extends Node2D {
   color = '#ffffff';
 }
 
-export class CharacterBody2D extends Node2D {
+/** A rectangle or circle: the solid part of the body or area it is directly under. */
+export class CollisionShape2D extends Node2D {
+  name = 'CollisionShape2D';
+  shape: 'rectangle' | 'circle' = 'rectangle';
+  private _size = new Vec2(16, 16);
+  /** Width and height; a circle uses the width as its diameter. */
+  get size(): Vec2 { return this._size; }
+  set size(v: { x: number; y: number }) { this._size = new Vec2(v.x, v.y); }
+
+  /** Where it is in the world, scaled by its body's scale (rectangles stay axis-aligned). */
+  worldShape(): WorldShape {
+    const m = this.worldTransform, sx = Math.hypot(m[0], m[1]), det = m[0] * m[3] - m[1] * m[2];
+    const sy = sx === 0 ? 0 : Math.abs(det / sx);
+    return this.shape === 'circle'
+      ? { kind: 'circle', x: m[4], y: m[5], r: (this._size.x * sx) / 2 }
+      : { kind: 'rectangle', x: m[4], y: m[5], hw: (this._size.x * sx) / 2, hh: (this._size.y * sy) / 2 };
+  }
+}
+
+/** What every body shares: the layers it is on, and its shapes (its direct CollisionShape2D children). */
+export class PhysicsBody2D extends Node2D {
+  collisionLayer = 1;
+  shapes(): WorldShape[] {
+    return this._children.filter((c): c is CollisionShape2D => c instanceof CollisionShape2D && !c._freed).map((c) => c.worldShape());
+  }
+}
+
+/** Solid and still: walls, floors, platforms. */
+export class StaticBody2D extends PhysicsBody2D {
+  name = 'StaticBody2D';
+}
+
+export interface SlideCollision { body: PhysicsBody2D; normal: Vec2 }
+
+export class CharacterBody2D extends PhysicsBody2D {
   name = 'CharacterBody2D';
+  collisionMask = 1;
   private _velocity = new Vec2();
+  _onFloor = false; _onWall = false; _onCeiling = false;
+  _collisions: SlideCollision[] = [];
 
   /** Pixels per second. moveAndSlide() moves by this. */
   get velocity(): Vec2 { return this._velocity; }
   set velocity(v: { x: number; y: number }) { this._velocity = new Vec2(v.x, v.y); }
 
   /**
-   * Move by velocity × the current step's time (1/60 s in physicsUpdate, the frame
-   * time in update). Phase 4 adds collision: it will stop and slide along what it hits.
+   * Move by velocity × the current step's time (1/60 s in physicsUpdate). It stops at
+   * solid bodies on its mask's layers and slides along them: the part of the velocity
+   * going into a surface is removed, the rest is kept. Afterwards isOnFloor(),
+   * isOnWall() and isOnCeiling() say what it touched.
    */
   moveAndSlide(): void {
-    const dt = this._game?.stepDelta ?? 0;
-    this.position = this.position.add(this._velocity.scale(dt));
+    const g = this._game;
+    this._onFloor = this._onWall = this._onCeiling = false;
+    this._collisions = [];
+    if (!g) return;
+    g._moveBody(this, (other, n) => {
+      const vn = this._velocity.dot(n);
+      if (vn < 0) this._velocity = this._velocity.sub(n.scale(vn));
+      if (n.y < -0.7) this._onFloor = true; else if (n.y > 0.7) this._onCeiling = true; else this._onWall = true;
+      if (!this._collisions.some((c) => c.body === other)) this._collisions.push({ body: other, normal: n });
+    });
   }
+
+  /** Standing on something (touched a surface facing up in the last moveAndSlide). */
+  isOnFloor(): boolean { return this._onFloor; }
+  isOnWall(): boolean { return this._onWall; }
+  isOnCeiling(): boolean { return this._onCeiling; }
+  /** What the last moveAndSlide touched, and the normal of each surface (pointing away from it). */
+  getSlideCollisions(): SlideCollision[] { return [...this._collisions]; }
+}
+
+/** Moves by itself: pulled by gravity, keeps its velocity, bounces off solid bodies. */
+export class RigidBody2D extends PhysicsBody2D {
+  name = 'RigidBody2D';
+  collisionMask = 1;
+  /** 1 is normal gravity; 0 floats. */
+  gravityScale = 1;
+  /** Speed kept on a hit: 0 stops, 1 bounces back as fast. */
+  bounce = 0;
+  private _velocity = new Vec2();
+  get velocity(): Vec2 { return this._velocity; }
+  set velocity(v: { x: number; y: number }) { this._velocity = new Vec2(v.x, v.y); }
+  /** Override in a script: called when it hits a body, with the surface's normal. */
+  onCollision(_body: PhysicsBody2D, _normal: Vec2): void {}
+}
+
+/** Notices bodies coming in and going out, without stopping them. */
+export class Area2D extends Node2D {
+  name = 'Area2D';
+  collisionMask = 1;
+  _inside = new Set<PhysicsBody2D>();
+  shapes(): WorldShape[] {
+    return this._children.filter((c): c is CollisionShape2D => c instanceof CollisionShape2D && !c._freed).map((c) => c.worldShape());
+  }
+  /** The bodies inside it now. */
+  getOverlappingBodies(): PhysicsBody2D[] { return [...this._inside]; }
+  /** Override in a script: called when a body comes in. */
+  bodyEntered(_body: PhysicsBody2D): void {}
+  /** Override in a script: called when a body goes out (or is removed). */
+  bodyExited(_body: PhysicsBody2D): void {}
 }
 
 /** The built-in classes, by registry type name. */
-export const NODE_CLASSES: Record<string, typeof Node> = { Node, Node2D, Sprite2D, Camera2D, Label, CanvasLayer, CharacterBody2D };
+export const NODE_CLASSES: Record<string, typeof Node> = { Node, Node2D, Sprite2D, Camera2D, Label, CanvasLayer, CollisionShape2D, StaticBody2D, CharacterBody2D, RigidBody2D, Area2D };
 
 /** The registered type a runtime node is: its class, or the nearest built-in class it extends. */
 export function nodeTypeOf(n: Node): string {

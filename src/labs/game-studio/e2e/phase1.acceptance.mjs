@@ -92,7 +92,7 @@ const failed = await withGameStudio(5197, async ({ page, t, check }) => {
   check('Run in the sandboxed runtime', true, 'ready() logged to Output');
   await t('tree-Player').click();
   await frame.click();
-  await page.keyboard.down('ArrowRight'); await page.waitForTimeout(600); await page.keyboard.up('ArrowRight');
+  await page.keyboard.down('ArrowRight'); await page.waitForTimeout(1200); await page.keyboard.up('ArrowRight');   // headless frames are uneven, so hold long enough to be sure
   await page.waitForTimeout(400);
   const live = await t('inspector').locator('span[title^="The value in the running game"]').first().innerText();
   const liveX = Number(live.split(',')[0]);

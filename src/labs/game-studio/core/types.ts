@@ -60,6 +60,8 @@ export interface ProjectSettings {
   mainScene: string | null;
   /** Scale images with hard edges (pixel art stays crisp when zoomed). Missing means true. */
   pixelArt?: boolean;
+  /** Gravity for rigid bodies, and physics.gravity for scripts: pixels per second per second, downward. Missing means 980. */
+  gravity?: number;
 }
 
 export interface Project {

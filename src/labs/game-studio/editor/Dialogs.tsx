@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import type { Store } from './store';
 import { Btn, C, NumberField, Row, TextField, selectStyle, useStore } from './kit';
 import * as storage from './storage';
+import { EXAMPLES } from '../examples';
 
 function Modal({ title, onClose, children, width = 520, testid }: { title: string; onClose?: () => void; children: React.ReactNode; width?: number; testid?: string }) {
   return (
@@ -35,7 +36,17 @@ export function ProjectsDialog({ store, onClose, onDone }: { store: Store; onClo
           style={{ flex: 1, background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 3, padding: '4px 6px', fontSize: 13 }} />
         <Btn testid="create-project" onClick={() => { if (!name.trim() || !guard()) return; store.newProject(name.trim()); onDone(); }}>Create</Btn>
       </div>
-      <div style={{ color: C.faint, fontSize: 11, fontWeight: 700, marginBottom: 6 }}>SAVED IN THIS BROWSER</div>
+      <div style={{ color: C.faint, fontSize: 11, fontWeight: 700, marginBottom: 6 }}>START FROM AN EXAMPLE</div>
+      {EXAMPLES.map((ex) => (
+        <div key={ex.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px', borderTop: `1px solid ${C.border}` }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, color: C.text }}>{ex.title}</div>
+            <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.4 }}>{ex.blurb} <span style={{ color: C.faint }}>Art: {ex.art}.</span></div>
+          </div>
+          <Btn small testid={`example-${ex.id}`} onClick={async () => { if (!guard()) return; await store.openExample(ex); onDone(); }}>Open</Btn>
+        </div>
+      ))}
+      <div style={{ color: C.faint, fontSize: 11, fontWeight: 700, margin: '16px 0 6px' }}>SAVED IN THIS BROWSER</div>
       {err && <div style={{ color: C.bad, fontSize: 12 }}>{err}</div>}
       {list === null ? <div style={{ color: C.faint }}>Loading…</div> : list.length === 0 ? <div style={{ color: C.faint, fontSize: 12 }}>No saved projects yet.</div> : list.map((p) => (
         <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 4px', borderTop: `1px solid ${C.border}` }}>
@@ -79,6 +90,9 @@ export function SettingsDialog({ store, onClose }: { store: Store; onClose: () =
       <Row label="Background"><input type="color" value={p.settings.background} onChange={(e) => store.act((d) => d.setSettings({ background: e.target.value }))} /></Row>
       <Row label="Pixel art" help="Scale images with hard edges, so pixel art stays crisp when the camera zooms. Turn off for smooth, painted art.">
         <input type="checkbox" checked={p.settings.pixelArt !== false} onChange={(e) => store.act((d) => d.setSettings({ pixelArt: e.target.checked }))} />
+      </Row>
+      <Row label="Gravity" help="How fast rigid bodies speed up falling, in pixels per second per second (downward). Scripts read it as physics.gravity. 0 for a top-down game.">
+        <NumberField value={p.settings.gravity ?? 980} step={10} digits={1} onCommit={(v) => store.act((d) => d.setSettings({ gravity: v }))} /><span style={{ color: C.faint, fontSize: 11 }}>px/s²</span>
       </Row>
       <Row label="Main scene">
         <select value={p.settings.mainScene ?? ''} onChange={(e) => e.target.value && store.act((d) => d.setMainScene(e.target.value))} style={selectStyle}>

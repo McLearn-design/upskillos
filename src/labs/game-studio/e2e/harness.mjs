@@ -1,6 +1,8 @@
 // Shared by Game Studio's browser tests: start a dev server on its own port, open a
 // fresh browser profile at Game Studio, record checks, and always clean up.
 import { spawn } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { chromium } from 'playwright';
 
 export async function withGameStudio(port, body) {
@@ -9,7 +11,7 @@ export async function withGameStudio(port, body) {
   const server = spawn('npx', ['vite', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true });
   const stopServer = () => { try { process.kill(-server.pid); } catch { /* already gone */ } };
   process.on('exit', stopServer);
-  let browser;
+  let browser, page;
   try {
     for (let i = 0; ; i++) {
       try { if ((await fetch(`http://localhost:${port}/`)).ok) break; } catch { /* not yet */ }
@@ -18,7 +20,10 @@ export async function withGameStudio(port, body) {
     }
     browser = await chromium.launch();
     const context = await browser.newContext({ viewport: { width: 1500, height: 950 }, permissions: ['clipboard-read', 'clipboard-write'] });
-    const page = await context.newPage();
+    // Mark the site's welcome tour as seen (src/context/TourContext.jsx), so its popup
+    // never appears part-way through and covers what a test clicks.
+    await context.addInitScript(() => { try { localStorage.setItem('oc-tour-seen', '1'); } catch { /* the sandboxed game frame has no storage */ } });
+    page = await context.newPage();
     const pageErrors = [];
     page.on('pageerror', (e) => pageErrors.push(e.message));
     page.on('dialog', (d) => d.accept());
@@ -31,7 +36,10 @@ export async function withGameStudio(port, body) {
     await body({ page, t: (id) => page.getByTestId(id), check });
     check('No page errors', pageErrors.length === 0, pageErrors.join(' | '));
   } catch (e) {
-    check('The test ran to the end', false, e instanceof Error ? e.message.split('\n')[0] : String(e));
+    // A picture of the page as it stood, in the temp folder (never the repository).
+    const shot = join(tmpdir(), `game-studio-failure-${port}.png`);
+    const saved = await page?.screenshot({ path: shot }).then(() => true, () => false);
+    check('The test ran to the end', false, `${e instanceof Error ? e.message.split('\n')[0] : String(e)}${saved ? `; screenshot: ${shot}` : ''}`);
   } finally {
     await browser?.close();
     stopServer();

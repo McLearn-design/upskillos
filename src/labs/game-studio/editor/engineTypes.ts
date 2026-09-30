@@ -74,6 +74,9 @@ declare class Camera2D extends Node2D {
   zoom: number;
   /** 0 follows exactly; around 5 lags gently behind. */
   smoothing: number;
+  /** The camera never shows anything outside this rectangle. */
+  get limitTopLeft(): Vec2; set limitTopLeft(v: { x: number; y: number });
+  get limitBottomRight(): Vec2; set limitBottomRight(v: { x: number; y: number });
 }
 
 /** Text; its position is its top-left corner. */
@@ -90,13 +93,57 @@ declare class CanvasLayer extends Node {
   layer: number;
 }
 
-/** A body you move from a script: set velocity, then call moveAndSlide(). */
-declare class CharacterBody2D extends Node2D {
+/** The solid part of the body or area it is directly under: a rectangle or a circle. */
+declare class CollisionShape2D extends Node2D {
+  shape: 'rectangle' | 'circle';
+  /** Width and height; a circle uses the width as its diameter. */
+  get size(): Vec2; set size(v: { x: number; y: number });
+}
+
+/** Layers 1–16 as bits: layer n is 1 << (n − 1). */
+declare class PhysicsBody2D extends Node2D {
+  collisionLayer: number;
+}
+
+/** Solid and still: walls, floors, platforms. */
+declare class StaticBody2D extends PhysicsBody2D {}
+
+/** A body you move from a script: set velocity, then call moveAndSlide() in physicsUpdate. */
+declare class CharacterBody2D extends PhysicsBody2D {
+  collisionMask: number;
   /** Pixels per second. */
   get velocity(): Vec2; set velocity(v: { x: number; y: number });
-  /** Move by velocity × the current step's time. */
+  /** Move by velocity × dt, stopping at solid bodies and sliding along them. */
   moveAndSlide(): void;
+  isOnFloor(): boolean;
+  isOnWall(): boolean;
+  isOnCeiling(): boolean;
+  getSlideCollisions(): { body: PhysicsBody2D; normal: Vec2 }[];
 }
+
+/** Moves by itself: gravity pulls it, it keeps its velocity, it bounces. */
+declare class RigidBody2D extends PhysicsBody2D {
+  collisionMask: number;
+  gravityScale: number;
+  /** 0 stops dead, 1 bounces back as fast. */
+  bounce: number;
+  get velocity(): Vec2; set velocity(v: { x: number; y: number });
+  /** Called when it hits a body. */
+  onCollision(body: PhysicsBody2D, normal: Vec2): void;
+}
+
+/** Notices bodies coming in and going out, without stopping them. */
+declare class Area2D extends Node2D {
+  collisionMask: number;
+  getOverlappingBodies(): PhysicsBody2D[];
+  /** Called when a body comes in. */
+  bodyEntered(body: PhysicsBody2D): void;
+  /** Called when a body goes out. */
+  bodyExited(body: PhysicsBody2D): void;
+}
+
+/** The project's physics settings. */
+declare const physics: { readonly gravity: number };
 
 /** Input actions, from Project › Input map. */
 declare const input: {

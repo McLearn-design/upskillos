@@ -10,7 +10,7 @@
 // hundred kilobytes of JSON.
 
 import type { NodeData, Project, PropValue, SceneData } from './types';
-import { addNode, deleteNode, duplicate, projectApi, rename, reparent, setProp, setScript } from './api';
+import { addNode, deleteNode, duplicate, projectApi, rename, reparent, runSceneCode, setProp, setScript } from './api';
 import { findNode, pathOf, sceneAt } from './project';
 import { isA, propDef, propValue } from './registry';
 import { placeNodes } from './sceneView';
@@ -232,11 +232,22 @@ export class Doc {
     this.run(`Main scene: ${path}`, null, `project.setMainScene(${lit(path)})`, () => projectApi(this.project).setMainScene(path));
   }
 
+  /**
+   * Run a block of Scene API code as one command: an example's build, or code a user
+   * pastes. It goes into the log as it is, inside { } so its own variables stay local,
+   * and replays like any other line.
+   */
+  runCode(label: string, code: string): void {
+    this.run(label, null, `{\n${code.trim()}\n}`, () => runSceneCode(this.project, code));
+    // The block may have left `scene` on any scene, so the next command names its scene again.
+    this.logScene = null;
+  }
+
   setProjectName(name: string): void {
     this.run('Rename project', null, `project.name = ${lit(name)}`, () => { projectApi(this.project).name = name; });
   }
 
-  setSettings(patch: { width?: number; height?: number; background?: string; pixelArt?: boolean }): void {
+  setSettings(patch: { width?: number; height?: number; background?: string; pixelArt?: boolean; gravity?: number }): void {
     this.run('Project settings', null, `project.setSettings(${lit(patch)})`, () => projectApi(this.project).setSettings(patch));
   }
 

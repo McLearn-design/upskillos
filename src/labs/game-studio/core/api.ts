@@ -152,7 +152,7 @@ function sceneHandle(p: Project, scene: SceneData): SceneHandle {
   };
 }
 
-export interface SettingsPatch { width?: number; height?: number; background?: string; pixelArt?: boolean }
+export interface SettingsPatch { width?: number; height?: number; background?: string; pixelArt?: boolean; gravity?: number }
 
 export interface ProjectApi {
   name: string;
@@ -181,13 +181,14 @@ export function projectApi(p: Project): ProjectApi {
     get name() { return p.name; },
     set name(v: string) { if (!String(v).trim()) throw new Error('A project needs a name'); p.name = String(v).trim(); },
     setSettings(patch) {
-      for (const k of Object.keys(patch)) if (!['width', 'height', 'background', 'pixelArt'].includes(k)) throw new Error(`There is no setting "${k}"`);
+      for (const k of Object.keys(patch)) if (!['width', 'height', 'background', 'pixelArt', 'gravity'].includes(k)) throw new Error(`There is no setting "${k}"`);
       for (const k of ['width', 'height'] as const) {
         const v = patch[k];
         if (v !== undefined && !(Number.isInteger(v) && v >= 64 && v <= 4096)) throw new Error(`${k} must be a whole number of pixels from 64 to 4096`);
       }
       if (patch.background !== undefined && !/^#[0-9a-f]{6}$/i.test(patch.background)) throw new Error('background must be a colour like "#1d2330"');
       if (patch.pixelArt !== undefined && typeof patch.pixelArt !== 'boolean') throw new Error('pixelArt must be true or false');
+      if (patch.gravity !== undefined && !(Number.isFinite(patch.gravity) && Math.abs(patch.gravity) <= 100000)) throw new Error('gravity must be a number of pixels per second per second');
       Object.assign(p.settings, patch);
     },
     createScene(path, rootType = 'Node2D', rootName) {

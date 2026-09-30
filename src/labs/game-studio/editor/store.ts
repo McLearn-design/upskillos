@@ -11,6 +11,8 @@ import type { FromRuntime } from '../runtime/protocol';
 import { runGame, type RunningGame } from './runner';
 import { checkSyntax } from '../runtime/scripts';
 import * as storage from './storage';
+import { starterImage } from './starterLibrary';
+import type { GameExample } from '../examples/types';
 
 export interface OutputLine { level: 'log' | 'info' | 'warn' | 'error' | 'system'; text: string; file?: string | null; line?: number | null; column?: number | null; node?: string | null }
 
@@ -96,7 +98,7 @@ export class Store {
     this.projectId = id;
     this.doc = doc;
     this.sceneId = doc.project.settings.mainScene ? sceneAt(doc.project, doc.project.settings.mainScene)!.id : doc.project.scenes[0]?.id ?? null;
-    this.selection = []; this.buffers.clear(); this.tabs = [{ kind: 'scene' }]; this.tab = { kind: 'scene' }; this.output = [];
+    this.selection = []; this.buffers.clear(); this.tabs = [{ kind: 'scene' }]; this.tab = { kind: 'scene' }; this.output = []; this.guide = null;
     this.unsubDoc = doc.subscribe(() => {
       // Undo can remove the scene on screen or selected nodes: keep the editor's view valid.
       const scenes = doc.project.scenes;
@@ -117,6 +119,28 @@ export class Store {
     this.blobs.clear(); this.images.clear();
     this.attach(storage.newProjectId(), doc);
     this.say(`New project "${name}"`);
+  }
+
+  /** The example whose guide is showing, if the project came from one. */
+  guide: GameExample | null = null;
+
+  /**
+   * Start a new project from an example: its images come from the starter art, then its
+   * code runs as one command, so GUI → code shows exactly how it was built.
+   */
+  async openExample(ex: GameExample): Promise<void> {
+    this.newProject(ex.title);
+    for (const path of ex.images) {
+      const img = starterImage(path);
+      if (!img) { this.say(`The example needs ${path}, which is not in the starter art`); return; }
+      if (!(await this.importStarter(path, img.url))) return;
+    }
+    this.act((d) => d.runCode(`Build the example "${ex.title}"`, ex.code));
+    const p = this.doc!.project;
+    this.sceneId = p.scenes.find((x) => x.path === p.settings.mainScene)?.id ?? p.scenes[0]?.id ?? null;
+    this.selection = [];
+    this.guide = ex;
+    this.say(`Opened the example "${ex.title}". It is a new project: Save keeps your own copy.`);
   }
 
   async openProject(id: string): Promise<void> {

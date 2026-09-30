@@ -32,6 +32,11 @@ function localBox(store: Store, p: PlacedNode): { x: number; y: number; w: numbe
     const w = img ? img.naturalWidth : 32, h = img ? img.naturalHeight : 32;
     return { x: -w / 2, y: -h / 2, w, h };
   }
+  if (p.node.type === 'CollisionShape2D') {
+    const sz = propValue('CollisionShape2D', p.node.props, 'size') as Vec2;
+    const w = sz.x, h = propValue('CollisionShape2D', p.node.props, 'shape') === 'circle' ? sz.x : sz.y;
+    return { x: -w / 2, y: -h / 2, w, h };
+  }
   if (p.node.type === 'Label') {
     const size = propValue('Label', p.node.props, 'fontSize') as number;
     measure.font = labelFont(size);
@@ -40,7 +45,7 @@ function localBox(store: Store, p: PlacedNode): { x: number; y: number; w: numbe
   return null;
 }
 
-export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fns: { frameAll: () => void; frameSelected: () => void }) => void }) {
+export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fns: { frameAll: () => void; frameSelected: () => void; frameGameArea: () => void }) => void }) {
   useStore(store);
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -93,6 +98,21 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
       else { g.setLineDash([4 / z, 3 / z]); g.strokeStyle = C.faint; g.lineWidth = 1 / z; g.strokeRect(-16, -16, 32, 32); g.setLineDash([]); }
       g.globalAlpha = 1;
     }
+    // Collision shapes: teal for bodies, green for areas. The game does not draw them; the editor shows them so you can line them up.
+    const parents = new Map<string, string>();
+    for (const pn of placed) for (const c of pn.node.children) parents.set(c.id, pn.node.type);
+    for (const pn of placed) {
+      if (pn.node.type !== 'CollisionShape2D' || !pn.visible) continue;
+      const box = localBox(store, pn)!, area = parents.get(pn.node.id) === 'Area2D';
+      const circle = propValue('CollisionShape2D', pn.node.props, 'shape') === 'circle';
+      set(pn.world);
+      g.fillStyle = area ? 'rgba(110,231,183,0.18)' : 'rgba(56,189,248,0.2)';
+      g.strokeStyle = area ? 'rgba(110,231,183,0.9)' : 'rgba(56,189,248,0.9)';
+      g.lineWidth = 1.5 / z;
+      g.beginPath();
+      if (circle) g.arc(0, 0, box.w / 2, 0, Math.PI * 2); else g.rect(box.x, box.y, box.w, box.h);
+      g.fill(); g.stroke();
+    }
     // Labels, over the sprites of their layer.
     for (const pn of placed) {
       if (!pn.visible || pn.node.type !== 'Label') continue;
@@ -110,6 +130,14 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
       set([1, 0, 0, 1, pn.world[4], pn.world[5]]);
       g.setLineDash([8 / z, 5 / z]); g.strokeStyle = on ? 'rgba(192,132,252,0.9)' : 'rgba(192,132,252,0.35)'; g.lineWidth = 1.5 / z;
       g.strokeRect(-cw / 2, -ch / 2, cw, ch); g.setLineDash([]);
+      // Its limits, when set: the camera never shows anything outside them.
+      const tl = propValue('Camera2D', pn.node.props, 'limitTopLeft') as Vec2, br = propValue('Camera2D', pn.node.props, 'limitBottomRight') as Vec2;
+      if (Math.abs(tl.x) < 1e6 || Math.abs(br.x) < 1e6 || Math.abs(tl.y) < 1e6 || Math.abs(br.y) < 1e6) {
+        const cl = (v: number) => Math.max(-1e5, Math.min(1e5, v));
+        set([1, 0, 0, 1, 0, 0]);
+        g.setLineDash([2 / z, 4 / z]); g.strokeStyle = 'rgba(192,132,252,0.7)'; g.lineWidth = 1 / z;
+        g.strokeRect(cl(tl.x), cl(tl.y), cl(br.x) - cl(tl.x), cl(br.y) - cl(tl.y)); g.setLineDash([]);
+      }
     }
     // Markers for 2D nodes without a picture, and the selection.
     for (const pn of placed) {
@@ -153,7 +181,19 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
     cam.current = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, zoom: Math.min(8, Math.max(0.05, Math.min(el.clientWidth / w, el.clientHeight / h) * 0.85)) };
     draw();
   }, [draw]);
-  const frameAll = useCallback(() => { const p = store.project; if (p) frameRect(0, 0, p.settings.width, p.settings.height); }, [store, frameRect]);
+  const frameGameArea = useCallback(() => { const p = store.project; if (p) frameRect(0, 0, p.settings.width, p.settings.height); }, [store, frameRect]);
+  /** Fit everything drawn in the world (not the HUD); with nothing yet, the game area. */
+  const frameAll = useCallback(() => {
+    const s = store.scene; if (!s) return frameGameArea();
+    const pts: Vec2[] = [];
+    for (const pn of placeNodes(s)) {
+      if (pn.screen || !pn.visible) continue;
+      const box = localBox(store, pn);
+      if (box) for (const [a, b] of [[0, 0], [1, 1], [1, 0], [0, 1]]) pts.push(apply(pn.world, { x: box.x + a * box.w, y: box.y + b * box.h }));
+    }
+    if (!pts.length) return frameGameArea();
+    frameRect(Math.min(...pts.map((q) => q.x)), Math.min(...pts.map((q) => q.y)), Math.max(...pts.map((q) => q.x)), Math.max(...pts.map((q) => q.y)));
+  }, [store, frameRect, frameGameArea]);
   const frameSelected = useCallback(() => {
     const s = store.scene; if (!s || !store.selection.length) return frameAll();
     const pts: Vec2[] = [];
@@ -163,9 +203,11 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
     }
     frameRect(Math.min(...pts.map((q) => q.x)), Math.min(...pts.map((q) => q.y)), Math.max(...pts.map((q) => q.x)), Math.max(...pts.map((q) => q.y)));
   }, [store, frameRect, frameAll]);
-  useEffect(() => { onFrameRef?.({ frameAll, frameSelected }); }, [onFrameRef, frameAll, frameSelected]);
+  useEffect(() => { onFrameRef?.({ frameAll, frameSelected, frameGameArea }); }, [onFrameRef, frameAll, frameSelected, frameGameArea]);
   const projectKey = store.projectId;
-  useEffect(() => { requestAnimationFrame(frameAll); }, [projectKey, frameAll]);
+  const sceneKey = store.sceneId;
+  // A newly opened project or scene is framed to fit what is in it.
+  useEffect(() => { requestAnimationFrame(frameAll); }, [projectKey, sceneKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** The topmost node under a screen point: sprites by their image box, other 2D nodes by their marker. */
   const hit = (sx: number, sy: number): string | null => {

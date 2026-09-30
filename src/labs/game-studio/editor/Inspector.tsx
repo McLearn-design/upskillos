@@ -13,7 +13,7 @@ import { lit } from '../core/doc';
 import type { PropValue, Vec2 } from '../core/types';
 
 const DEG = 180 / Math.PI;
-const SECTION: Record<string, string> = { Node2D: 'Transform', Sprite2D: 'Sprite', CharacterBody2D: 'Body' };
+const SECTION: Record<string, string> = { Node2D: 'Transform', Sprite2D: 'Sprite', CharacterBody2D: 'Body', StaticBody2D: 'Body', RigidBody2D: 'Body', Area2D: 'Area', CollisionShape2D: 'Shape' };
 
 function liveText(v: unknown, def: PropDef): string | undefined {
   if (v === undefined) return undefined;
@@ -69,6 +69,25 @@ export function Inspector({ store }: { store: Store }) {
             {p.assets.map((a) => <option key={a.id} value={a.path}>{a.path.replace(/^assets\//, '')}</option>)}
           </select>
           {img && <img src={img.src} alt="" style={{ width: 22, height: 22, objectFit: 'contain', imageRendering: 'pixelated', background: C.bg }} />}
+        </Row>;
+      }
+      case 'enum':
+        return <Row key={def.name} label={def.name} help={help} live={lv}>
+          <select data-testid={`prop-${def.name}`} value={v as string} onChange={(e) => set(def.name, e.target.value)} style={{ ...selectStyle, flex: 1 }}>
+            {def.options!.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </Row>;
+      case 'layers': {
+        // Layers 1–16 as toggles (layer n is bit n − 1), in two rows of eight.
+        const bits = v as number;
+        return <Row key={def.name} label={def.name} help={`${help} Click a number to turn that layer on or off.`} live={lv}>
+          <span style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 20px)', gap: 2 }}>
+            {Array.from({ length: 16 }, (_, i) => {
+              const on = (bits & (1 << i)) !== 0;
+              return <button key={i} type="button" data-testid={`prop-${def.name}-${i + 1}`} onClick={() => set(def.name, bits ^ (1 << i))}
+                style={{ width: 20, height: 18, fontSize: 10, padding: 0, borderRadius: 2, cursor: 'pointer', border: `1px solid ${on ? C.accent : C.border}`, background: on ? C.accent : C.bg, color: on ? '#0b1320' : C.faint }}>{i + 1}</button>;
+            })}
+          </span>
         </Row>;
       }
       case 'color':

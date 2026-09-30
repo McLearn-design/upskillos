@@ -25,6 +25,8 @@ export function SceneTree({ store }: { store: Store }) {
   const s = store.scene;
   const [renaming, setRenaming] = useState<string | null>(null);
   const [over, setOver] = useState<{ id: string; where: 'into' | 'before' } | null>(null);
+  /** Which branches are open. A branch with more than 20 children (a floor of tiles) starts closed. */
+  const [openState, setOpenState] = useState<Record<string, boolean>>({});
   if (!store.project) return null;
   const sel = new Set(store.selection);
 
@@ -44,6 +46,7 @@ export function SceneTree({ store }: { store: Store }) {
 
   const row = (n: NodeData, depth: number): React.ReactNode => {
     const isRoot = n.id === s!.root.id, active = sel.has(n.id);
+    const isOpen = openState[n.id] ?? n.children.length <= 20;
     return (
       <div key={n.id}>
         {!isRoot && (
@@ -64,6 +67,8 @@ export function SceneTree({ store }: { store: Store }) {
             display: 'flex', alignItems: 'center', gap: 5, padding: `2px 6px 2px ${8 + depth * 14}px`, cursor: 'default', fontSize: 12,
             background: active ? '#2b4a6e' : over?.id === n.id && over.where === 'into' ? '#26384f' : 'transparent', color: active ? '#fff' : C.text, whiteSpace: 'nowrap',
           }}>
+          <span data-testid={`toggle-${n.name}`} onClick={(e) => { e.stopPropagation(); if (n.children.length) setOpenState((o) => ({ ...o, [n.id]: !isOpen })); }}
+            style={{ width: 10, color: C.faint, fontSize: 9, cursor: n.children.length ? 'pointer' : 'default' }}>{n.children.length ? (isOpen ? '▾' : '▸') : ''}</span>
           <span style={{ width: 16, textAlign: 'center', opacity: 0.85 }}>{nodeType(n.type).icon}</span>
           {renaming === n.id ? (
             <input autoFocus defaultValue={n.name} data-testid="rename-input"
@@ -71,10 +76,11 @@ export function SceneTree({ store }: { store: Store }) {
               onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setRenaming(null); }}
               style={{ background: C.bg, color: C.text, border: `1px solid ${C.accent}`, fontSize: 12, padding: '0 3px', width: 130 }} />
           ) : <span>{n.name}</span>}
+          {!isOpen && n.children.length > 0 && <span style={{ color: C.faint, fontSize: 11 }}>({n.children.length})</span>}
           <span style={{ flex: 1 }} />
           {n.script && <span title={`Script: ${n.script}`} onClick={(e) => { e.stopPropagation(); store.openScript(n.script!); }} style={{ color: C.warn, cursor: 'pointer', fontSize: 11 }}>{'</>'}</span>}
         </div>
-        {n.children.map((c) => row(c, depth + 1))}
+        {isOpen && n.children.map((c) => row(c, depth + 1))}
       </div>
     );
   };

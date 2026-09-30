@@ -328,7 +328,7 @@ called done.
 
 - dockable panels and workspaces;
 - capsule and polygon collision (rectangle and circle first);
-- Matter physics (Arcade first; Matter only if Breakout or a later game needs it);
+- turned (rotated) collision rectangles (change 9);
 - TypeScript scripts;
 - multiplayer;
 - a 3D mode.
@@ -357,6 +357,18 @@ Recorded during Phase 1 (2026-09-30). None of them change a boundary.
    reparent call followed by those property lines, so replay is still exact.
 7. **Logged numbers are exact (ADR 8).** The log writes each number in the shortest form that reads back as the
    same value. Rounding to 4 decimal places made replay slightly wrong.
+8. **An example is Scene API code (ADR 12).** An example is the code that builds it: the same language the
+   GUI → code panel writes, run as one command on a new project, with its images from the starter art. So an
+   example can only use what the editor and engine really offer, and GUI → code shows exactly how it was
+   built. Each is also played headlessly on the real engine in `examples/examples.test.ts`.
 5. **The browser tests (ADR 14)** are Node scripts using the Playwright library
    (`npm run game:acceptance`), because the repository has no Playwright test runner. Each one starts and
    stops its own dev server.
+9. **Physics is the engine's own (ADR 2, ADR 15).** Collision is in `engine/physics.ts` and the body nodes,
+   not Phaser's Arcade or Matter physics. So the engine stays testable in Node without Phaser, and the
+   physics tests check exact numbers. Shapes are axis-aligned rectangles and circles; rectangles do not turn
+   with their body yet. A CharacterBody2D moves in steps of at most 4 pixels, so it cannot pass through thin
+   walls.
+10. **"Just pressed" in `physicsUpdate` means since the last physics step (ADR 4).** Frames and physics steps
+   run at different rates, so the input keeps a second set of "just" presses and releases, cleared after each
+   physics step, and `physicsUpdate` reads that one. This is Godot's rule too.

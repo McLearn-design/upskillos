@@ -117,13 +117,115 @@ pick several and use "Add to project".
   1.5708 and replay gave a slightly different project. Numbers are now written in their shortest exact form.
 - **Pressing next to a node with Rotate or Scale cleared the selection.** It now acts on the selection.
 
+## Done: the first example, Potion Hunt (2026-09-30)
+
+**What it is:** a top-down dungeon from Kenney's Tiny Dungeon art. You walk the hero round, collect eight
+potions and keep away from a bat. It has a following camera limited to the level, a HUD with a count, and
+a message at the end.
+
+**How it is built:**
+- **Only the real Scene API:** `examples/potionHunt.ts` is the same kind of code the GUI → code panel
+  writes. A loop lays the 240 floor and wall tiles.
+- **Its scripts** (`player.js`, `bat.js`) use only the documented Game API.
+- **Opening it** from the project list makes a new project: the images come from the starter art, and the
+  code runs as one undoable command (`Doc.runCode`). GUI → code then shows the whole build.
+- **A guide beside the viewport** says what to look at and try.
+- **The walls** are a StaticBody2D with four rectangle shapes; the hero is a CharacterBody2D, and the
+  potions and the bat are Area2Ds (rebuilt on Phase 4 physics, below).
+
+**Added to the engine and editor for it** (each works for any project):
+- **Camera limits** (`limitTopLeft`, `limitBottomRight`, Godot's style, with defaults so large they do
+  nothing). The editor draws them.
+- **Running a block of Scene API code** as one command.
+- **Collapsible branches in the scene tree,** with branches over 20 children closed at first.
+- **Framing:** a project or scene opens framed to its content, and there's a Frame all menu item.
+
+**Tested:**
+- `examples/examples.test.ts` plays the example on the real engine, with its scripts loaded as ES modules
+  and no special cases. It checks:
+  - every example builds soundly and its GUI → code log replays exactly;
+  - the HUD starts at 0 / 8;
+  - standing on each potion counts up, and at 8 the message shows;
+  - the bat moves, and touching it sends the hero back to the start;
+  - the hero stops at the wall;
+  - the camera stays within the dungeon.
+- `e2e/examples.acceptance.mjs` opens each example from the project list in a browser, runs it, plays it
+  with the arrow keys, and finds no script errors.
+- All of this is in `npm run game:acceptance`.
+
+## Done: Phase 4, physics (2026-09-30)
+
+The engine's own collision, in `engine/physics.ts` and `engine/nodes.ts`, not Phaser's (architecture doc,
+change 9). Shapes are axis-aligned: a rectangle does not turn with its body yet.
+
+| Part | What it does |
+|---|---|
+| **CollisionShape2D** | `shape` (rectangle or circle) and `size` (a circle uses `size.x` as its diameter). The editor draws body shapes teal and area shapes green |
+| **StaticBody2D** | Never moves; others stop against it. `collisionLayer` |
+| **CharacterBody2D** | Moved by its script: `velocity`, then `moveAndSlide()`, which stops at solid bodies and keeps the part of the velocity along the surface. Then `isOnFloor()`, `isOnWall()`, `isOnCeiling()`, `getSlideCollisions()`. It moves in steps of at most 4 pixels, so it cannot pass through a thin wall |
+| **RigidBody2D** | Moves by itself: gravity × `gravityScale`, and `bounce` (1 keeps all its speed, 0 stops dead) off solid bodies. `onCollision(body, normal)` |
+| **Area2D** | Solid to nothing; `bodyEntered(body)` and `bodyExited(body)` when bodies on its mask come in and go out, and `getOverlappingBodies()` |
+| **Layers and masks** | 16 layers. A body stops at another when its mask includes a layer the other is on. The Inspector shows 16 toggles |
+| **Gravity** | A project setting (default 980 pixels per second²), and `physics.gravity` in scripts |
+
+**Order in each physics step:** every `physicsUpdate`, then rigid bodies move, then areas report who came
+in and went out.
+
+**Input in `physicsUpdate` (change 10):** "just pressed" there means since the last physics step, not
+since the last frame. A screen faster than 60 Hz draws some frames with no physics step, and a jump
+pressed in one of those was lost before.
+
+**Tested:** `engine/physics.test.ts` (stopping at a wall at exactly 84, sliding, landing, no tunnelling,
+bounce 1, 0.5 and 0, gravity, areas), the "no fake controls" test in `engine/engine.test.ts` (every
+physics property must change what happens in a scenario), and the input test above.
+
+## Done: the second example, Coin Run (2026-09-30)
+
+**What it is:** a side-on platformer from Kenney's Pixel Platformer art. Run and jump along a level 60 tiles
+long, collect ten coins, reach the flag; fall down a gap and you go back to the start.
+
+**What it shows**, all with the real Scene API and Game API (`examples/platformer.ts`):
+- gravity as a project setting, added to `velocity.y` by the player's script;
+- jumping only when `isOnFloor()`, and a shorter jump if you let go early;
+- one StaticBody2D for all the ground and platforms: a `stretch()` function in the build code lays each
+  stretch's tiles and one rectangle shape covering them;
+- invisible walls (shapes with no picture) at both ends;
+- coins as Area2Ds sharing one script, bobbing on a sine wave; a flag Area2D that ends the level;
+- a two-picture walk (the script swaps `texture`);
+- a backdrop where a plain picture is stretched with `scale`;
+- a camera at zoom 3 that scrolls the level and stops at its edges, and a HUD.
+
+**Tested** in `examples/examples.test.ts`, headlessly on the real engine:
+- the player lands at exactly 222 (ground top 234 − half its shape);
+- a jump rises exactly what the step-by-step sum of gravity gives (about 69 pixels);
+- holding jump does not jump again in mid-air;
+- running and jumping lands on the first platform (168);
+- falling down a gap sends the player back to the start;
+- every coin counts, the flag shows the message and stops the player;
+- the invisible edges stop the player;
+- the camera's view never leaves the level.
+
+The browser test opens it, runs it and plays it with the arrow keys and Space.
+
+**Totals now:** `npx vitest run src/labs/game-studio` passes 54 tests in 5 files; `npm run game:acceptance`
+passes 15/15, 9/9 and 6/6.
+
+**Browser test fixes found on the way:** the site's welcome tour popup could appear part-way through a test
+and cover the button it clicked; the harness now marks the tour as seen before the page loads. When a
+browser test fails, the harness saves a screenshot to the system temp folder and prints its path.
+Phase 1's key-move step holds the key 1.2 s, because headless Chromium's frames are uneven.
+
 ## Next
 
-1. **Phase 3, the script editor.** Most of it is already in: tabs, the unsaved marker, errors at their line,
+1. **Breakout**, from the Puzzle Pack: a RigidBody2D ball with `bounce` 1 and `gravityScale` 0, a paddle, and
+   bricks that disappear when hit (`onCollision`). It finishes Phase 4's "proven by".
+2. **Phase 3, the script editor.** Most of it is already in: tabs, the unsaved marker, errors at their line,
    the console, and Monaco's own search and replace. Still to do: a script error test in the browser, and
    hover documentation from the API types.
-2. **Phase 4, physics.** Collision shapes (rectangle and circle), StaticBody2D, Area2D, collision layers and
-   masks, gravity, and `moveAndSlide` that stops and slides. That is what the platformer and Breakout need.
+3. **Phase 5, animation**: sprite frames and an AnimatedSprite2D, so Coin Run's walk no longer needs a
+   script swapping textures.
+4. **Phase 6, tilemaps**: Coin Run and Potion Hunt lay hundreds of Sprite2Ds; a TileMap will replace them.
+   Then a maze chase.
 
 ## Phases
 
@@ -133,7 +235,7 @@ pick several and use "Add to project".
 | 1 | Model, editor shell, commands, undo, code log, image assets, Sprite/Node2D/CharacterBody2D (no collision), scripts, input, iframe runtime, IndexedDB, the Kenney starter set | The Phase 1 acceptance test | Done |
 | 2 | Camera, more node types, asset browser, drag-and-drop, project settings | Phase 2 browser test | Done |
 | 3 | Script editor completeness, Output with click-to-source, TypeScript later | Script error test | |
-| 4 | Physics: bodies, shapes, layers and masks, gravity | Platformer, Breakout (physics part) | |
+| 4 | Physics: bodies, shapes, layers and masks, gravity | Platformer, Breakout (physics part) | Done; Coin Run and the rebuilt Potion Hunt pass, Breakout next |
 | 5 | Animation: sprite frames, property tracks, timeline | Platformer animation | |
 | 6 | Tilemaps: tilesets, painting, tile collision, Tiled import | Maze chase | |
 | 7 | Scene instancing, groups, signals, resources | Breakout, puzzle, shooter | |
