@@ -12,6 +12,7 @@ import { SceneTree } from './editor/SceneTree';
 import { Files } from './editor/Files';
 import { StarterArt } from './editor/StarterArt';
 import { Guide } from './editor/Guide';
+import { Reference } from './editor/Reference';
 import { Inspector } from './editor/Inspector';
 import { ScriptEditor } from './editor/ScriptEditor';
 import { BottomPanel } from './editor/BottomPanel';
@@ -96,6 +97,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
       if (e.key === 'F5') { e.preventDefault(); run('project'); return; }
       if (e.key === 'F6') { e.preventDefault(); run('scene'); return; }
       if (e.key === 'F8') { e.preventDefault(); store.stop(); return; }
+      if (e.key === 'F1' && !typing) { e.preventDefault(); if (store.reference === null) store.showReference(); else { store.reference = null; store.changed(); } return; }
       if (typing || dialog) return;
       if (mod && k === 'z') { e.preventDefault(); if (e.shiftKey) store.doc?.redo(); else store.doc?.undo(); return; }
       if (mod && k === 'y') { e.preventDefault(); store.doc?.redo(); return; }
@@ -134,6 +136,9 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
       [running?.paused ? 'Resume' : 'Pause', () => store.pause(), '', !running],
       ['Restart', () => store.restart(), '', !running],
       ['Stop', () => store.stop(), 'F8', !running],
+    ],
+    Help: [
+      ['API reference', () => store.showReference(), 'F1'],
     ],
   };
 
@@ -198,13 +203,16 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
           })}
           {running && <div style={{ padding: '5px 10px', fontSize: 12, background: C.bg, color: C.ok, whiteSpace: 'nowrap' }}>▶ {running.scene}{running.paused ? ' (paused)' : ''}</div>}
         </div>
-        <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
           <div style={{ position: 'absolute', inset: 0, visibility: !running && store.tab.kind === 'scene' ? 'visible' : 'hidden' }}>
             <Viewport store={store} onFrameRef={(f) => { frameFns.current = f; }} />
           </div>
-          {!running && <Guide store={store} />}
+          {!running && store.tab.kind === 'scene' && <Guide store={store} />}
           {!running && store.tab.kind === 'script' && <div style={{ position: 'absolute', inset: 0 }}><ScriptEditor key={store.tab.path} store={store} path={store.tab.path} /></div>}
           <div ref={gameBox} data-testid="game-box" style={{ position: 'absolute', inset: 0, display: running ? 'block' : 'none', background: '#000' }} />
+        </div>
+        {store.reference !== null && <Reference store={store} />}
         </div>
       </div>
 

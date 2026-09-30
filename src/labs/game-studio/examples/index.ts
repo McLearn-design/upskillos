@@ -2,6 +2,7 @@
 import type { GameExample } from './types';
 import { potionHunt } from './potionHunt';
 import { platformer } from './platformer';
+import { breakout } from './breakout';
 
 export type { GameExample };
-export const EXAMPLES: GameExample[] = [potionHunt, platformer];
+export const EXAMPLES: GameExample[] = [potionHunt, platformer, breakout];

@@ -6,11 +6,12 @@ import { newProject } from '../core/project';
 import { runSceneCode } from '../core/api';
 import { problems, serialize } from '../core/serialize';
 import { Game, MATH, scriptGlobals, type DrawItem } from '../engine/game';
-import { NODE_CLASSES, Node, type CharacterBody2D, type Node2D } from '../engine/nodes';
+import { NODE_CLASSES, Node, type CharacterBody2D, type Node2D, type RigidBody2D } from '../engine/nodes';
 import { Vec2 } from '../engine/vec2';
 import { EXAMPLES } from './index';
 import { potionHunt } from './potionHunt';
 import { platformer } from './platformer';
+import { breakout } from './breakout';
 import type { GameExample } from './types';
 
 function build(ex: GameExample): Doc {
@@ -227,5 +228,107 @@ describe('Coin Run plays', () => {
     expect(Math.min(...views.map((v) => v.x))).toBeCloseTo(160, 3);
     expect(Math.max(...views.map((v) => v.x))).toBeCloseTo(920, 3);
     expect(Math.max(...views.map((v) => v.y))).toBeCloseTo(180, 3);   // the bottom of the level is the bottom of the view
+  });
+});
+
+describe('Breakout plays', () => {
+  const DT = 1 / 60;
+  const steps = (game: Game, n: number) => { for (let i = 0; i < n; i++) game.step(DT); };
+  type BallScript = RigidBody2D & { launched: boolean; lives: number; left: number; score: number };
+  async function start() {
+    const r = await play(build(breakout));
+    return { ...r, ball: r.game.root.get<BallScript>('Ball'), paddle: r.game.root.get<CharacterBody2D>('Paddle'), bricks: () => r.game.root.get('Bricks').children as Node2D[] };
+  }
+
+  it('starts with the HUD, and the ball sits on the paddle and follows it until Space', async () => {
+    const { game, texts, errors, ball, paddle } = await start();
+    expect(texts()).toEqual(['Score: 0', 'Balls: 3', 'Press Space to launch']);
+    game.input.key('ArrowRight', true);
+    steps(game, 30);
+    expect(paddle.position.x).toBeCloseTo(480 + 480 * 0.5, 9);   // 480 px/s for half a second
+    expect(ball.position.x).toBeCloseTo(paddle.position.x, 9);
+    expect(ball.position.y).toBeCloseTo(477, 9);
+    expect(errors).toEqual([]);
+  });
+
+  it('Space launches it at 20° from straight up, and it keeps exactly 360 px/s through every bounce', async () => {
+    const { game, texts, ball } = await start();
+    game.input.key('Space', true); game.step(DT); game.input.key('Space', false);
+    expect(ball.launched).toBe(true);
+    expect(texts()).toEqual(['Score: 0', 'Balls: 3']);
+    const a = (20 * Math.PI) / 180;
+    expect(ball.velocity.x).toBeCloseTo(360 * Math.sin(a), 9);
+    expect(ball.velocity.y).toBeCloseTo(-360 * Math.cos(a), 9);
+    for (let i = 0; i < 300 && ball.launched; i++) { game.step(DT); if (ball.launched) expect(ball.velocity.length()).toBeCloseTo(360, 9); }
+  });
+
+  it('the ball breaks the first brick it reaches: 47 left, score 10', async () => {
+    const { game, texts, ball, bricks } = await start();
+    game.input.key('Space', true);
+    for (let i = 0; i < 120 && ball.score === 0; i++) game.step(DT);
+    game.step(DT);   // freed at the end of the frame
+    expect(bricks()).toHaveLength(47);
+    expect(ball.left).toBe(47);
+    expect(texts()[0]).toBe('Score: 10');
+  });
+
+  it('where it lands on the paddle aims it: half-way to the right end sends it 30° right', async () => {
+    const { game, ball, paddle } = await start();
+    ball.launched = true;
+    ball.position = { x: paddle.position.x + 26, y: 470 };
+    ball.velocity = { x: 0, y: 360 };
+    for (let i = 0; i < 10 && ball.velocity.y > 0; i++) game.step(DT);
+    const a = (30 * Math.PI) / 180;
+    expect(ball.velocity.x).toBeCloseTo(360 * Math.sin(a), 6);
+    expect(ball.velocity.y).toBeCloseTo(-360 * Math.cos(a), 6);
+  });
+
+  it('a missed ball costs a life and goes back on the paddle; after three, game over and Space does nothing', async () => {
+    const { game, texts, ball, paddle } = await start();
+    for (let life = 2; life >= 0; life--) {
+      ball.launched = true;
+      ball.position = { x: 100, y: 540 };        // far from the paddle, falling
+      ball.velocity = { x: 0, y: 360 };
+      steps(game, 20);
+      expect(ball.lives).toBe(life);
+      expect(texts()[1]).toBe(`Balls: ${life}`);
+    }
+    expect(texts()[2]).toBe('Game over. Press \u21bb to play again.');
+    game.input.key('Space', true); steps(game, 2);
+    expect(ball.launched).toBe(false);
+    expect(ball.position.x).toBeCloseTo(paddle.position.x, 9);
+  });
+
+  it('the paddle stops at the left wall: 0 + half its width, 52', async () => {
+    const { game, paddle } = await start();
+    game.input.key('ArrowLeft', true);
+    steps(game, 120);
+    expect(paddle.position.x).toBeCloseTo(52, 9);
+    expect(paddle.isOnWall()).toBe(true);
+  });
+
+  it('collision layers: the paddle\u2019s mask does not include the ball\u2019s layer, so the ball never blocks it', async () => {
+    const { game, ball, paddle } = await start();
+    ball.launched = true;
+    ball.position = { x: 560, y: 500 };           // right beside the paddle, not moving
+    ball.velocity = { x: 0, y: 0 };
+    game.input.key('ArrowRight', true);
+    steps(game, 20);
+    expect(paddle.position.x).toBeCloseTo(480 + 480 * 20 / 60, 9);
+  });
+
+  it('breaking all 48 bricks shows "You cleared the wall!" and the ball rests on the paddle', async () => {
+    const { game, texts, errors, ball, bricks } = await start();
+    ball.launched = true;
+    // From the bottom row up, fire the ball at each brick from just below it.
+    for (const b of [...bricks()].reverse()) {
+      ball.position = { x: b.position.x, y: b.position.y + 16 + 8 + 2 };
+      ball.velocity = { x: 0, y: -360 };
+      steps(game, 2);
+    }
+    expect(bricks()).toHaveLength(0);
+    expect(texts()).toEqual(['Score: 480', 'Balls: 3', 'You cleared the wall!']);
+    expect(ball.launched).toBe(false);
+    expect(errors).toEqual([]);
   });
 });

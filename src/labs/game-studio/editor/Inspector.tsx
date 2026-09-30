@@ -109,7 +109,16 @@ export function Inspector({ store }: { store: Store }) {
         <span style={{ fontSize: 15 }}>{nodeType(n.type).icon}</span>
         <div style={{ flex: 1 }}><TextField testid="node-name" value={n.name} onCommit={(v) => store.act((d) => d.rename(s.id, n.id, v))} /></div>
       </div>
-      <div title={nodeType(n.type).help} style={{ padding: '0 8px 6px', color: C.faint }}>{lineage(n.type).map((t) => t.type).join(' › ')}</div>
+      <div title={nodeType(n.type).help} style={{ padding: '0 8px 6px', color: C.faint, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+        {lineage(n.type).map((t, i) => (
+          <React.Fragment key={t.type}>
+            {i > 0 && <span>›</span>}
+            <span role="link" data-testid={`inspector-ref-${t.type}`} title={`${t.type} in the API reference`} onClick={() => store.showReference(t.type)} style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}>{t.type}</span>
+          </React.Fragment>
+        ))}
+        <span style={{ flex: 1 }} />
+        <button type="button" onClick={() => store.showReference(n.type)} title="What a script can do with this node: the API reference" style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 9, color: C.dim, cursor: 'pointer', fontSize: 11, padding: '0 6px' }}>?</button>
+      </div>
       {running && <div style={{ margin: '0 8px 6px', color: C.live, fontSize: 11 }}>Purple values are the running game&apos;s. They are not saved: stopping the game puts the editor&apos;s values back in charge.</div>}
       {lineage(n.type).filter((t) => t.props.length).map((t) => (
         <Section key={t.type} title={SECTION[t.type] ?? t.type}>{t.props.map(control)}</Section>

@@ -372,3 +372,8 @@ Recorded during Phase 1 (2026-09-30). None of them change a boundary.
 10. **"Just pressed" in `physicsUpdate` means since the last physics step (ADR 4).** Frames and physics steps
    run at different rates, so the input keeps a second set of "just" presses and releases, cleared after each
    physics step, and `physicsUpdate` reads that one. This is Godot's rule too.
+11. **The API reference is the one description of the Game API (ADR 5).** `core/apiReference.ts` describes every
+   class, member and global. The Reference panel shows it, the script editor's types are generated from it, and
+   a test checks it against the real engine both ways. So the rule "the engine API is the only surface user code
+   sees" is checked, not just stated. The script editor loads JavaScript's own types but not the browser's DOM,
+   because scripts do not use the DOM, and its `Node` type hid the engine's.

@@ -27,10 +27,18 @@ export function ScriptEditor({ store, path }: { store: Store; path: string }) {
 
   const onMount: OnMount = (editor, monaco) => {
     ed.current = editor;
+    // For browser tests, in development only (like window.__gameStudio).
+    if (import.meta.env?.DEV) (window as unknown as { __gameStudioMonaco?: unknown }).__gameStudioMonaco = monaco;
     if (!typesAdded) {
       typesAdded = true;
       monaco.languages.typescript.javascriptDefaults.addExtraLib(ENGINE_DTS, 'file:///game-studio-engine.d.ts');
-      monaco.languages.typescript.javascriptDefaults.setCompilerOptions({ target: monaco.languages.typescript.ScriptTarget.ES2020, allowNonTsExtensions: true, checkJs: false, module: monaco.languages.typescript.ModuleKind.ESNext });
+      // JavaScript itself and the Game API, but not the browser's DOM: scripts do not use it, and its
+      // own Node type would hide the engine's Node from completion and hover. checkJs underlines a
+      // misspelt name (this.isOnFlor()) before the game runs; the example scripts check clean.
+      // Monaco checks only syntax in JavaScript unless told otherwise. The "could be typed" hints are
+      // noise in plain JavaScript, so they are off.
+      monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({ noSemanticValidation: false, noSyntaxValidation: false, noSuggestionDiagnostics: true });
+      monaco.languages.typescript.javascriptDefaults.setCompilerOptions({ target: monaco.languages.typescript.ScriptTarget.ES2020, lib: ['es2020'], allowNonTsExtensions: true, checkJs: true, module: monaco.languages.typescript.ModuleKind.ESNext });
     }
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => { store.saveScript(path); });
     if (store.reveal?.path === path) {
@@ -41,8 +49,9 @@ export function ScriptEditor({ store, path }: { store: Store; path: string }) {
 
   return (
     <div data-testid="script-editor" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '3px 8px', fontSize: 11, color: C.faint, borderBottom: `1px solid ${C.border}`, fontFamily: C.mono }}>
-        {path}{store.isScriptDirty(path) ? '  ● unsaved (Ctrl/Cmd+S)' : '  saved'}
+      <div style={{ display: 'flex', padding: '3px 8px', fontSize: 11, color: C.faint, borderBottom: `1px solid ${C.border}`, fontFamily: C.mono }}>
+        <span style={{ flex: 1 }}>{path}{store.isScriptDirty(path) ? '  ● unsaved (Ctrl/Cmd+S)' : '  saved'}</span>
+        <span role="link" data-testid="script-reference" onClick={() => store.showReference()} title="Every class, method and global a script can use" style={{ color: C.accent, cursor: 'pointer', fontFamily: 'system-ui, sans-serif' }}>API reference</span>
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>
         <Editor

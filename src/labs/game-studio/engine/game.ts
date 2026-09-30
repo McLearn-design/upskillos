@@ -300,7 +300,7 @@ export function applyProps(node: Node, type: string, props: Record<string, PropV
 
 /** The globals a script sees (ADR 4). */
 export function scriptGlobals(game: Game): Record<string, unknown> {
-  return { input: game.input, scene: game.sceneApi, time: game.time, math: MATH, physics: { gravity: game.gravity }, Vec2, ...NODE_CLASSES };
+  return { input: game.input, scene: game.sceneApi, time: game.time, math: MATH, physics: { gravity: game.gravity }, Vec2, PhysicsBody2D, ...NODE_CLASSES };
 }
 
 /** Small maths helpers scripts use all the time. */

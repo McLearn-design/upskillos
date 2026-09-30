@@ -124,6 +124,11 @@ export class Store {
   /** The example whose guide is showing, if the project came from one. */
   guide: GameExample | null = null;
 
+  /** The API reference entry showing beside the viewport: '' for its contents, null when it is closed. */
+  reference: string | null = null;
+
+  showReference(name = ''): void { this.reference = name; this.changed(); }
+
   /**
    * Start a new project from an example: its images come from the starter art, then its
    * code runs as one command, so GUI → code shows exactly how it was built.

@@ -207,24 +207,100 @@ long, collect ten coins, reach the flag; fall down a gap and you go back to the 
 
 The browser test opens it, runs it and plays it with the arrow keys and Space.
 
-**Totals now:** `npx vitest run src/labs/game-studio` passes 54 tests in 5 files; `npm run game:acceptance`
-passes 15/15, 9/9 and 6/6.
+**Totals then:** `npx vitest run src/labs/game-studio` passed 54 tests in 5 files; `npm run game:acceptance`
+passed 15/15, 9/9 and 6/6. After the API reference and Breakout below: 71 tests in 6 files, and 15/15, 9/9, 8/8 and 10/10.
 
 **Browser test fixes found on the way:** the site's welcome tour popup could appear part-way through a test
 and cover the button it clicked; the harness now marks the tour as seen before the page loads. When a
 browser test fails, the harness saves a screenshot to the system temp folder and prints its path.
 Phase 1's key-move step holds the key 1.2 s, because headless Chromium's frames are uneven.
 
+## Done: the API reference, and the script editor's help (2026-09-30)
+
+**What it is:** Help › API reference (F1), docked beside the viewport. It covers every class, property,
+method and global a script can use. Each entry gives:
+- what it does, and Godot's name for it;
+- a short example script, with a Copy button;
+- the Inspector properties it has, marked as such;
+- links to the classes it extends.
+
+A search finds names, Godot names, descriptions and examples (`move_and_slide` finds `moveAndSlide`). The
+contents page explains how a script works and how Godot's names map. It also documents the Scene API, the
+language GUI → code writes. The Inspector links each node type to its entry, and the script editor has an
+API reference link.
+
+**One source:** `core/apiReference.ts` holds the reference. Inspector properties come from the node registry,
+with its help text, so the Inspector and the reference cannot disagree. The script editor's completion and
+hover types are generated from it (architecture doc, change 11).
+
+**Tested:** `core/apiReference.test.ts` checks it against the real engine, both ways:
+- every entry and member exists;
+- nothing a script can reach is missing (a short list of engine internals is named in the test);
+- every script global is covered;
+- each class extends what the engine's class extends;
+- the Scene API entries match the real project, scene and node handles;
+- the generated types compile;
+- every example in the reference, and every example game's scripts, type-check against them;
+- a misspelt method is caught.
+
+`e2e/reference.acceptance.mjs` checks it in a browser:
+- F1, an entry, a search by Godot name, and the Inspector's links;
+- hover in the script editor shows the reference's text;
+- an example script has nothing underlined, and `this.queueFre()` is underlined with "Did you mean
+  'queueFree'?".
+
+**Problems it found and fixed:**
+- **Hover and completion were broken for every node method from Node.** The script editor loaded the
+  browser's own types, whose `Node` clashed with the engine's. So `this.queueFree()`, `this.path` and
+  `this.children` had no help. The editor now loads JavaScript's types without the browser's, and `console`
+  is declared as part of the API.
+- **The script editor never underlined mistakes.** Monaco checks only syntax in JavaScript unless told
+  otherwise. It now checks names and types too, with the noisy "could be typed" hints off.
+- **The example guide covered the script editor.** It now shows only over the scene view.
+- **Scripts could not refer to PhysicsBody2D,** for example `body instanceof PhysicsBody2D`. It is now a
+  script global.
+
+**This finishes most of Phase 3.** Hover documentation is in, and mistakes are underlined before Run. Still
+to do: a browser test for a script error at run time with click-to-source.
+
+## Done: the third example, Breakout (2026-09-30)
+
+**What it is:** from Kenney's Puzzle Pack 2. Bat the ball into a wall of 48 bricks with the paddle, and clear
+them with three balls. Where the ball lands on the paddle aims it.
+
+**What it shows** (`examples/breakout.ts`):
+- a RigidBody2D that moves by itself, with `gravityScale` 0 and `bounce` 1;
+- `onCollision(body, normal)`, used both to break bricks and to steer the ball off the paddle;
+- collision layers: the ball is on layer 2 and collides with layer 1; the paddle's mask leaves out layer 2,
+  so the ball never blocks it;
+- a game with no camera, where the world is the screen;
+- high-resolution art brought down to size with `scale`.
+
+**Tested** headlessly:
+- the HUD at the start;
+- the ball follows the paddle until Space;
+- the launch angle, and exactly 360 px/s kept through 300 frames of bouncing;
+- the first brick breaks (47 left, score 10);
+- landing half-way to the paddle's end sends it 30° right;
+- three misses end the game, and Space then does nothing;
+- the paddle stops at the wall at x = 52;
+- the ball never blocks the paddle;
+- all 48 bricks give "You cleared the wall!".
+
+Its scripts also type-check against the API reference, and the browser test opens it and plays it.
+
+**Fixed on the way:** the starter art's Puzzle Pack had no balls, although the credits said it did. The
+pack keeps them in colour subfolders, which the first import missed. All 40 (black, blue, grey, yellow) are
+in `starter/puzzle-pack/balls/` now, from the same Kenney download (its licence file is unchanged).
+
+**Phase 4 is now proven** by all three examples: Potion Hunt, Coin Run and Breakout.
+
 ## Next
 
-1. **Breakout**, from the Puzzle Pack: a RigidBody2D ball with `bounce` 1 and `gravityScale` 0, a paddle, and
-   bricks that disappear when hit (`onCollision`). It finishes Phase 4's "proven by".
-2. **Phase 3, the script editor.** Most of it is already in: tabs, the unsaved marker, errors at their line,
-   the console, and Monaco's own search and replace. Still to do: a script error test in the browser, and
-   hover documentation from the API types.
-3. **Phase 5, animation**: sprite frames and an AnimatedSprite2D, so Coin Run's walk no longer needs a
+1. **Phase 3, the script editor:** a browser test for a run-time script error and click-to-source.
+2. **Phase 5, animation**: sprite frames and an AnimatedSprite2D, so Coin Run's walk no longer needs a
    script swapping textures.
-4. **Phase 6, tilemaps**: Coin Run and Potion Hunt lay hundreds of Sprite2Ds; a TileMap will replace them.
+3. **Phase 6, tilemaps**: Coin Run and Potion Hunt lay hundreds of Sprite2Ds; a TileMap will replace them.
    Then a maze chase.
 
 ## Phases
@@ -234,8 +310,8 @@ Phase 1's key-move step holds the key 1.2 s, because headless Chromium's frames 
 | 0 | Architecture decisions, licence check | This record | Done |
 | 1 | Model, editor shell, commands, undo, code log, image assets, Sprite/Node2D/CharacterBody2D (no collision), scripts, input, iframe runtime, IndexedDB, the Kenney starter set | The Phase 1 acceptance test | Done |
 | 2 | Camera, more node types, asset browser, drag-and-drop, project settings | Phase 2 browser test | Done |
-| 3 | Script editor completeness, Output with click-to-source, TypeScript later | Script error test | |
-| 4 | Physics: bodies, shapes, layers and masks, gravity | Platformer, Breakout (physics part) | Done; Coin Run and the rebuilt Potion Hunt pass, Breakout next |
+| 3 | Script editor completeness, Output with click-to-source, TypeScript later | Script error test | Mostly done: API reference, hover docs, underlined mistakes; the run-time error test is left |
+| 4 | Physics: bodies, shapes, layers and masks, gravity | Platformer, Breakout (physics part) | Done: Potion Hunt, Coin Run and Breakout all pass |
 | 5 | Animation: sprite frames, property tracks, timeline | Platformer animation | |
 | 6 | Tilemaps: tilesets, painting, tile collision, Tiled import | Maze chase | |
 | 7 | Scene instancing, groups, signals, resources | Breakout, puzzle, shooter | |
