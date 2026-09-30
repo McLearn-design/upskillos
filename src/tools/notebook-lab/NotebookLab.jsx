@@ -1,12 +1,20 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Plus, Trash2, Download, Upload, Link, FileText, ChevronLeft, Pencil, Check, BookOpen } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import {
+  Plus, Trash2, Download, Upload, Link, FileText, ChevronLeft, ChevronRight, ChevronDown,
+  Pencil, Check, CheckCircle2, Circle, CircleDot, RotateCcw,
+} from 'lucide-react'
 import PythonNotebook from '../../components/notebooks/PythonNotebook.jsx'
 import {
   listNotebooks, getNotebook, saveNotebook, deleteNotebook, createNotebook,
 } from './notebookStorage.js'
 import { downloadIpynb, fromIpynb, fetchColabNotebook } from './ipynbConverter.js'
-import mlSeriesData from './series-ml-ds.json'
-import dsaSeriesData from './series-dsa.json'
+import { SERIES, findLesson } from './series.js'
+import {
+  loadSeriesState, setSeriesCollapsed, saveLessonCells, setLessonCompleted,
+  resetLessonCells, lessonStatus, savedLessonCells,
+} from './seriesProgress.js'
+
+const LAST_OPEN_KEY = 'oc-notebook-lab-last'
 
 function timeAgo(ts) {
   const s = Math.floor((Date.now() - ts) / 1000)
@@ -16,9 +24,35 @@ function timeAgo(ts) {
   return `${Math.floor(s / 86400)}d ago`
 }
 
+// Series used to be copied into the notebook list by a "Load series" button.
+// Those copies are now served straight from series.js, so drop them.
+function removeLegacySeriesCopies() {
+  for (const nb of listNotebooks()) {
+    if (/^(ml-ds|dsa)-\d+$/.test(nb.id)) deleteNotebook(nb.id)
+  }
+}
+
+function readLastOpen() {
+  try { return JSON.parse(localStorage.getItem(LAST_OPEN_KEY)) } catch { return null }
+}
+
+function StatusIcon({ status }) {
+  if (status === 'done') return <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+  if (status === 'started') return <CircleDot className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+  return <Circle className="w-3.5 h-3.5 shrink-0 text-slate-600" />
+}
+
 export default function NotebookLab() {
-  const [notebooks, setNotebooks] = useState(() => listNotebooks())
-  const [activeId, setActiveId] = useState(null)
+  const [notebooks, setNotebooks] = useState(() => { removeLegacySeriesCopies(); return listNotebooks() })
+  const [seriesState, setSeriesState] = useState(() => loadSeriesState())
+  // { kind: 'notebook' | 'lesson', id }
+  const [open, setOpen] = useState(() => {
+    const last = readLastOpen()
+    if (last?.kind === 'lesson' && findLesson(last.id)) return last
+    if (last?.kind === 'notebook' && getNotebook(last.id)) return last
+    return null
+  })
+  const [resetCount, setResetCount] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState('')
@@ -29,81 +63,102 @@ export default function NotebookLab() {
   const fileInputRef = useRef(null)
   const nameInputRef = useRef(null)
   const saveTimer = useRef(null)
+  const pendingSave = useRef(null)
+  const lastPassed = useRef('')
 
-  const active = notebooks.find(n => n.id === activeId) ?? null
+  const activeNotebook = open?.kind === 'notebook' ? notebooks.find(n => n.id === open.id) ?? null : null
+  const activeLesson = open?.kind === 'lesson' ? findLesson(open.id) : null
+  const openKey = open ? `${open.kind}:${open.id}` : null
 
   const refresh = () => setNotebooks(listNotebooks())
 
-  const openNotebook = (id) => {
-    setActiveId(id)
+  const flushSave = useCallback(() => {
+    clearTimeout(saveTimer.current)
+    const job = pendingSave.current
+    pendingSave.current = null
+    job?.()
+  }, [])
+
+  useEffect(() => flushSave, [flushSave])
+
+  const select = (next) => {
+    flushSave()
+    lastPassed.current = ''
+    setOpen(next)
     setEditingName(false)
+    try { localStorage.setItem(LAST_OPEN_KEY, JSON.stringify(next)) } catch { /* ignore */ }
     if (window.innerWidth < 768) setSidebarOpen(false)
   }
+
+  // Cells handed to the notebook when it opens. Only recomputed when a
+  // different notebook opens (or a lesson is reset) — recomputing on every
+  // save would push stale cells back into the editor while the user types.
+  const initialCells = useMemo(() => {
+    if (!open) return undefined
+    if (open.kind === 'lesson') {
+      const found = findLesson(open.id)
+      if (!found) return undefined
+      return savedLessonCells(loadSeriesState(), found.lesson) ?? found.lesson.cells
+    }
+    const nb = getNotebook(open.id)
+    return nb?.cells.length ? nb.cells : undefined
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openKey, resetCount])
+
+  const handleCellsChange = useCallback((cells) => {
+    if (!open) return
+    const target = open
+    pendingSave.current = () => {
+      if (target.kind === 'lesson') {
+        const found = findLesson(target.id)
+        if (found) setSeriesState(saveLessonCells(found.lesson, cells))
+      } else {
+        const nb = getNotebook(target.id)
+        if (nb) { saveNotebook({ ...nb, cells }); refresh() }
+      }
+    }
+    // A newly passed challenge decides progress, so record it straight away.
+    const passedNow = cells.filter(c => c.challengeType && c.testResult?.success).map(c => c.id).join()
+    const justPassed = passedNow !== lastPassed.current && passedNow !== ''
+    lastPassed.current = passedNow
+    clearTimeout(saveTimer.current)
+    if (justPassed) flushSave()
+    else saveTimer.current = setTimeout(flushSave, 800)
+  }, [open, flushSave])
 
   const newNotebook = () => {
     const nb = createNotebook()
     refresh()
-    openNotebook(nb.id)
+    select({ kind: 'notebook', id: nb.id })
   }
 
-  const handleCellsChange = useCallback((cells) => {
-    if (!activeId) return
-    clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => {
-      const nb = getNotebook(activeId)
-      if (nb) { saveNotebook({ ...nb, cells }); refresh() }
-    }, 800)
-  }, [activeId])
-
   const handleDelete = (id) => {
-    if (!confirm('Delete this notebook?')) return
     deleteNotebook(id)
-    if (activeId === id) setActiveId(null)
+    if (open?.kind === 'notebook' && open.id === id) setOpen(null)
     refresh()
   }
 
   const handleRename = () => {
-    const nb = getNotebook(activeId)
+    const nb = getNotebook(open?.id)
     if (!nb) return
     saveNotebook({ ...nb, name: nameInput.trim() || nb.name })
     setEditingName(false)
     refresh()
   }
 
-  const handleLoadSeries = (seriesId) => {
-    const prefix = seriesId === 'ml_ds' ? 'ml-ds-' : 'dsa-'
-    const data = seriesId === 'ml_ds' ? mlSeriesData : dsaSeriesData
-    
-    // Clear existing notebooks with this series prefix to prevent duplicates if clicked twice
-    const existing = listNotebooks()
-    for (const nb of existing) {
-      if (nb.id.startsWith(prefix)) {
-        deleteNotebook(nb.id)
-      }
-    }
-    for (const nb of data) {
-      saveNotebook(nb)
-    }
-    refresh()
-    if (data.length > 0) {
-      openNotebook(data[0].id)
-    }
+  const toggleSeries = (seriesId) => {
+    setSeriesState(setSeriesCollapsed(seriesId, !seriesState.collapsed[seriesId]))
   }
 
-  const handleClearSeries = (seriesId) => {
-    const prefix = seriesId === 'ml_ds' ? 'ml-ds-' : 'dsa-'
-    const existing = listNotebooks()
-    for (const nb of existing) {
-      if (nb.id.startsWith(prefix)) {
-        deleteNotebook(nb.id)
-      }
-    }
-    setActiveId(null)
-    refresh()
+  const resetLesson = () => {
+    clearTimeout(saveTimer.current)
+    pendingSave.current = null
+    setSeriesState(resetLessonCells(open.id))
+    setResetCount(n => n + 1)
   }
 
   const startEdit = () => {
-    setNameInput(active?.name ?? '')
+    setNameInput(activeNotebook?.name ?? '')
     setEditingName(true)
     setTimeout(() => nameInputRef.current?.focus(), 50)
   }
@@ -118,7 +173,7 @@ export default function NotebookLab() {
         const nb = fromIpynb(ipynb, file.name.replace(/\.ipynb$/, ''))
         saveNotebook(nb)
         refresh()
-        openNotebook(nb.id)
+        select({ kind: 'notebook', id: nb.id })
       } catch {
         alert('Could not parse .ipynb file.')
       }
@@ -137,7 +192,7 @@ export default function NotebookLab() {
       const nb = fromIpynb(ipynb, name)
       saveNotebook(nb)
       refresh()
-      openNotebook(nb.id)
+      select({ kind: 'notebook', id: nb.id })
       setColabOpen(false)
       setColabUrl('')
     } catch (e) {
@@ -147,39 +202,93 @@ export default function NotebookLab() {
     }
   }
 
+  // Neighbouring lessons for the prev/next buttons.
+  const lessonNav = useMemo(() => {
+    if (!activeLesson) return null
+    const { series, lesson } = activeLesson
+    const i = series.lessons.findIndex(l => l.id === lesson.id)
+    return { prev: series.lessons[i - 1] ?? null, next: series.lessons[i + 1] ?? null }
+  }, [activeLesson])
+
+  const lessonDone = activeLesson && lessonStatus(seriesState, activeLesson.lesson.id) === 'done'
+
   return (
     <div className="flex h-full bg-slate-950 text-slate-100 overflow-hidden">
 
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
       <aside
         className={`flex flex-col shrink-0 border-r border-slate-800 transition-all duration-200 ${
-          sidebarOpen ? 'w-64' : 'w-0 overflow-hidden'
+          sidebarOpen ? 'w-72' : 'w-0 overflow-hidden'
         }`}
         style={{ background: '#111827' }}
       >
-        {/* Sidebar header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 shrink-0">
-          <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">Notebooks</span>
-          <button
-            onClick={newNotebook}
-            title="New notebook"
-            className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto pb-20">
 
-        {/* Notebook list */}
-        <div className="flex-1 overflow-y-auto py-1">
+          {/* Series */}
+          <p className="px-4 pt-3 pb-1 text-[11px] font-black uppercase tracking-widest text-slate-400">Series</p>
+          {SERIES.map(series => {
+            const collapsed = !!seriesState.collapsed[series.id]
+            const done = series.lessons.filter(l => lessonStatus(seriesState, l.id) === 'done').length
+            return (
+              <div key={series.id} className="mb-1">
+                <button
+                  onClick={() => toggleSeries(series.id)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-slate-800 transition-colors"
+                  title={collapsed ? 'Show lessons' : 'Hide lessons'}
+                >
+                  {collapsed
+                    ? <ChevronRight className="w-4 h-4 shrink-0 text-slate-500" />
+                    : <ChevronDown className="w-4 h-4 shrink-0 text-slate-500" />}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[13px] font-semibold text-slate-200 truncate">{series.title}</span>
+                      <span className="text-[10px] text-slate-500 shrink-0">{done}/{series.lessons.length}</span>
+                    </div>
+                    <div className="mt-1 h-1 rounded bg-slate-800 overflow-hidden">
+                      <div className="h-full bg-emerald-500" style={{ width: `${(done / series.lessons.length) * 100}%` }} />
+                    </div>
+                  </div>
+                </button>
+                {!collapsed && series.lessons.map(lesson => {
+                  const isActive = open?.kind === 'lesson' && open.id === lesson.id
+                  return (
+                    <button
+                      key={lesson.id}
+                      onClick={() => select({ kind: 'lesson', id: lesson.id })}
+                      className={`w-full flex items-center gap-2 pl-8 pr-3 py-1.5 text-left transition-colors border-l-2 ${
+                        isActive ? 'bg-indigo-600/20 border-indigo-500' : 'hover:bg-slate-800 border-transparent'
+                      }`}
+                    >
+                      <StatusIcon status={lessonStatus(seriesState, lesson.id)} />
+                      <span className="text-[10px] tabular-nums text-slate-500 w-5 shrink-0">{lesson.number}</span>
+                      <span className="text-[12px] truncate text-slate-300">{lesson.title}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })}
+
+          {/* User notebooks */}
+          <div className="flex items-center justify-between px-4 pt-4 pb-1 border-t border-slate-800 mt-2">
+            <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">My notebooks</span>
+            <button
+              onClick={newNotebook}
+              title="New notebook"
+              className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
           {notebooks.length === 0 && (
-            <p className="px-4 py-6 text-xs text-slate-500 text-center">No notebooks yet.<br />Click + to create one.</p>
+            <p className="px-4 py-3 text-xs text-slate-500">No notebooks yet. Click + to create one.</p>
           )}
           {notebooks.map(nb => (
             <div
               key={nb.id}
-              onClick={() => openNotebook(nb.id)}
+              onClick={() => select({ kind: 'notebook', id: nb.id })}
               className={`group flex items-start gap-2 px-3 py-2.5 cursor-pointer transition-colors ${
-                nb.id === activeId
+                open?.kind === 'notebook' && nb.id === open.id
                   ? 'bg-indigo-600/20 border-l-2 border-indigo-500'
                   : 'hover:bg-slate-800 border-l-2 border-transparent'
               }`}
@@ -191,88 +300,52 @@ export default function NotebookLab() {
               </div>
               <button
                 onClick={e => { e.stopPropagation(); handleDelete(nb.id) }}
+                title="Delete notebook"
                 className="shrink-0 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-900/40 hover:text-red-400 text-slate-500 transition-all"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
           ))}
-        </div>
 
-        <div className="shrink-0 border-t border-slate-800 p-3 space-y-1.5">
-          <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider mb-2 px-1">Curated Series</p>
-          <div className="flex gap-1">
+          <div className="px-3 pt-3 space-y-1.5">
             <button
-              onClick={() => handleLoadSeries('ml_ds')}
-              className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-700 transition-colors"
-              title="Load the Machine Learning Series"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-700 transition-colors"
             >
-              <BookOpen className="w-3.5 h-3.5" /> Load ML Series
+              <Upload className="w-3.5 h-3.5" /> Upload .ipynb
             </button>
             <button
-              onClick={() => handleClearSeries('ml_ds')}
-              className="shrink-0 flex items-center justify-center px-2 py-2 rounded-lg text-xs font-medium text-slate-500 hover:bg-red-900/40 hover:text-red-400 transition-colors"
-              title="Remove ML Series from Notebooks"
+              onClick={() => setColabOpen(o => !o)}
+              className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-700 transition-colors"
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <Link className="w-3.5 h-3.5" /> Import from URL
             </button>
+            <input ref={fileInputRef} type="file" accept=".ipynb" className="hidden" onChange={handleUpload} />
           </div>
-          <div className="flex gap-1">
-            <button
-              onClick={() => handleLoadSeries('dsa')}
-              className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-700 transition-colors"
-              title="Load the DSA & Design Patterns Series"
-            >
-              <BookOpen className="w-3.5 h-3.5" /> Load DSA Series
-            </button>
-            <button
-              onClick={() => handleClearSeries('dsa')}
-              className="shrink-0 flex items-center justify-center px-2 py-2 rounded-lg text-xs font-medium text-slate-500 hover:bg-red-900/40 hover:text-red-400 transition-colors"
-              title="Remove DSA Series from Notebooks"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
 
-        {/* Sidebar footer: import buttons */}
-        <div className="shrink-0 border-t border-slate-800 p-3 space-y-1.5">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-700 transition-colors"
-          >
-            <Upload className="w-3.5 h-3.5" /> Upload .ipynb
-          </button>
-          <button
-            onClick={() => setColabOpen(o => !o)}
-            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-700 transition-colors"
-          >
-            <Link className="w-3.5 h-3.5" /> Import from URL
-          </button>
-          <input ref={fileInputRef} type="file" accept=".ipynb" className="hidden" onChange={handleUpload} />
+          {/* Colab/URL import panel */}
+          {colabOpen && (
+            <div className="p-3 space-y-2">
+              <p className="text-[10px] text-slate-400">Paste a GitHub .ipynb URL or download from Colab and upload:</p>
+              <input
+                value={colabUrl}
+                onChange={e => setColabUrl(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleColabImport()}
+                placeholder="https://github.com/…/file.ipynb"
+                className="w-full text-xs px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-200 outline-none focus:border-indigo-500"
+              />
+              {colabError && <p className="text-[10px] text-red-400">{colabError}</p>}
+              <button
+                onClick={handleColabImport}
+                disabled={colabLoading}
+                className="w-full py-1.5 text-xs font-semibold rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+              >
+                {colabLoading ? 'Importing…' : 'Import'}
+              </button>
+            </div>
+          )}
         </div>
-
-        {/* Colab/URL import panel */}
-        {colabOpen && (
-          <div className="shrink-0 border-t border-slate-800 p-3 space-y-2">
-            <p className="text-[10px] text-slate-400">Paste a GitHub .ipynb URL or download from Colab and upload:</p>
-            <input
-              value={colabUrl}
-              onChange={e => setColabUrl(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleColabImport()}
-              placeholder="https://github.com/…/file.ipynb"
-              className="w-full text-xs px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-200 outline-none focus:border-indigo-500"
-            />
-            {colabError && <p className="text-[10px] text-red-400">{colabError}</p>}
-            <button
-              onClick={handleColabImport}
-              disabled={colabLoading}
-              className="w-full py-1.5 text-xs font-semibold rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-colors"
-            >
-              {colabLoading ? 'Importing…' : 'Import'}
-            </button>
-          </div>
-        )}
       </aside>
 
       {/* ── Main area ───────────────────────────────────────────────────── */}
@@ -288,7 +361,51 @@ export default function NotebookLab() {
             <ChevronLeft className={`w-4 h-4 transition-transform ${sidebarOpen ? '' : 'rotate-180'}`} />
           </button>
 
-          {active && (
+          {activeLesson && (
+            <>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] uppercase tracking-wider text-slate-500 truncate">
+                  {activeLesson.series.title} · Lesson {activeLesson.lesson.number} of {activeLesson.series.lessons.length}
+                </p>
+                <p className="text-sm font-semibold text-slate-200 truncate">{activeLesson.lesson.title}</p>
+              </div>
+              <button
+                onClick={() => lessonNav.prev && select({ kind: 'lesson', id: lessonNav.prev.id })}
+                disabled={!lessonNav.prev}
+                title="Previous lesson"
+                className="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-white disabled:opacity-30 transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => lessonNav.next && select({ kind: 'lesson', id: lessonNav.next.id })}
+                disabled={!lessonNav.next}
+                title="Next lesson"
+                className="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-white disabled:opacity-30 transition-colors"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setSeriesState(setLessonCompleted(activeLesson.lesson.id, !lessonDone))}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                  lessonDone
+                    ? 'bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" /> {lessonDone ? 'Completed' : 'Mark complete'}
+              </button>
+              <button
+                onClick={resetLesson}
+                title="Restore the lesson's original code (keeps your progress)"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Reset
+              </button>
+            </>
+          )}
+
+          {activeNotebook && (
             <>
               {editingName ? (
                 <div className="flex items-center gap-1 flex-1">
@@ -308,25 +425,31 @@ export default function NotebookLab() {
                   onClick={startEdit}
                   className="flex items-center gap-1.5 text-sm font-semibold text-slate-200 hover:text-white group"
                 >
-                  {active.name}
+                  {activeNotebook.name}
                   <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" />
                 </button>
               )}
-
               <div className="flex-1" />
-
-              <button
-                onClick={() => downloadIpynb(active)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
-              >
-                <Download className="w-3.5 h-3.5" /> Download .ipynb
-              </button>
             </>
           )}
 
-          {!active && (
+          {(activeNotebook || activeLesson) && (
+            <button
+              onClick={() => downloadIpynb(activeNotebook ?? {
+                id: activeLesson.lesson.id,
+                name: activeLesson.lesson.title,
+                cells: savedLessonCells(seriesState, activeLesson.lesson) ?? activeLesson.lesson.cells,
+              })}
+              title="Download .ipynb"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" /> .ipynb
+            </button>
+          )}
+
+          {!activeNotebook && !activeLesson && (
             <>
-              <span className="text-sm text-slate-500 flex-1">Select or create a notebook</span>
+              <span className="text-sm text-slate-500 flex-1">Pick a lesson or create a notebook</span>
               <button
                 onClick={newNotebook}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
@@ -337,21 +460,35 @@ export default function NotebookLab() {
           )}
         </div>
 
-        {/* Notebook content */}
+        {/* Notebook content. Bottom padding keeps the end of the notebook
+            clear of the app's floating dock. */}
         <div className="flex-1 min-h-0 overflow-auto bg-white dark:bg-slate-950">
-          {active ? (
-            <PythonNotebook
-              key={active.id}
-              params={{ initialCells: active.cells.length ? active.cells : undefined }}
-              onCellsChange={handleCellsChange}
-            />
+          {activeNotebook || activeLesson ? (
+            <div className="pb-24">
+              <PythonNotebook
+                key={`${openKey}:${resetCount}`}
+                params={{ initialCells }}
+                onCellsChange={handleCellsChange}
+              />
+              {activeLesson && lessonNav.next && (
+                <div className="px-6 pt-2">
+                  <button
+                    onClick={() => select({ kind: 'lesson', id: lessonNav.next.id })}
+                    className="flex items-center gap-2 ml-auto px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors"
+                  >
+                    Next: {lessonNav.next.title} <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-full gap-5 text-center p-8">
               <span className="text-5xl">📓</span>
               <div>
                 <p className="text-lg font-bold text-slate-700 dark:text-slate-200 mb-1">Notebook Lab</p>
                 <p className="text-sm text-slate-400 max-w-sm">
-                  Create notebooks, run Python, download as .ipynb, upload from Jupyter or Colab.
+                  Work through a series from the sidebar, or create notebooks, run Python,
+                  download as .ipynb and upload from Jupyter or Colab.
                 </p>
               </div>
               <div className="flex gap-3">

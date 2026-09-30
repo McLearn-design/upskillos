@@ -938,7 +938,7 @@ function fixPythonBrokenStrings(src) {
   return out.join("\n");
 }
 
-export default function PythonNotebook({ params, onParamChange }) {
+export default function PythonNotebook({ params, onParamChange, onCellsChange }) {
   const C = useThemeColors();
   const { themeStyles } = useGlobalTheme();
   const monacoTheme = themeStyles?.monaco || (C.dark ? "open-calc-dark" : "open-calc-light");
@@ -973,6 +973,18 @@ export default function PythonNotebook({ params, onParamChange }) {
       setCells(normalizeCells(params.initialCells));
     }
   }, [params?.initialCells]);
+
+  // Report edits, run results and test outcomes to a host that persists them
+  // (Notebook Lab). Skips the first render so opening a notebook isn't a save,
+  // and skips while a cell is mid-run so a half-finished state isn't stored.
+  const onCellsChangeRef = useRef(onCellsChange);
+  onCellsChangeRef.current = onCellsChange;
+  const cellsReportedRef = useRef(false);
+  useEffect(() => {
+    if (!cellsReportedRef.current) { cellsReportedRef.current = true; return; }
+    if (cells.some((c) => c.status === "running")) return;
+    onCellsChangeRef.current?.(cells);
+  }, [cells]);
 
   // ── Load Pyodide via Singleton ─────────────────────────────────────────────
   useEffect(() => {
