@@ -9,40 +9,9 @@
 //
 //   npm run game:acceptance        (starts and stops its own dev server)
 
-import { spawn } from 'node:child_process';
-import { chromium } from 'playwright';
+import { withGameStudio } from './harness.mjs';
 
-const PORT = 5197, URL = `http://localhost:${PORT}/#/lab/game-studio`;
-const results = [];
-const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); console.log(`${ok ? '✓' : '✗'} ${name}${detail ? `  (${detail})` : ''}`); };
-
-const server = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], { stdio: 'ignore', detached: true });
-const stopServer = () => { try { process.kill(-server.pid); } catch { /* already gone */ } };
-process.on('exit', stopServer);
-
-async function waitForServer() {
-  for (let i = 0; i < 90; i++) {
-    try { if ((await fetch(`http://localhost:${PORT}/`)).ok) return; } catch { /* not yet */ }
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-  throw new Error('The dev server did not start');
-}
-
-let browser;
-try {
-  await waitForServer();
-  browser = await chromium.launch();
-  const context = await browser.newContext({ viewport: { width: 1500, height: 950 }, permissions: ['clipboard-read', 'clipboard-write'] });
-  const page = await context.newPage();
-  const pageErrors = [];
-  page.on('pageerror', (e) => pageErrors.push(e.message));
-  page.on('dialog', (d) => d.accept());
-  const t = (id) => page.getByTestId(id);
-
-  await page.goto(URL);
-  await t('projects-dialog').waitFor({ timeout: 60000 });
-  const max = page.locator('button[title="Maximize"]');
-  if (await max.count()) await max.first().click();
+const failed = await withGameStudio(5197, async ({ page, t, check }) => {
 
   // 1. Create project
   await t('new-project-name').fill('Acceptance');
@@ -172,15 +141,7 @@ try {
   check('The reopened project runs', true);
   await t('stop').click();
 
-  check('No page errors', pageErrors.length === 0, pageErrors.join(' | '));
-  await page.screenshot({ path: process.env.SCREENSHOT ?? 'game-studio-acceptance.png' });
-} catch (e) {
-  check('The test ran to the end', false, e instanceof Error ? e.message.split('\n')[0] : String(e));
-} finally {
-  await browser?.close();
-  stopServer();
-}
-
-const failed = results.filter((r) => !r.ok).length;
-console.log(`\n${results.length - failed}/${results.length} passed`);
+  // A picture of the end state, only when asked for: SCREENSHOT=/some/where.png
+  if (process.env.SCREENSHOT) await page.screenshot({ path: process.env.SCREENSHOT });
+});
 process.exit(failed ? 1 : 0);

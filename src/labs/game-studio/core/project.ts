@@ -42,12 +42,17 @@ export function checkName(name: string): string | null {
   return null;
 }
 
-/** `wanted`, or `wanted2`, `wanted3`… so it differs from every sibling's name. */
+/**
+ * `wanted`, or the next free name after it, so it differs from every sibling: a name
+ * ending in a number counts on from it, keeping its width (Tile0009 → Tile0010), as
+ * Godot does; any other name gets 2, 3… (Enemy → Enemy2).
+ */
 export function uniqueName(siblings: NodeData[], wanted: string, except?: string): string {
   const taken = new Set(siblings.filter((s) => s.id !== except).map((s) => s.name));
   if (!taken.has(wanted)) return wanted;
-  const base = wanted.replace(/\d+$/, '') || wanted;
-  for (let i = 2; ; i++) if (!taken.has(`${base}${i}`)) return `${base}${i}`;
+  const m = /^(.*?)(\d+)$/.exec(wanted);
+  if (m) for (let i = Number(m[2]) + 1; ; i++) { const name = `${m[1]}${String(i).padStart(m[2].length, '0')}`; if (!taken.has(name)) return name; }
+  for (let i = 2; ; i++) if (!taken.has(`${wanted}${i}`)) return `${wanted}${i}`;
 }
 
 // ── walking the tree ─────────────────────────────────────────────────────

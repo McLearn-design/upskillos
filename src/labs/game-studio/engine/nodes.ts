@@ -94,7 +94,8 @@ export class Node2D extends Node {
   /** Parent's world transform times this node's local one. */
   get worldTransform(): Mat2D {
     let m = local(this._position, this.rotation, this._scale);
-    for (let p = this._parent; p; p = p._parent) if (p instanceof Node2D) m = multiply(local(p._position, p.rotation, p._scale), m);
+    // Up the tree to the scene root, or to a CanvasLayer: its children are placed on the screen.
+    for (let p = this._parent; p && !(p instanceof CanvasLayer); p = p._parent) if (p instanceof Node2D) m = multiply(local(p._position, p.rotation, p._scale), m);
     return m;
   }
 
@@ -112,8 +113,15 @@ export class Node2D extends Node {
 }
 
 function parentWorld(n: Node): Mat2D {
-  for (let p = n._parent; p; p = p._parent) if (p instanceof Node2D) return p.worldTransform;
+  for (let p = n._parent; p && !(p instanceof CanvasLayer); p = p._parent) if (p instanceof Node2D) return p.worldTransform;
   return IDENTITY;
+}
+
+/** Draws its children on the screen, not in the world: a HUD stays put when the camera moves. */
+export class CanvasLayer extends Node {
+  name = 'CanvasLayer';
+  /** Higher layers are drawn over lower ones; every layer is over the world. */
+  layer = 1;
 }
 
 export class Sprite2D extends Node2D {
@@ -123,6 +131,24 @@ export class Sprite2D extends Node2D {
   flipX = false;
   flipY = false;
   opacity = 1;
+}
+
+/** What the player sees. Under the player, it follows. The first current camera in the tree is used. */
+export class Camera2D extends Node2D {
+  name = 'Camera2D';
+  current = true;
+  /** 2 shows everything twice as big. */
+  zoom = 1;
+  /** 0 follows exactly; higher values catch up more gently. */
+  smoothing = 0;
+}
+
+/** Text. Its position is its top-left corner. */
+export class Label extends Node2D {
+  name = 'Label';
+  text = 'Label';
+  fontSize = 24;
+  color = '#ffffff';
 }
 
 export class CharacterBody2D extends Node2D {
@@ -144,7 +170,7 @@ export class CharacterBody2D extends Node2D {
 }
 
 /** The built-in classes, by registry type name. */
-export const NODE_CLASSES: Record<string, typeof Node> = { Node, Node2D, Sprite2D, CharacterBody2D };
+export const NODE_CLASSES: Record<string, typeof Node> = { Node, Node2D, Sprite2D, Camera2D, Label, CanvasLayer, CharacterBody2D };
 
 /** The registered type a runtime node is: its class, or the nearest built-in class it extends. */
 export function nodeTypeOf(n: Node): string {

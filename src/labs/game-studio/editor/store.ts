@@ -62,6 +62,8 @@ export class Store {
   running: { game: RunningGame; scene: string; paused: boolean; live: Record<string, unknown> | null } | null = null;
   output: OutputLine[] = [];
   snap = true;
+  /** The viewport's tool: what dragging a node does (W, E, R). */
+  tool: 'move' | 'rotate' | 'scale' = 'move';
   grid = 16;
   message = '';
   /** The line to show in the script editor, after clicking an error. */
@@ -178,19 +180,34 @@ export class Store {
 
   // ── assets ──────────────────────────────────────────────────────────────
 
+  /** Import an image file the user chose. */
   async importImage(file: File): Promise<string | undefined> {
+    if (!this.doc) return undefined;
+    const base = file.name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+/, '') || 'image.png';
+    let path = `assets/${base}`, k = 2;
+    while (this.doc.project.assets.some((a) => a.path === path)) path = `assets/${base.replace(/(\.[^.]+)$/, `-${k++}$1`)}`;
+    return this.addImage(path, file);
+  }
+
+  /** Add an image from the starter art. If the project already has it, that is used. */
+  async importStarter(path: string, url: string): Promise<string | undefined> {
+    if (!this.doc) return undefined;
+    if (this.doc.project.assets.some((a) => a.path === path)) return path;
+    try { return await this.addImage(path, await (await fetch(url)).blob()); }
+    catch (e) { this.say(e instanceof Error ? e.message : String(e)); return undefined; }
+  }
+
+  /** Check an image loads, record it in the project (a command), and store its bytes. */
+  private async addImage(path: string, blob: Blob): Promise<string | undefined> {
     if (!this.doc || !this.projectId) return undefined;
-    const url = URL.createObjectURL(file);
+    const url = URL.createObjectURL(blob);
     try {
-      const img = await new Promise<HTMLImageElement>((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error(`${file.name} is not an image this browser can read`)); i.src = url; });
-      const base = file.name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+/, '') || 'image.png';
-      let path = `assets/${base}`, k = 2;
-      while (this.doc.project.assets.some((a) => a.path === path)) path = `assets/${base.replace(/(\.[^.]+)$/, `-${k++}$1`)}`;
-      const id = this.act((d) => d.importAsset(path, { mime: file.type || 'image/png', width: img.naturalWidth, height: img.naturalHeight }));
-      if (!id) return undefined;
-      this.blobs.set(id, file);
+      const img = await new Promise<HTMLImageElement>((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error(`${path} is not an image this browser can read`)); i.src = url; });
+      const id = this.act((d) => d.importAsset(path, { mime: blob.type || 'image/png', width: img.naturalWidth, height: img.naturalHeight }));
+      if (!id) { URL.revokeObjectURL(url); return undefined; }
+      this.blobs.set(id, blob);
       this.images.set(id, img);
-      await storage.putAsset(this.projectId, id, file);
+      await storage.putAsset(this.projectId, id, blob);
       this.say(`Imported ${path} (${img.naturalWidth} × ${img.naturalHeight})`);
       return path;
     } catch (e) {

@@ -352,6 +352,11 @@ Recorded during Phase 1 (2026-09-30). None of them change a boundary.
    "Unexpected token" with no line number. So the editor parses every script (with acorn) before Run, and
    reports `file:line:column`, and the game does not start. The runtime checks too, so an exported game
    reports the same way.
+6. **Reparenting keeps the world placement (ADR 8).** Moving a node under another recalculates its local
+   position, rotation and scale so it stays where it is on screen, as in Godot's editor. The logged code is the
+   reparent call followed by those property lines, so replay is still exact.
+7. **Logged numbers are exact (ADR 8).** The log writes each number in the shortest form that reads back as the
+   same value. Rounding to 4 decimal places made replay slightly wrong.
 5. **The browser tests (ADR 14)** are Node scripts using the Playwright library
    (`npm run game:acceptance`), because the repository has no Playwright test runner. Each one starts and
    stops its own dev server.

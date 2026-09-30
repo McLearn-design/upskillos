@@ -1,7 +1,7 @@
 {
   "name": "open-calc",
   "version": "0.1.5",
-  "description": "An open-source interactive STEM learning platform — intuition first, rigor always",
+  "description": "An open-source interactive STEM learning platform \u2014 intuition first, rigor always",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "main": "desktop/app/main.cjs",
@@ -43,7 +43,7 @@
     "check-lessons": "node scripts/check-lesson-roundtrip.mjs",
     "test-challenges": "node scripts/test-lesson-challenges.mjs",
     "game:runtime": "vite build --config src/labs/game-studio/runtime/vite.config.mjs",
-    "game:acceptance": "npm run game:runtime && node src/labs/game-studio/e2e/phase1.acceptance.mjs"
+    "game:acceptance": "npm run game:runtime && node src/labs/game-studio/e2e/phase1.acceptance.mjs && node src/labs/game-studio/e2e/phase2.acceptance.mjs"
   },
   "dependencies": {
     "@babel/parser": "^7.29.2",

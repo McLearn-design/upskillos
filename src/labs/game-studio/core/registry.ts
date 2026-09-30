@@ -59,6 +59,31 @@ const TYPES: NodeTypeDef[] = [
     ],
   },
   {
+    type: 'Camera2D', base: 'Node2D', icon: '🎥', addable: true,
+    help: 'What the player sees. Put it under the player and it follows. The first camera with current on is used.',
+    props: [
+      { name: 'current', type: 'bool', default: true, help: 'Whether this camera is the one used. The first current camera in the tree wins.' },
+      { name: 'zoom', type: 'number', default: 1, min: 0.1, max: 10, step: 0.1, help: 'How close it is. 2 shows everything twice as big (half as much of the world).' },
+      { name: 'smoothing', type: 'number', default: 0, min: 0, max: 30, step: 0.5, help: 'How gently it catches up: 0 follows exactly; around 5 lags a little behind, which feels smooth.' },
+    ],
+  },
+  {
+    type: 'Label', base: 'Node2D', icon: '🔤', addable: true,
+    help: 'Text: a score, a message, a title. Its position is its top-left corner.',
+    props: [
+      { name: 'text', type: 'string', default: 'Label', help: 'The words shown. A script can change it: this.text = `Score: ${score}`.' },
+      { name: 'fontSize', type: 'number', default: 24, min: 4, max: 256, step: 1, help: 'The height of the letters, in pixels.' },
+      { name: 'color', type: 'color', default: '#ffffff', help: 'The colour of the text.' },
+    ],
+  },
+  {
+    type: 'CanvasLayer', base: 'Node', icon: '🗔', addable: true,
+    help: 'Draws its children on the screen, not in the world: they stay put when the camera moves or zooms. Use it for a HUD.',
+    props: [
+      { name: 'layer', type: 'number', default: 1, min: -100, max: 100, step: 1, help: 'Which layer: higher layers are drawn on top of lower ones, and every layer is over the world.' },
+    ],
+  },
+  {
     type: 'CharacterBody2D', base: 'Node2D', icon: '🏃', addable: true,
     help: 'A body you move from a script: set its velocity, then call moveAndSlide() in physicsUpdate. (Collision arrives in Phase 4.)',
     props: [],

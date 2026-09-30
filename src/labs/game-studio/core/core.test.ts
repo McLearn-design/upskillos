@@ -33,6 +33,8 @@ describe('commands', () => {
     const { d, s, player } = sample();
     const again = d.addNode(s.id, 'CharacterBody2D', undefined, { name: 'Player' });
     expect(again.name).toBe('Player2');
+    const t = d.addNode(s.id, 'Sprite2D', undefined, { name: 'Tile0009' });
+    expect([t.name, d.addNode(s.id, 'Sprite2D', undefined, { name: 'Tile0009' }).name]).toEqual(['Tile0009', 'Tile0010']);
     expect(pathOf(d.scene(s.id), d.node(s.id, player.id)!.children[0].id)).toBe('Player/Sprite');
     expect(nodeAt(d.scene(s.id), 'Player/Sprite')!.props.texture).toBe('assets/player.png');
   });
@@ -79,6 +81,19 @@ describe('commands', () => {
     d.setProp(s.id, player.id, 'position', { x: 200, y: 150 });   // what it already is
     expect(d.undoStack.length).toBe(depth);
     expect(d.log.length).toBe(lines);
+  });
+
+  it('moving a node under another keeps it where it is on screen, and the log replays to the same result', () => {
+    const d = new Doc(newProject());
+    const s = d.createScene('scenes/main.scene');
+    const parent = d.addNode(s.id, 'Node2D', undefined, { name: 'Ship', props: { position: { x: 100, y: 50 }, rotation: Math.PI / 2, scale: { x: 2, y: 2 } } });
+    const gun = d.addNode(s.id, 'Node2D', undefined, { name: 'Gun', props: { position: { x: 100, y: 90 } } });
+    d.reparent(s.id, gun.id, parent.id);
+    // World (100, 90) seen from a ship at (100, 50) turned 90° clockwise and doubled: 20 along its x axis.
+    expect(d.node(s.id, gun.id)!.props).toEqual({ position: { x: 20, y: 0 }, rotation: -1.5708, scale: { x: 0.5, y: 0.5 } });
+    const replay = newProject();
+    runSceneCode(replay, d.log.map((l) => l.code).join('\n'));
+    expect(serialize(replay)).toBe(serialize(d.project));
   });
 
   it('know when the project differs from what was saved', () => {

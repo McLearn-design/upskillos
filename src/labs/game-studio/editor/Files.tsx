@@ -3,7 +3,7 @@
 
 import React, { useRef, useState } from 'react';
 import type { Store } from './store';
-import { Btn, C, PanelTitle, useStore } from './kit';
+import { Btn, C, useStore } from './kit';
 import { ASSET_DRAG } from './Viewport';
 
 function Group({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
@@ -42,7 +42,6 @@ export function Files({ store }: { store: Store }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
-      <PanelTitle>FILES</PanelTitle>
       <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 8 }}>
         <Group title="scenes/" action={<Btn small testid="new-scene" onClick={() => setNaming('scene')} title="New scene">+</Btn>}>
           {p.scenes.map((s) => (

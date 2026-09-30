@@ -67,6 +67,29 @@ declare class Sprite2D extends Node2D {
   opacity: number;
 }
 
+/** What the player sees. Under the player, it follows. The first current camera in the tree is used. */
+declare class Camera2D extends Node2D {
+  current: boolean;
+  /** 2 shows everything twice as big. */
+  zoom: number;
+  /** 0 follows exactly; around 5 lags gently behind. */
+  smoothing: number;
+}
+
+/** Text; its position is its top-left corner. */
+declare class Label extends Node2D {
+  text: string;
+  fontSize: number;
+  /** "#rrggbb" */
+  color: string;
+}
+
+/** Its children are drawn on the screen, not in the world: a HUD. */
+declare class CanvasLayer extends Node {
+  /** Higher layers are drawn over lower ones. */
+  layer: number;
+}
+
 /** A body you move from a script: set velocity, then call moveAndSlide(). */
 declare class CharacterBody2D extends Node2D {
   /** Pixels per second. */

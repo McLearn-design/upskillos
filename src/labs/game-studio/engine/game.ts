@@ -17,24 +17,31 @@ import type { NodeData, Project, PropValue, SceneData } from '../core/types';
 import { propsOf } from '../core/registry';
 import { decompose } from '../core/math2d';
 import { Input } from './input';
-import { NODE_CLASSES, Node, Node2D, Sprite2D } from './nodes';
+import { NODE_CLASSES, Camera2D, CanvasLayer, Label, Node, Node2D, Sprite2D } from './nodes';
 import { Vec2 } from './vec2';
 
 export const PHYSICS_DT = 1 / 60;
 
-/** One thing to draw, in world coordinates. */
-export interface DrawItem {
+interface DrawBase {
   id: number;
-  texture: string;
   x: number; y: number; rotation: number; scaleX: number; scaleY: number;
-  flipX: boolean; flipY: boolean; alpha: number;
+  alpha: number;
   /** Drawing order: higher is on top. */
   depth: number;
+  /** On the screen (under a CanvasLayer), not in the world: the camera does not move or zoom it. */
+  screen: boolean;
 }
+/** One thing to draw: an image (centred on x, y) or text (top-left at x, y). */
+export type DrawItem =
+  | (DrawBase & { kind: 'sprite'; texture: string; flipX: boolean; flipY: boolean })
+  | (DrawBase & { kind: 'text'; text: string; fontSize: number; color: string });
+
+/** Where the camera looks: the world point at the centre of the screen, and how close. */
+export interface View { x: number; y: number; zoom: number }
 
 export interface Renderer {
-  /** Everything to draw this frame. Items not in the list are no longer drawn. */
-  frame(items: DrawItem[]): void;
+  /** Everything to draw this frame, and the camera. Items not in the list are no longer drawn. */
+  frame(items: DrawItem[], view: View): void;
 }
 
 export interface ScriptError { message: string; file: string | null; stack: string; node: string; phase: string }
@@ -56,9 +63,15 @@ export class Game {
   private ids = new WeakMap<Node, number>();
   private nextDrawId = 1;
   private started = false;
+  /** Where the camera is looking (it eases toward its target when it has smoothing). */
+  private view: View;
+  private readonly screenSize: { w: number; h: number };
 
   constructor(project: Project, scene: SceneData, private renderer: Renderer, private opts: GameOptions = {}) {
     this.input = new Input(project.input);
+    this.screenSize = { w: project.settings.width, h: project.settings.height };
+    // With no camera, the screen shows the world from (0, 0) to (width, height).
+    this.view = { x: this.screenSize.w / 2, y: this.screenSize.h / 2, zoom: 1 };
     this.root = this.build(scene.root);
     this.root._game = this;
   }
@@ -91,6 +104,7 @@ export class Game {
     this.started = true;
     const readyAll = (n: Node) => { for (const c of n._children) readyAll(c); this.call(n, 'ready'); };
     readyAll(this.root);
+    this.updateCamera(0, true);
     this.draw();
   }
 
@@ -107,6 +121,7 @@ export class Game {
     this.stepDelta = dt;
     this.each((n) => this.call(n, 'update', dt));
     this.flushFree();
+    this.updateCamera(dt);
     this.draw();
     this.input.endFrame();
   }
@@ -147,24 +162,45 @@ export class Game {
     this.freeQueue.clear();
   }
 
-  /** The draw list: every visible Sprite2D with a texture, in world coordinates. */
+  /** The camera in use: the first Camera2D in tree order with current on. */
+  get camera(): Camera2D | null {
+    let found: Camera2D | null = null;
+    this.each((n) => { if (!found && n instanceof Camera2D && n.current) found = n; });
+    return found;
+  }
+
+  /**
+   * Point the view at the camera. With smoothing k, the view closes the gap by a
+   * fraction 1 − e^(−k·dt) each frame: the same easing whatever the frame rate.
+   */
+  private updateCamera(dt: number, snap = false): void {
+    const cam = this.camera;
+    if (!cam) { this.view = { x: this.screenSize.w / 2, y: this.screenSize.h / 2, zoom: 1 }; return; }
+    const target = cam.globalPosition;
+    const f = snap || cam.smoothing <= 0 ? 1 : 1 - Math.exp(-cam.smoothing * dt);
+    this.view = { x: this.view.x + (target.x - this.view.x) * f, y: this.view.y + (target.y - this.view.y) * f, zoom: cam.zoom };
+  }
+
+  /** The draw list: visible sprites with a texture and visible labels, in world (or screen) coordinates. */
   private draw(): void {
     const items: DrawItem[] = [];
     let order = 0;
-    const visit = (n: Node, visible: boolean, z: number) => {
+    const idOf = (n: Node) => { let id = this.ids.get(n); if (id === undefined) { id = this.nextDrawId++; this.ids.set(n, id); } return id; };
+    const visit = (n: Node, visible: boolean, z: number, screen: boolean) => {
       if (n._freed) return;
-      let vis = visible, zz = z;
-      if (n instanceof Node2D) { vis = visible && n.visible; zz = z + n.zIndex; }
-      if (vis && n instanceof Sprite2D && n.texture) {
+      let vis = visible, zz = z, scr = screen;
+      if (n instanceof CanvasLayer) { scr = true; zz = 1e6 * n.layer; }
+      if (n instanceof Node2D) { vis = visible && n.visible; zz = zz + n.zIndex; }
+      if (vis && n instanceof Node2D && ((n instanceof Sprite2D && n.texture) || n instanceof Label)) {
         const t = decompose(n.worldTransform);
-        let id = this.ids.get(n);
-        if (id === undefined) { id = this.nextDrawId++; this.ids.set(n, id); }
-        items.push({ id, texture: n.texture, x: t.position.x, y: t.position.y, rotation: t.rotation, scaleX: t.scale.x, scaleY: t.scale.y, flipX: n.flipX, flipY: n.flipY, alpha: n.opacity, depth: zz + (order++) * 1e-6 });
+        const base = { id: idOf(n), x: t.position.x, y: t.position.y, rotation: t.rotation, scaleX: t.scale.x, scaleY: t.scale.y, depth: zz + (order++) * 1e-6, screen: scr };
+        if (n instanceof Sprite2D) items.push({ ...base, kind: 'sprite', texture: n.texture!, flipX: n.flipX, flipY: n.flipY, alpha: n.opacity });
+        else if (n instanceof Label) items.push({ ...base, kind: 'text', text: String(n.text), fontSize: n.fontSize, color: n.color, alpha: 1 });
       }
-      for (const c of n._children) visit(c, vis, zz);
+      for (const c of n._children) visit(c, vis, zz, scr);
     };
-    visit(this.root, true, 0);
-    this.renderer.frame(items);
+    visit(this.root, true, 0, false);
+    this.renderer.frame(items, { ...this.view });
   }
 
   /** Scripts' `scene` global: the tree from its root. */

@@ -15,7 +15,7 @@ What is done and what is next. The rules are in
   - scripting in Phase 1;
   - GUI → code as a first-class feature.
 
-**Phase 1 is done (2026-09-30), except the Kenney starter set, which is next.** `npm run game:acceptance`
+**Phase 1 is done (2026-09-30).** `npm run game:acceptance`
 passes 15/15 in a real browser, with real clicks and keys and an empty browser profile. It does, in order:
 - create a project, a scene, a node and a sprite;
 - import a PNG and assign it;
@@ -72,20 +72,66 @@ The editor's parts:
 - **Its saved projects** are left in IndexedDB's `projects` store, as ADR 1 says.
 - **A development-only handle:** `window.__gameStudio = { store }`, for browser tests.
 
+## Done: the Kenney starter set and Phase 2 (2026-09-30)
+
+**Starter art** (`src/labs/game-studio/starter/`, 4.0 MB, 871 images) holds five Kenney CC0 packs:
+- Pixel Platformer;
+- Tiny Dungeon;
+- Top-down Shooter;
+- Puzzle Pack 2 (paddles, balls, bricks);
+- UI Pack.
+
+Each pack keeps its own `License.txt`, and `CREDITS.md` lists them. The sound packs wait for the audio node.
+
+In the editor, a **Starter art** tab sits beside Files. Pick a pack and folder, then drag a thumbnail into
+the viewport: the image is added to the project (once) and a Sprite2D appears where you dropped it. Or
+pick several and use "Add to project".
+
+**Phase 2:**
+
+| Feature | What it does |
+|---|---|
+| **Camera2D** | Under a node, it follows it. `current`, `zoom`, and `smoothing` (the view closes 1 − e^(−k·dt) of the gap each frame). The editor draws each camera's frame |
+| **Label** | Text, with `text`, `fontSize` and `color`. Its origin is the top-left corner |
+| **CanvasLayer** | A screen layer, for the HUD. Its children are placed on the screen, and a second Phaser camera draws them, so they neither move nor zoom with the world |
+| **Move / Rotate / Scale tools** | W, E and R, from the toolbar too. With Snap, rotation goes in 15° steps and scale in 0.1 steps. Rotate and scale work on the selection wherever you press |
+| **Reparenting keeps world placement** | Dragging a node onto another in the tree keeps it where it is on screen (the local transform is recalculated), as in Godot's editor |
+| **Pixel art setting** | On by default. Hard-edged scaling in the game and the viewport, so the Kenney pixel packs stay crisp when zoomed |
+
+**Other changes:**
+- The API types in the script editor gain the new classes.
+- A sibling name that clashes counts on from its number (`Tile0009` → `Tile0010`), as Godot does.
+
+**Tested:**
+- `npx vitest run src/labs/game-studio` passes 28 tests. New ones cover no camera, a camera following
+  exactly, the smoothing formula, the HUD on the screen, reparenting in place, and name numbering. The
+  "no fake controls" check covers every property of the new types, and now also compares the camera view.
+- `npm run game:acceptance` runs both browser tests: Phase 1 passes 15/15 and Phase 2 passes 9/9.
+- The Phase 2 test builds a pixel-platformer scene from the starter art by dragging, reparents the character
+  under the player, adds a zoomed camera and a HUD, attaches the movement script, and rotates (90°) and
+  scales (2×) a tile, undoing both. It then runs: holding → scrolls the ground while the HUD's pixels stay
+  identical.
+
+**Bugs found and fixed:**
+- **The GUI → code log was not exact.** It rounded numbers to 4 decimal places, so π/2 was written as
+  1.5708 and replay gave a slightly different project. Numbers are now written in their shortest exact form.
+- **Pressing next to a node with Rotate or Scale cleared the selection.** It now acts on the selection.
+
 ## Next
 
-1. **The Kenney starter set** (the rest of Phase 1). Download a curated CC0 subset (characters, tiles, items, UI),
-   keep each pack's licence file, and write `CREDITS.md`. Then make them importable from the Files panel.
-2. **Phase 2:** camera and follow, rotate and scale gizmos in the viewport, the asset browser with previews,
-   more project settings, and the "run a 2D scene" test.
+1. **Phase 3, the script editor.** Most of it is already in: tabs, the unsaved marker, errors at their line,
+   the console, and Monaco's own search and replace. Still to do: a script error test in the browser, and
+   hover documentation from the API types.
+2. **Phase 4, physics.** Collision shapes (rectangle and circle), StaticBody2D, Area2D, collision layers and
+   masks, gravity, and `moveAndSlide` that stops and slides. That is what the platformer and Breakout need.
 
 ## Phases
 
 | Phase | Content | Proven by | State |
 |---|---|---|---|
 | 0 | Architecture decisions, licence check | This record | Done |
-| 1 | Model, editor shell, commands, undo, code log, image assets, Sprite/Node2D/CharacterBody2D (no collision), scripts, input, iframe runtime, IndexedDB | The Phase 1 acceptance test | Done, except the Kenney starter set |
-| 2 | Camera, more node types, asset browser, drag-and-drop, project settings | Run-a-2D-scene test | |
+| 1 | Model, editor shell, commands, undo, code log, image assets, Sprite/Node2D/CharacterBody2D (no collision), scripts, input, iframe runtime, IndexedDB, the Kenney starter set | The Phase 1 acceptance test | Done |
+| 2 | Camera, more node types, asset browser, drag-and-drop, project settings | Phase 2 browser test | Done |
 | 3 | Script editor completeness, Output with click-to-source, TypeScript later | Script error test | |
 | 4 | Physics: bodies, shapes, layers and masks, gravity | Platformer, Breakout (physics part) | |
 | 5 | Animation: sprite frames, property tracks, timeline | Platformer animation | |

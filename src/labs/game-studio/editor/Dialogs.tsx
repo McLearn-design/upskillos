@@ -77,6 +77,9 @@ export function SettingsDialog({ store, onClose }: { store: Store; onClose: () =
         <NumberField value={p.settings.height} step={16} digits={0} onCommit={(v) => store.act((d) => d.setSettings({ height: Math.round(v) }))} />
       </Row>
       <Row label="Background"><input type="color" value={p.settings.background} onChange={(e) => store.act((d) => d.setSettings({ background: e.target.value }))} /></Row>
+      <Row label="Pixel art" help="Scale images with hard edges, so pixel art stays crisp when the camera zooms. Turn off for smooth, painted art.">
+        <input type="checkbox" checked={p.settings.pixelArt !== false} onChange={(e) => store.act((d) => d.setSettings({ pixelArt: e.target.checked }))} />
+      </Row>
       <Row label="Main scene">
         <select value={p.settings.mainScene ?? ''} onChange={(e) => e.target.value && store.act((d) => d.setMainScene(e.target.value))} style={selectStyle}>
           {!p.settings.mainScene && <option value="">(none)</option>}

@@ -58,6 +58,8 @@ export interface ProjectSettings {
   height: number;
   background: string;
   mainScene: string | null;
+  /** Scale images with hard edges (pixel art stays crisp when zoomed). Missing means true. */
+  pixelArt?: boolean;
 }
 
 export interface Project {

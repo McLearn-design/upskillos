@@ -47,7 +47,7 @@ Undo that edit when you're done, or use it as your first change: see [first-chan
 |---|---|
 | `npm run build` | Production build into `dist/`. Takes a few minutes and several GB of memory |
 | `npm run game:runtime` | Builds Game Studio's game runtime (the engine and Phaser, run inside a sandboxed iframe) into `src/labs/game-studio/runtime/dist/`. `dev` and `build` run it for you |
-| `npm run game:acceptance` | Game Studio's end-to-end test in a real browser. Starts and stops its own dev server |
+| `npm run game:acceptance` | Game Studio's end-to-end tests in a real browser, one per finished phase. Each starts and stops its own dev server |
 | `npm run preview` | Serves the last build, to check it the way the live site runs |
 | `npx vitest run <folder>` | Runs the tests in a folder once |
 | `npm test` | Runs all tests and re-runs them as you edit |

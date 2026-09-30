@@ -10,6 +10,7 @@ import { Btn, C, useStore } from './editor/kit';
 import { Viewport } from './editor/Viewport';
 import { SceneTree } from './editor/SceneTree';
 import { Files } from './editor/Files';
+import { StarterArt } from './editor/StarterArt';
 import { Inspector } from './editor/Inspector';
 import { ScriptEditor } from './editor/ScriptEditor';
 import { BottomPanel } from './editor/BottomPanel';
@@ -57,6 +58,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
   const frameFns = useRef<{ frameAll: () => void; frameSelected: () => void } | null>(null);
   const [dialog, setDialog] = useState<'projects' | 'settings' | null>(null);
   const [booting, setBooting] = useState(true);
+  const [left, setLeft] = useState<'files' | 'art'>('files');
 
   // A handle for debugging and browser tests, in development only.
   useEffect(() => { if (import.meta.env?.DEV) (window as unknown as { __gameStudio?: unknown }).__gameStudio = { store }; }, [store]);
@@ -99,6 +101,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
       if (mod && k === 'd') { e.preventDefault(); dup(); return; }
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); del(); return; }
       if (k === 'f' && store.tab.kind === 'scene') frameFns.current?.frameSelected();
+      if (!mod && (k === 'w' || k === 'e' || k === 'r')) { store.tool = k === 'w' ? 'move' : k === 'e' ? 'rotate' : 'scale'; store.changed(); }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
@@ -143,7 +146,11 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
         <Btn small onClick={() => store.doc?.undo()} disabled={!store.doc?.undoStack.length} title="Undo (Ctrl+Z)">↶</Btn>
         <Btn small onClick={() => store.doc?.redo()} disabled={!store.doc?.redoStack.length} title="Redo (Ctrl+Shift+Z)">↷</Btn>
         <span style={{ width: 1, height: 18, background: C.border }} />
-        <Btn small active={store.snap} onClick={() => { store.snap = !store.snap; store.changed(); }} title="Snap moves to the grid">Snap</Btn>
+        {([['move', 'Move', 'W'], ['rotate', 'Rotate', 'E'], ['scale', 'Scale', 'R']] as const).map(([t, label, key]) => (
+          <Btn key={t} small testid={`tool-${t}`} active={store.tool === t} onClick={() => { store.tool = t; store.changed(); }} title={`${label} (${key}): drag a node in the viewport`}>{label}</Btn>
+        ))}
+        <span style={{ width: 1, height: 18, background: C.border }} />
+        <Btn small active={store.snap} onClick={() => { store.snap = !store.snap; store.changed(); }} title="Snap: moves to the grid, turns to 15°, scales to 0.1">Snap</Btn>
         <select value={store.grid} onChange={(e) => { store.grid = Number(e.target.value); store.changed(); }} title="Grid size, in pixels" style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 3, fontSize: 12 }}>
           {[4, 8, 16, 32, 64].map((g) => <option key={g} value={g}>{g} px</option>)}
         </select>
@@ -161,7 +168,16 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
       {/* Left: scene tree over files */}
       <div style={{ gridColumn: 1, gridRow: 3, display: 'grid', gridTemplateRows: '1fr 1fr', borderRight: `1px solid ${C.border}`, background: C.panel, minHeight: 0 }}>
         <div style={{ minHeight: 0, borderBottom: `1px solid ${C.border}` }}><SceneTree store={store} /></div>
-        <div style={{ minHeight: 0 }}><Files store={store} /></div>
+        <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', background: C.panel2, borderBottom: `1px solid ${C.border}` }}>
+            {(['files', 'art'] as const).map((k) => (
+              <button key={k} type="button" data-testid={`left-${k}`} onClick={() => setLeft(k)} style={{ flex: 1, background: 'none', border: 'none', borderBottom: `2px solid ${left === k ? C.accent : 'transparent'}`, color: left === k ? C.text : C.dim, padding: '5px 0', fontSize: 11, fontWeight: 700, letterSpacing: 0.4, cursor: 'pointer' }}>
+                {k === 'files' ? 'FILES' : 'STARTER ART'}
+              </button>
+            ))}
+          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>{left === 'files' ? <Files store={store} /> : <StarterArt store={store} />}</div>
+        </div>
       </div>
 
       {/* Middle: tabs, then the viewport, a script, or the running game */}

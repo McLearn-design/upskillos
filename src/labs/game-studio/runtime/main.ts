@@ -86,7 +86,7 @@ async function start(msg: Extract<ToRuntime, { type: 'load' }>): Promise<void> {
   };
   phaser = new Phaser.Game({
     type: Phaser.AUTO, parent: 'game', width: s.width, height: s.height, backgroundColor: s.background,
-    scene: scenes, banner: false, input: { keyboard: false },
+    scene: scenes, banner: false, input: { keyboard: false }, pixelArt: s.pixelArt !== false, roundPixels: s.pixelArt !== false,
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   });
 }

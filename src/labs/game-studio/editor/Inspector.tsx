@@ -74,7 +74,7 @@ export function Inspector({ store }: { store: Store }) {
       case 'color':
         return <Row key={def.name} label={def.name} help={help}><input type="color" value={v as string} onChange={(e) => set(def.name, e.target.value)} /></Row>;
       case 'string':
-        return <Row key={def.name} label={def.name} help={help}><TextField value={v as string} onCommit={(x) => set(def.name, x)} /></Row>;
+        return <Row key={def.name} label={def.name} help={help} live={lv}><TextField testid={`prop-${def.name}`} value={v as string} onCommit={(x) => set(def.name, x)} /></Row>;
     }
   };
 

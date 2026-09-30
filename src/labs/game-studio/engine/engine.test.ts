@@ -3,10 +3,10 @@ import { Doc } from '../core/doc';
 import { newProject } from '../core/project';
 import { nodeTypes, propsOf, type PropDef } from '../core/registry';
 import type { PropValue } from '../core/types';
-import { Game, PHYSICS_DT, type DrawItem, type ScriptError } from './game';
+import { Game, PHYSICS_DT, type DrawItem, type ScriptError, type View } from './game';
 import { CharacterBody2D, Node, Node2D, Sprite2D } from './nodes';
 
-const recorder = () => { const frames: DrawItem[][] = []; return { frames, renderer: { frame: (items: DrawItem[]) => frames.push(items) } }; };
+const recorder = () => { const frames: DrawItem[][] = [], views: View[] = []; return { frames, views, renderer: { frame: (items: DrawItem[], view: View) => { frames.push(items); views.push(view); } } }; };
 
 function scene(build: (d: Doc, sceneId: string) => void) {
   const d = new Doc(newProject());
@@ -135,7 +135,8 @@ describe('input', () => {
 describe('no fake controls', () => {
   it('every property in the registry changes what the engine draws', () => {
     const changed = (def: PropDef): PropValue => def.type === 'vec2' ? { x: 3, y: 4 } : def.type === 'angle' ? 0.5 : def.type === 'bool' ? !def.default
-      : def.type === 'texture' ? 'assets/a.png' : def.type === 'number' ? (def.default === 1 ? 0.5 : 2) : 'x';
+      : def.type === 'texture' ? 'assets/a.png' : def.type === 'color' ? '#123456'
+      : def.type === 'number' ? (def.default === 1 ? 0.5 : Math.min(def.max ?? Infinity, (def.default as number) + 2)) : 'x';
     // A Sprite2D is given a texture so there is something to see, except when the texture itself is the property tested.
     const draw = (type: string, props: Record<string, PropValue>, autoTexture = true) => {
       const { project, scene: s } = scene((d, id) => {
@@ -144,8 +145,13 @@ describe('no fake controls', () => {
         if (type !== 'Sprite2D') d.addNode(id, 'Sprite2D', n.id, { name: 'Drawn', props: { texture: 'assets/a.png' } });
       });
       const rec = recorder();
-      new Game(project, s, rec.renderer).start();
-      return JSON.stringify(rec.frames.at(-1));
+      const g = new Game(project, s, rec.renderer);
+      g.start();
+      // Move it and run a frame, so properties about motion (a camera's smoothing) have something to act on.
+      const n = g.root.get('N');
+      if (n instanceof Node2D) n.position = { x: n.position.x + 50, y: n.position.y };
+      g.step(1 / 30);
+      return JSON.stringify({ items: rec.frames.at(-1), view: rec.views.at(-1) });
     };
     let checked = 0;
     for (const t of nodeTypes()) {
@@ -158,3 +164,46 @@ describe('no fake controls', () => {
     expect(checked).toBeGreaterThan(15);
   });
 });
+
+describe('camera and screen layer', () => {
+  const build = (smoothing: number) => scene((d, id) => {
+    const p = d.addNode(id, 'CharacterBody2D', undefined, { name: 'Player', props: { position: { x: 100, y: 100 } } });
+    d.addNode(id, 'Camera2D', p.id, { name: 'Cam', props: { smoothing, zoom: 2 } });
+    const hud = d.addNode(id, 'CanvasLayer', undefined, { name: 'HUD' });
+    d.addNode(id, 'Label', hud.id, { name: 'Score', props: { text: 'Score: 0', position: { x: 10, y: 8 } } });
+  });
+
+  it('with no camera, the screen shows the game area: the view is centred on it', () => {
+    const { project, scene: s } = scene(() => undefined);
+    const rec = recorder();
+    new Game(project, s, rec.renderer).start();
+    expect(rec.views.at(-1)).toEqual({ x: 480, y: 270, zoom: 1 });
+  });
+
+  it('a camera under the player follows it exactly, and a HUD label stays on the screen', () => {
+    const { project, scene: s } = build(0);
+    const rec = recorder();
+    const g = new Game(project, s, rec.renderer);
+    g.start();
+    expect(rec.views.at(-1)).toEqual({ x: 100, y: 100, zoom: 2 });
+    g.root.get<Node2D>('Player').position = { x: 400, y: 100 };
+    g.step(1 / 30);
+    expect(rec.views.at(-1)).toEqual({ x: 400, y: 100, zoom: 2 });
+    const label = rec.frames.at(-1)!.find((i) => i.kind === 'text')!;
+    expect(label).toMatchObject({ kind: 'text', text: 'Score: 0', x: 10, y: 8, screen: true });
+  });
+
+  it('with smoothing k the view closes 1 − e^(−k·dt) of the gap each frame', () => {
+    const { project, scene: s } = build(5);
+    const rec = recorder();
+    const g = new Game(project, s, rec.renderer);
+    g.start();
+    g.root.get<Node2D>('Player').position = { x: 400, y: 100 };
+    g.step(1 / 30);
+    const f = 1 - Math.exp(-5 / 30);
+    expect(rec.views.at(-1)!.x).toBeCloseTo(100 + 300 * f, 9);   // ≈ 146.2
+    for (let i = 0; i < 120; i++) g.step(1 / 30);
+    expect(rec.views.at(-1)!.x).toBeCloseTo(400, 4);
+  });
+});
+
