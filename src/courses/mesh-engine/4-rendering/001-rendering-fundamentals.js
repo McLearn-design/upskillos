@@ -1189,7 +1189,7 @@ export default {
   coreConcept:
     'A perspective projection stores a function of 1/d, not d, so the smallest separation the depth buffer can resolve is (f-n) d squared / (2^bits f n) - verified against the projection to 0.0536%. Two consequences. Precision falls as d squared: at 500 units with near 0.1 the buffer cannot distinguish surfaces closer than 0.149. And because delta is proportional to (f-n)/(f n), which for f much larger than n is nearly 1/n, the far plane cancels itself out: pulling it in from 1000 to 100 is worth 1.00x while pushing the near plane from 0.1 to 10 is worth 101x. The adjustment everybody reaches for is the one that cannot help. Around that sit four more facts. Welding pays here rather than in lesson 3 - indexing a 214,382-face model saves 67%, 15.4 MB to 5.1 MB - but indexing buys one normal per vertex, and a rim vertex averaged across a 90 degree crease is 34 degrees out, so the renderer must un-weld exactly where topology wanted welding, using lesson 16A’s crease angle. A section plane left in world space while the orbit rotates the model removes 25% of a part at one viewing angle and 0% at another, a variation of 6.008 cubic inches, and the two schemes agree exactly head-on so a screenshot proves nothing.',
   prerequisites: ['mesh-engine-3-2-face-splitting'],
-  nextLesson: null,
+  nextLesson: 'mesh-engine-4-2-colour-as-information',
 
   semantics: {
     core: [
