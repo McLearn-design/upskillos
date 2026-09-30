@@ -1106,7 +1106,7 @@ export default {
   coreConcept:
     '"Select everything in this window" has three defensible readings - any vertex inside, all vertices inside, centroid inside - and they disagree by up to 100%, with all-vertices returning nothing at all on a narrow window where 38 triangles are visibly inside it. The disagreement grows as the window shrinks, so the rule matters most when the user is being precise. What decides which rule to ship is not a guarantee but stability: after subdividing every triangle 1 to 4, the same window selects an area that changed by 30.3% under any-vertex, unboundedly under all-vertices, and 3.6% under centroid - and the surface never moved. A brush is a flood fill that must refuse to cross a crease, and its threshold is two numbers, not one: above the facet angle inside a surface and below the crease angle at its boundary. Measured, a coarse fillet alone does not break it, but a coarse fillet next to a shallow boundary leaves no usable threshold at all, so the chord tolerance chosen at export decides whether the brush can work.',
   prerequisites: ['mesh-engine-2-2-manual-alignment'],
-  nextLesson: null,
+  nextLesson: 'mesh-engine-3-2-face-splitting',
 
   semantics: {
     core: [
