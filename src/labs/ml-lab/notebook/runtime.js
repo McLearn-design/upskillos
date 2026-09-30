@@ -2,7 +2,9 @@
 // runs executed one at a time in submission order, and a Stop that always works because it
 // terminates the worker. `generation` increases on every stop, so a notebook can tell whether
 // the variables from its earlier runs still exist.
-let createWorker = () => new Worker(new URL('./notebook.worker.js', import.meta.url))
+// A module worker: notebook.worker.js uses `import`, which a classic worker rejects with
+// "Cannot use import statement outside a module".
+let createWorker = () => new Worker(new URL('./notebook.worker.js', import.meta.url), { type: 'module' })
 export function setWorkerFactory(factory) { createWorker = factory }   // tests use a fake worker
 
 let worker = null, generation = 0, jobCounter = 0, current = null

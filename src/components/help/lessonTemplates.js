@@ -57,7 +57,7 @@ Don't introduce the formula yet — build the IDEA first.
 
   // ── FORMAL MATH (optional) ──────────────────────────────────
   math: {
-    definition: 'Formal statement. LaTeX: $f\'(x) = \\\\lim_{h \\\\to 0} \\\\frac{f(x+h)-f(x)}{h}$',
+    definition: 'Formal statement. LaTeX: $f\\'(x) =\\\\lim_{h \\\\to 0} \\\\frac{f(x+h)-f(x)}{h}$',
     examples: [
       {
         problem:  'Find the derivative of $f(x) = x^2$.',
@@ -148,7 +148,7 @@ Then the notebook below lets students try it themselves.
                 'import numpy as np',
                 '',
                 'print(np.arange(5) ** 2)',
-              ].join('\n'),
+              ].join('\\n'),
             },
             {
               id: 2,

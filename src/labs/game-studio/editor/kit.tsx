@@ -1,7 +1,7 @@
 // Game Studio's look and small controls: the dense panels of a development tool
 // (the specification's §54), matching MeshLab's colours.
 import React, { useState, useSyncExternalStore } from 'react';
-import { evalExpr } from '../../mesh-lab/core/expr';
+import { evalExpr } from '../../../engines/mesh/core/expr';
 import type { Store } from './store';
 
 export const C = {

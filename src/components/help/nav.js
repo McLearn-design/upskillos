@@ -96,7 +96,7 @@ export const NAV = [
     items: [
       { id: "overview", label: "How to Contribute", Icon: BookOpen, color: 'emerald' },
       { id: "first-lesson", label: "Your First Lesson", Icon: Play, color: 'emerald' },
-      { id: "anatomy", label: "Cell Types", Icon: Eye, color: 'emerald' },
+      { id: "anatomy", label: "Lesson Sections", Icon: Eye, color: 'emerald' },
     ],
   },
   {

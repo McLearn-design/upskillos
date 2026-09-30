@@ -2,7 +2,7 @@
 
 # Project inventory
 
-43 courses · 217 chapters · 1232 lessons · 51 labs · 15 games
+43 courses · 217 chapters · 1232 lessons · 52 labs · 15 games
 
 ## How things are counted
 
@@ -93,6 +93,7 @@
 | Logic Suite | `logic-sim` | lab | `/logic-sim` |
 | Matrix 3D Lab | `matrix-3d-lab` | lab | `/matrix-3d-lab` |
 | Matrix Lab | `matrix-lab` | lab | `/matrix-lab` |
+| Mesh Engine Lab | `mesh-engine-lab` | lab | `/mesh-engine-lab` |
 | MeshLab | `mesh-lab` | lab | `/mesh-lab` |
 | Machine Learning Lab | `ml-lab` | lab | `/lab/ml-lab` |
 | Music Lab | `music-lab` | builder | `/music-lab` |

@@ -11,7 +11,7 @@
     "courses": 43,
     "chapters": 217,
     "lessons": 1232,
-    "labs": 51,
+    "labs": 52,
     "games": 15
   },
   "courses": [
@@ -534,6 +534,12 @@
       "label": "Matrix Lab",
       "kind": "lab",
       "path": "/matrix-lab"
+    },
+    {
+      "id": "mesh-engine-lab",
+      "label": "Mesh Engine Lab",
+      "kind": "lab",
+      "path": "/mesh-engine-lab"
     },
     {
       "id": "mesh-lab",

@@ -9,13 +9,14 @@ import { Cb, H3, Note, Para, SectionHeading } from "../primitives.jsx";
 export function SectionOverview({ onNavigate }) {
   return (
     <div>
-      <SectionHeading sub="Two paths to contribute — pick the one that fits.">
+      <SectionHeading sub="Three ways to contribute — pick the one that fits.">
         How to Contribute
       </SectionHeading>
       <Para>
         UpSkillOS is an open-source interactive STEM learning platform. Every
         topic is a <strong>lesson</strong>. Lessons are grouped into{" "}
-        <strong>chapters</strong>. There are three tools for building content:
+        <strong>chapters</strong>, and chapters into <strong>courses</strong>.
+        There are three ways to build content:
       </Para>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 my-5">
@@ -25,8 +26,8 @@ export function SectionOverview({ onNavigate }) {
             Lesson Builder
           </div>
           <div className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed mb-3">
-            Visual editor built into the app. Add cells, preview instantly, no
-            setup needed.
+            Visual editor built into the app. Add sections, see them rendered as
+            you go, no install needed.
           </div>
           <Link
             to="/lesson-builder"
@@ -42,8 +43,8 @@ export function SectionOverview({ onNavigate }) {
             Viz Builder
           </div>
           <div className="text-xs text-sky-700 dark:text-sky-400 leading-relaxed mb-3">
-            Build interactive visualizations and diagrams. Export directly into
-            any lesson.
+            Configure an interactive visualization and insert it into any
+            course lesson.
           </div>
           <Link
             to="/viz-builder"
@@ -74,10 +75,10 @@ export function SectionOverview({ onNavigate }) {
       </div>
 
       <Note color="green">
-        <strong>New contributor?</strong> Start with the{" "}
-        <strong>Lesson Builder</strong> — head to{" "}
-        <strong>Your First Lesson</strong> in the sidebar for a step-by-step
-        walkthrough.
+        <strong>New contributor?</strong> The easiest start is fixing a lesson
+        you're reading: every lesson page has an{" "}
+        <strong>🔨 Edit in Builder</strong> button next to its title. For the
+        whole flow, see <strong>Your First Lesson</strong> in the sidebar.
       </Note>
 
       <H3>How lessons become content</H3>
@@ -91,13 +92,13 @@ export function SectionOverview({ onNavigate }) {
           null,
           {
             icon: "📤",
-            label: "Export as .js file",
+            label: "Export: copy, save or open a PR",
             cls: "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40",
           },
           null,
           {
             icon: "🔀",
-            label: "Submit a PR",
+            label: "Maintainer reviews the PR",
             cls: "text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/40",
           },
           null,
@@ -123,6 +124,13 @@ export function SectionOverview({ onNavigate }) {
           ),
         )}
       </div>
+
+      <Para>
+        Opening a pull request from the builder needs a free GitHub account and a
+        personal access token; the builder forks the repository, creates a branch
+        and opens the pull request for you. Saving straight to your own files
+        only works when you run the app locally with <Cb>npm run dev</Cb>.
+      </Para>
 
       <H3>Community</H3>
       <div className="flex flex-wrap gap-3 mt-3">

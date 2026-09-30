@@ -8,76 +8,74 @@ import { Note, Para, SectionHeading } from "../primitives.jsx";
 export function SectionAnatomy() {
   return (
     <div>
-      <SectionHeading sub="Every lesson is made of cells — pick the right type for each block of content.">
-        Cell Types
+      <SectionHeading sub="A lesson is a set of sections — add the ones your topic needs.">
+        Lesson Sections
       </SectionHeading>
       <Para>
-        The Lesson Builder composes lessons from cells. Each cell type renders
-        differently for students. Add cells in any order — the lesson renders
-        top-to-bottom.
+        In the Lesson Builder, <strong>Add Section</strong> lists every section
+        type. Identity (title, id, slug) is always there; the rest are optional,
+        and the lesson renders them top to bottom. The most used:
       </Para>
 
       <div className="space-y-4 my-4">
         {[
           {
-            icon: "📝",
-            label: "Markdown",
+            icon: "🧠",
+            label: "Intuition, Math, Rigor",
             color: "border-blue-300/60 bg-blue-50/50 dark:bg-blue-950/20",
             badge: "text-blue-600 dark:text-blue-400",
             points: [
-              "Prose, headings, bold, italic, inline code",
-              "Inline math: $f(x)$    Display math: $$\\int$$",
-              "Use '∫≈ Visual Math…' toolbar button for WYSIWYG LaTeX",
-              "Renders markdown + KaTeX — no HTML needed",
+              "The explanation: Intuition first, then formal Math, then proof in Rigor",
+              "Inside each, add Prose, Callout, Visualization and Image blocks",
+              "Prose is Markdown with LaTeX: $f(x)$ inline, $$\\int$$ on its own line",
+              "'∫≈ Visual Math…' in the prose toolbar writes LaTeX for you",
             ],
           },
           {
-            icon: "❓",
+            icon: "🧪",
             label: "Quiz (scored)",
             color: "border-orange-300/60 bg-orange-50/50 dark:bg-orange-950/20",
             badge: "text-orange-600 dark:text-orange-400",
             points: [
-              "≥80% earns ★ completion — shown permanently in sidebar",
-              "Each question: answer + up to 3 hints (revealed one at a time)",
-              "Best for: clear right/wrong questions",
-              "Supports LaTeX in both question and answer",
+              "Questions with one clear correct answer",
+              "The lesson counts as complete when every question is answered correctly",
+              "LaTeX works in questions and answers",
             ],
           },
           {
-            icon: "💭",
+            icon: "📋",
             label: "Assessment (unscored)",
             color: "border-teal-300/60 bg-teal-50/50 dark:bg-teal-950/20",
             badge: "text-teal-600 dark:text-teal-400",
             points: [
-              "No score — zero pressure, open-ended reflection",
-              "Students type an answer and then see the model answer",
-              "One hint per question (a single nudge, not an array)",
-              "Best for: 'explain in your own words' questions",
+              "No score — open-ended questions",
+              "Learners write an answer, then compare it with a model answer",
+              "Best for 'explain it in your own words'",
             ],
           },
           {
-            icon: "📊",
-            label: "Viz",
+            icon: "🔭",
+            label: "Visualization blocks",
             color: "border-violet-300/60 bg-violet-50/50 dark:bg-violet-950/20",
             badge: "text-violet-600 dark:text-violet-400",
             points: [
-              "Embeds any registered interactive visualization by ID",
-              "ID must exactly match the VIZ_REGISTRY key (case-sensitive)",
-              "Pass props to configure the viz: { id: 'RiemannSum', props: { defaultN: 10 } }",
-              "Full list in the 'Using Vizs' section",
+              "Embed a registered visualization by its id (case-sensitive)",
+              "Props configure it: { id: 'RiemannSum', props: { defaultN: 10 } }",
+              "PythonNotebook and JSNotebook are visualizations too",
+              "Available ids are listed under 'Using Vizs'",
             ],
           },
           {
-            icon: "💻",
-            label: "Code (Python / JS)",
+            icon: "🐍",
+            label: "Python, Cells, Examples, Challenges",
             color:
               "border-emerald-300/60 bg-emerald-50/50 dark:bg-emerald-950/20",
             badge: "text-emerald-600 dark:text-emerald-400",
             points: [
-              "PythonNotebook: Pyodide, opencalc charts, Shift+Enter to run",
-              "JSNotebook: live HTML/CSS output, Monaco editor",
-              "Added via a Viz cell with id: 'PythonNotebook' or 'JSNotebook'",
-              "opencalc library available automatically in Python cells",
+              "Python: runnable notebook cells (Pyodide), with the opencalc library",
+              "Cells: notebook cells for markdown, JavaScript, challenges and walkthroughs",
+              "Examples: worked examples, step by step",
+              "Challenges: practice problems with an answer and walkthrough",
             ],
           },
         ].map((c) => (
@@ -102,9 +100,9 @@ export function SectionAnatomy() {
       </div>
 
       <Note color="blue">
-        <strong>LaTeX tip:</strong> Use the <strong>∫≈ Visual Math…</strong>{" "}
-        button in the Markdown cell toolbar to open a WYSIWYG equation editor.
-        Type or draw a formula, click Insert — the LaTeX is written for you.
+        More sections are in <strong>Add Section</strong>: Walkthroughs,
+        Checkpoints, Semantics, Spiral, Misconceptions, Transfer Prompts,
+        Debugging and Mastery. Hover one to see what it's for.
       </Note>
     </div>
   );

@@ -7,76 +7,71 @@ import { Para, SectionHeading, StepWizard } from "../primitives.jsx";
 const FIRST_LESSON_STEPS = [
   {
     title: "Open the Lesson Builder",
-    desc: "Click the Start Menu (^ logo, top-left) and choose 'Lesson Builder' — or navigate directly to /lesson-builder. No setup, no install.",
-    note: "The Lesson Builder works entirely in your browser. You can build and preview a complete lesson without touching any code.",
+    desc: "To improve a lesson you're reading, press 🔨 Edit in Builder next to its title — the builder opens with that lesson loaded. To start a new one, open Lesson Builder from the Start menu (desktop) or go to #/lesson-builder.",
+    note: "The builder runs in your browser. You can build and check a whole lesson without installing anything.",
     bullets: [
-      "Start Menu → Lesson Builder",
-      "Or navigate to /lesson-builder in the URL bar",
-      "The page opens with a blank lesson ready to fill in",
+      "Existing lesson: 🔨 Edit in Builder on the lesson page",
+      "New lesson: Start menu → Lesson Builder, or #/lesson-builder",
+      "The Lesson Map on the right shows the lesson's structure; click a node to jump to it",
     ],
   },
   {
-    title: "Set your lesson title and subtitle",
-    desc: "At the top of the builder, click the title field and type your lesson title. Add a subtitle — one sentence describing what the lesson teaches.",
-    note: "The title and subtitle are the first thing students see. Make the title a clear concept name, and the subtitle an active description: 'The instantaneous rate of change', not just 'Derivatives'.",
+    title: "Fill in the Identity section",
+    desc: "Every lesson starts with Identity: its title, a one-line subtitle, its id, slug and chapter, and search tags.",
+    note: "The id is the key learners' progress is saved under. For a new lesson pick one that no other lesson uses; never change the id of a lesson that is already published.",
+    noteColor: "amber",
   },
   {
-    title: "Add a Markdown cell for your explanation",
-    desc: "Click '+ Add Cell' and choose Markdown. This is your main lesson body. Write the intuitive explanation here — prose, LaTeX math, and formatted text.",
-    code: `Write plain text and use:
+    title: "Add the sections your lesson needs",
+    desc: "Use Add Section on the left — click to append, or drag onto the canvas to insert. Most lessons start with Intuition; add Math, Examples, Quiz, Python and others as needed. Inside Intuition, Math and Rigor you add Prose, Callout, Visualization and Image blocks.",
+    code: `Prose supports Markdown and LaTeX:
 **bold**   *italic*   \`code\`
 
 Inline math:   $f'(x) = \\lim_{h \\to 0} \\frac{f(x+h)-f(x)}{h}$
 
 Display math:
 $$\\int_0^1 x^2 \\, dx = \\frac{1}{3}$$`,
-    note: "Not sure how to write a formula? Click the '∫≈ Visual Math…' button in the toolbar to open the visual equation editor — draw or type the formula and it inserts the LaTeX for you.",
+    note: "Not sure how to write a formula? The prose editor's toolbar has a '∫≈ Visual Math…' button that writes the LaTeX for you. Math is checked as you type, so a broken equation shows up straight away.",
     noteColor: "green",
   },
   {
-    title: "Add a Quiz cell",
-    desc: "Click '+ Add Cell' → Quiz. Add 3–5 questions. Each question has an answer and optional hints (revealed one at a time). Getting ≥80% marks the lesson complete with a ★.",
-    code: `Question: What is the derivative of $f(x) = x^3$?
-Answer:   $3x^2$
-Hint 1:   Use the power rule.
-Hint 2:   Multiply the exponent by the coefficient, reduce exponent by 1.`,
-    note: "Write questions with a single definitive correct answer. Open-ended reflection questions belong in an Assessment cell (no score, students see model answer).",
+    title: "Add a Quiz",
+    desc: "Add the Quiz section and write questions with one clear correct answer. A lesson with a quiz counts as complete when the learner answers every question correctly.",
+    note: "Open-ended 'explain it in your own words' questions belong in the Assessment section, which has no score.",
     noteColor: "blue",
   },
   {
-    title: "Add a Viz cell (optional)",
-    desc: "Click '+ Add Cell' → Viz to embed any registered interactive visualization. Type the visualization ID exactly as it appears in the registry.",
-    code: `Common IDs:
+    title: "Add a visualization (optional)",
+    desc: "Inside Intuition (or Math), add a Visualization block and choose a registered visualization by its id. Python notebooks are visualizations too: PythonNotebook.",
+    code: `Common ids:
 SecantToTangent     RiemannSum
 UnitCircle          PythonNotebook
 JSNotebook          ParametricCurve3D`,
-    note: "The full list of available IDs is in the 'Using Vizs' section of this guide. IDs are case-sensitive.",
+    note: "Ids are case-sensitive. 'Using Vizs' in this guide lists what's available; the Viz Builder can insert a configured visualization for you.",
     noteColor: "amber",
   },
   {
-    title: "Preview your lesson",
-    desc: "Click the eye icon (👁) or the 'Preview' button in the toolbar to see exactly how your lesson will look to students. The preview updates live as you edit.",
+    title: "Check how it looks",
+    desc: "Each section on the canvas shows how it will render for learners; click a section to edit it and click away to see the result again.",
     bullets: [
-      "LaTeX math renders correctly in preview",
-      "Quiz questions are interactive",
-      "Any embedded viz loads live",
-      "Scroll through to check the full layout",
+      "LaTeX renders as you type",
+      "Visualizations load live",
+      "Use the Lesson Map to check the order of sections",
     ],
   },
   {
-    title: "Export and submit a PR",
-    desc: "Click 'Export' to download the lesson as a .js file. Then create a GitHub pull request to add it to the right chapter folder in the repository.",
-    code: `// Destination path pattern:
-src/courses/{subject}/{chapter-folder}/{order}-{topic}.js
+    title: "Export and open a pull request",
+    desc: "Press Export .js in the top bar. From the export panel you can copy the lesson source, or submit it as a pull request: paste a GitHub personal access token and the builder forks the repository, creates a branch, commits the file and opens the pull request for you.",
+    code: `// Where a lesson file lives:
+src/courses/{course}/{N}-{chapter}/{NNN}-{slug}.js
 
 // Example:
-src/courses/calculus/2-derivatives/005-chain-rule.js`,
-    note: "Fork the repo first if you don't have write access. Ask in Discord if you're unsure which folder your lesson belongs in.",
+src/courses/calculus/3-derivatives/005-chain-rule.js`,
+    note: "If you run the app locally with npm run dev, the panel can also show a diff and save straight to your files. Ask in Discord if you're unsure which chapter a new lesson belongs in.",
     noteColor: "green",
     bullets: [
-      "Open a PR on GitHub — maintainers review and merge",
-      "Your lesson appears in the app for all students",
-      "Join Discord to announce it to the community",
+      "A maintainer reviews and merges the pull request",
+      "Once merged, the lesson appears in the app automatically — nothing to register",
     ],
   },
 ];
@@ -88,8 +83,8 @@ export function SectionFirstLesson() {
         Your First Lesson
       </SectionHeading>
       <Para>
-        Follow these steps. By the end you'll have a complete lesson built in
-        the app and ready to submit. No code required — just write content.
+        Follow these steps. By the end you'll have a lesson built or improved in
+        the app and submitted for review. No code required — just write content.
       </Para>
       <StepWizard steps={FIRST_LESSON_STEPS} />
     </div>

@@ -77,7 +77,7 @@ export default function MLLab({ onBack }) {
     setBusy(true);setOutput('');setPythonStatus('Starting Python…')
     try {
       worker.current?.terminate()
-      const instance=new Worker(new URL('./python.worker.js',import.meta.url));worker.current=instance
+      const instance=new Worker(new URL('./python.worker.js',import.meta.url),{type:'module'});worker.current=instance
       const finish=()=>{clearTimeout(timer.current);setBusy(false);instance.terminate();if(worker.current===instance)worker.current=null}
       instance.onmessage=({data})=>{
         if(data.type==='status')setPythonStatus(data.text)
