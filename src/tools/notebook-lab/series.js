@@ -1,33 +1,19 @@
-// Curated notebook series. Each series is a fixed, ordered list of lessons.
+// Curated notebook series. Each series is a fixed, ordered list of lessons
+// (series/manifest.js); a lesson's text is loaded only when it is opened.
 // Lessons are read-only sources: a learner's edits and progress are stored
-// separately (seriesProgress.js), so rebuilding a lesson never has to touch
-// anyone's saved notebooks, and the sidebar order is always lesson order.
-//
-// Lesson ids are progress keys: once a lesson ships, never change its id.
-import mlSeriesData from './series-ml-ds.json'
-import dsaSeriesData from './series-dsa.json'
+// separately (seriesProgress.js).
+import { SERIES_MANIFEST } from './series/manifest.js'
+import { parseLesson } from './lessonFormat.js'
 
-function toLessons(data) {
-  return data.map((nb, i) => ({
-    id: nb.id,
-    number: i + 1,
-    title: nb.name.replace(/^\d+\s*[-–—]\s*/, ''),
-    cells: nb.cells,
-  }))
-}
+const lessonFiles = import.meta.glob('./series/*/*.md', { query: '?raw', import: 'default' })
 
-export const SERIES = [
-  {
-    id: 'ml',
-    title: 'Machine Learning',
-    lessons: toLessons(mlSeriesData),
-  },
-  {
-    id: 'dsa',
-    title: 'Algorithms & Design Patterns',
-    lessons: toLessons(dsaSeriesData),
-  },
-]
+export const SERIES = SERIES_MANIFEST.map(series => ({
+  ...series,
+  lessons: series.lessons.map(lesson => ({
+    ...lesson,
+    load: lessonFiles[`./series/${series.dir}/${lesson.slug}.md`] ?? null,
+  })),
+}))
 
 const LESSONS = new Map(
   SERIES.flatMap(series => series.lessons.map(lesson => [lesson.id, { series, lesson }])),
@@ -35,4 +21,19 @@ const LESSONS = new Map(
 
 export function findLesson(lessonId) {
   return LESSONS.get(lessonId) ?? null
+}
+
+export function isAvailable(lesson) {
+  return !!lesson.load
+}
+
+const parsed = new Map()
+
+// The lesson's cells, parsed from its Markdown. Cached per page load.
+export async function loadLessonCells(lesson) {
+  if (!parsed.has(lesson.id)) {
+    const source = await lesson.load()
+    parsed.set(lesson.id, parseLesson(source).cells)
+  }
+  return parsed.get(lesson.id)
 }

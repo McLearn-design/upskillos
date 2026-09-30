@@ -51,6 +51,28 @@ function tracebackHeadline(output) {
   return lines[lines.length - 1] || output
 }
 
+// The traceback of a cell error with Pyodide's own frames removed: only the
+// frames in the learner's code (`File "<exec>"`) and the error itself remain.
+function cellTraceback(output) {
+  const start = output.indexOf('Traceback (most recent call last):')
+  const text = start === -1 ? output.replace(/^[\s\S]*?Error: /, '') : output.slice(start)
+  const out = []
+  let keep = true
+  for (const line of text.split('\n')) {
+    const frame = line.match(/^ {2}File "(.+?)"/)
+    if (frame) keep = frame[1] === '<exec>'
+    else if (!line.startsWith('    ')) keep = true
+    if (keep) out.push(line)
+  }
+  return out.join('\n').trim()
+}
+
+// The line of the learner's code where the error happened, if known.
+function errorLine(output) {
+  const lines = [...output.matchAll(/File "<exec>", line (\d+)/g)]
+  return lines.length ? lines[lines.length - 1][1] : null
+}
+
 // ── CellOutput ────────────────────────────────────────────────────────────────
 function CellOutput({ cell, C }) {
   const hasMatplotlib = cell.matplotlibImages && cell.matplotlibImages.length > 0;
@@ -133,18 +155,24 @@ function CellOutput({ cell, C }) {
       {/* Error output — headline first, full traceback collapsed, with a report action */}
       {cell.output && cell.status === "error" && (
         <div style={{ padding: "4px 14px 12px" }}>
+          {cell.printedBeforeError && (
+            <pre style={{ margin: "0 0 8px", fontFamily: "monospace", fontSize: 13, lineHeight: 1.6, color: C.text, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              {cell.printedBeforeError}
+            </pre>
+          )}
           {isExpectedError && (
             <p style={{ margin: "0 0 6px", fontSize: 12, lineHeight: 1.5, color: C.amber, fontWeight: 600 }}>
               Expected error — this cell is meant to fail so you can read the message. Follow the instructions above to fix it.
             </p>
           )}
           <p style={{ margin: "0 0 6px", fontFamily: "monospace", fontSize: 13, lineHeight: 1.6, color: C.red, fontWeight: 600, wordBreak: "break-word" }}>
+            {errorLine(cell.output) && `Line ${errorLine(cell.output)}: `}
             {tracebackHeadline(cell.output)}
           </p>
           <details>
             <summary style={{ fontSize: 11, color: C.hint, cursor: "pointer" }}>Show full traceback</summary>
             <pre style={{ margin: "6px 0 0", fontFamily: "monospace", fontSize: 12, lineHeight: 1.5, color: C.red, opacity: 0.85, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-              {cell.output}
+              {cellTraceback(cell.output)}
             </pre>
           </details>
           {isExpectedError ? null : reportStatus === "done" ? (
@@ -637,6 +665,33 @@ const CellComponent = React.memo(
                         </ul>
                       );
                     }
+                    // 1. Numbered list: every line starts with "N. "
+                    if (
+                      typeof p === "string" &&
+                      p.split("\n").every((l) => /^\s*\d+\.\s/.test(l))
+                    ) {
+                      const items = p.split("\n");
+                      return (
+                        <ol
+                          key={i}
+                          start={parseInt(items[0], 10)}
+                          style={{
+                            margin: i === 0 ? 0 : "6px 0 0",
+                            paddingLeft: 22,
+                            fontSize: 13,
+                            color: C.text,
+                            lineHeight: 1.7,
+                            listStyleType: "decimal",
+                          }}
+                        >
+                          {items.map((item, j) => (
+                            <li key={j} style={{ marginBottom: j < items.length - 1 ? 3 : 0 }}>
+                              {parseProse(item.replace(/^\s*\d+\.\s*/, ""))}
+                            </li>
+                          ))}
+                        </ol>
+                      );
+                    }
                     // Default: paragraph
                     return (
                       <p
@@ -741,6 +796,8 @@ const CellComponent = React.memo(
           </div>
         )}
 
+        {/* A prose-only cell is lesson text: no editor, run button or output. */}
+        {!cell.proseOnly && (<>
         {/* ── Cell header (In [n] label + buttons) ────────────────────────── */}
         <div
           style={{
@@ -889,11 +946,12 @@ const CellComponent = React.memo(
                   lineHeight: 1.6,
                 }}
               >
-                {cell.hint}
+                {parseProse(cell.hint)}
               </div>
             )}
           </div>
         )}
+        </>)}
       </div>
     );
   },
@@ -949,6 +1007,11 @@ export default function PythonNotebook({ params, onParamChange, onCellsChange })
 
   // Use initialCells from params if provided, otherwise fallback to STARTER_CELLS
   const disableRunAll = params?.disableRunAll ?? false;
+  // Code written as real notebook text (Notebook Lab) runs exactly as typed.
+  // Lesson cells authored in JS template literals need their broken strings
+  // rejoined first (see fixPythonBrokenStrings).
+  const rawCode = params?.rawCode ?? false;
+  const prepare = rawCode ? (src) => src : fixPythonBrokenStrings;
   const normalizeCells = (raw) =>
     (raw || STARTER_CELLS).map((c, i) =>
       c.id != null ? c : { ...c, id: `cell-${i + 1}`, output: c.output ?? '', status: c.status ?? 'idle', figureJson: c.figureJson ?? null }
@@ -1014,6 +1077,10 @@ export default function PythonNotebook({ params, onParamChange, onCellsChange })
   const runCell = useCallback(
     async (cellId) => {
       if (!pyodide || isExecuting) return;
+      // Python runs on the page's thread, so code that never finishes freezes
+      // the tab before React renders again. Hand the host the current cells
+      // now, so it can save them before the run starts.
+      onCellsChangeRef.current?.(cells, { beforeRun: true });
       setIsExecuting(true);
       setCells((prev) =>
         prev.map((c) =>
@@ -1026,23 +1093,35 @@ export default function PythonNotebook({ params, onParamChange, onCellsChange })
       const cell = cells.find((c) => c.id === cellId);
       let textOutput = "";
 
-      // Capture stdout
-      pyodide.setStdout({
-        batched: (msg) => {
-          textOutput += msg + "\n";
+      // Capture stdout and stderr exactly as written. Python keeps text that
+      // does not end in a new line (print(x, end=" ")) in its own buffer, so
+      // flushOutput pushes it out after each run; the "batched" handler would
+      // drop it until some later line ended.
+      const decoder = new TextDecoder();
+      const capture = {
+        write: (buf) => {
+          textOutput += decoder.decode(buf, { stream: true });
+          return buf.length;
         },
-      });
-      pyodide.setStderr({
-        batched: (msg) => {
-          textOutput += msg + "\n";
-        },
-      });
+      };
+      pyodide.setStdout(capture);
+      pyodide.setStderr(capture);
+      const flushOutput = async () => {
+        try {
+          await pyodide.runPythonAsync("__import__('sys').stdout.flush(); __import__('sys').stderr.flush()");
+        } catch { /* nothing to flush */ }
+      };
 
       try {
         // 1. Run user code — preprocess to rejoin lines where a real newline was
         // embedded inside a string literal (happens with \n in JS template literals).
-        const userCode = fixPythonBrokenStrings(cell.code);
-        const result = await pyodide.runPythonAsync(userCode);
+        const userCode = prepare(cell.code);
+        let result;
+        try {
+          result = await pyodide.runPythonAsync(userCode);
+        } finally {
+          await flushOutput();
+        }
 
         let testFeedback = null;
 
@@ -1052,10 +1131,15 @@ export default function PythonNotebook({ params, onParamChange, onCellsChange })
           pyodide.globals.set('_', result ?? null);
         } catch { /* ignore if result is not a transferable type */ }
 
-        // 2. Run test code if provided
+        // 2. Run test code if provided. Tests can also read what the cell
+        // printed (`_stdout`) and its source (`_source`), so a challenge can
+        // check output, not only the values it leaves behind.
         if (cell.testCode) {
           try {
-            const testResult = await pyodide.runPythonAsync(fixPythonBrokenStrings(cell.testCode));
+            pyodide.globals.set('_stdout', textOutput);
+            pyodide.globals.set('_source', cell.code);
+            const testResult = await pyodide.runPythonAsync(prepare(cell.testCode));
+            await flushOutput();
             // Look for 'SUCCESS' or True
             const isSuccess =
               testResult === true ||
@@ -1129,6 +1213,8 @@ export default function PythonNotebook({ params, onParamChange, onCellsChange })
                     (textOutput ? textOutput + "\n" : "") +
                     "Error: " +
                     err.message,
+                  // What the cell printed before it failed, shown above the error.
+                  printedBeforeError: textOutput.trimEnd(),
                   figureJson: null,
                   matplotlibImages: [],
                 }
@@ -1139,14 +1225,14 @@ export default function PythonNotebook({ params, onParamChange, onCellsChange })
         setIsExecuting(false);
       }
     },
-    [pyodide, cells, isExecuting],
+    [pyodide, cells, isExecuting, rawCode],
   );
 
   // ── Run all cells in order ─────────────────────────────────────────────────
   // Challenge cells hold unfinished starter code, so Run All skips them;
   // learners run each challenge themselves once they have written it.
   const runAll = useCallback(async () => {
-    for (const cell of cells.filter((c) => !c.challengeType)) {
+    for (const cell of cells.filter((c) => !c.challengeType && !c.proseOnly)) {
       await new Promise((resolve) => {
         // Small delay between cells so state updates render
         setTimeout(resolve, 50);

@@ -8,7 +8,7 @@ import {
   listNotebooks, getNotebook, saveNotebook, deleteNotebook, createNotebook,
 } from './notebookStorage.js'
 import { downloadIpynb, fromIpynb, fetchColabNotebook } from './ipynbConverter.js'
-import { SERIES, findLesson } from './series.js'
+import { SERIES, findLesson, isAvailable, loadLessonCells } from './series.js'
 import {
   loadSeriesState, setSeriesCollapsed, saveLessonCells, setLessonCompleted,
   resetLessonCells, lessonStatus, savedLessonCells,
@@ -48,7 +48,8 @@ export default function NotebookLab() {
   // { kind: 'notebook' | 'lesson', id }
   const [open, setOpen] = useState(() => {
     const last = readLastOpen()
-    if (last?.kind === 'lesson' && findLesson(last.id)) return last
+    const lastLesson = last?.kind === 'lesson' ? findLesson(last.id) : null
+    if (lastLesson && isAvailable(lastLesson.lesson)) return last
     if (last?.kind === 'notebook' && getNotebook(last.id)) return last
     return null
   })
@@ -65,10 +66,25 @@ export default function NotebookLab() {
   const saveTimer = useRef(null)
   const pendingSave = useRef(null)
   const lastPassed = useRef('')
+  // The open lesson's cells as shipped: { id, cells } once its file has loaded.
+  const [shipped, setShipped] = useState(null)
+  const [lessonError, setLessonError] = useState(null)
 
   const activeNotebook = open?.kind === 'notebook' ? notebooks.find(n => n.id === open.id) ?? null : null
   const activeLesson = open?.kind === 'lesson' ? findLesson(open.id) : null
   const openKey = open ? `${open.kind}:${open.id}` : null
+  const shippedCells = activeLesson && shipped?.id === activeLesson.lesson.id ? shipped.cells : null
+
+  useEffect(() => {
+    if (!activeLesson) return
+    let live = true
+    setLessonError(null)
+    loadLessonCells(activeLesson.lesson)
+      .then(cells => { if (live) setShipped({ id: activeLesson.lesson.id, cells }) })
+      .catch(err => { if (live) setLessonError(err.message) })
+    return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openKey])
 
   const refresh = () => setNotebooks(listNotebooks())
 
@@ -96,22 +112,20 @@ export default function NotebookLab() {
   const initialCells = useMemo(() => {
     if (!open) return undefined
     if (open.kind === 'lesson') {
-      const found = findLesson(open.id)
-      if (!found) return undefined
-      return savedLessonCells(loadSeriesState(), found.lesson) ?? found.lesson.cells
+      if (!shippedCells) return undefined
+      return savedLessonCells(loadSeriesState(), open.id, shippedCells) ?? shippedCells
     }
     const nb = getNotebook(open.id)
     return nb?.cells.length ? nb.cells : undefined
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openKey, resetCount])
+  }, [openKey, resetCount, shippedCells])
 
-  const handleCellsChange = useCallback((cells) => {
+  const handleCellsChange = useCallback((cells, { beforeRun = false } = {}) => {
     if (!open) return
     const target = open
     pendingSave.current = () => {
       if (target.kind === 'lesson') {
-        const found = findLesson(target.id)
-        if (found) setSeriesState(saveLessonCells(found.lesson, cells))
+        if (shippedCells) setSeriesState(saveLessonCells(target.id, shippedCells, cells))
       } else {
         const nb = getNotebook(target.id)
         if (nb) { saveNotebook({ ...nb, cells }); refresh() }
@@ -122,9 +136,10 @@ export default function NotebookLab() {
     const justPassed = passedNow !== lastPassed.current && passedNow !== ''
     lastPassed.current = passedNow
     clearTimeout(saveTimer.current)
-    if (justPassed) flushSave()
+    // Save before code runs: a run that never ends freezes the page.
+    if (justPassed || beforeRun) flushSave()
     else saveTimer.current = setTimeout(flushSave, 800)
-  }, [open, flushSave])
+  }, [open, shippedCells, flushSave])
 
   const newNotebook = () => {
     const nb = createNotebook()
@@ -207,7 +222,12 @@ export default function NotebookLab() {
     if (!activeLesson) return null
     const { series, lesson } = activeLesson
     const i = series.lessons.findIndex(l => l.id === lesson.id)
-    return { prev: series.lessons[i - 1] ?? null, next: series.lessons[i + 1] ?? null }
+    const ready = series.lessons.filter(isAvailable)
+    return {
+      prev: ready.filter(l => l.number < lesson.number).at(-1) ?? null,
+      next: ready.find(l => l.number > lesson.number) ?? null,
+      index: i,
+    }
   }, [activeLesson])
 
   const lessonDone = activeLesson && lessonStatus(seriesState, activeLesson.lesson.id) === 'done'
@@ -251,6 +271,20 @@ export default function NotebookLab() {
                 </button>
                 {!collapsed && series.lessons.map(lesson => {
                   const isActive = open?.kind === 'lesson' && open.id === lesson.id
+                  if (!isAvailable(lesson)) {
+                    return (
+                      <div
+                        key={lesson.id}
+                        title="Not written yet"
+                        className="flex items-center gap-2 pl-8 pr-3 py-1.5 border-l-2 border-transparent opacity-45 cursor-default"
+                      >
+                        <Circle className="w-3.5 h-3.5 shrink-0 text-slate-700" />
+                        <span className="text-[10px] tabular-nums text-slate-600 w-5 shrink-0">{lesson.number}</span>
+                        <span className="text-[12px] truncate text-slate-500 flex-1">{lesson.title}</span>
+                        <span className="text-[9px] uppercase tracking-wider text-slate-600 shrink-0">soon</span>
+                      </div>
+                    )
+                  }
                   return (
                     <button
                       key={lesson.id}
@@ -438,7 +472,7 @@ export default function NotebookLab() {
               onClick={() => downloadIpynb(activeNotebook ?? {
                 id: activeLesson.lesson.id,
                 name: activeLesson.lesson.title,
-                cells: savedLessonCells(seriesState, activeLesson.lesson) ?? activeLesson.lesson.cells,
+                cells: savedLessonCells(seriesState, activeLesson.lesson.id, shippedCells ?? []) ?? shippedCells ?? [],
               })}
               title="Download .ipynb"
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
@@ -465,11 +499,17 @@ export default function NotebookLab() {
         <div className="flex-1 min-h-0 overflow-auto bg-white dark:bg-slate-950">
           {activeNotebook || activeLesson ? (
             <div className="pb-24">
-              <PythonNotebook
-                key={`${openKey}:${resetCount}`}
-                params={{ initialCells }}
-                onCellsChange={handleCellsChange}
-              />
+              {activeLesson && !shippedCells ? (
+                <p className="p-8 text-sm text-slate-400">
+                  {lessonError ? `This lesson could not be loaded: ${lessonError}` : 'Loading lesson…'}
+                </p>
+              ) : (
+                <PythonNotebook
+                  key={`${openKey}:${resetCount}`}
+                  params={{ initialCells, rawCode: true }}
+                  onCellsChange={handleCellsChange}
+                />
+              )}
               {activeLesson && lessonNav.next && (
                 <div className="px-6 pt-2">
                   <button

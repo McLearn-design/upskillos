@@ -23,6 +23,52 @@ A lesson is something you can learn from without another source, not a summary o
 
 Sizes: a lesson is one sitting (about 30–45 minutes), with 4–8 teaching sections and 2–4 challenges.
 
+## Writing and checking a lesson
+
+The lesson list, in order, is [src/tools/notebook-lab/series/manifest.js](../src/tools/notebook-lab/series/manifest.js). A lesson is the Markdown file `src/tools/notebook-lab/series/<series>/<slug>.md`. Until that file exists, the sidebar shows the lesson as "soon". A lesson's id (`py-running-code`) is a learner's progress key, so never rename a slug once the lesson has shipped. Reordering the manifest is safe.
+
+The format is parsed by [lessonFormat.js](../src/tools/notebook-lab/lessonFormat.js), which the app and the checker share:
+
+````text
+# Lesson title                      (must match the manifest)
+
+Prose. Blank lines separate paragraphs. "## " starts a section.
+Lists use "- " or "1. ". Math: $inline$ and \[display\] (not $$).
+
+```python
+a demo cell; the prose above it is shown with it
+```
+
+```python error NameError
+a demo meant to raise that error, to teach reading errors
+```
+
+::: challenge Title [easy|medium|hard]
+Instructions.
+```python starter
+```
+```python solution
+```
+```python test
+assert ..., "message shown to the learner when it fails"
+"SUCCESS: message shown when it passes"
+```
+Hint: one paragraph.
+:::
+````
+
+A challenge test runs after the learner's code, in the same namespace. It can also read `_stdout` (what the code printed) and `_source` (the code itself). Name any helper variables in a test with a leading underscore, so they cannot clash with the learner's names. Prose after the last cell is shown as text only.
+
+Check a lesson with:
+
+```text
+node scripts/check_notebook_series.mjs py-running-code   # one lesson
+node scripts/check_notebook_series.mjs python            # one series
+node scripts/check_notebook_series.mjs                   # everything written
+```
+
+The checker enforces everything under "What every lesson contains" that a script can judge. That includes the minimum prose length, and, for Python from Zero, that no syntax is used before the lesson that teaches it. Teaching quality is judged by review.
+
 ---
 
 ## Series 1: Python from Zero (24 lessons)

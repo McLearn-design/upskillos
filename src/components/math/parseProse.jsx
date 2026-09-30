@@ -283,7 +283,8 @@ export function parseProse(text) {
     const nextBackslash = text.indexOf('\\', i)
     const nextTooltip   = text.indexOf('<span class="tooltip" data-tooltip="', i)
     const nextNewline   = text.indexOf('\n', i)
-    const candidates = [nextBold, nextAsterisk, nextDollar, nextAlg, nextDisplay, nextInline, nextBackslash, nextTooltip, nextNewline].filter(v => v !== -1)
+    const nextBacktick  = text.indexOf('`', i)
+    const candidates = [nextBold, nextAsterisk, nextDollar, nextAlg, nextDisplay, nextInline, nextBackslash, nextTooltip, nextNewline, nextBacktick].filter(v => v !== -1)
     const stop = candidates.length ? Math.min(...candidates) : text.length
     if (stop > i) {
       parts.push(<span key={`t${keyIdx++}`}>{text.slice(i, stop)}</span>)
