@@ -1,12 +1,13 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { fileURLToPath } from 'node:url';
 import { loadPyodide } from 'pyodide';
-import { Editor } from './Editor';
-import { EditMesh } from './EditMesh';
-import { runScript } from './api';
-import { skinSource, skinnedSource } from './evaluate';
+import { Editor } from '../../../engines/mesh/core/Editor';
+import { EditMesh } from '../../../engines/mesh/core/EditMesh';
+import { runScript } from '../../../engines/mesh/core/api';
+import { skinSource, skinnedSource } from '../../../engines/mesh/core/evaluate';
 import { PROJECTS, PROJECT_GROUPS, openProject, startState, stepText } from './projects';
-import { sampleKeys } from './animation';
-import type { PyodideLike } from './python';
+import { sampleKeys } from '../../../engines/mesh/core/animation';
+import type { PyodideLike } from '../../../engines/mesh/core/python';
 
 let py: PyodideLike;
 beforeAll(async () => { py = (await loadPyodide()) as unknown as PyodideLike; }, 60000);
@@ -68,7 +69,7 @@ describe('what the projects claim', () => {
   });
 
   it('the candy wrapper: at the full twist the linear tube pinches, the dual-quaternion one stays round', async () => {
-    const { skinnedSource } = await import('./evaluate');
+    const { skinnedSource } = await import('../../../engines/mesh/core/evaluate');
     const { e } = open('candy-wrapper');
     e.setFrame(36);
     const mid = (name: string) => {
@@ -81,7 +82,7 @@ describe('what the projects claim', () => {
   });
 
   it('fix a bad rig: opens painting the spine, and painting the chest stops the arm dragging it', async () => {
-    const { skinnedSource, skinSource } = await import('./evaluate');
+    const { skinnedSource, skinSource } = await import('../../../engines/mesh/core/evaluate');
     const { e } = open('fix-a-bad-rig');
     expect(e.mode).toBe('weight'); expect(e.activeBone).toBe('Spine'); expect(e.frame).toBe(24);
     const body = () => e.scene.get('Character')!;
@@ -96,7 +97,7 @@ describe('what the projects claim', () => {
   });
 
   it('the tentacle: rolling a bone 90° turns its bending plane from forward to sideways', async () => {
-    const { posedEnds } = await import('./armature');
+    const { posedEnds } = await import('../../../engines/mesh/core/armature');
     const { e } = open('tentacle');
     e.setFrame(13);                                   // Seg 1 at a full swing
     const tip = () => posedEnds(e.scene.get('Tentacle rig')!.bones!).get('Seg 1')!.tail;
@@ -125,7 +126,7 @@ describe('what the projects claim', () => {
 
 describe('bone edit mode shows the rest pose', () => {
   it('while the tentacle rig is edited the tentacle is straight; leaving puts the pose back', async () => {
-    const { skinnedSource, skinSource } = await import('./evaluate');
+    const { skinnedSource, skinSource } = await import('../../../engines/mesh/core/evaluate');
     const e = new Editor();
     openProject(e, PROJECTS.find((p) => p.id === 'tentacle')!, py);
     e.setFrame(13);
@@ -182,7 +183,7 @@ describe('UV and material projects', () => {
   });
 
   it('the vase gets a band and a disc, with little angle distortion', async () => {
-    const { uvFits, charts } = await import('./uv');
+    const { uvFits, charts } = await import('../../../engines/mesh/core/uv');
     const { e, r } = open('python-vase');
     const v = e.scene.get('Vase')!;
     expect(uvFits(v.mesh!, v.uv)).toBe(true);
@@ -191,7 +192,7 @@ describe('UV and material projects', () => {
   });
 
   it('the shader gallery has one sphere per model, all unwrapped, and the custom GLSL set', async () => {
-    const { uvFits } = await import('./uv');
+    const { uvFits } = await import('../../../engines/mesh/core/uv');
     const { e } = open('shader-gallery');
     const want = { PBR: 'pbr', Lambert: 'lambert', 'Blinn–Phong 10': 'blinn-phong', 'Blinn–Phong 120': 'blinn-phong', Toon: 'toon', Normals: 'normals', UV: 'uv', Custom: 'custom' };
     for (const [n, m] of Object.entries(want)) { const o = e.scene.get(n)!; expect(o.material.shader).toBe(m); expect(uvFits(o.mesh!, o.uv)).toBe(true); }
@@ -200,7 +201,7 @@ describe('UV and material projects', () => {
   });
 
   it('the dining set is wood-grained: every part unwrapped with the wood texture', async () => {
-    const { uvFits } = await import('./uv');
+    const { uvFits } = await import('../../../engines/mesh/core/uv');
     const { e } = open('dining-set');
     const parts = e.scene.objects.filter((o) => o.mesh);
     expect(parts.length).toBeGreaterThan(20);
@@ -212,7 +213,7 @@ describe('hard-surface projects', () => {
   const open = (id: string) => { const e = new Editor(); const r = openProject(e, PROJECTS.find((p) => p.id === id)!, py); return { e, r }; };
 
   it('the crate is closed, bevelled, panelled and fully unwrapped', async () => {
-    const { uvFits, angleDistortion } = await import('./uv');
+    const { uvFits, angleDistortion } = await import('../../../engines/mesh/core/uv');
     const { e } = open('crate');
     const c = e.scene.get('Crate')!, s = c.mesh!.stats();
     expect(s.closed).toBe(true); expect(s.euler).toBe(2);
@@ -235,9 +236,19 @@ import { CHALLENGES } from './challenges';
 
 describe('guides name things that exist', () => {
   it('every "Menu › Item" in a guide or hint is a real menu item; every other "A › B" is text in the interface', () => {
-    const dir = new URL('..', import.meta.url).pathname;
+    // fileURLToPath, not .pathname: on Windows a file URL keeps a leading slash
+    // before the drive letter and percent-encodes spaces, so the naive version
+    // builds 'C:\C:\...%20...' and every read from it fails. This test reported a
+    // missing file rather than whatever it was checking - a test that cannot run is
+    // not a test that passes.
+    const dir = fileURLToPath(new URL('..', import.meta.url));
     const meshlab = readFileSync(dir + 'MeshLab.tsx', 'utf8');
-    const ui = meshlab + readdirSync(dir + 'ui').map((f) => readFileSync(dir + 'ui/' + f, 'utf8')).join('\n');
+    // The interface is split: content-facing panels stay with the lab,
+    // the inspection panels are shared in src/engines/mesh. Scanning only
+    // one of the two would check a fraction of the menu items and pass.
+    const uiDirs = [dir + 'ui', dir + '../../engines/mesh/ui'];
+    const ui = meshlab + uiDirs.flatMap((d) => readdirSync(d)
+      .map((f) => readFileSync(d + '/' + f, 'utf8'))).join('\n');
     // The menus: `Name: [ ... ],` or `'Name': [ ... ],` inside the menus object, with their item labels.
     const block = meshlab.slice(meshlab.indexOf('const menus'), meshlab.indexOf('const stats'));
     const menus = new Map<string, string>();
@@ -279,7 +290,7 @@ describe('the walk cycle', () => {
   });
 
   it('the island is grass on planar UVs', async () => {
-    const { uvFits } = await import('./uv');
+    const { uvFits } = await import('../../../engines/mesh/core/uv');
     const e = new Editor(); openProject(e, PROJECTS.find((p) => p.id === 'island')!);
     const land = e.scene.get('Island')!;
     expect(land.material.texture).toBe('grass'); expect(uvFits(land.mesh!, land.uv)).toBe(true);

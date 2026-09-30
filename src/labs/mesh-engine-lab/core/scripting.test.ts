@@ -7,7 +7,7 @@ import { runPython, type PyodideLike } from '../../../engines/mesh/core/python';
 
 const fresh = () => { const e = new Editor(); e.newScene(); return e; };
 
-describe('recording a JavaScript script', () => {
+describe('recording a JavaScript script [mesh-engine lab]', () => {
   it('instrumented code behaves like the original, including single-statement bodies', () => {
     const code = `let s = 0\nfor (let i = 0; i < 4; i++) s += i\nif (s > 5) s *= 2; else s = -1\nlet t = 0; while (t < 3) t++\nconst f = (x) => x * 2\nfunction g(y) { return y + 1 }\nreturn [s, t, f(3), g(1)]`;
     const plain = new Function(code)();
@@ -61,7 +61,7 @@ describe('recording a JavaScript script', () => {
   });
 });
 
-describe('Python', () => {
+describe('Python [mesh-engine lab]', () => {
   let py: PyodideLike;
   beforeAll(async () => { py = (await loadPyodide()) as unknown as PyodideLike; }, 60000);
 
@@ -114,7 +114,7 @@ describe('Python', () => {
   });
 });
 
-describe('Python examples', () => {
+describe('Python examples [mesh-engine lab]', () => {
   let py: PyodideLike;
   beforeAll(async () => { py = (await loadPyodide()) as unknown as PyodideLike; }, 60000);
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Editor } from './Editor';
-import { runScript } from './api';
+import { Editor } from '../../../engines/mesh/core/Editor';
+import { runScript } from '../../../engines/mesh/core/api';
 import { CHALLENGES, startChallenge } from './challenges';
 
 describe('challenges', () => {

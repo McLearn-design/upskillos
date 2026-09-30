@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { Editor } from '../core/Editor';
-import { runScript } from '../core/api';
-import { exportGLB } from './io';
+import { Editor } from '../../../engines/mesh/core/Editor';
+import { runScript } from '../../../engines/mesh/core/api';
+import { exportGLB } from '../../../engines/mesh/render/io';
 
 describe('GLB export with animation', () => {
   it('bakes every frame into a clip that three.js (and Blender) reads back', async () => {
@@ -35,7 +35,7 @@ describe('GLB export of a rigged character', () => {
   it('re-imports as a SkinnedMesh that three.js deforms exactly as MeshLab does', async () => {
     const THREE = await import('three');
     const { EXAMPLES } = await import('../core/examples');
-    const { skinnedSource } = await import('../core/evaluate');
+    const { skinnedSource } = await import('../../../engines/mesh/core/evaluate');
     const e = new Editor(); e.newScene();
     expect(runScript(e, EXAMPLES.find((x) => x.id === 'rig-character')!.code).error).toBeNull();
     e.setFrame(24); // arm raised, leg stepping

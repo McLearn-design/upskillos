@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { Editor } from './Editor';
-import { runScript } from './api';
+import { Editor } from '../../../engines/mesh/core/Editor';
+import { runScript } from '../../../engines/mesh/core/api';
 import { EXAMPLES } from './examples';
-import { skinnedSource, skinSource } from './evaluate';
-import { dab, falloff, mirrorBoneName, neighbourLists, setWeight, DEFAULT_PAINT } from './weightPaint';
-import type { Skin } from './armature';
+import { skinnedSource, skinSource } from '../../../engines/mesh/core/evaluate';
+import { dab, falloff, mirrorBoneName, neighbourLists, setWeight, DEFAULT_PAINT } from '../../../engines/mesh/core/weightPaint';
+import type { Skin } from '../../../engines/mesh/core/armature';
 
 const skin2 = (n: number): Skin => ({ armature: 'a', bones: ['A', 'B'], weights: [new Array(n).fill(0.5), new Array(n).fill(0.5)], verts: n });
 

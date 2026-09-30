@@ -2,12 +2,18 @@
 // checkers can't make: every link into MeshLab opens something real, the
 // notebook challenges grade correctly, and cells print what the prose says.
 import { describe, expect, it } from 'vitest';
+import { fileURLToPath } from 'node:url';
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { meshLabLink, parseMeshLabLink } from '../../labs/mesh-lab/links';
 import lesson1, { checkHouse } from './1-meshes-as-data/001-vertices-and-faces.js';
 
-const dir = new URL('.', import.meta.url).pathname;
+// fileURLToPath, not .pathname: on Windows a file URL keeps a leading slash
+// before the drive letter and percent-encodes spaces, so the naive version
+// builds 'C:\C:\...%20...' and every read from it fails. This test reported a
+// missing file rather than whatever it was checking - a test that cannot run is
+// not a test that passes.
+const dir = fileURLToPath(new URL('.', import.meta.url));
 const lessonFiles = readdirSync(dir)
   .filter((d) => statSync(join(dir, d)).isDirectory())
   .flatMap((d) => readdirSync(join(dir, d)).filter((f) => f.endsWith('.js')).map((f) => join(dir, d, f)));

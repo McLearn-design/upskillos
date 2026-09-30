@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { Vector3 } from 'three';
-import { EditMesh, type Vec3 } from './EditMesh';
-import { boneHeatWeights, boneMatrices, chain, deform, posedEnds, restMatrix, type Bone, type Skin } from './armature';
-import { Editor } from './Editor';
-import { evaluatedMesh, skinState, skinSource } from './evaluate';
-import { runScript } from './api';
-import { Scene } from './Scene';
+import { EditMesh, type Vec3 } from '../../../engines/mesh/core/EditMesh';
+import { boneHeatWeights, boneMatrices, chain, deform, posedEnds, restMatrix, type Bone, type Skin } from '../../../engines/mesh/core/armature';
+import { Editor } from '../../../engines/mesh/core/Editor';
+import { evaluatedMesh, skinState, skinSource } from '../../../engines/mesh/core/evaluate';
+import { runScript } from '../../../engines/mesh/core/api';
+import { Scene } from '../../../engines/mesh/core/Scene';
 
 const R = 0.3;
 /** An open tube along y from 0 to 2: 21 rings of 12 vertices. Ring k is at y = k / 10. */
@@ -261,7 +261,7 @@ describe('bone roll and bone editing', () => {
   });
 
   it('moving a joint moves the joints that touch it; a whole bone drags its neighbours\' ends', async () => {
-    const { moveJoint } = await import('./armature');
+    const { moveJoint } = await import('../../../engines/mesh/core/armature');
     const start = chain(['A', 'B', 'C'], [[0, 0, 0], [0, 1, 0], [0, 2, 0], [0, 3, 0]]);
     const bones = start.map((b) => ({ ...b, head: [...b.head] as Vec3, tail: [...b.tail] as Vec3 }));
     expect(moveJoint(bones, start, { bone: 'A', part: 'tail' }, [0.5, 0, 0])).toEqual(['A', 'B']);

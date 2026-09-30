@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { makePrimitive } from './primitives';
-import { catmullClark } from './subdivision';
-import { Trace, checkQuiz } from './trace';
-import { Editor } from './Editor';
+import { makePrimitive } from '../../../engines/mesh/core/primitives';
+import { catmullClark } from '../../../engines/mesh/core/subdivision';
+import { Trace, checkQuiz } from '../../../engines/mesh/core/trace';
+import { Editor } from '../../../engines/mesh/core/Editor';
 import { PROJECTS, openProject } from './projects';
-import type { Vec3 } from './EditMesh';
+import type { Vec3 } from '../../../engines/mesh/core/EditMesh';
 
 const avg = (ps: Vec3[]) => ps.reduce((s, p) => [s[0] + p[0] / ps.length, s[1] + p[1] / ps.length, s[2] + p[2] / ps.length], [0, 0, 0]);
 

@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { Editor } from './Editor';
-import { runScript } from './api';
+import { Editor } from '../../../engines/mesh/core/Editor';
+import { runScript } from '../../../engines/mesh/core/api';
 import { EXAMPLES } from './examples';
-import { evaluate } from './modifiers';
-import { parseOBJ, exportOBJ } from './formats';
+import { evaluate } from '../../../engines/mesh/core/modifiers';
+import { parseOBJ, exportOBJ } from '../../../engines/mesh/core/formats';
 import { advance } from '../../../utils/playback';
 
 const fresh = () => { const e = new Editor(); e.newScene(); return e; };
@@ -76,7 +76,7 @@ describe('shared playback', () => {
   });
 });
 
-import { evalExpr } from './expr';
+import { evalExpr } from '../../../engines/mesh/core/expr';
 describe('number-field expressions', () => {
   it('evaluates arithmetic, constants and functions, and rejects anything else', () => {
     expect(evalExpr('pi/4')).toBeCloseTo(Math.PI / 4, 15);

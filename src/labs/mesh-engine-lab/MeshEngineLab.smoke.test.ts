@@ -33,7 +33,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SHARED = '../../engines/mesh';
 const source = [`${SHARED}/render/Viewport.ts`, `${SHARED}/render/io.ts`].map((f) => readFileSync(resolve(here, f), 'utf8')).join('\n');
 
-describe('the installed three.js has everything MeshLab names', () => {
+describe('the installed three.js has everything MeshLab names [mesh-engine lab]', () => {
   it('exposes every THREE.X the component refers to', () => {
     const used = new Set<string>();
     for (const m of source.matchAll(/\bTHREE\.([A-Z][A-Za-z0-9_]*)/g)) used.add(m[1]);
@@ -51,7 +51,7 @@ describe('the installed three.js has everything MeshLab names', () => {
   });
 });
 
-describe('the scene MeshLab builds, on the installed version', () => {
+describe('the scene MeshLab builds, on the installed version [mesh-engine lab]', () => {
   it('constructs controls and puts the gizmo in the scene', () => {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, 1.5, 0.1, 1000);

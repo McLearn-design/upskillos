@@ -5,11 +5,11 @@
 // one step. `setup` says what to show once it is built (what to select, which
 // frame, which panel), and `guide` lists things to look at and try.
 
-import type { Editor } from './Editor';
-import type { Vec3 } from './EditMesh';
-import { runScript } from './api';
+import type { Editor } from '../../../engines/mesh/core/Editor';
+import type { Vec3 } from '../../../engines/mesh/core/EditMesh';
+import { runScript } from '../../../engines/mesh/core/api';
 import { CHARACTER, EXAMPLES } from './examples';
-import { runPython, type PyodideLike } from './python';
+import { runPython, type PyodideLike } from '../../../engines/mesh/core/python';
 
 export interface ProjectSetup {
   /** Object to select (by name). */

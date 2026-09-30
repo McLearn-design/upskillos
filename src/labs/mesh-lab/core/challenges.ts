@@ -6,15 +6,15 @@
 // the app and proves in the tests that the starting scene does not pass and the
 // solution does.
 
-import type { Editor } from './Editor';
-import { runScript } from './api';
-import { sampleKeys } from './animation';
-import { charts, uvFits, angleDistortion } from './uv';
-import { evaluatedMesh, skinSource } from './evaluate';
-import { heatGeodesic } from './geometry';
+import type { Editor } from '../../../engines/mesh/core/Editor';
+import { runScript } from '../../../engines/mesh/core/api';
+import { sampleKeys } from '../../../engines/mesh/core/animation';
+import { charts, uvFits, angleDistortion } from '../../../engines/mesh/core/uv';
+import { evaluatedMesh, skinSource } from '../../../engines/mesh/core/evaluate';
+import { heatGeodesic } from '../../../engines/mesh/core/geometry';
 import { Box3, Vector3 } from 'three';
 import { EXAMPLES } from './examples';
-import { fmt } from './trace';
+import { fmt } from '../../../engines/mesh/core/trace';
 
 export interface Check { label: string; ok: boolean; detail?: string }
 
