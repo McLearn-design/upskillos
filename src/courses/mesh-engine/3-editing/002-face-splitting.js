@@ -1303,7 +1303,7 @@ export default {
   coreConcept:
     'A toolpath boundary crosses faces, and a face that is half one operation cannot be coloured correctly. Refining the mesh is the wrong lever: measured, the straddling fraction falls exactly like 1/n - 10.00% at a 10-grid down to 0.62% at 160 - because those faces sit along a line while the total sits over an area, so 256x the faces buys 16x the improvement and never reaches zero. Cutting the faces where the boundary is preserves area exactly and leaves nothing straddling. The crack is not where it looks: a cut running all the way across the mesh opens ZERO interior cracks, because it crosses every interior edge on both sides and both triangles gain the same vertex. The T-junction is at the termination, where the cut stops, and at a lone face split by hand, which adds exactly 3 boundary edges. Repairing it means splitting the neighbour at the inserted point, not re-applying the cut - so the cut must record which edge each new vertex landed on. Then the bookkeeping, which is the harder half: splitting face 640 of 1,920 by delete-and-append leaves 640 of 1,920 indices correct, silently renaming 1,280 faces of owner, role, distance and image data, while tombstoning renames exactly 1.',
   prerequisites: ['mesh-engine-3-1-selection'],
-  nextLesson: 'mesh-engine-2-3-rendering-fundamentals',
+  nextLesson: 'mesh-engine-4-1-rendering-fundamentals',
 
   semantics: {
     core: [
