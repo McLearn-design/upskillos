@@ -112,6 +112,10 @@ const flushOutput = () => py.runPythonAsync("__import__('sys').stdout.flush(); _
 // notebook captures open figures itself after each cell).
 await py.loadPackage(['numpy', 'pandas', 'matplotlib', 'scikit-learn', 'scipy', 'statsmodels', 'sqlite3', 'sympy'], { messageCallback: () => {} })
 await py.runPythonAsync(`
+import warnings
+# scikit-learn's threadpoolctl calls a Pyodide API deprecated in 0.29; the
+# RuntimeWarning it prints on first use (e.g. KMeans) means nothing to learners.
+warnings.filterwarnings('ignore', message='JsProxy.as_object_map', category=RuntimeWarning)
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt

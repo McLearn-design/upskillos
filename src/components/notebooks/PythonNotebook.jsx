@@ -272,6 +272,10 @@ async function getPyodide() {
 
     // Force Agg backend so matplotlib never injects HTML into the DOM
     await py.runPythonAsync(`
+import warnings
+# scikit-learn's threadpoolctl calls a Pyodide API deprecated in 0.29; the
+# RuntimeWarning it prints on first use (e.g. KMeans) means nothing to learners.
+warnings.filterwarnings('ignore', message='JsProxy.as_object_map', category=RuntimeWarning)
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt

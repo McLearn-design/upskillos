@@ -28,7 +28,7 @@ In a two-class problem, call the class you are trying to detect the **positive**
 - **True negative** (TN): negative, predicted negative. Correctly left alone.
 - **False negative** (FN): positive, predicted negative. A missed fraud.
 
-These four counts, arranged in a grid, are the **confusion matrix**. Using the breast cancer model from the last lesson, now with **malignant** as the positive class since that is what screening is for:
+These four counts, arranged in a grid, are the **confusion matrix**. Using the same kind of model as the last lesson, logistic regression on the breast cancer data, now with **malignant** as the positive class since that is what screening is for:
 
 ```python
 import numpy as np
@@ -80,7 +80,7 @@ The two pull in opposite directions. A model that flags everything has perfect r
 F_1 = \frac{2 \cdot \text{precision} \cdot \text{recall}}{\text{precision} + \text{recall}}
 \]
 
-The harmonic mean is dragged down by whichever of the two is smaller, so a model cannot score well on F1 by excelling at one and neglecting the other. One more measure appears often in medicine: **specificity**, the true negative rate, TN / (TN + FP): the fraction of healthy cases correctly cleared.
+The harmonic mean is dragged down by whichever of the two is smaller. A model with precision 1.0 and recall 0.1 has an ordinary average of 0.55, which sounds respectable, but an F1 of 2 × 1.0 × 0.1 / 1.1 ≈ 0.18, which correctly says it misses most positives. A model cannot score well on F1 by excelling at one and neglecting the other. One more measure appears often in medicine: **specificity**, the true negative rate, TN / (TN + FP): the fraction of healthy cases correctly cleared.
 
 ## The threshold trades one error for the other
 
@@ -191,7 +191,7 @@ best = thresholds[int(np.argmin(costs))]
 print(f"best threshold {best:.2f}, total cost {min(costs)} (at 0.5 the cost is {costs[49]})")
 ```
 
-(`~pred` flips the booleans: not predicted positive.) With false negatives this expensive, the best threshold is well below 0.5. There is also a neat theoretical answer: if the probabilities are trustworthy, the cost-minimising rule is to predict positive whenever `p > cost_fp / (cost_fp + cost_fn)`, here 1/21 ≈ 0.05. In practice, pick the threshold on validation data, as here, and report the final result on a separate test set; this demo uses the test set only to keep the code short.
+(`~pred` flips the booleans: not predicted positive.) With false negatives this expensive, the best threshold is well below 0.5. There is also a neat theoretical answer: if the probabilities are trustworthy, the cost-minimising rule is to predict positive whenever `p > cost_fp / (cost_fp + cost_fn)`, here 1/21 ≈ 0.05. In practice, pick the threshold on validation data and report the final result on a separate test set; this demo uses the test set only to keep the code short.
 
 ## Can you trust the probabilities?
 
@@ -218,7 +218,7 @@ for low, high in zip(edges[:-1], edges[1:]):
         print(f"predicted {low:.1f}–{high:.1f}: {in_bin.sum():>3} tumours, mean prediction {p_test[in_bin].mean():.2f}, actually malignant {y_test[in_bin].mean():.2f}")
 ```
 
-Logistic regression is usually reasonably calibrated, because its log loss rewards honest probabilities. Many other models (you will meet some) are not, and their probabilities need correcting before being used for decisions. Here the confident bins match almost perfectly. The middle bins hold only a couple of dozen tumours between them, so their fractions are rough (one malignant tumour more or less in the 0.1–0.5 bin moves its fraction by 0.05), a reminder of the estimation lesson.
+Logistic regression is usually reasonably calibrated, because its log loss rewards honest probabilities. Many other models (you will meet some) are not, and their probabilities need correcting before being used for decisions. Here the confident bins match almost perfectly. The 0.1–0.5 bin looks worse: its predictions average 0.21, so about 4 of its 20 tumours would be expected to be malignant, but only 1 is. Is that a sign of bad calibration, or bad luck? Simulating 20 tumours with these exact probabilities gives 1 or fewer malignant about 5% of the time: unusual, but not shocking with so few tumours. A bin of 20 cannot settle the question, which is the estimation lesson again; checking calibration properly needs hundreds of examples in each bin.
 
 ::: challenge The four counts [easy]
 Write a function `confusion_counts(y_true, y_pred)` that takes two arrays of 0/1 labels (1 is the positive class) and returns a tuple `(tp, fp, tn, fn)` of plain integers. Then write `precision_recall_f1(y_true, y_pred)` returning `(precision, recall, f1)`. If there are no predicted positives, define precision as 0; if there are no actual positives, define recall as 0; if both precision and recall are 0, define F1 as 0.
@@ -262,6 +262,14 @@ assert "confusion_counts" in dir() and "precision_recall_f1" in dir(), "Keep bot
 _t = _np.array([1, 0, 1, 1, 0])
 _p = _np.array([1, 1, 0, 1, 0])
 assert tuple(confusion_counts(_t, _p)) == (2, 1, 1, 1), f"For the example the counts should be (tp, fp, tn, fn) = (2, 1, 1, 1), but got {confusion_counts(_t, _p)}."
+from sklearn.metrics import confusion_matrix as _cm
+_rng0 = _np.random.default_rng(11)
+_yt0 = _rng0.integers(0, 2, 50)
+_yp0 = _np.where(_rng0.random(50) < 0.3, 1, _yt0)
+_tn, _fp, _fn, _tp = _cm(_yt0, _yp0).ravel()
+_got0 = tuple(confusion_counts(_yt0, _yp0))
+assert _got0 == (_tp, _fp, _tn, _fn), f"On a larger example the counts should be (tp, fp, tn, fn) = {(int(_tp), int(_fp), int(_tn), int(_fn))}, but got {_got0}. Did you swap false positives and false negatives, or the order of the arguments (y_true first, then y_pred)?"
+assert all(type(_v) is int for _v in _got0), "Return plain Python integers: wrap each count in int()."
 _rng = _np.random.default_rng(3)
 for _ in range(3):
     _yt = _rng.integers(0, 2, 60)
@@ -270,6 +278,7 @@ for _ in range(3):
     _want = (_ps(_yt, _yp), _rs(_yt, _yp), _fs(_yt, _yp))
     assert _np.allclose(_got, _want), f"precision, recall and F1 should be {tuple(round(v, 4) for v in _want)}, but got {tuple(round(v, 4) for v in _got)}."
 assert tuple(precision_recall_f1(_np.array([1, 1]), _np.array([0, 0]))) == (0.0, 0.0, 0.0), "With no predicted positives, precision, recall and F1 should all be 0."
+assert tuple(precision_recall_f1(_np.array([0, 0]), _np.array([1, 0])))[1:] == (0.0, 0.0), "With no actual positives, recall (and so F1) should be 0."
 "SUCCESS: The four boxes and the three measures built from them."
 ```
 
@@ -319,67 +328,82 @@ assert _np.isclose(auc(_np.array([0, 1, 0, 1]), _ties), 0.5), "Tied scores shoul
 Hint: Select the positive scores and the negative scores. `positive.reshape(-1, 1) > negative` broadcasts into a table comparing every positive with every negative. Add half a point for ties, then take the mean.
 :::
 
-::: challenge The cheapest threshold [medium]
-Write a function `cheapest_threshold(y_true, p, cost_fn, cost_fp, thresholds)` that returns the threshold (from the given list) with the lowest total cost, where a prediction is positive when `p > threshold`, each false negative costs `cost_fn` and each false positive costs `cost_fp`. If several thresholds tie for the lowest cost, return the first.
+::: challenge A screening threshold [medium]
+Cost ratios are often hard to agree on. Screening programmes usually set a rule instead: **catch at least 95% of the positives**, and then flag as few people as possible. Among the thresholds that achieve the required recall, the best is the **highest**, because a higher threshold flags fewer cases and so gives fewer false alarms.
 
-Then, for the starter's predictions, find the cheapest threshold when a false negative costs 10 and a false positive costs 1, and store it in `threshold_10`; and when both cost 1, storing it in `threshold_1`.
+Write a function `screening_threshold(y_true, p, min_recall, thresholds)` that returns a tuple `(threshold, precision)`: the highest threshold in the list whose recall is at least `min_recall` (predicting positive when `p > threshold`), and the precision at that threshold. If no threshold reaches the required recall, return `(None, None)`.
+
+Then, for the starter's predictions, store the result for a required recall of 0.95 in `rule_95`, and for 0.8 in `rule_80`.
 
 ```python starter
 import numpy as np
 
-def cheapest_threshold(y_true, p, cost_fn, cost_fp, thresholds):
-    return 0.5
+def screening_threshold(y_true, p, min_recall, thresholds):
+    return None, None
 
 rng = np.random.default_rng(5)
 y_true = (rng.random(500) < 0.2).astype(int)
 p = np.clip(0.2 + 0.5 * (y_true - 0.2) + rng.normal(0, 0.2, 500), 0, 1)
 grid = list(np.round(np.linspace(0.05, 0.95, 19), 2))
 
-threshold_10 = 0.5
-threshold_1 = 0.5
-print(threshold_10, threshold_1)
+rule_95 = None
+rule_80 = None
+print(rule_95, rule_80)
 ```
 
 ```python solution
 import numpy as np
 
-def cheapest_threshold(y_true, p, cost_fn, cost_fp, thresholds):
-    costs = []
-    for t in thresholds:
+def screening_threshold(y_true, p, min_recall, thresholds):
+    best = (None, None)
+    for t in sorted(thresholds):
         pred = p > t
-        fn = (~pred & (y_true == 1)).sum()
-        fp = (pred & (y_true == 0)).sum()
-        costs.append(cost_fn * fn + cost_fp * fp)
-    return thresholds[int(np.argmin(costs))]
+        tp = (pred & (y_true == 1)).sum()
+        recall = tp / (y_true == 1).sum()
+        if recall >= min_recall:
+            best = (t, tp / pred.sum() if pred.sum() else 0.0)
+    return best
 
 rng = np.random.default_rng(5)
 y_true = (rng.random(500) < 0.2).astype(int)
 p = np.clip(0.2 + 0.5 * (y_true - 0.2) + rng.normal(0, 0.2, 500), 0, 1)
 grid = list(np.round(np.linspace(0.05, 0.95, 19), 2))
 
-threshold_10 = cheapest_threshold(y_true, p, 10, 1, grid)
-threshold_1 = cheapest_threshold(y_true, p, 1, 1, grid)
-print(threshold_10, threshold_1)
+rule_95 = screening_threshold(y_true, p, 0.95, grid)
+rule_80 = screening_threshold(y_true, p, 0.8, grid)
+print(rule_95, rule_80)
 ```
 
 ```python test
 import numpy as _np
-assert "cheapest_threshold" in dir(), "Keep the function's name as cheapest_threshold."
-def _ct(y, p, cfn, cfp, ts):
-    c = [cfn * ((~(p > t)) & (y == 1)).sum() + cfp * ((p > t) & (y == 0)).sum() for t in ts]
-    return ts[int(_np.argmin(c))]
+assert "screening_threshold" in dir(), "Keep the function's name as screening_threshold."
+def _ref(y, p, mr, ts):
+    best = (None, None)
+    for t in sorted(ts):
+        pred = p > t
+        tp = (pred & (y == 1)).sum()
+        if tp / (y == 1).sum() >= mr:
+            best = (t, tp / pred.sum() if pred.sum() else 0.0)
+    return best
+_yt = _np.array([1, 1, 1, 1, 0, 0, 0, 0, 0, 0])
+_pt = _np.array([0.9, 0.8, 0.6, 0.3, 0.7, 0.5, 0.4, 0.2, 0.1, 0.05])
+_got = screening_threshold(_yt, _pt, 0.75, [0.1, 0.25, 0.55, 0.85])
+assert _got[0] == 0.55, f"In the small example, thresholds 0.1, 0.25 and 0.55 all catch at least 75% of the positives; the highest of them is 0.55, but you returned {_got[0]}."
+assert _np.isclose(_got[1], 3 / 4), f"At threshold 0.55 the model flags 4 cases, 3 of them positive, so precision is 0.75; you returned {_got[1]}."
+assert tuple(screening_threshold(_yt, _pt, 0.75, [0.85, 0.55, 0.25, 0.1])) == tuple(_got), "The answer should not depend on the order of the threshold list."
+assert tuple(screening_threshold(_yt, _pt, 1.0, [0.5, 0.85])) == (None, None), "When no threshold reaches the required recall, return (None, None)."
 _rng = _np.random.default_rng(5)
 _y = (_rng.random(500) < 0.2).astype(int)
 _p = _np.clip(0.2 + 0.5 * (_y - 0.2) + _rng.normal(0, 0.2, 500), 0, 1)
 _g = list(_np.round(_np.linspace(0.05, 0.95, 19), 2))
-assert _np.isclose(cheapest_threshold(_y, _p, 3, 2, _g), _ct(_y, _p, 3, 2, _g)), "cheapest_threshold gave the wrong threshold for costs 3 and 2."
-assert _np.isclose(threshold_10, _ct(_y, _p, 10, 1, _g)), f"With false negatives costing 10, the cheapest threshold is {_ct(_y, _p, 10, 1, _g)}, but threshold_10 is {threshold_10}."
-assert _np.isclose(threshold_1, _ct(_y, _p, 1, 1, _g)), f"With equal costs, the cheapest threshold is {_ct(_y, _p, 1, 1, _g)}, but threshold_1 is {threshold_1}."
-assert threshold_10 < threshold_1, "When misses cost more, the cheapest threshold should be lower."
-"SUCCESS: Expensive misses push the threshold down: the model flags more, catching more positives at the price of more false alarms."
+for _name, _mr in (("rule_95", 0.95), ("rule_80", 0.8)):
+    _val = globals().get(_name)
+    _want = _ref(_y, _p, _mr, _g)
+    assert _val is not None and _np.isclose(_val[0], _want[0]) and _np.isclose(_val[1], _want[1]), f"{_name} should be about ({_want[0]}, {_want[1]:.3f}), but it is {_val}."
+"SUCCESS: Demanding 95% recall forces the threshold down to 0.25, where only about half of the flagged cases are real; settling for 80% allows 0.4 and a precision of about 0.75. That trade is the decision a screening programme has to make."
 ```
 
-Hint: For each threshold, count the false negatives and false positives, weight them by their costs, and keep the list of totals. `np.argmin` gives the position of the first smallest total.
+Hint: Loop over the thresholds from lowest to highest, computing recall at each; every time recall is still high enough, remember that threshold and its precision. The last one remembered is the highest that works.
 :::
 
 ## What you learned
@@ -389,7 +413,7 @@ Hint: For each threshold, count the false negatives and false positives, weight 
 - Recall = TP/(TP + FN): the fraction of positives caught. Precision = TP/(TP + FP): the fraction of alarms that are real. F1, their harmonic mean, is high only when both are. Specificity = TN/(TN + FP).
 - Lowering the threshold raises recall and usually lowers precision; the right threshold depends on the costs of each kind of mistake.
 - The ROC curve plots true positive rate against false positive rate across all thresholds; the AUC is the probability that a random positive outranks a random negative. For rare positives, also check precision or the precision–recall curve.
-- Choose the threshold that minimises total cost on validation data; with calibrated probabilities, predict positive when p > cost_fp / (cost_fp + cost_fn).
+- Choose the threshold that minimises total cost on validation data; with calibrated probabilities, predict positive when p > cost_fp / (cost_fp + cost_fn). Or, as screening programmes do, require a minimum recall and take the highest threshold that achieves it.
 - A model is calibrated if its predicted probabilities match observed frequencies.
 
 So far every classifier has had two classes. Next you will extend logistic regression to any number of classes with softmax regression, and use it to recognise handwritten digits.

@@ -82,7 +82,7 @@ print("probability given to the true class:", p_correct)
 print("cross-entropy:", round(-np.mean(np.log(p_correct)), 4))
 ```
 
-The loss is the same idea as log loss: **minus the log of the probability the model gave to the correct class**, averaged over examples. This is the **cross-entropy** loss. `P[np.arange(len(y)), y]` is fancy indexing: from row 0 it takes column `y[0]`, from row 1 column `y[1]`, and so on, which picks out exactly the probability given to each true class. The last example is the costly one: its true class is 2, and the model gave that only 0.1, so it adds −ln 0.1 ≈ 2.3, while the first example, with 0.7 on the right answer, adds only 0.36. With two classes, this loss is exactly the log loss from the last lesson.
+The loss is the same idea as log loss: **minus the log of the probability the model gave to the correct class**, averaged over examples. This is the **cross-entropy** loss. `P[np.arange(len(y)), y]` is fancy indexing: from row 0 it takes column `y[0]`, from row 1 column `y[1]`, and so on, which picks out exactly the probability given to each true class. The last example is the costly one: its true class is 2, and the model gave that only 0.1, so it adds −ln 0.1 ≈ 2.3, while the first example, with 0.7 on the right answer, adds only 0.36. With two classes, this loss is exactly the log loss from the logistic regression lesson.
 
 ## The gradient, and training
 
@@ -123,7 +123,7 @@ for i in range(3):
 print("largest difference:", np.abs(formula - numeric).max())
 ```
 
-The formula and the nudging agree to about ten decimal places. (Like logistic regression's, this loss is convex, so gradient descent finds the best weights.) Now train on three groups of points in the plane:
+The formula and the nudging agree to about ten decimal places. Like logistic regression's, this loss is convex, so any minimum gradient descent settles into is the best one, with the same caveat: on separable data the weights grow without limit unless a penalty stops them. One more quirk follows from the shifting property: adding the same vector to every column of `W` adds the same amount to every class's score, which changes no probability. So the best weights are never unique; a ridge penalty (as scikit-learn applies by default) picks one. Now train on three groups of points in the plane:
 
 ```python
 import numpy as np
@@ -178,7 +178,7 @@ for ax, image, label in zip(axes, digits.images, digits.target):
 plt.show()
 ```
 
-`digits.images` holds the 8×8 grids and `digits.data` the same pixels as rows of 64, and `imshow` draws a grid as an image. Each pixel is a feature, so the model has 64 inputs (65 with the bias) and 10 classes: a 65 × 10 weight matrix. Train it from scratch, dividing the pixels by 16 so they run from 0 to 1:
+`digits.images` holds the 8×8 grids and `digits.data` the same pixels as rows of 64, and `imshow` draws a grid as an image. Each pixel is a feature, so the model has 64 inputs (65 with the bias) and 10 classes: a 65 × 10 weight matrix. Train it from scratch, dividing the pixels by 16 so they run from 0 to 1. Before running it, guess: a model that only weighs up pixels, with no idea what a digit is, what fraction of unseen digits will it read correctly?
 
 ```python
 import numpy as np
@@ -214,7 +214,7 @@ print(confusion)
 
 The first loss is 2.303, which is ln 10: with all weights zero, every digit gets probability 1/10. By step 500 the loss is about 0.12, and the model reads about **96%** of the unseen test digits correctly: a model with no idea what a "digit" is, just a weighted vote over pixels.
 
-The confusion matrix works as in the last lesson, now 10 × 10: row = true digit, column = predicted digit, so correct answers lie on the diagonal. `np.add.at(confusion, (y_test, pred), 1)` adds 1 at position (true, predicted) for every test example (a plain `confusion[y_test, pred] += 1` would count repeated positions only once). The off-diagonal entries show which mistakes happen: 8s mistaken for 1s are the most common, which makes sense for thin, carelessly written digits.
+The confusion matrix works as in the last lesson, now 10 × 10: row = true digit, column = predicted digit, so correct answers lie on the diagonal. `np.add.at(confusion, (y_test, pred), 1)` adds 1 at position (true, predicted) for every test example (a plain `confusion[y_test, pred] += 1` would count repeated positions only once). The off-diagonal entries show which mistakes happen. The largest is 3 eights read as ones; several other pairs have 2. With counts this small the ranking could easily be chance, so look for patterns across several splits before reading much into a single confusion matrix.
 
 For comparison, scikit-learn's `LogisticRegression` fits softmax regression automatically whenever there are more than two classes. On this split, `LogisticRegression(max_iter=1000).fit(X_train, y_train).score(X_test, y_test)` gives about 96% too.
 
@@ -288,6 +288,9 @@ with _np.errstate(over="ignore", invalid="ignore"):
     _big = softmax(_np.array([[1000.0, 1001.0, 999.0]]))
 assert not _np.isnan(_big).any(), "Scores near 1000 gave nan: subtract each row's maximum before exponentiating."
 assert _np.allclose(_big, softmax(_np.array([[1.0, 2.0, 0.0]]))), "Shifting every score in a row by the same amount should not change the probabilities."
+with _np.errstate(over="ignore", invalid="ignore", under="ignore"):
+    _mixed = softmax(_np.array([[1000.0, 1001.0], [-1000.0, -999.0]]))
+assert not _np.isnan(_mixed).any() and _np.allclose(_mixed, [[0.26894142, 0.73105858], [0.26894142, 0.73105858]]), "Rows on very different scales went wrong: subtract each row's own maximum (axis=1, keepdims=True), not the overall maximum."
 "SUCCESS: Row by row, and safe from overflow."
 ```
 
@@ -333,7 +336,7 @@ assert "per_class_report" in dir(), "Keep the function's name as per_class_repor
 _yt = _np.array([0, 0, 1, 1, 2, 2, 2])
 _yp = _np.array([0, 1, 1, 1, 2, 0, 2])
 _p, _r = per_class_report(_yt, _yp, 3)
-assert _np.allclose(_p, [0.5, 2 / 3, 1.0]), f"For the example, precision should be [0.5, 0.667, 1.0] (e.g. class 1 was predicted 3 times, 2 correctly), but got {_np.round(_p, 3)}."
+assert _np.allclose(_p, [0.5, 2 / 3, 1.0]), f"For the example, precision should be [0.5, 0.667, 1.0] (e.g. class 1 was predicted 3 times, 2 correctly), but got {_np.round(_p, 3)}. Did you swap rows and columns? Rows are true classes, columns predicted ones."
 assert _np.allclose(_r, [0.5, 1.0, 2 / 3]), f"For the example, recall should be [0.5, 1.0, 0.667] (e.g. class 2 occurs 3 times, 2 were caught), but got {_np.round(_r, 3)}. Did you swap rows and columns?"
 _rng = _np.random.default_rng(6)
 _yt = _rng.integers(0, 5, 200)
@@ -349,7 +352,7 @@ Hint: The diagonal of the confusion matrix (`np.diag`) holds the correct predict
 :::
 
 ::: challenge Top-k accuracy [medium]
-When there are many classes, a softer measure is often reported: **top-k accuracy**, the fraction of examples whose true class is among the model's `k` most probable classes. (Image classifiers with 1,000 classes are usually quoted with "top-5 accuracy".) Write a function `top_k_accuracy(P, y, k)` where `P` is a matrix of probabilities (one row per example) and `y` the true labels. Use `np.argsort` to find each row's `k` most probable classes, and do not use a Python loop over the examples.
+When there are many classes, a softer measure is often reported: **top-k accuracy**, the fraction of examples whose true class is among the model's `k` most probable classes. (Image classifiers with 1,000 classes are usually quoted with "top-5 accuracy".) Write a function `top_k_accuracy(P, y, k)` where `P` is a matrix of probabilities (one row per example) and `y` the true labels. Use `np.argsort` to find each row's `k` most probable classes: with `axis=1`, it returns, for each row, the column numbers arranged so that their values increase (so `np.argsort([[0.5, 0.2, 0.3]], axis=1)` is `[[1, 2, 0]]`). Do not use a Python loop over the examples.
 
 ```python starter
 import numpy as np
