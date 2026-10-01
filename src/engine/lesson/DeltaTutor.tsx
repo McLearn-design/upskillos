@@ -24,17 +24,29 @@ function buildSystemPrompt(lesson: ParsedLesson, step: LessonStep): string {
     `- Be short. One or two paragraphs max unless the learner asks for more.`,
     `- For challenge steps: give hints and direction, never write the solution. If they are stuck, ask a leading question.`,
     `- For concept steps: explain, connect to related ideas, give an alternative analogy if asked.`,
-    `- Use Python examples only when they directly answer the question.`,
+    `- This lesson is in ${lesson.lang}. Write any example code in ${lesson.lang}, and only when it directly answers the question.`,
     `- If the learner shares code, read it and respond to what they actually wrote — do not hallucinate different code.`,
     ``,
     `Current step prose (what the learner just read):`,
     step.prose.slice(0, 1200),
   ]
 
-  if (isChallenge && step.challenge) {
-    lines.push(``, `Challenge starter code:`, '```python', step.challenge.code, '```')
+  if (step.project) {
+    // A project step: the tutor sees every file as the lesson started it.
+    lines.push(``, `The learner is working on a ${step.project.kind.toUpperCase()} project with these files:`)
+    for (const file of step.project.files) {
+      lines.push(``, `${file.path}${file.readOnly ? ' (read-only)' : ''}:`, '```' + file.lang, file.code, '```')
+    }
+    if (isChallenge && step.tests) {
+      lines.push(``, `Tests (each "assert" line is checked against the running app):`, '```', step.tests, '```',
+        ``, `Do NOT reveal the solution. Guide with questions and partial hints.`)
+    }
+  } else if (isChallenge && step.challenge) {
+    // A "-program" challenge (graded on printed output) is still written in the base language.
+    const fence = step.challenge.lang.replace(/-program$/, '')
+    lines.push(``, `Challenge starter code:`, '```' + fence, step.challenge.code, '```')
     if (step.tests) {
-      lines.push(``, `Test assertions:`, '```python', step.tests, '```')
+      lines.push(``, `Test assertions (each "assert" line is checked against the learner's code):`, '```', step.tests, '```')
     }
     lines.push(``, `Do NOT reveal the solution. Guide with questions and partial hints.`)
   }

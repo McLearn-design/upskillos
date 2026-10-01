@@ -39,6 +39,28 @@ describe('the shared WebLLM engine', () => {
     expect(log.unloaded).toEqual(['Tutor-3B'])
     expect(log.deleted).toEqual(['Tutor-3B'])
   })
+  it('loads the q4f32 build on a GPU without 16-bit float shaders', async () => {
+    vi.stubGlobal('navigator', { gpu: { requestAdapter: async () => ({ features: new Set() }) } })
+    try {
+      await mod.getSharedEngine()
+      await mod.getSharedEngine()                          // same request again: no second load
+      expect(log.created).toEqual(['Llama-3.2-1B-Instruct-q4f32_1-MLC'])
+      await mod.getSharedEngine(undefined, 'Tutor-3B-q4f16_1-MLC')
+      await mod.forgetModel('Tutor-3B-q4f16_1-MLC')
+      expect(log.deleted).toEqual(['Tutor-3B-q4f32_1-MLC']) // forgets the build it actually loaded
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+  it('keeps the q4f16 build when the GPU supports 16-bit float shaders', async () => {
+    vi.stubGlobal('navigator', { gpu: { requestAdapter: async () => ({ features: new Set(['shader-f16']) }) } })
+    try {
+      await mod.getSharedEngine()
+      expect(log.created).toEqual([mod.WEBLLM_MODEL_ID])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
   it('passes progress text and fraction to the caller', async () => {
     const seen = []
     await mod.getSharedEngine((text, fraction) => seen.push([text, fraction]))

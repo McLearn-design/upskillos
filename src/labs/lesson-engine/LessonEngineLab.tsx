@@ -189,6 +189,11 @@ import csharpLevel22 from './content/csharp-fundamentals/level-22.md?raw'
 import csharpLevel23 from './content/csharp-fundamentals/level-23.md?raw'
 import csharpLevel24 from './content/csharp-fundamentals/level-24.md?raw'
 import csharpLevel25 from './content/csharp-fundamentals/level-25.md?raw'
+import wpfLevel0 from './content/wpf-mastery/level-0.md?raw'
+import wpfLevel1 from './content/wpf-mastery/level-1.md?raw'
+import wpfLevel6 from './content/wpf-mastery/level-6.md?raw'
+import wpfLevel7 from './content/wpf-mastery/level-7.md?raw'
+import wpfLevel14 from './content/wpf-mastery/level-14.md?raw'
 
 import javaLevel0 from './content/java-fundamentals/level-0.md?raw'
 import javaLevel1 from './content/java-fundamentals/level-1.md?raw'
@@ -646,6 +651,11 @@ const LESSON_FILES: Record<string, string> = {
   'csharp-fundamentals/level-23.md': csharpLevel23,
   'csharp-fundamentals/level-24.md': csharpLevel24,
   'csharp-fundamentals/level-25.md': csharpLevel25,
+  'wpf-mastery/level-0.md': wpfLevel0,
+  'wpf-mastery/level-1.md': wpfLevel1,
+  'wpf-mastery/level-6.md': wpfLevel6,
+  'wpf-mastery/level-7.md': wpfLevel7,
+  'wpf-mastery/level-14.md': wpfLevel14,
   'java-fundamentals/level-0.md': javaLevel0,
   'java-fundamentals/level-1.md': javaLevel1,
   'java-fundamentals/level-2.md': javaLevel2,

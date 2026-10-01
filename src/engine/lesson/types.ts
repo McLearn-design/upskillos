@@ -36,6 +36,22 @@ export interface TestResult {
   detail?: string
 }
 
+// One file of a multi-file project lesson (e.g. a WPF window's MainWindow.xaml).
+export interface ProjectFile {
+  path: string                // e.g. "MainWindow.xaml", relative to the project folder
+  lang: string                // editor language: 'xml' for .xaml, 'csharp' for .cs
+  code: string                // starting content
+  readOnly: boolean
+}
+
+// A step whose code is a whole project rather than one snippet. From ```project <kind>
+// file=...``` fences (an example to edit and launch) or ```challenge <kind> file=...```
+// fences (the same, plus the step's test fence).
+export interface LessonProject {
+  kind: string                // 'wpf'
+  files: ProjectFile[]
+}
+
 export interface LessonStep {
   id: string
   title: string
@@ -44,6 +60,7 @@ export interface LessonStep {
   examples: CodeSnippet[]     // runnable examples that live with the prose
   challenge: CodeSnippet | null
   tests: string | null        // raw test assertions
+  project?: LessonProject | null
 }
 
 export interface ParsedLesson {

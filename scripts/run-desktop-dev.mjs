@@ -56,7 +56,9 @@ const electron = spawn(
   {
     cwd: root,
     stdio: 'inherit',
-    env: { ...process.env, VITE_PORT: String(VITE_PORT) },
+    // ELECTRON_RUN_AS_NODE (set inside VS Code's terminals and tools) makes electron.exe behave
+    // as plain Node, so the app fails at require('electron'). Never pass it through.
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined, VITE_PORT: String(VITE_PORT) },
   }
 )
 

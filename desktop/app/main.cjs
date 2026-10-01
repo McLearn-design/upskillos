@@ -51,6 +51,13 @@ app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096')
 app.commandLine.appendSwitch('ignore-gpu-blocklist')
 app.commandLine.appendSwitch('enable-gpu-rasterization')
 
+// WebGPU 16-bit float shaders ('shader-f16') need Dawn's DXC shader compiler on Windows. Without
+// this switch Electron 35 reported no shader-f16 on an NVIDIA GPU, and the AI tutor's q4f16 models
+// failed with "Invalid ShaderModule ... entryPoint: reshape7_kernel". Verified with a probe: the
+// adapter offers shader-f16 and an f16 shader compiles once this is set. (webLLMSingleton.js also
+// falls back to q4f32 models on any GPU that still lacks f16.)
+if (process.platform === 'win32') app.commandLine.appendSwitch('enable-dawn-features', 'use_dxc')
+
 let mainWindow = null
 
 app.whenReady().then(async () => {
@@ -263,6 +270,15 @@ ipcMain.handle('desktop:run-code', async (_event, runtime, code) => {
   if (!mod || !mod.runCode) return { ok: false, reason: `No runnable runtime: ${runtime}` }
   const emit = (payload) => mainWindow?.webContents.send('desktop:script-output', payload)
   return mod.runCode(app, code, emit)
+})
+
+// Builds and runs a multi-file lesson project (see dotnet.cjs runProject):
+// spec.mode 'test' runs the lesson's tests, 'launch' opens the real app window.
+ipcMain.handle('desktop:run-project', async (_event, runtime, spec) => {
+  const mod = RUNTIMES[runtime]
+  if (!mod || !mod.runProject) return { ok: false, reason: `No project support for runtime: ${runtime}` }
+  const emit = (payload) => mainWindow?.webContents.send('desktop:script-output', payload)
+  return mod.runProject(app, spec, emit)
 })
 
 // Stops one run by id (used for run timeouts, e.g. an infinite loop in a

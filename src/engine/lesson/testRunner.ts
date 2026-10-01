@@ -1,6 +1,6 @@
 import type { TestResult, Executor } from './types'
 
-const OC_PREFIX = '__OC_TEST__'
+export const OC_PREFIX = '__OC_TEST__'
 
 // Assert lines commonly carry an explanatory trailing comment ("assert x > 3   // must
 // be descriptive"), which the contract encourages. In JS the assertion expression gets
@@ -9,7 +9,7 @@ const OC_PREFIX = '__OC_TEST__'
 // before using the expression, but only when the `//` is not inside a string literal
 // (a URL like 'https://example.com' must survive intact). The label shown to the
 // learner still uses the untouched original line, comment included.
-function stripTrailingLineComment(line: string): string {
+export function stripTrailingLineComment(line: string): string {
   let quote: string | null = null
   for (let i = 0; i < line.length; i++) {
     const ch = line[i]

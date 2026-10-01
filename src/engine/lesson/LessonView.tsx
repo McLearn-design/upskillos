@@ -9,6 +9,7 @@ import DomTreePanel from './DomTreePanel'
 import CssSpecificityPanel from './CssSpecificityPanel'
 import RunExample from './RunExample'
 import ChallengeStep from './ChallengeStep'
+import ProjectStep from './ProjectStep'
 import DeltaTutor from './DeltaTutor'
 import { RAN_ON_EVENT } from './executor'
 import { CodeBlockPre, CodeBlockCode } from '../../components/math/CodeBlock.jsx'
@@ -249,7 +250,9 @@ export default function LessonView({ lesson, executor, ui, onBack, onBackToSerie
         {/* Left — full-height code window */}
         <div className={`flex flex-col flex-1 min-w-0 border-r ${ui.border}`}>
           {step && (
-            isChallenge
+            step.project
+              ? <ProjectStep step={step} project={step.project} ui={ui} onResults={handleResults} onOutput={handleOutput} />
+              : isChallenge
               ? <ChallengeStep step={step} executor={executor} ui={ui} onTrace={handleTrace} onSeek={handleSeek} onResults={handleResults} onOutput={handleOutput} />
               : step.examples[0]
                 ? <RunExample snippet={step.examples[0]} snippets={step.examples} executor={executor} ui={ui} onTrace={handleTrace} onSeek={handleSeek} onOutput={handleOutput} onAutoPreview={handleAutoPreview} />

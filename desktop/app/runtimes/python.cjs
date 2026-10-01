@@ -24,6 +24,7 @@ const path = require('node:path')
 const { spawn, execFile } = require('node:child_process')
 const { promisify } = require('node:util')
 const { pathExists, downloadFile, extractZip, errorDetail } = require('./_shared.cjs')
+const { systemPython } = require('./_toolchains.cjs')
 
 const execFileAsync = promisify(execFile)
 
@@ -54,19 +55,41 @@ function pythonExePath(app) {
   return path.join(runtimeDir(app), 'python.exe')
 }
 
+// Two separate questions, answered by one status object:
+//  - pythonInstalled / pysideInstalled / pygameInstalled: the private
+//    PySide6 environment that runScript and projectCommand use.
+//  - installed / source / version / path: the interpreter runCode uses for
+//    plain lesson programs. The learner's own Python comes first (see
+//    _toolchains.cjs); the private one is the fallback.
+async function resolveInterpreter(app) {
+  const system = await systemPython()
+  if (system) return { source: 'system', exe: system.exe, version: system.version }
+  const managed = pythonExePath(app)
+  if (await pathExists(managed)) return { source: 'app', exe: managed, version: PYTHON_VERSION }
+  return null
+}
+
 async function getStatus(app) {
+  const interpreter = await resolveInterpreter(app)
+  const forLessons = {
+    installed: !!interpreter,
+    source: interpreter?.source ?? null,
+    version: interpreter?.version ?? null,
+    path: interpreter?.exe ?? null,
+  }
+
   const pythonExe = pythonExePath(app)
   const pythonInstalled = await pathExists(pythonExe)
-  if (!pythonInstalled) return { pythonInstalled: false, pysideInstalled: false, pygameInstalled: false }
+  if (!pythonInstalled) return { ...forLessons, pythonInstalled: false, pysideInstalled: false, pygameInstalled: false }
 
   try {
     await execFileAsync(pythonExe, ['-c', 'import PySide6, pygame'], { timeout: 10000, windowsHide: true })
-    return { pythonInstalled: true, pysideInstalled: true, pygameInstalled: true }
+    return { ...forLessons, pythonInstalled: true, pysideInstalled: true, pygameInstalled: true }
   } catch {
     // Don't distinguish which of the two is missing here — install() always
     // installs both together, so "not both present" just means "needs
     // (re)install," same single Install button either way.
-    return { pythonInstalled: true, pysideInstalled: false, pygameInstalled: false }
+    return { ...forLessons, pythonInstalled: true, pysideInstalled: false, pygameInstalled: false }
   }
 }
 
@@ -169,6 +192,59 @@ async function runScript(app, code, onOutput) {
   }
 }
 
+// Runs a plain lesson program to completion (no window), on the learner's
+// own Python when there is one. Same contract as cpp.cjs / dotnet.cjs:
+// returns runId first, then streams stdout/stderr and an exit event.
+async function runCode(app, code, onOutput) {
+  try {
+    const interpreter = await resolveInterpreter(app)
+    if (!interpreter) return { ok: false, reason: 'No Python found and the app Python is not installed' }
+
+    await fs.mkdir(scratchDir(app), { recursive: true })
+    const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const scriptPath = path.join(scratchDir(app), `${runId}.py`)
+    await fs.writeFile(scriptPath, code, 'utf8')
+
+    // PYTHONUTF8: when stdout is a pipe, Windows Python otherwise encodes
+    // output in the ANSI code page, and printing a character such as "✓"
+    // raises UnicodeEncodeError.
+    const child = spawn(interpreter.exe, [scriptPath], {
+      cwd: scratchDir(app),
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, ...UNBUFFERED, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },
+    })
+    runningScripts.set(runId, child)
+
+    // Tracebacks name the scratch file by its full temp path; call it main.py.
+    const tidy = (text) => text.split(scriptPath).join('main.py')
+    child.stdout.on('data', (chunk) => onOutput?.({ runId, stream: 'stdout', text: chunk.toString() }))
+    child.stderr.on('data', (chunk) => onOutput?.({ runId, stream: 'stderr', text: tidy(chunk.toString()) }))
+    child.on('close', (exitCode) => {
+      runningScripts.delete(runId)
+      onOutput?.({ runId, stream: 'exit', code: exitCode })
+      fs.rm(scriptPath, { force: true }).catch(() => {})
+    })
+    child.on('error', (err) => {
+      runningScripts.delete(runId)
+      onOutput?.({ runId, stream: 'stderr', text: `Failed to launch Python: ${err.message}` })
+      onOutput?.({ runId, stream: 'exit', code: 1 })
+      fs.rm(scriptPath, { force: true }).catch(() => {})
+    })
+
+    return { ok: true, runId }
+  } catch (e) {
+    return { ok: false, reason: String(e?.message ?? e) }
+  }
+}
+
+function killRun(runId) {
+  const child = runningScripts.get(runId)
+  if (!child) return false
+  try { child.kill() } catch {}
+  return true
+}
+
 function killAllScripts() {
   for (const child of runningScripts.values()) {
     try { child.kill() } catch {}
@@ -187,4 +263,4 @@ async function projectCommand(app, absFile) {
   return { command: exe, args: [absFile], env: UNBUFFERED }
 }
 
-module.exports = { getStatus, install, runScript, killAllScripts, projectCommand }
+module.exports = { getStatus, install, runScript, runCode, killRun, killAllScripts, projectCommand }

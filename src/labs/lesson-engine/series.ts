@@ -131,6 +131,25 @@ export const SERIES: SeriesMeta[] = [
     ],
   },
   {
+    id: 'wpf-mastery',
+    label: 'WPF & .NET Mastery',
+    lang: 'csharp',
+    emoji: 'WPF',
+    description: 'Master WPF and the .NET machinery under it, with nothing left as magic: how .NET apps are built, what XAML compiles into, dependency properties, binding, styles and templates, MVVM, dependency injection, data and deployment. Every example launches a real window on your own .NET SDK; challenges are tested by clicking through your actual UI. Desktop app only. Plan: src/docs/MasterCurriculum/wpf-mastery-plan.md',
+    // Level numbers follow the plan (progress is stored per series:level), so levels
+    // written later slot in without renumbering these.
+    levels: [
+      // Module A — how a .NET application is put together
+      { level: 0,  title: 'From Source Code to a Running .NET App', file: 'wpf-mastery/level-0.md' },
+      { level: 1,  title: 'Namespaces, using and Assemblies',       file: 'wpf-mastery/level-1.md' },
+      // Module B — how WPF works inside
+      { level: 6,  title: 'Windows, XAML & Click Events',           file: 'wpf-mastery/level-6.md' },
+      { level: 7,  title: 'What XAML Compiles Into',                file: 'wpf-mastery/level-7.md' },
+      // Module C — data binding in depth
+      { level: 14, title: 'Data Binding, Commands & MVVM',          file: 'wpf-mastery/level-14.md' },
+    ],
+  },
+  {
     id: 'java-fundamentals',
     label: 'Java Fundamentals',
     lang: 'java',

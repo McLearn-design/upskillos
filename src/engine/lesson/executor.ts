@@ -37,6 +37,10 @@ interface DesktopRun {
 async function getDesktopRunner() {
   return import('../../utils/desktopCodeRunner.js') as Promise<{
     runOnDesktop: (lang: string, code: string) => Promise<DesktopRun | null>
+    runProjectOnDesktop: (
+      spec: ProjectSpec,
+      opts?: { onAfterLaunch?: (evt: { stream: string; text?: string; code?: number | null }) => void },
+    ) => Promise<(DesktopRun & { launched: boolean; files: { path: string; text: string }[] }) | null>
   }>
 }
 
@@ -71,8 +75,23 @@ async function tryDesktop(code: string, lang: string, lines: OutputLine[]): Prom
   const { runOnDesktop } = await getDesktopRunner()
   const run = await runOnDesktop(lang, code)
   if (!run) return false
+  pushRunLines(run, lines)
+  announceRanOn(`${run.label}, on this computer`)
+  return true
+}
+
+// Turns a finished desktop run into output lines: stdout, then at most one error
+// (timeout, crash, compile error or failing exit) or the compiler's warnings.
+function pushRunLines(run: DesktopRun, lines: OutputLine[]) {
   const failed = run.timedOut || run.exitCode !== 0
-  const stderr = run.stderr.trimEnd()
+  // Compiler warnings (sent before the program starts) are kept apart from the
+  // program's own error output, so a failure is reported by its real cause rather
+  // than by whichever warning happened to come first.
+  const stderrLines = run.stderr.trimEnd().split('\n')
+  const isWarning = (l: string) => /^\S+\.(cs|xaml)\(\d+,\d+\): warning /.test(l)
+  const warnings = stderrLines.filter(isWarning).join('\n')
+  const stderr = failed ? stderrLines.filter(l => !isWarning(l)).join('\n').trim() || warnings : run.stderr.trimEnd()
+  if (failed && warnings && stderr !== warnings) lines.push({ kind: 'stderr', text: warnings })
   const crash = !run.timedOut && run.exitCode != null ? crashMessage(run.exitCode) : null
   run.stdout.split('\n').filter(Boolean).forEach(text => lines.push({ kind: 'stdout', text }))
   if (run.timedOut) {
@@ -89,8 +108,56 @@ async function tryDesktop(code: string, lang: string, lines: OutputLine[]): Prom
     // Compiler warnings on a successful run: worth seeing, not an error.
     lines.push({ kind: 'stderr', text: stderr })
   }
-  announceRanOn(`${run.label}, on this computer`)
-  return true
+}
+
+// ── Project lessons ───────────────────────────────────────────────────────────
+
+export interface ProjectSpec {
+  template: string
+  mode: 'test' | 'launch' | 'inspect'
+  files: { path: string; content: string }[]
+}
+
+export interface GeneratedFile { path: string; text: string }
+
+const NO_DESKTOP: Record<string, string> = {
+  wpf: "WPF lessons run in the UpSkillOS desktop app, on your own .NET SDK. A browser can't build or open a WPF window.",
+  console: 'This project runs in the UpSkillOS desktop app, on your own .NET SDK.',
+}
+
+// Builds and runs a multi-file lesson project. Desktop only: a WPF window can't run in
+// a browser, and no online compiler builds a whole project.
+// - 'test': build and run to completion.
+// - 'launch': for wpf, returns once the app's window is open (launched: true);
+//   onAfterLaunch then receives what the running app prints, and its exit, until the
+//   learner closes it. For console, the same as 'test'.
+// - 'inspect': build only; `generated` holds the project file and the code the build
+//   generated (e.g. MainWindow.g.cs).
+export async function executeProject(
+  spec: ProjectSpec,
+  onAfterLaunch?: (line: OutputLine | null) => void,
+): Promise<ExecutionResult & { launched?: boolean; generated?: GeneratedFile[] }> {
+  const start = Date.now()
+  const lines: OutputLine[] = []
+  const { runProjectOnDesktop } = await getDesktopRunner()
+  const run = await runProjectOnDesktop(spec, {
+    onAfterLaunch: (evt) => {
+      if (evt.stream === 'exit') onAfterLaunch?.(null)
+      else if (evt.text) onAfterLaunch?.({ kind: evt.stream === 'stderr' ? 'error' : 'stdout', text: evt.text.replace(/\r\n/g, '\n').trimEnd() })
+    },
+  })
+  if (!run) {
+    lines.push({ kind: 'error', text: NO_DESKTOP[spec.template] ?? NO_DESKTOP.console })
+    return { lines, durationMs: Date.now() - start }
+  }
+  if (run.launched) {
+    run.stdout.split('\n').filter(Boolean).forEach(text => lines.push({ kind: 'stdout', text }))
+    if (run.stderr.trim()) lines.push({ kind: 'stderr', text: run.stderr.trimEnd() })
+  } else {
+    pushRunLines(run, lines)
+  }
+  if (run.label) announceRanOn(`${run.label}, on this computer`)
+  return { lines, durationMs: Date.now() - start, launched: run.launched, generated: run.files }
 }
 
 // Routed through codeRunner.js's Wandbox-backed runCode(), same as C/C++/C#/Java
@@ -113,7 +180,10 @@ export async function executeCode(code: string, lang: Lang): Promise<ExecutionRe
     const runner = await getRunner()
     const norm = lang.toLowerCase()
 
-    if (norm === 'python' || norm === 'py') {
+    if ((norm === 'python' || norm === 'py') && await tryDesktop(code, norm, lines)) {
+      // Ran on the learner's Python; lines are filled in.
+    } else if (norm === 'python' || norm === 'py') {
+      announceRanOn('Pyodide, in the browser')
       const result = await runner.runPythonInline(code, (line: { type: string; text?: string; src?: string }) => {
         if (line.type === 'output' && line.text) lines.push({ kind: 'stdout', text: line.text })
         else if (line.type === 'error' && line.text) lines.push({ kind: 'error', text: line.text })

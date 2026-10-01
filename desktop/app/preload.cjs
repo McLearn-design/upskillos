@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('openCalcDesktop', {
   installRuntime:          (runtime) => ipcRenderer.invoke('desktop:install-runtime', runtime),
   runPythonScript:         (code) => ipcRenderer.invoke('desktop:run-python-script', code),
   runCode:                 (runtime, code) => ipcRenderer.invoke('desktop:run-code', runtime, code),
+  runProject:              (runtime, spec) => ipcRenderer.invoke('desktop:run-project', runtime, spec),
   stopRun:                 (runId) => ipcRenderer.invoke('desktop:stop-run', runId),
   onRuntimeProgress:       (cb) => {
     const handler = (_event, data) => cb(data)

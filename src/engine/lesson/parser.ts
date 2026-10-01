@@ -1,4 +1,4 @@
-import type { ParsedLesson, LessonStep, CodeSnippet } from './types'
+import type { ParsedLesson, LessonStep, CodeSnippet, LessonProject, ProjectFile } from './types'
 
 // ── Frontmatter ───────────────────────────────────────────────────────────────
 
@@ -32,7 +32,7 @@ const RUNNABLE_LANGS = new Set([
   'java',
   'kotlin',
 ])
-const SPECIAL_LANGS  = new Set(['challenge', 'test'])
+const SPECIAL_LANGS  = new Set(['challenge', 'test', 'project'])
 
 function extractFences(text: string): { fences: Fence[]; prose: string } {
   const fences: Fence[] = []
@@ -84,9 +84,23 @@ function buildStep(raw: string, idx: number, metaLang: string): LessonStep {
   const examples: CodeSnippet[] = []
   let challenge: CodeSnippet | null = null
   let tests: string | null = null
+  let project: LessonProject | null = null
+  let projectIsChallenge = false
 
   for (let i = 0; i < fences.length; i++) {
     const f = fences[i]
+    const tokens = f.info.split(/\s+/)
+    const file = tokens.find(t => t.startsWith('file='))?.slice('file='.length)
+    if ((f.lang === 'project' || f.lang === 'challenge') && file) {
+      // One file of a project: ```project wpf file=MainWindow.xaml``` (an example) or
+      // ```challenge wpf file=MainWindow.xaml``` (graded by the step's test fence).
+      // Add `readonly` for a file the learner reads but doesn't edit.
+      const kind = (tokens[1] ?? '').toLowerCase()
+      project ??= { kind, files: [] }
+      project.files.push(projectFile(file, f.code, tokens.includes('readonly')))
+      if (f.lang === 'challenge') projectIsChallenge = true
+      continue
+    }
     if (f.lang === 'challenge') {
       // Explicit language wins: ```challenge javascript```. Written the same way every
       // other fence declares its language, and it's the only reliable way to grade a
@@ -112,7 +126,21 @@ function buildStep(raw: string, idx: number, metaLang: string): LessonStep {
     }
   }
 
-  return { id: `step-${idx}`, title, prose, lenses, examples, challenge, tests }
+  // A project challenge is still a challenge to the rest of the engine (step type, Tests
+  // tab, lesson completion); its `challenge` is the first file the learner edits.
+  if (project && projectIsChallenge && !challenge) {
+    const firstEditable = project.files.find(f => !f.readOnly) ?? project.files[0]
+    challenge = { lang: project.kind, code: firstEditable.code }
+  }
+
+  return { id: `step-${idx}`, title, prose, lenses, examples, challenge, tests, project }
+}
+
+const LANG_BY_EXTENSION: Record<string, string> = { xaml: 'xml', cs: 'csharp', xml: 'xml', json: 'json' }
+
+function projectFile(path: string, code: string, readOnly: boolean): ProjectFile {
+  const extension = path.split('.').pop()?.toLowerCase() ?? ''
+  return { path, lang: LANG_BY_EXTENSION[extension] ?? 'plaintext', code, readOnly }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

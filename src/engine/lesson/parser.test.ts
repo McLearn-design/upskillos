@@ -311,3 +311,52 @@ Regular prose.
     expect(step.prose).not.toContain('SE lens')
   })
 })
+
+describe('parseLesson — project steps', () => {
+  const fence = (info: string, body: string) => '```' + info + '\n' + body + '\n```'
+
+  it('collects `project <kind> file=` fences into one example project, not a challenge', () => {
+    const md = ['---', 'series: wpf-mastery', 'level: 0', 'title: T', 'lang: csharp', '---', '',
+      '## A window', 'Prose.', '',
+      fence('project wpf file=MainWindow.xaml', '<Window/>'), '',
+      fence('project wpf file=MainWindow.xaml.cs', 'class C {}'), '',
+      fence('project wpf file=RelayCommand.cs readonly', 'class R {}'),
+    ].join('\n')
+    const step = parseLesson(md).steps[0]
+    expect(step.project).toEqual({
+      kind: 'wpf',
+      files: [
+        { path: 'MainWindow.xaml', lang: 'xml', code: '<Window/>', readOnly: false },
+        { path: 'MainWindow.xaml.cs', lang: 'csharp', code: 'class C {}', readOnly: false },
+        { path: 'RelayCommand.cs', lang: 'csharp', code: 'class R {}', readOnly: true },
+      ],
+    })
+    expect(step.challenge).toBeNull()
+    expect(step.examples).toEqual([])
+    expect(step.prose).toBe('Prose.')
+  })
+
+  it('makes `challenge <kind> file=` fences a graded project challenge', () => {
+    const md = ['---', 'series: wpf-mastery', 'level: 0', 'title: T', 'lang: csharp', '---', '',
+      '## Challenge: greeter', 'Task.', '',
+      fence('challenge wpf file=Shared.cs readonly', 'class S {}'), '',
+      fence('challenge wpf file=MainWindow.xaml', '<Window/>'), '',
+      fence('test', 'assert true'),
+    ].join('\n')
+    const step = parseLesson(md).steps[0]
+    expect(step.project?.files.map(f => f.path)).toEqual(['Shared.cs', 'MainWindow.xaml'])
+    // The rest of the engine sees a challenge in the project's language, starting
+    // from the first file the learner edits.
+    expect(step.challenge).toEqual({ lang: 'wpf', code: '<Window/>' })
+    expect(step.tests).toBe('assert true')
+  })
+
+  it('leaves ordinary challenges without a project', () => {
+    const md = ['---', 'series: s', 'level: 0', 'title: T', 'lang: csharp', '---', '',
+      '## Challenge: x', fence('challenge', 'static int F() => 1;'), fence('test', 'assert F() == 1'),
+    ].join('\n')
+    const step = parseLesson(md).steps[0]
+    expect(step.project).toBeNull()
+    expect(step.challenge).toEqual({ lang: 'csharp', code: 'static int F() => 1;' })
+  })
+})

@@ -117,6 +117,31 @@ async function detectSystemCpp() {
   return { found: null, rejected }
 }
 
+// ── Python ───────────────────────────────────────────────────────────────────
+
+// Lesson code uses f-strings, the walrus operator and dict ordering; 3.9 is a safe floor.
+const MIN_PYTHON = [3, 9]
+
+// Windows puts a python.exe "App Execution Alias" in WindowsApps even when no Python is
+// installed; running it then prints "Python was not found" (exit 9009) or opens the Store.
+// So an interpreter only counts once it actually runs code and reports its version.
+async function detectSystemPython() {
+  const candidates = [...(await whereAll('python')), ...(await whereAll('python3'))]
+  for (const exe of [...new Set(candidates)]) {
+    try {
+      const { stdout } = await execFileAsync(exe, ['-c', 'import sys; print("%d.%d.%d" % sys.version_info[:3])'], {
+        windowsHide: true, timeout: 15000,
+      })
+      const version = stdout.trim()
+      const [major, minor] = version.split('.').map(Number)
+      if (major > MIN_PYTHON[0] || (major === MIN_PYTHON[0] && minor >= MIN_PYTHON[1])) return { exe, version }
+    } catch {
+      // Not runnable (the Store alias stub, a broken install): try the next one.
+    }
+  }
+  return null
+}
+
 // ── Session cache ────────────────────────────────────────────────────────────
 
 const cache = new Map()
@@ -129,4 +154,5 @@ function cached(key, detect) {
 module.exports = {
   systemDotnet: () => cached('dotnet', detectSystemDotnet),
   systemCpp: () => cached('cpp', detectSystemCpp),
+  systemPython: () => cached('python', detectSystemPython),
 }

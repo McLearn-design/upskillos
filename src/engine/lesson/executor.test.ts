@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // The online compilers (Wandbox, then Piston, then Judge0) — never really called here.
 const onlineRunCode = vi.fn(async (_lang: string, _code: string) => 'online output')
@@ -7,6 +7,13 @@ vi.mock('../../utils/codeRunner.js', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../utils/codeRunner.js')>()
   return { ...real, runCode: (lang: string, code: string) => onlineRunCode(lang, code) }
 })
+
+// Pyodide, the in-browser Python — never really loaded here.
+const pyodideRun = vi.fn(async (_code: string, onLine?: (l: { type: string; text?: string }) => void) => {
+  onLine?.({ type: 'output', text: 'pyodide output' })
+  return { error: null }
+})
+vi.mock('../../utils/inlineRunner.js', () => ({ runPythonInline: (code: string, onLine: any) => pyodideRun(code, onLine) }))
 
 import { executeCode, RAN_ON_EVENT } from './executor'
 import { runTests } from './testRunner'
@@ -48,6 +55,13 @@ function captureRanOn() {
   window.addEventListener(RAN_ON_EVENT, on)
   return { seen, stop: () => window.removeEventListener(RAN_ON_EVENT, on) }
 }
+
+// executeCode imports its runners lazily. Load them once here: on a cold cache the first
+// import took longer than the 5 s test timeout and failed whichever test happened to be first.
+beforeAll(async () => {
+  await import('../../utils/codeRunner.js')
+  await import('../../utils/desktopCodeRunner.js')
+}, 60000)
 
 beforeEach(() => onlineRunCode.mockClear())
 afterEach(() => { delete (window as any).openCalcDesktop; vi.useRealTimers() })
@@ -140,6 +154,39 @@ describe('executeCode: C++ and C# on the desktop app', () => {
     await executeCode('int main(void) { return 0; }', 'c')
     expect(api.runCode).not.toHaveBeenCalled()
     expect(onlineRunCode).toHaveBeenCalled()
+  })
+})
+
+describe('executeCode: Python', () => {
+  beforeEach(() => pyodideRun.mockClear())
+
+  it('uses Pyodide on the hosted site', async () => {
+    const ranOn = captureRanOn()
+    const r = await executeCode('print(1)', 'python')
+    ranOn.stop()
+    expect(pyodideRun).toHaveBeenCalled()
+    expect(r.lines).toEqual([{ kind: 'stdout', text: 'pyodide output' }])
+    expect(ranOn.seen).toEqual(['Pyodide, in the browser'])
+  })
+
+  it('uses the learner\'s Python on desktop, unwrapped', async () => {
+    const api = fakeDesktop({
+      status: { installed: true, source: 'system', version: '3.13.14', path: 'C:\\Python\\python.exe' },
+      script: () => [out('3\n'), exit(0)],
+    })
+    const ranOn = captureRanOn()
+    const r = await executeCode('print(1 + 2)', 'py')
+    ranOn.stop()
+    expect(pyodideRun).not.toHaveBeenCalled()
+    expect(api.ranCode).toEqual(['print(1 + 2)'])
+    expect(r.lines).toEqual([{ kind: 'stdout', text: '3' }])
+    expect(ranOn.seen).toEqual(['your Python 3.13.14, on this computer'])
+  })
+
+  it('shows a traceback as an error', async () => {
+    fakeDesktop({ script: () => [err('Traceback (most recent call last):\n  File "main.py", line 1\nZeroDivisionError: division by zero\n'), exit(1)] })
+    const r = await executeCode('1/0', 'python')
+    expect(r.lines).toEqual([{ kind: 'error', text: 'Traceback (most recent call last):\n  File "main.py", line 1\nZeroDivisionError: division by zero' }])
   })
 })
 
