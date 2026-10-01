@@ -81,7 +81,7 @@ If a matrix `A` can be undone, the matrix that undoes it is called its **inverse
 A^{-1} A = I
 \]
 
-Then solving is one multiplication: multiply both sides of `A x = b` by `A⁻¹` to get `x = A⁻¹ b`.
+Then solving is one multiplication. Multiply both sides of `A x = b` by `A⁻¹`: the left side becomes `A⁻¹ A x = I x = x`, since the identity changes nothing, so `x = A⁻¹ b`.
 
 ```python
 import numpy as np
@@ -94,7 +94,7 @@ print((A_inv @ A).round(10))
 print(A_inv @ np.array([7.0, 11.0]))
 ```
 
-It is useful to know the inverse exists and what it means. In practice, though, prefer `np.linalg.solve(A, b)` to `np.linalg.inv(A) @ b`. `solve` goes straight to the answer without building the whole inverse, so it is faster, and it makes smaller rounding errors, which matters for large or delicate problems.
+(A `-0.` in the output is just zero with a minus sign left over from rounding; it equals 0.) It is useful to know the inverse exists and what it means. In practice, though, prefer `np.linalg.solve(A, b)` to `np.linalg.inv(A) @ b`. `solve` goes straight to the answer without building the whole inverse, so it is faster, and it makes smaller rounding errors, which matters for large or delicate problems.
 
 ## When there is no unique answer
 
@@ -112,11 +112,24 @@ b = np.array([5.60, 5.10, 11.20])
 print(np.linalg.solve(A, b))
 ```
 
-There is no answer to give: the matrix is **singular**, the word for a square matrix that cannot be inverted. With only two genuinely different receipts for three unknown prices, there are infinitely many sets of prices that fit.
+There is no **single** answer to give: the matrix is **singular**, the word for a square matrix that cannot be inverted. With only two genuinely different receipts for three unknown prices, there are infinitely many sets of prices that fit.
+
+The third receipt could also **contradict** the first. If it said 11.00 instead of 11.20, no prices at all could fit, because a customer buying exactly twice as much must pay exactly twice as much:
+
+```python
+import numpy as np
+
+A = np.array([[2, 1, 1],
+              [1, 2, 0],
+              [4, 2, 2]], dtype=float)
+print(np.linalg.solve(A, np.array([5.60, 5.10, 11.00])))
+```
+
+Same singular matrix, and this time there is no solution at all. Either way, a singular matrix means `A x = b` has no unique answer: infinitely many, or none, depending on `b`.
 
 How this shows up depends on where NumPy is running. In this notebook, `solve` returns `nan` ("not a number") for every component. On a normal computer, NumPy raises an error instead, `LinAlgError: Singular matrix`. And with real, messy numbers, rounding can leave a singular matrix very slightly non-singular, so that `solve` returns huge, meaningless numbers with no warning at all. In every case the lesson is the same: do not trust a solution without checking it, and check whether the matrix can be inverted in the first place.
 
-How can you tell in advance? A square matrix can be inverted exactly when its **determinant is not zero**, which from the last lesson means it does not flatten space. A more informative measure is the **rank**: the number of genuinely independent directions among the columns (or, equivalently, the rows). The rows (or columns) are **linearly dependent** when one can be built from the others, as the third row here is twice the first.
+How can you tell in advance? A square matrix can be inverted exactly when its **determinant is not zero**. The last lesson defined the determinant for 2 by 2 matrices as the factor by which areas change; for a 3 by 3 matrix it is the factor by which **volumes** change, and `np.linalg.det` computes it for any square matrix. Either way, a determinant of zero means the matrix flattens space. A more informative measure is the **rank**: the number of genuinely independent directions among the columns (or, equivalently, the rows). The rows (or columns) are **linearly dependent** when one can be built from the others, as the third row here is twice the first.
 
 ```python
 import numpy as np
@@ -162,7 +175,7 @@ Now the case that matters most in machine learning. Suppose you measure how a sp
 
 With ten measurements there are ten equations and only two unknowns, and because every measurement has a little error, no single line passes through all ten points. There is no exact solution. The sensible question becomes: which `m` and `c` make the equations **as nearly true as possible**?
 
-The standard answer is the **least squares** solution: choose `m` and `c` to make the sum of the squared errors, the gaps between each predicted and measured length, as small as possible. `np.linalg.lstsq` finds it:
+The standard answer is the **least squares** solution: choose `m` and `c` to make the sum of the squared errors, the gaps between each predicted and measured length, as small as possible. The errors are squared so that positive and negative gaps cannot cancel each other out, and so that one big miss counts for much more than several small ones; a later lesson on loss functions looks at other choices. `np.linalg.lstsq` finds it:
 
 ```python
 import numpy as np
@@ -271,7 +284,7 @@ assert _np.allclose(_C @ safe_solve(_C, _np.array([1.0, 2, 3])), [1, 2, 3]), "sa
 Hint: A square matrix with `n` rows has full rank when its rank is `n`; `A.shape[0]` is the number of rows. Return `None` early if the rank is smaller.
 :::
 
-::: challenge Fit a line [medium]
+::: challenge Fit a line [easy]
 Write a function `fit_line(x, y)` that returns the slope `m` and intercept `c` of the least squares line `y ≈ m x + c` through the points, as a tuple `(m, c)` of floats. Build the tall matrix with a column of `x` values and a column of ones, as in the lesson, and use `np.linalg.lstsq`.
 
 Then use it: the starter has the ages and heights of some children. Store the fitted slope, in centimetres per year, in `growth_per_year`.

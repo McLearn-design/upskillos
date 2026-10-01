@@ -92,7 +92,17 @@ plt.show()
 
 The grey F is the original and the blue F is the result. The red and green arrows are the matrix's two columns, the new positions of `e1` and `e2`.
 
-A note on `F @ M.T`. The points are stored as **rows**, one point per row, which is how data is always stored. To transform every row `p` by `M @ p` at once, NumPy computes `F @ M.T` (`.T` is the transpose). You can check that for a single point `p`, `p @ M.T` gives the same numbers as `M @ p`. You will see this "data times transposed matrix" pattern constantly.
+A note on `F @ M.T`. The points are stored as **rows**, one point per row, which is how data is always stored. To transform every row `p` by `M @ p` at once, NumPy computes `F @ M.T` (`.T` is the transpose). For a single point you can check that the two agree:
+
+```python
+import numpy as np
+
+M = np.array([[2, 1], [0, 3]])
+p = np.array([4, 5])
+print(M @ p, p @ M.T)
+```
+
+The transpose rule near the end of this lesson explains why. You will see this "data times transposed matrix" pattern constantly.
 
 ## A gallery of transformations
 
@@ -111,7 +121,7 @@ def show(M, title, ax):
     ax.annotate("", xy=M[:, 0], xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="tab:red", lw=2))
     ax.annotate("", xy=M[:, 1], xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="tab:green", lw=2))
     ax.set_title(title, fontsize=10)
-    ax.set_xlim(-4, 4)
+    ax.set_xlim(-4, 6)
     ax.set_ylim(-4, 4)
     ax.set_aspect("equal")
     ax.grid(True, alpha=0.3)
@@ -146,7 +156,21 @@ If you transform a vector by `B` and then by `A`, you get `A @ (B @ v)`. The mat
 (AB)v = A(Bv)
 \]
 
-To compute `A @ B`, multiply `A` by each column of `B` in turn; the results are the columns of the product. The order matters: `A @ B` means "do `B` first", reading right to left, like function composition. And in general `A @ B` and `B @ A` are **different**:
+To compute `A @ B`, multiply `A` by each column of `B` in turn; the results are the columns of the product:
+
+```python
+import numpy as np
+
+A = np.array([[1, 2], [3, 4]])
+B = np.array([[0, 1], [5, 2]])
+by_columns = np.column_stack([A @ B[:, 0], A @ B[:, 1]])
+print(by_columns)
+print(A @ B)
+v = np.array([1, -1])
+print((A @ B) @ v, A @ (B @ v))
+```
+
+The column-by-column product matches `A @ B`, and applying the product to `v` gives the same as applying `B` then `A`. The order matters: `A @ B` means "do `B` first", reading right to left, like function composition. And in general `A @ B` and `B @ A` are **different**. Predict both results of the next cell before running it: what happens to `(1, 0)` if you rotate it by 90° and then stretch x by 2, or the other way round?
 
 ```python
 import numpy as np
@@ -210,11 +234,13 @@ print(np.array_equal((A @ B).T, B.T @ A.T))
 
 ## How much does a matrix stretch area?
 
-A transformation changes areas by a fixed factor, the same everywhere. The unit square, with corners at 0, `e1`, `e2` and `e1 + e2`, becomes a parallelogram whose sides are the matrix's two columns, and the area of that parallelogram is the factor. For a 2 by 2 matrix it has a simple formula, called the **determinant**:
+A transformation changes areas by a fixed factor, the same everywhere. The unit square, with corners at 0, `e1`, `e2` and `e1 + e2`, becomes a parallelogram whose sides are the matrix's two columns, and the area of that parallelogram is the factor. Stretching x by 2 turns the unit square into a 2 by 1 rectangle, so it doubles every area. A shear slants the square into a parallelogram with the same base and the same height, so it keeps every area the same. For a 2 by 2 matrix the factor has a simple formula, called the **determinant**:
 
 \[
 \det \begin{pmatrix} a & b \\ c & d \end{pmatrix} = ad - bc
 \]
+
+Using the gallery above, predict the determinant of each of the five matrices below before running the cell.
 
 ```python
 import numpy as np
@@ -328,7 +354,7 @@ Finally print whether they are equal, using `np.allclose`.
 import numpy as np
 
 def combine(first, second):
-    return first @ second
+    return None
 
 shear = np.array([[1, 1], [0, 1]])
 rotate = np.array([[0, -1], [1, 0]])
@@ -354,11 +380,14 @@ import numpy as _np
 assert "combine" in dir(), "Keep the function's name as combine."
 _rng = _np.random.default_rng(4)
 _A, _B, _v = _rng.normal(size=(2, 2)), _rng.normal(size=(2, 2)), _rng.normal(size=2)
-assert _np.allclose(combine(_A, _B) @ _v, _B @ (_A @ _v)), "combine(first, second) must equal applying first, then second: (second @ first). Read matrix products right to left."
+_c = combine(_A, _B)
+assert _c is not None, "combine should return a matrix."
+assert _np.allclose(_c @ _v, _B @ (_A @ _v)), "For any vector v, combine(A, B) @ v must equal B @ (A @ v): apply A first, then B. Your matrix does something else."
 _s = _np.array([[1, 1], [0, 1]])
 _r = _np.array([[0, -1], [1, 0]])
-assert shear_then_rotate is not None and _np.allclose(shear_then_rotate, _r @ _s), "shear_then_rotate should be rotate @ shear."
-assert rotate_then_shear is not None and _np.allclose(rotate_then_shear, _s @ _r), "rotate_then_shear should be shear @ rotate."
+_e = _np.array([1.0, 2.0])
+assert shear_then_rotate is not None and _np.allclose(shear_then_rotate @ _e, _r @ (_s @ _e)), "shear_then_rotate should shear a vector first, then rotate it."
+assert rotate_then_shear is not None and _np.allclose(rotate_then_shear @ _e, _s @ (_r @ _e)), "rotate_then_shear should rotate a vector first, then shear it."
 assert "False" in _stdout, "Print whether the two are equal (they are not)."
 "SUCCESS: The same two transformations in a different order give a different result."
 ```

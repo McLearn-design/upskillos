@@ -143,6 +143,8 @@ def numerical_derivative(f, x, h=1e-5):
 x = 1.7
 for n in [1, 2, 3, 4]:
     print(f"x^{n}: numerical {numerical_derivative(lambda t: t ** n, x):.5f}, rule {n * x ** (n - 1):.5f}")
+print(f"exp: numerical {numerical_derivative(np.exp, x):.5f}, rule exp(x) = {np.exp(x):.5f}")
+print(f"log: numerical {numerical_derivative(np.log, x):.5f}, rule 1/x = {1 / x:.5f}")
 ```
 
 So `x²` has derivative `2x`, which is why the tangent to `x²` at 1.5 had slope 3, and `x³` has derivative `3x²`. The cyclist's `12t + 3t²` has derivative `12 + 6t`, which at `t = 2` is 24, matching the limit found above. The other patterns you will need:
@@ -178,13 +180,13 @@ ax.legend()
 plt.show()
 ```
 
-Read the dashed derivative curve as the steepness of the solid curve. Where `f′` is **positive**, `f` is going up; where it is **negative**, `f` is going down. And where `f′` crosses **zero**, at `x = −1` and `x = 1`, the curve is momentarily flat: those are the tops of hills and bottoms of valleys, called **maximum** and **minimum** points. `ax.axhline(0)` draws a horizontal line at zero to make the crossings easy to see.
+Read the dashed derivative curve as the steepness of the solid curve. Where `f′` is **positive**, `f` is going up; where it is **negative**, `f` is going down. And where `f′` crosses **zero**, at `x = −1` and `x = 1`, the curve is momentarily flat: those are the tops of hills and bottoms of valleys, called **maximum** and **minimum** points. (A flat point is not always a hill or a valley: `x³` is flat at 0 but keeps rising on both sides. What marks a hill or valley is the derivative actually **changing sign** there, from positive to negative or the other way round.) `ax.axhline(0)` draws a horizontal line at zero to make the crossings easy to see.
 
 ## Walking downhill
 
 Training a model means finding the parameter values that make its error as small as possible: finding the bottom of a valley. The derivative says which way is downhill. If `f′(x)` is positive, the curve rises to the right, so step **left**; if it is negative, step right. In both cases: step in the direction of **minus** the derivative.
 
-Here is that idea finding the minimum of `f(x) = (x − 3)² + 1` from a starting guess of `x = 0`. Each step moves `x` by a small multiple of the negative derivative:
+Here is that idea finding the minimum of `f(x) = (x − 3)² + 1` from a starting guess of `x = 0`. Each step moves `x` by a small multiple of the negative derivative. Predict: as the dots approach the bottom, will the steps get bigger or smaller?
 
 ```python
 import numpy as np
@@ -212,7 +214,7 @@ ax.set_title("Each step moves downhill")
 plt.show()
 ```
 
-The red dots walk down the curve and settle at the bottom, `x = 3`. The steps are big where the curve is steep and shrink as it flattens out near the minimum, because the derivative itself shrinks there. This procedure is **gradient descent**, and it is how neural networks with billions of parameters are trained. Its full treatment, including what happens when the step size is too big, comes later in the series. Before that, the next lesson extends derivatives to functions of many numbers at once, which is what a model with many parameters needs.
+The red dots walk down the curve and settle near the bottom: after 25 steps `x` is about 2.99, within 0.01 of the true minimum at 3, and more steps would get closer still. The steps are big where the curve is steep and shrink as it flattens out near the minimum, because the derivative itself shrinks there. This procedure is **gradient descent**, and it is how neural networks with billions of parameters are trained. Its full treatment, including what happens when the step size is too big, comes later in the series. Before that, the next lesson extends derivatives to functions of many numbers at once, which is what a model with many parameters needs.
 
 ::: challenge A numerical derivative [easy]
 Write a function `derivative(f, x, h=1e-5)` that returns the central-difference estimate of `f′(x)`. It should work when `x` is a NumPy array too, giving the derivative at every point at once (it will, if you only use arithmetic).
@@ -311,7 +313,7 @@ def flat_points(f, lo, hi, n=10001):
     x = np.linspace(lo, hi, n)
     h = 1e-5
     slope = (f(x + h) - f(x - h)) / (2 * h)
-    changes = np.sign(slope[:-1]) != np.sign(slope[1:])
+    changes = slope[:-1] * slope[1:] < 0
     return x[:-1][changes]
 
 print(flat_points(lambda x: x ** 3 - 3 * x, -2, 2).round(3))
@@ -332,7 +334,7 @@ assert _np.asarray(flat_points(lambda x: 2 * x + 1, 0, 5)).size == 0, "A straigh
 "SUCCESS: You found the hills and valleys from where the slope changes sign."
 ```
 
-Hint: `np.sign` turns every slope into -1, 0 or 1. Compare `sign[:-1]` with `sign[1:]`: each position then compares a point with its right-hand neighbour, and a mismatch marks a sign change. Use that boolean array as a mask on the `x` values (all but the last).
+Hint: `slope[:-1]` and `slope[1:]` line up each point with its right-hand neighbour. Two numbers have opposite signs exactly when their product is negative, so `slope[:-1] * slope[1:] < 0` marks every sign change. Use that boolean array as a mask on the `x` values (all but the last).
 :::
 
 ## What you learned

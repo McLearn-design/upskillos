@@ -63,7 +63,31 @@ Collect the partial derivatives into a vector, and you have the **gradient**, wr
 \nabla f = \left( \frac{\partial f}{\partial x}, \frac{\partial f}{\partial y} \right)
 \]
 
-For a function of a thousand variables, the gradient has a thousand components, one per variable. It has a remarkable geometric meaning: **the gradient points in the direction in which the function increases fastest**, and its length is that steepest rate of increase. So minus the gradient points straight **downhill**. At every point, it is also perpendicular to the contour line through that point, which makes sense: walking along a contour line keeps the height the same, so it is the direction of no change at all.
+For a function of a thousand variables, the gradient has a thousand components, one per variable. It has a remarkable geometric meaning: **the gradient points in the direction in which the function increases fastest**, and its length is that steepest rate of increase.
+
+Here is why. Near a point, a smooth surface is almost a flat tilted plane, so moving a tiny step in the direction of a unit vector `u` changes the height at the rate `∇f · u`: each coordinate's rate times how much of that coordinate the step contains. From the vectors lesson, that dot product is ‖∇f‖ cos θ, where θ is the angle between `u` and the gradient. It is largest when cos θ = 1, that is, when `u` points exactly along the gradient. You can check by trying every direction:
+
+```python
+import numpy as np
+
+def f(x, y):
+    return x ** 2 + 3 * y ** 2
+
+point = np.array([1.0, 1.0])
+h = 1e-5
+angles = np.radians(np.arange(0, 360, 10))
+rates = []
+for angle in angles:
+    u = np.array([np.cos(angle), np.sin(angle)])
+    rates.append((f(*(point + h * u)) - f(*(point - h * u))) / (2 * h))
+best = angles[np.argmax(rates)]
+gradient = np.array([2 * point[0], 6 * point[1]])
+print("steepest direction found:", np.degrees(best), "degrees")
+print("gradient direction:      ", np.degrees(np.arctan2(gradient[1], gradient[0])).round(1), "degrees")
+print("steepest rate:", round(max(rates), 3), " length of gradient:", np.linalg.norm(gradient).round(3))
+```
+
+Of 36 directions tried, the steepest is the one closest to the gradient's direction (`np.arctan2(y, x)` gives the angle of a vector), and the steepest rate matches the gradient's length. So minus the gradient points straight **downhill**. At every point, it is also perpendicular to the contour line through that point, which makes sense: walking along a contour line keeps the height the same, so it is the direction of no change at all. Before running the next cell, predict: in this stretched bowl, will the downhill arrows point straight at the centre?
 
 ```python
 import numpy as np
@@ -97,7 +121,7 @@ Gradient descent works exactly as in one dimension, updating every variable at o
 (x, y) \leftarrow (x, y) - \text{step size} \times \nabla f(x, y)
 \]
 
-The arrow `←` means "is replaced by", like assignment in Python.
+The arrow `←` means "is replaced by", like assignment in Python. Predict the shape of the path from `(2.5, 1.5)`: a straight line to the centre, or something else?
 
 ```python
 import numpy as np
@@ -201,7 +225,7 @@ The Σ (capital sigma) means "add up, for `i` from 1 to `n`". `L` is a function 
 \frac{\partial L}{\partial c} = \frac{2}{n} \sum_{i} (m x_i + c - y_i)
 \]
 
-Every time you derive a gradient by hand, check it numerically. This comparison is called **gradient checking**, and it catches the sign slips and missing factors of two that are otherwise very hard to find:
+Every time you derive a gradient by hand, check it numerically. This comparison is called **gradient checking**, and it catches the sign slips and missing factors of two that are otherwise very hard to find. The data below comes from the line with slope 2 and intercept 1; at the guess `m = 0.5, c = 0`, predict the sign of each gradient component before running it.
 
 ```python
 import numpy as np
@@ -331,7 +355,7 @@ assert _np.allclose(fitted, _best, atol=1e-3), f"The best line has m = {_best[0]
 "SUCCESS: You trained a model: gradient descent found the least squares line."
 ```
 
-Hint: Inside the loop, `point = point - step_size * grad(point)`. Convert `start` to a float array first, so the updates are not rounded to integers. Then call `descend(mse_gradient, np.array([0.0, 0.0]), 0.02, 2000)`.
+Hint: This is the two-dimensional loop from the lesson, with `grad` passed in. Convert `start` to a float array first, so the updates are not rounded to integers.
 :::
 
 ::: challenge Check a gradient by hand [medium]
@@ -392,6 +416,13 @@ for _w in [1.0, 2.0, -0.5]:
     assert 0 <= _gc < 1e-5, f"gradient_check should return a tiny non-negative difference for a correct formula, but returned {_gc}."
 _wrong = lambda w, x, y: _np.mean((w * x ** 2 - y) * x ** 2)
 assert abs(_wrong(1.0, _x, _y) - loss_gradient(1.0, _x, _y)) > 1e-3, "The factor of 2 from differentiating the square must be included."
+_saved = loss_gradient
+loss_gradient = _wrong
+try:
+    _gc_wrong = gradient_check(1.0, _x, _y)
+finally:
+    loss_gradient = _saved
+assert _gc_wrong > 1e-3, "gradient_check must actually compare loss_gradient with a numerical derivative: given a wrong formula, it should report a clear difference."
 "SUCCESS: You derived a gradient with the chain rule and proved it with a numerical check."
 ```
 

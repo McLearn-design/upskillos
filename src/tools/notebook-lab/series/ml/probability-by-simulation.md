@@ -32,7 +32,7 @@ plt.show()
 
 ## Simulating experiments with NumPy
 
-With arrays, you can run a hundred thousand experiments in one line and count the ones where an event happened, using boolean masks. What is the probability that two dice add up to 7?
+With arrays, you can run a hundred thousand experiments in one line and count the ones where an event happened, using boolean masks. What is the probability that two dice add up to 7? Make a guess before running the cell.
 
 ```python
 import numpy as np
@@ -94,8 +94,10 @@ d2 = rng.integers(1, 7, size=n)
 A = d1 == 6
 B = d2 % 2 == 0
 print("P(A and B):", (A & B).mean(), " P(A) × P(B):", A.mean() * B.mean())
-print("P(A or B): ", (A | B).mean(), " formula:", A.mean() + B.mean() - (A & B).mean())
+print("P(A or B): ", (A | B).mean(), " exact: 1/6 + 1/2 − 1/12 =", round(1 / 6 + 1 / 2 - 1 / 12, 4))
 ```
+
+Here `A` is "the first die is a six" (probability 1/6) and `B` is "the second die is even" (probability 1/2). They are independent, so P(A and B) = 1/6 × 1/2 = 1/12, and the "or" rule gives the exact value on the last line.
 
 Independence is an assumption, and it is often false. Whether it rains today and whether it rains tomorrow are not independent. Several machine learning methods assume independence to make the maths simple, knowing it is not quite true, and you will see one, naive Bayes, later in the series.
 
@@ -121,9 +123,10 @@ total = d1 + d2
 print("P(total ≥ 10):              ", (total >= 10).mean())
 given = d1 == 5
 print("P(total ≥ 10 | first is 5): ", (total[given] >= 10).mean())
+print("using the formula:          ", ((total >= 10) & given).mean() / given.mean())
 ```
 
-Without any information, a total of 10 or more has probability 6/36 ≈ 0.167. Knowing the first die is a 5, you only need a 5 or 6 on the second, so the probability rises to 2/6 ≈ 0.333. `total[given]` keeps only the experiments where the condition held, exactly as the definition says.
+Without any information, a total of 10 or more has probability 6/36 ≈ 0.167. Knowing the first die is a 5, you only need a 5 or 6 on the second, so the probability rises to 2/6 ≈ 0.333. `total[given]` keeps only the experiments where the condition held. The last line computes the formula instead, P(A and B) divided by P(B), and gets the same number: filtering and then taking a fraction **is** the formula.
 
 In machine learning, almost every prediction is a conditional probability: the probability that an email is spam **given** its words, that a patient has a disease **given** their test results, that the next word is "cat" **given** the words so far.
 
@@ -160,7 +163,7 @@ The bottom line, the overall chance of a positive test, adds up both ways of get
 
 ## A surprising simulation: shared birthdays
 
-Simulation is especially valuable when intuition fails. In a room of 23 people, what is the chance that at least two share a birthday? (Assume 365 equally likely birthdays and ignore leap years.)
+Simulation is especially valuable when intuition fails. In a room of 23 people, what is the chance that at least two share a birthday? (Assume 365 equally likely birthdays and ignore leap years.) Write your guess down before running the cell.
 
 ```python
 import numpy as np
@@ -174,7 +177,7 @@ for people in [10, 23, 40, 60]:
     print(f"{people} people: {has_shared.mean():.3f}")
 ```
 
-With just 23 people it is already about 50%, and with 60 it is nearly certain. The trick for spotting a shared birthday: sort each row, and a repeat shows up as two equal neighbours, which `np.diff` (the difference between each element and the next) turns into a zero. Intuition goes wrong because it thinks about one person matching you, but there are 253 different **pairs** of people in a room of 23, and any of them could match.
+With just 23 people it is already about 50%, and with 60 it is nearly certain. The trick for spotting a shared birthday: sort each row, and a repeat shows up as two equal neighbours, which `np.diff` (the difference between each element and the next) turns into a zero. Intuition goes wrong because it thinks about one person matching you, but there are 253 different **pairs** of people in a room of 23 (each of the 23 people pairs with 22 others, which counts every pair twice, so 23 × 22 / 2), and any of them could match.
 
 ::: challenge At least one six [easy]
 Write a function `chance_of_six(rolls, trials, seed)` that estimates by simulation the probability of getting at least one six in `rolls` rolls of a die. Create a generator with `np.random.default_rng(seed)`, draw all the dice at once with `rng.integers(1, 7, size=(trials, rolls))`, and return the fraction of rows containing a six.
@@ -285,7 +288,7 @@ Write a function `posterior(prior, sensitivity, false_positive_rate)` that retur
 - `sensitivity` is P(positive | condition),
 - `false_positive_rate` is P(positive | no condition).
 
-`posterior(0.01, 0.95, 0.05)` is about 0.161. Then use it to find how much a **second** independent positive test changes things: the posterior after the first test becomes the prior for the second. Store the probability after two positive tests in `after_two_tests`, for the lesson's disease and test.
+`posterior(0.01, 0.95, 0.05)` is about 0.161. Then use it to find how much a **second** positive test changes things, assuming the second test's result is independent of the first once you know whether the person has the condition: the posterior after the first test becomes the prior for the second. Store the probability after two positive tests in `after_two_tests`, for the lesson's disease and test.
 
 ```python starter
 def posterior(prior, sensitivity, false_positive_rate):

@@ -22,26 +22,30 @@ import matplotlib.pyplot as plt
 
 A = np.array([[3.0, 1.0],
               [1.0, 2.0]])
-angles = np.linspace(0, 2 * np.pi, 13)[:-1]
+angles = np.linspace(0, 2 * np.pi, 200)
 circle = np.column_stack([np.cos(angles), np.sin(angles)])
 moved = circle @ A.T
+values, vectors = np.linalg.eig(A)
 
 fig, ax = plt.subplots(figsize=(5, 5))
-for start, end in zip(circle, moved):
-    ax.annotate("", xy=start, xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="lightgray"))
-    ax.annotate("", xy=end, xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="tab:blue", alpha=0.6))
-values, vectors = np.linalg.eig(A)
+ax.plot(circle[:, 0], circle[:, 1], color="lightgray", lw=2, label="unit circle")
+ax.plot(moved[:, 0], moved[:, 1], color="tab:blue", lw=2, label="after A")
+test = np.array([1.0, 0.0])
+ax.annotate("", xy=test, xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="gray", lw=2))
+ax.annotate("", xy=A @ test, xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="black", lw=2))
 for value, vector in zip(values, vectors.T):
-    ax.plot(*np.column_stack([-4 * vector, 4 * vector]), color="tab:red", lw=1, ls="--")
+    ax.annotate("", xy=vector, xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="tab:orange", lw=2))
+    ax.annotate("", xy=value * vector, xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="tab:red", lw=1.5, ls="--"))
 ax.set_xlim(-4, 4)
 ax.set_ylim(-4, 4)
 ax.set_aspect("equal")
-ax.set_title("grey: before, blue: after, red: eigenvector directions")
+ax.legend(loc="lower right", fontsize=8)
+ax.set_title("orange: eigenvectors, red dashed: after A")
 plt.show()
 print("eigenvalues:", values.round(3))
 ```
 
-The circle becomes an ellipse. Most blue arrows point in a different direction from their grey originals. But along the two red dashed lines, the arrows are only lengthened: those are the eigenvector directions, and the eigenvalues say how much each is stretched, about 3.6 along one and 1.4 along the other. Notice that the two eigenvector directions are the long and short axes of the ellipse.
+The circle becomes an ellipse. The grey arrow `(1, 0)` is knocked off its direction: its image, in black, points somewhere new. But each orange eigenvector's image, the red dashed arrow, lies along the **same line**, only longer: those are the eigenvector directions, and the eigenvalues say how much each is stretched, about 3.6 along one and 1.4 along the other. Notice that the two eigenvector directions are the long and short axes of the ellipse.
 
 `np.linalg.eig(A)` returns the eigenvalues and a matrix whose **columns** are the eigenvectors (that is why the loop uses `vectors.T`, to go through the columns). Each eigenvector is scaled to length 1, since any multiple of an eigenvector is also an eigenvector: only the direction matters.
 
@@ -78,7 +82,7 @@ values, vectors = np.linalg.eig(A)
 print("eigenvector with the largest eigenvalue:", vectors[:, np.argmax(values)].round(4))
 ```
 
-Whatever direction you start from (almost), repeated multiplication swings the vector round to the eigenvector with the **largest** eigenvalue. The reason: any starting vector is a mix of the two eigenvectors, and each multiplication scales the first part by about 3.6 but the second part by only 1.4. After a few steps, the first part dominates completely. This procedure is called **power iteration**, and it is how the eigenvector of enormous matrices is found in practice. It is also the core of Google's original PageRank algorithm, which found the most important web pages as the dominant eigenvector of a matrix describing the links between billions of pages.
+Whatever direction you start from, repeated multiplication swings the vector round to the eigenvector with the **largest** eigenvalue. (There is one exception: a start pointing exactly along the other eigenvector never leaves it. With real numbers that essentially never happens.) The reason: any starting vector is a mix of the two eigenvectors, and each multiplication scales the first part by about 3.6 but the second part by only 1.4. After a few steps, the first part dominates completely. This procedure is called **power iteration**, and it is how the eigenvector of enormous matrices is found in practice. It is also the core of Google's original PageRank algorithm, which found the most important web pages as the dominant eigenvector of a matrix describing the links between billions of pages.
 
 A small example of the same idea. Suppose tomorrow's weather depends only on today's: after a sunny day there is a 90% chance of sun, after a rainy day a 50% chance. Where does the chance of sun settle in the long run?
 
@@ -127,7 +131,7 @@ Eigenvectors only exist for square matrices, and even then not always real ones.
 A = U \Sigma V^T
 \]
 
-Every matrix does three simple things in turn: a rotation (`Vᵀ`), then a stretch along perpendicular axes (`Σ`, a diagonal matrix of non-negative numbers called the **singular values**), then another rotation (`U`). In two dimensions this means **every** matrix turns the unit circle into an ellipse, and the singular values are the lengths of the ellipse's two half-axes.
+Every matrix does three simple things in turn: a rotation (`Vᵀ`), then a stretch along perpendicular axes (`Σ`, a diagonal matrix of non-negative numbers called the **singular values**), then another rotation (`U`). Either rotation may also include a flip, a mirror image, which does not change the picture much: they still turn the plane without stretching it. In two dimensions this means **every** matrix turns the unit circle into an ellipse, and the singular values are the lengths of the ellipse's two half-axes.
 
 ```python
 import numpy as np
@@ -141,7 +145,7 @@ print("Vt:\n", Vt.round(4))
 print("rebuilt:\n", (U @ np.diag(s) @ Vt).round(10))
 ```
 
-`np.linalg.svd` returns `U`, the singular values `s` as a 1D array (largest first), and `Vᵀ` directly. `np.diag(s)` turns them into the diagonal matrix `Σ`. Multiplying the three back together rebuilds `A` exactly.
+`np.linalg.svd` returns `U`, the singular values `s` as a 1D array (largest first), and `Vᵀ` directly. `np.diag(s)` turns them into the diagonal matrix `Σ`. The numbers inside `U` and `Vt` are not very meaningful to read by eye (their signs can even come out either way), but each has columns (or rows) of length 1 at right angles to each other, which is what makes it a rotation. The part to look at is the singular values, and the check that multiplying the three back together rebuilds `A` exactly.
 
 The singular values rank the directions by importance: how much the matrix stretches each one. That ranking is what makes the SVD so useful, as the rest of this lesson shows.
 
@@ -153,32 +157,45 @@ Write the SVD out as a sum. Each singular value `sᵢ` pairs one column of `U` w
 A = s_1 u_1 v_1^T + s_2 u_2 v_2^T + \dots
 \]
 
-Each piece `uᵢ vᵢᵀ` is a very simple matrix (every row of it is a multiple of the same row), and the singular values say how much each piece contributes. Keeping only the first `k` pieces, the ones with the largest singular values, gives the best possible approximation of `A` built from `k` pieces. This is called a **rank-k approximation**, because a sum of `k` such pieces has rank `k`.
+Each piece `uᵢ vᵢᵀ` is a column times a row, called an **outer product**: a whole matrix in which every entry is one number from the column times one number from the row. Every row of it is a multiple of the same row:
 
-Here it is on a synthetic 60 by 60 greyscale image:
+```python
+import numpy as np
+
+u = np.array([1, 2, 3])
+v = np.array([10, 20])
+print(np.outer(u, v))
+```
+
+The singular values say how much each piece contributes. Keeping only the first `k` pieces, the ones with the largest singular values, gives the best possible approximation of `A` built from `k` pieces, "best" meaning that the sum of the squared differences between the approximation and `A` is as small as it can be. This is called a **rank-k approximation**, because a sum of `k` such pieces has rank `k`.
+
+Here it is on a synthetic 60 by 60 greyscale image, made from smooth patterns plus some random speckle, as real photos have:
 
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
 
+rng = np.random.default_rng(0)
 y, x = np.mgrid[0:60, 0:60]
-image = np.sin(x / 7) + np.cos(y / 9) + ((x - 30) ** 2 + (y - 30) ** 2 < 150)
+image = (np.sin(x / 7) + np.cos(y / 9) + np.sin((x + y) / 5)
+         + ((x - 30) ** 2 + (y - 30) ** 2 < 150) + rng.normal(0, 0.15, (60, 60)))
 
 U, s, Vt = np.linalg.svd(image)
 fig, axes = plt.subplots(1, 4, figsize=(11, 3))
 axes[0].imshow(image, cmap="gray")
-axes[0].set_title("original (rank 60)")
-for ax, k in zip(axes[1:], [1, 3, 10]):
+axes[0].set_title(f"original (rank {np.linalg.matrix_rank(image)})")
+for ax, k in zip(axes[1:], [1, 5, 15]):
     approx = U[:, :k] @ np.diag(s[:k]) @ Vt[:k]
     ax.imshow(approx, cmap="gray")
     ax.set_title(f"rank {k}")
 for ax in axes:
     ax.axis("off")
 plt.show()
-print("share of the total, first 10 singular values:", (s[:10].sum() / s.sum()).round(3))
+kept = (s[:15] ** 2).sum() / (s ** 2).sum()
+print(f"the first 15 of 60 pieces keep {kept:.1%} of the image")
 ```
 
-`np.mgrid` builds grids of row and column coordinates, which are used here to draw stripes and a disc. With rank 1 you see only a vague blur; by rank 10 the image is nearly perfect, although it is stored as ten columns of `U`, ten rows of `Vᵀ` and ten numbers, 1,210 numbers instead of 3,600. Real photographs behave the same way: most of their information is concentrated in the first few singular values.
+`np.mgrid` builds grids of row and column coordinates, used here to draw stripes, a diagonal wave and a disc. The random speckle makes the original full rank, 60. With rank 1 you see only a vague blur; by rank 15 the picture is clearly all there, with only some of the speckle lost, yet it is stored as 15 columns of `U`, 15 rows of `Vᵀ` and 15 numbers: 1,815 numbers instead of 3,600. (How much is "kept" is measured with **squared** singular values, the same measure the digits example below uses; the statistics lessons explain why squares are the natural choice.) Real photographs behave the same way: most of their structure is concentrated in the first few singular values.
 
 ## Compressing handwritten digits
 
@@ -246,23 +263,23 @@ import numpy as _np
 assert "eigen_check" in dir(), "Keep the function's name as eigen_check."
 _A = _np.array([[2.0, 1.0], [1.0, 2.0]])
 _r = eigen_check(_A, _np.array([1.0, 1.0]))
-assert _r[0] is True and _np.isclose(_r[1], 3), f"(1, 1) is an eigenvector of this matrix with eigenvalue 3, but eigen_check returned {_r}."
+assert bool(_r[0]) and _np.isclose(_r[1], 3), f"(1, 1) is an eigenvector of this matrix with eigenvalue 3, but eigen_check returned {_r}."
 _r = eigen_check(_A, _np.array([1.0, -1.0]))
-assert _r[0] is True and _np.isclose(_r[1], 1), f"(1, -1) is an eigenvector with eigenvalue 1, but eigen_check returned {_r}."
+assert bool(_r[0]) and _np.isclose(_r[1], 1), f"(1, -1) is an eigenvector with eigenvalue 1, but eigen_check returned {_r}."
 _r = eigen_check(_A, _np.array([1.0, 0.0]))
-assert _r == (False, None), f"(1, 0) is not an eigenvector of this matrix, so eigen_check should return (False, None), but returned {_r}."
+assert not bool(_r[0]) and _r[1] is None, f"(1, 0) is not an eigenvector of this matrix, so eigen_check should return (False, None), but returned {_r}."
 _B = _np.array([[0.0, -1.0], [1.0, 0.0]])
-assert eigen_check(_B, _np.array([1.0, 2.0]))[0] is False, "A rotation by 90 degrees has no real eigenvectors."
+assert not bool(eigen_check(_B, _np.array([1.0, 2.0]))[0]), "A rotation by 90 degrees has no real eigenvectors."
 _C = _np.array([[4.0, 0, 0], [0, -2.0, 0], [0, 0, 1.0]])
 _r = eigen_check(_C, _np.array([0.0, 5.0, 0.0]))
-assert _r[0] is True and _np.isclose(_r[1], -2), f"(0, 5, 0) is an eigenvector of that diagonal matrix with eigenvalue -2, but eigen_check returned {_r}."
+assert bool(_r[0]) and _np.isclose(_r[1], -2), f"(0, 5, 0) is an eigenvector of that diagonal matrix with eigenvalue -2, but eigen_check returned {_r}."
 "SUCCESS: You can recognise an eigenvector by what the matrix does to it."
 ```
 
 Hint: Compute `Av = A @ v` once. The candidate λ is a ratio of two dot products. If `np.allclose(Av, λ * v)`, it is an eigenvector.
 :::
 
-::: challenge Power iteration [medium]
+::: challenge Power iteration [easy]
 Write a function `dominant_eigenvector(A, steps=100)` that finds the eigenvector of a symmetric matrix `A` with the largest eigenvalue, by power iteration: start from `np.ones(len(A))`, and on every step multiply by `A` and rescale to length 1. Return a tuple `(vector, value)`, where `value` is the eigenvalue, computed at the end as `v · Av` (for a unit vector, that is λ).
 
 Do not use `np.linalg.eig` or `eigh` inside your function; the check compares your answer with them.

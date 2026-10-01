@@ -106,9 +106,11 @@ const capture = { write: buf => { captured += decoder.decode(buf, { stream: true
 py.setStdout(capture)
 py.setStderr(capture)
 const flushOutput = () => py.runPythonAsync("__import__('sys').stdout.flush(); __import__('sys').stderr.flush()")
-// Same matplotlib setup as PythonNotebook: Agg backend, and plt.show() as a
-// no-op (the notebook captures open figures itself after each cell).
-await py.loadPackage(['matplotlib'], { messageCallback: () => {} })
+// Same packages PythonNotebook preloads (so code that relies on one without
+// importing it, like sklearn's as_frame=True needing pandas, behaves the
+// same), and the same matplotlib setup: Agg backend, plt.show() a no-op (the
+// notebook captures open figures itself after each cell).
+await py.loadPackage(['numpy', 'pandas', 'matplotlib', 'scikit-learn', 'scipy', 'statsmodels', 'sqlite3', 'sympy'], { messageCallback: () => {} })
 await py.runPythonAsync(`
 import matplotlib
 matplotlib.use('Agg')
@@ -181,6 +183,7 @@ for (const { series, lesson, file } of lessons) {
     if (prose.some(p => p.includes('$$'))) problems.push('uses $$…$$ math, which does not render; use \\[…\\]')
     for (const p of prose) {
       if (/^#{3,6}\s/.test(p)) problems.push(`"${p.slice(0, 40)}": only "## " headings render; "###" shows as plain text`)
+      if (!p.startsWith('```') && /^\s*\|.*\|\s*$/m.test(p)) problems.push(`"${p.slice(0, 40)}": Markdown tables do not render in the notebook; use a list`)
     }
 
     const challenges = cells.filter(c => c.challengeType)

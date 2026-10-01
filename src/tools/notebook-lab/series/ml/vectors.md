@@ -117,7 +117,29 @@ print(np.linalg.norm(houses - target, axis=1))
 
 This straight-line distance is called the **Euclidean distance**. With `axis=1`, `np.linalg.norm` finds the length of each row, so the second calculation, which broadcasts `target` across every row, gives the distance from the target house to every house at once. The nearest houses are the most similar ones, and predicting something about a new house from the houses closest to it is the idea behind the k-nearest-neighbours method you will build later.
 
-Notice that the floor area, in the tens and hundreds, completely dominates these distances, while the bedroom count barely matters. Features measured on very different scales distort distances, which is exactly why the last lesson standardised the columns of a dataset. Machine learning code standardises features before measuring distances for this reason.
+Notice that the floor area, in the tens and hundreds, completely dominates these distances, while the bedroom count barely matters. Features measured on very different scales distort distances, which is exactly why the "Standardise the features" challenge in the indexing and broadcasting lesson put every column on the same scale. Machine learning code standardises features before measuring distances for this reason.
+
+## Angles, cos and sin
+
+To talk about the angle between two vectors, you need two functions from trigonometry, **cos** (cosine) and **sin** (sine). Here is all you need of them. Draw a circle of radius 1 around the origin. Start at the point `(1, 0)` and walk anticlockwise round the circle through an angle θ (the Greek letter theta). The point you arrive at has coordinates
+
+\[
+(\cos\theta,\ \sin\theta)
+\]
+
+So cos θ is how far across you are, and sin θ how far up. At 0° you have not moved, so cos is 1 and sin is 0. At 90° you are at the top, `(0, 1)`: cos is 0. At 180° you are at `(−1, 0)`: cos is −1. In short, **cos θ is 1 when the angle is zero, 0 at a right angle, and −1 when pointing the opposite way**, which is exactly why it measures "how much two directions agree".
+
+NumPy's `np.cos` and `np.sin` measure angles in **radians**, not degrees. A full turn is 2π radians (about 6.28) instead of 360°, so 180° is π radians and 90° is π/2. `np.radians` converts degrees to radians, and `np.degrees` converts back.
+
+```python
+import numpy as np
+
+for degrees in [0, 60, 90, 180, 270]:
+    theta = np.radians(degrees)
+    print(f"{degrees:>3}°  cos {np.cos(theta):6.3f}   sin {np.sin(theta):6.3f}")
+```
+
+Some values print as tiny numbers like `6.1e-17` instead of 0: floating-point rounding again (Python lesson 2), since π itself cannot be stored exactly.
 
 ## The dot product
 
@@ -147,7 +169,18 @@ The dot product has a geometric meaning that makes it one of the most important 
 a \cdot b = \|a\|\,\|b\|\cos\theta
 \]
 
-Since cos θ is 1 when the vectors point the same way, 0 when they are at right angles, and -1 when they point in opposite directions, the dot product measures **how much two vectors point the same way**, scaled by their lengths:
+You can check the formula on two vectors whose angle you know. `(2, 0)` points along the x-axis and `(3, 3)` points diagonally, 45° away:
+
+```python
+import numpy as np
+
+a = np.array([2.0, 0.0])
+b = np.array([3.0, 3.0])
+print("a · b                  =", a @ b)
+print("|a| |b| cos(45°)       =", np.linalg.norm(a) * np.linalg.norm(b) * np.cos(np.radians(45)))
+```
+
+Both sides come to 6. Since cos θ is 1 when the vectors point the same way, 0 when they are at right angles, and −1 when they point in opposite directions, the dot product measures **how much two vectors point the same way**, scaled by their lengths. Before running the next cell, predict which of the four dot products will be negative and which will be zero.
 
 ```python
 import numpy as np
@@ -161,7 +194,7 @@ for name, v in [("same direction", [2, 0]), ("45 degrees", [1, 1]), ("right angl
 - **Zero**: they are at exactly 90 degrees. Vectors whose dot product is zero are called **orthogonal**, which is the general word for "perpendicular" in any number of dimensions.
 - **Negative**: they point broadly in opposite directions.
 
-Rearranging the formula gives the angle between any two vectors, in any number of dimensions:
+Rearranging the formula gives the angle between any two vectors, in any number of dimensions. Look back at the picture of `a = (3, 1)` and `b = (1, 2)` at the start of the lesson and estimate the angle between them before running this:
 
 ```python
 import numpy as np
@@ -170,16 +203,16 @@ a = np.array([3, 1])
 b = np.array([1, 2])
 cos_theta = (a @ b) / (np.linalg.norm(a) * np.linalg.norm(b))
 print(cos_theta)
-print(np.degrees(np.arccos(cos_theta)))
+print(np.degrees(np.arccos(cos_theta)).round(6))
 ```
 
-`np.arccos` turns a cosine back into an angle, in radians, and `np.degrees` converts radians to degrees. The angle between `a` and `b` is 45 degrees.
+`np.arccos` turns a cosine back into an angle, in radians, and `np.degrees` converts radians to degrees. The angle between `a` and `b` is 45 degrees. (Without the rounding it prints as `45.00000000000001`: rounding error once more.)
 
 ## Cosine similarity
 
 That cosine on its own, the dot product divided by both lengths, is called **cosine similarity**. It measures only the **direction** two vectors point, ignoring how long they are, and always lies between -1 and 1.
 
-Direction without size is often exactly what "similar" should mean. Represent each document by how many times it uses each of a few words. A long article and a short note about the same topic use the same words in similar **proportions**, so they point the same way, even though the long article's counts are all much bigger:
+Direction without size is often exactly what "similar" should mean. Represent each document by how many times it uses each of a few words. A long article and a short note about the same topic use the same words in similar **proportions**, so they point the same way, even though the long article's counts are all much bigger. Predict which pair will have the higher cosine similarity, and which the smaller straight-line distance:
 
 ```python
 import numpy as np
@@ -192,12 +225,13 @@ politics_report = np.array([0, 1, 15, 9])
 def cosine_similarity(a, b):
     return (a @ b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
-print(round(cosine_similarity(football_note, football_report), 3))
-print(round(cosine_similarity(football_note, politics_report), 3))
-print(round(np.linalg.norm(football_note - football_report), 1))
+print("cosine, note vs football report:", round(cosine_similarity(football_note, football_report), 3))
+print("cosine, note vs politics report:", round(cosine_similarity(football_note, politics_report), 3))
+print("distance, note vs football report:", round(np.linalg.norm(football_note - football_report), 1))
+print("distance, note vs politics report:", round(np.linalg.norm(football_note - politics_report), 1))
 ```
 
-The two football texts have a cosine similarity near 1, and the football note and the politics report are close to 0. Yet by straight-line distance, the football note is further from the football report than you might expect, simply because the report is longer. Cosine similarity is used throughout search engines and recommendation systems, and to compare the learned vectors, called **embeddings**, that represent words and images in modern models.
+The two football texts have a cosine similarity near 1, and the football note and the politics report are close to 0. Straight-line distance gets it backwards: the football note is **closer** to the politics report than to the football report, simply because the football report is long and its counts are all large. Cosine similarity is used throughout search engines and recommendation systems, and to compare the learned vectors, called **embeddings**, that represent words and images in modern models.
 
 ## The dot product as a weighted sum
 
@@ -355,6 +389,7 @@ Hint: `X @ w` computes the dot product of every row with `w`, giving one number 
 - Vectors add component by component (tip to tail) and scale by multiplying every component. `b - a` is the arrow from `a` to `b`.
 - The norm ‖a‖ = √(sum of squared components) is the length, computed with `np.linalg.norm`. Dividing by it gives a unit vector.
 - The Euclidean distance between points is ‖a − b‖. Features on very different scales distort distances, which is why data is standardised.
+- The point at angle θ round the unit circle is (cos θ, sin θ). cos is 1 at 0°, 0 at 90° and −1 at 180°. NumPy uses radians (a full turn is 2π); `np.radians` and `np.degrees` convert.
 - The dot product `a @ b` multiplies component by component and adds. It equals ‖a‖‖b‖cos θ: positive when vectors point the same way, zero when they are orthogonal, negative when they are opposed.
 - Cosine similarity, the dot product divided by both lengths, compares direction while ignoring size.
 - The dot product is a weighted sum: `w @ x + b` is a linear model's score, and `X @ w + b` scores every example at once.

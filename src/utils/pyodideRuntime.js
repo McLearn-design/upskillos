@@ -17,9 +17,13 @@ export function getLocalPyodideIndexURL() {
 
 export async function createPyodide(options = {}) {
   const localIndexURL = getLocalPyodideIndexURL()
+  // The npm package ships only the core runtime, not package wheels (numpy,
+  // matplotlib, ...), so a fresh CI install copies none into dist/pyodide/.
+  // Fetch wheels from the CDN folder for the same version; their checksums are
+  // in the bundled lockfile. Without this, loadPackage 404s and only logs it.
   const loadFrom = async indexURL => {
     const { loadPyodide } = await import(/* @vite-ignore */ `${indexURL}pyodide.mjs`)
-    return loadPyodide({ ...options, indexURL })
+    return loadPyodide({ packageBaseUrl: CDN_INDEX_URL, ...options, indexURL })
   }
   try {
     return await loadFrom(localIndexURL)
