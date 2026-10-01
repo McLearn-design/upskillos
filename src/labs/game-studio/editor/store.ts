@@ -4,7 +4,7 @@
 // and call its methods; none of them owns project data.
 
 import { Doc } from '../core/doc';
-import { newProject, pathOf, sceneAt, findNode } from '../core/project';
+import { newProject, pathOf, sceneAt, findNode, walk as walkNodes } from '../core/project';
 import type { AnimationClip, NodeData, Project, PropValue, SceneData, TilesetData } from '../core/types';
 import { applyClip, setKey, trackPath } from '../core/animation';
 import { applyEdits, tilesetGrid, type CellEdit } from '../core/tiles';
@@ -20,6 +20,13 @@ import { taskById } from '../tasks';
 import type { TaskLink } from '../tasks/links';
 import type { CheckResult, GameTask } from '../tasks/types';
 import type { GameExample } from '../examples/types';
+import { mapNodeOf, mapToSceneCode, sceneToMap, type ArtMap } from '../core/artMaps';
+import { gameHtmlFile, gameZip, projectZip, readProjectZip } from '../core/archive';
+import { loadRuntimeSource } from './runner';
+import type { EnvSpec } from '../ml/env';
+import type { CemOptions, Generation, LinearPolicy } from '../ml/cem';
+import { EXAMPLES } from '../examples';
+import { sendArt } from '../../../utils/artBridge.js';
 
 export interface OutputLine { level: 'log' | 'info' | 'warn' | 'error' | 'system'; text: string; file?: string | null; line?: number | null; column?: number | null; node?: string | null }
 
@@ -29,6 +36,12 @@ export type Tab = { kind: 'scene' } | { kind: 'script'; path: string };
 export const className = (name: string): string => (name.replace(/[^A-Za-z0-9]+(.)?/g, (_m, c: string | undefined) => (c ? c.toUpperCase() : '')).replace(/^[^A-Za-z_]+/, '').replace(/^./, (c) => c.toUpperCase()) || 'MyNode');
 
 /** A new script for a node: the lifecycle it will use, ready to fill in. */
+/** Where art in another lab goes back to in Game Studio (src/utils/artBridge.js). */
+export interface ArtLink { project?: string; projectName?: string; asset?: string; scene?: string; node?: string | null; place?: boolean }
+export interface SpriteMessage { type: 'sprite'; name: string; doc: string; frames: { blob: Blob; width: number; height: number; duration: number }[]; tags: { name: string; from: number; to: number }[]; link?: ArtLink }
+export interface MapMessage { type: 'map'; name: string; doc: string; map: ArtMap; tileset: { blob: Blob; name: string; imageWidth: number; imageHeight: number }; link?: ArtLink }
+export type ArtMessage = SpriteMessage | MapMessage;
+
 export function scriptTemplate(nodeName: string, type: string): string {
   const cls = className(nodeName);
   if (isA(type, 'CharacterBody2D')) {
@@ -143,6 +156,8 @@ export class Store {
       this.changed();
     });
     this.changed();
+    // Art sent from Sprite Forge or Tile Mapper while no project was open goes into this one.
+    if (this.inbox.length) { const waiting = this.inbox; this.inbox = []; queueMicrotask(() => { for (const m of waiting) void this.receiveArt(m); }); }
   }
 
   newProject(name: string): void {
@@ -284,6 +299,71 @@ export class Store {
     await this.loadImages();
     this.attach(id, doc);
     this.say(`Opened "${p.name}"`);
+  }
+
+  // ── export and import (core/archive.ts) ──────────────────────────────────
+
+  /** Every image's bytes, by project path, for an archive. */
+  private async assetBytes(): Promise<Map<string, Uint8Array>> {
+    const p = this.doc!.project;
+    return new Map(await Promise.all(p.assets.filter((a) => this.blobs.has(a.id)).map(async (a) => [a.path, new Uint8Array(await this.blobs.get(a.id)!.arrayBuffer())] as const)));
+  }
+
+  /** Offer a file to save (the browser's download). */
+  download: (name: string, data: Blob) => void = (name, data) => {
+    const a = document.createElement('a'), url = URL.createObjectURL(data);
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+
+  private fileName(ext: string): string { return `${(this.doc?.project.name ?? 'game').replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'game'}${ext}`; }
+
+  /** The whole project as a .zip, to keep, move to another browser, or read the scripts anywhere. */
+  async exportProject(): Promise<void> {
+    if (!this.doc) return;
+    for (const path of [...this.buffers.keys()]) if (this.isScriptDirty(path)) this.saveScript(path);
+    const bytes = await this.assetBytes();
+    this.download(this.fileName('.zip'), new Blob([projectZip(this.doc.project, (path) => bytes.get(path)) as BlobPart], { type: 'application/zip' }));
+    this.say(`Exported the project as ${this.fileName('.zip')}: open it with Project › Import project (.zip)…`);
+  }
+
+  /**
+   * The game, without the editor: a website .zip (index.html, game.js, project.json, assets/) for any
+   * static host, or one .html file that opens by double-click.
+   */
+  async exportGame(kind: 'website' | 'html'): Promise<void> {
+    if (!this.doc) return;
+    for (const path of [...this.buffers.keys()]) if (this.isScriptDirty(path)) this.saveScript(path);
+    try {
+      const [runtime, bytes] = await Promise.all([loadRuntimeSource(), this.assetBytes()]);
+      const get = (path: string) => bytes.get(path);
+      if (kind === 'website') {
+        const name = this.fileName('-website.zip');
+        this.download(name, new Blob([gameZip(this.doc.project, runtime, get) as BlobPart], { type: 'application/zip' }));
+        this.say(`Exported ${name}: unzip it onto any web host (GitHub Pages works) and open index.html there`);
+      } else {
+        const name = this.fileName('.html');
+        this.download(name, new Blob([gameHtmlFile(this.doc.project, runtime, get)], { type: 'text/html' }));
+        this.say(`Exported ${name}: it runs on its own; double-click it, or send it to someone`);
+      }
+    } catch (e) { this.say(`Could not export the game: ${e instanceof Error ? e.message : String(e)}`); }
+  }
+
+  /** A project .zip (from Export project) as a new project in this browser, then opened. */
+  async importProject(file: File): Promise<boolean> {
+    try {
+      const { project, bytes } = readProjectZip(new Uint8Array(await file.arrayBuffer()));
+      if (!(await this.leaveProject())) return false;
+      const id = storage.newProjectId();
+      for (const a of project.assets) await storage.putAsset(id, a.id, new Blob([bytes.get(a.id)! as BlobPart], { type: a.mime }));
+      await storage.saveProject(id, project);
+      await this.openProject(id);
+      this.say(`Imported "${project.name}" from ${file.name}`);
+      return true;
+    } catch (e) {
+      this.say(`Could not import ${file.name}: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
+    }
   }
 
   async save(): Promise<void> {
@@ -515,24 +595,153 @@ export class Store {
     catch (e) { this.say(e instanceof Error ? e.message : String(e)); return undefined; }
   }
 
-  /** Check an image loads, record it in the project (a command), and store its bytes. */
-  private async addImage(path: string, blob: Blob): Promise<string | undefined> {
+  /**
+   * Check an image loads, record it in the project (a command), and store its bytes. With `replace`,
+   * the image already at the path gets these bytes instead (a new id, so undo brings the old back).
+   */
+  private async addImage(path: string, blob: Blob, opts: { origin?: string; replace?: boolean } = {}): Promise<string | undefined> {
     if (!this.doc || !this.projectId) return undefined;
     const url = URL.createObjectURL(blob);
     try {
       const img = await new Promise<HTMLImageElement>((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error(`${path} is not an image this browser can read`)); i.src = url; });
-      const id = this.act((d) => d.importAsset(path, { mime: blob.type || 'image/png', width: img.naturalWidth, height: img.naturalHeight }));
+      const info = { mime: blob.type || 'image/png', width: img.naturalWidth, height: img.naturalHeight, origin: opts.origin };
+      const id = this.act((d) => (opts.replace ? d.replaceAsset(path, info) : d.importAsset(path, info)));
       if (!id) { URL.revokeObjectURL(url); return undefined; }
       this.blobs.set(id, blob);
       this.images.set(id, img);
       await storage.putAsset(this.projectId, id, blob);
-      this.say(`Imported ${path} (${img.naturalWidth} × ${img.naturalHeight})`);
+      this.say(`${opts.replace ? 'Updated' : 'Imported'} ${path} (${img.naturalWidth} × ${img.naturalHeight})`);
       return path;
     } catch (e) {
       URL.revokeObjectURL(url);
       this.say(e instanceof Error ? e.message : String(e));
       return undefined;
     }
+  }
+
+  // ── Sprite Forge and Tile Mapper (src/utils/artBridge.js) ─────────────────
+
+  /** Art that arrived while no project was open: it goes into the next one opened. */
+  inbox: ArtMessage[] = [];
+  /** Opens another lab's window (GameStudio sets it: router navigation). */
+  openLab: (lab: 'sprite-forge' | 'tile-mapper') => void = () => {};
+
+  /** A sprite or map sent from Sprite Forge or Tile Mapper. */
+  async receiveArt(m: ArtMessage): Promise<void> {
+    const from = m.type === 'sprite' ? 'Sprite Forge' : 'Tile Mapper';
+    if (!this.doc || !this.projectId) { this.inbox.push(m); this.say(`${m.name} from ${from} is waiting: open or create a project and it goes in`); return; }
+    if (this.running) this.stop();
+    let link = m.link;
+    if (link?.project && link.project !== this.projectId) { link = undefined; this.say(`${m.name} came from another project, so it is added to this one as new`); }
+    try {
+      if (m.type === 'sprite') await this.receiveSprite(m, link);
+      else if (m.type === 'map') await this.receiveMap(m, link);
+    } catch (e) { this.say(`Could not add ${m.name} from ${from}: ${e instanceof Error ? e.message : String(e)}`); }
+  }
+
+  private async receiveSprite(m: SpriteMessage, link: ArtLink | undefined): Promise<void> {
+    const p = this.doc!.project, origin = `sprite-forge:${m.doc}`;
+    // Where it goes: back where it came from (the link, or images made from the same sprite), else new paths.
+    const mine = p.assets.filter((a) => a.origin === origin).map((a) => a.path);
+    const back = (link?.asset && p.assets.some((a) => a.path === link.asset) ? link.asset : null) ?? mine[0] ?? null;
+    const slug = m.name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'sprite';
+    const free = (path: string) => !p.assets.some((a) => a.path === path) && !p.assets.some((a) => a.path.startsWith(`${path.replace(/\.png$/, '')}/`));
+    const unique = (base: string, ext: string) => { let b = base; for (let k = 2; !free(`${b}${ext}`); k++) b = `${base}-${k}`; return b; };
+    let paths: string[];
+    if (m.frames.length === 1) paths = [back ?? `${unique(`assets/${slug}`, '.png')}.png`];
+    else {
+      const base = back ? back.replace(/\/\d+\.png$/, '').replace(/\.png$/, '') : unique(`assets/${slug}`, '');
+      paths = m.frames.map((_, i) => `${base}/${i + 1}.png`);
+    }
+    const had = new Set(p.assets.map((a) => a.path)), isNew = paths.every((x) => !had.has(x));
+    for (const [i, f] of m.frames.entries()) await this.addImage(paths[i], f.blob, { origin, replace: had.has(paths[i]) });
+    // Made from "New sprite…": put it in the scene too, in the middle of the game area.
+    const s = this.scene;
+    if (isNew && link?.place && s) {
+      const name = m.name.replace(/[^A-Za-z0-9_]+/g, '') || 'Sprite', at = { x: p.settings.width / 2, y: p.settings.height / 2 };
+      const avg = m.frames.reduce((t, f) => t + f.duration, 0) / m.frames.length, fps = Math.max(1, Math.round(1000 / (avg || 100)));
+      const anims = m.tags.length ? m.tags.map((t) => ({ name: t.name, fps, loop: true, frames: paths.slice(t.from, t.to + 1) })) : [{ name: 'default', fps, loop: true, frames: paths }];
+      const n = m.frames.length === 1
+        ? this.addNode('Sprite2D', { parentId: s.root.id, name, props: { texture: paths[0], position: at } })
+        : this.addNode('AnimatedSprite2D', { parentId: s.root.id, name, props: { frames: anims, animation: anims[0].name, position: at } });
+      if (n) this.select([n.id]);
+    }
+    this.say(`From Sprite Forge: ${m.frames.length === 1 ? paths[0] : `${paths.length} frames, ${paths[0]} …`}${isNew ? '' : ' (updated; Ctrl+Z puts the old picture back)'}`);
+  }
+
+  private async receiveMap(m: MapMessage, link: ArtLink | undefined): Promise<void> {
+    const d = this.doc!, p = d.project;
+    // The tileset's picture: one already in the project with the same bytes, else a new image.
+    const bytes = new Uint8Array(await m.tileset.blob.arrayBuffer());
+    let image: string | null = null;
+    for (const a of p.assets) {
+      const b = this.blobs.get(a.id);
+      if (b && b.size === bytes.length && new Uint8Array(await b.arrayBuffer()).every((v, i) => v === bytes[i])) { image = a.path; break; }
+    }
+    if (!image) {
+      const slug = m.tileset.name.toLowerCase().replace(/\.[a-z]+$/, '').replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'tiles';
+      let path = `assets/${slug}.png`;
+      for (let k = 2; p.assets.some((a) => a.path === path); k++) path = `assets/${slug}-${k}.png`;
+      image = (await this.addImage(path, m.tileset.blob)) ?? null;
+      if (!image) return;
+    }
+    // Which scene, and which node's layers: where it came from, else a new Node2D in the scene on screen.
+    let scene = (link?.scene && p.scenes.find((x) => x.path === link.scene)) || this.scene;
+    if (!scene) { this.createScene('scenes/main.scene'); scene = this.scene; }
+    if (!scene) return;
+    const parentId = link?.node && findNode(scene, link.node) ? link.node : null;
+    const plan = mapToSceneCode(p, m.map, image, { scenePath: scene.path, parentId });
+    const before = new Set(scene.root.children.map((c) => c.id));
+    d.runCode(`From Tile Mapper: ${m.name}`, plan.code);
+    const now = this.doc!.project.scenes.find((x) => x.path === scene!.path)!;
+    const node = parentId ?? now.root.children.find((c) => !before.has(c.id))?.id ?? null;
+    this.sceneId = now.id; this.tab = { kind: 'scene' };
+    if (node) this.select([node]);
+    this.say(`From Tile Mapper: ${m.name} (${plan.notes.join('; ')})${parentId ? '; Ctrl+Z puts the old map back' : ''}`);
+    // Tell Tile Mapper where the map went, so sending it again updates it here.
+    if (node) sendArt('tile-mapper', { type: 'linked', doc: m.doc, link: { project: this.projectId, scene: now.path, node } });
+  }
+
+  /** Open an image in Sprite Forge; what it sends back replaces this image. */
+  editInSpriteForge(path: string): void {
+    const a = this.doc?.project.assets.find((x) => x.path === path), blob = a && this.blobs.get(a.id);
+    if (!a || !blob) { this.say(`There is no image "${path}" to edit`); return; }
+    if (a.width > 128 || a.height > 128) { this.say(`Sprite Forge edits pictures up to 128 × 128 pixels; ${path} is ${a.width} × ${a.height}`); return; }
+    const doc = a.origin?.startsWith('sprite-forge:') ? a.origin.slice('sprite-forge:'.length) : undefined;
+    sendArt('sprite-forge', { type: 'edit-sprite', name: path.replace(/^.*\//, '').replace(/\.[^.]+$/, ''), blob, doc, link: { project: this.projectId!, projectName: this.doc!.project.name, asset: path } });
+    this.openLab('sprite-forge');
+  }
+
+  /** Draw a new sprite in Sprite Forge; sent back, it is added to the project and the scene. */
+  newSprite(): void {
+    if (!this.doc) return;
+    sendArt('sprite-forge', { type: 'new-sprite', name: 'sprite', link: { project: this.projectId!, projectName: this.doc.project.name, place: true } });
+    this.openLab('sprite-forge');
+  }
+
+  /** Open a map (a TileMapLayer, or the node holding a map's layers) in Tile Mapper. */
+  editInTileMapper(nodeId: string): void {
+    const s = this.scene;
+    if (!s || !this.doc) return;
+    try {
+      const out = sceneToMap(this.doc.project, s, nodeId);
+      const a = this.doc.project.assets.find((x) => x.path === out.image), blob = a && this.blobs.get(a.id);
+      if (!a || !blob) throw new Error(`the tileset's image ${out.image} is missing`);
+      sendArt('tile-mapper', { type: 'edit-map', name: out.map.name, map: out.map, tileset: { blob, name: out.image.replace(/^.*\//, ''), imageWidth: a.width, imageHeight: a.height }, link: { project: this.projectId!, projectName: this.doc.project.name, scene: s.path, node: out.parentId } });
+      if (out.notes.length) this.say(`Opened in Tile Mapper: ${out.notes.join('; ')}`);
+      this.openLab('tile-mapper');
+    } catch (e) { this.say(e instanceof Error ? e.message : String(e)); }
+  }
+
+  /** Whether a node can be opened in Tile Mapper (a tile layer, or the node holding a map's layers). */
+  isMapNode(nodeId: string): boolean { const s = this.scene; return !!s && !!mapNodeOf(s, nodeId); }
+
+  /** Make a new map in Tile Mapper; sent back, it goes into the scene on screen. */
+  newMap(): void {
+    const s = this.scene;
+    if (!this.doc || !s) { this.say('Open a scene first: the map goes into it'); return; }
+    sendArt('tile-mapper', { type: 'new-map', name: 'map', link: { project: this.projectId!, projectName: this.doc.project.name, scene: s.path, node: null } });
+    this.openLab('tile-mapper');
   }
 
   private async loadImages(): Promise<void> {
@@ -587,8 +796,9 @@ export class Store {
 
   // ── running ─────────────────────────────────────────────────────────────
 
-  async run(which: 'project' | 'scene', container: HTMLElement): Promise<void> {
+  async run(which: 'project' | 'scene', container: HTMLElement, opts: { agent?: boolean } = {}): Promise<void> {
     if (!this.doc) return;
+    this.watchingAgent = !!opts.agent && !!this.training.policy;
     // Scripts are saved into the project before running, so the game runs what you see.
     for (const path of [...this.buffers.keys()]) if (this.isScriptDirty(path)) this.saveScript(path);
     const p = this.doc.project;
@@ -618,9 +828,65 @@ export class Store {
     else if (m.type === 'error') this.output.push({ level: 'error', text: m.message, file: m.file, line: m.line, column: m.column, node: m.node });
     else if (m.type === 'paused') this.running.paused = m.paused;
     else if (m.type === 'state') this.running.live = m.props;
-    else if (m.type === 'running') this.inspectLive();
+    else if (m.type === 'running') {
+      this.inspectLive();
+      // Watching a trained agent: it takes the controls as soon as the game is running.
+      if (this.watchingAgent && this.training.spec && this.training.policy) this.running.game.send({ type: 'agent', spec: this.training.spec, policy: this.training.policy });
+    }
     if (this.output.length > 500) this.output.splice(0, this.output.length - 500);
     this.changed();
+  }
+
+  // ── training an agent (ml/: a Gymnasium-style environment and the cross-entropy method) ─────
+
+  training: { running: boolean; spec: EnvSpec | null; random: number | null; generations: Generation[]; policy: LinearPolicy | null; score: number | null; error: string | null; total: number } =
+    { running: false, spec: null, random: null, generations: [], policy: null, score: null, error: null, total: 0 };
+  /** The game running from "Watch it play": the trained agent holds the controls. */
+  watchingAgent = false;
+  private trainer: Worker | null = null;
+
+  /** The agent spec to start from: the example's, if the project is one that has it, else a sketch to fill in. */
+  defaultAgentSpec(): EnvSpec {
+    const p = this.doc?.project;
+    const ex = this.guide?.agent ? this.guide : EXAMPLES.find((e) => e.title === p?.name && e.agent);
+    if (ex?.agent) return ex.agent;
+    const scene = p?.scenes.find((x) => x.path === p.settings.mainScene);
+    const body = scene ? [...walkNodes(scene.root)].find((n) => /Body2D$/.test(n.type)) : undefined;
+    const name = body?.name ?? 'Player';
+    return {
+      actions: [[], ['move_left'], ['move_right'], ['jump']],
+      observation: [{ path: `${name}:position.x`, scale: 1 / (p?.settings.width ?? 960) }, { path: `${name}:position.y`, scale: 1 / (p?.settings.height ?? 540) }],
+      reward: [{ path: `${name}:position.x`, scale: 0.01 }],
+      terminated: [],
+      frameSkip: 4,
+      maxSteps: 600,
+    };
+  }
+
+  /** Train in a worker; each generation's scores arrive as it finishes. */
+  startTraining(spec: EnvSpec, options: CemOptions): void {
+    if (!this.doc) return;
+    this.stopTraining();
+    for (const path of [...this.buffers.keys()]) if (this.isScriptDirty(path)) this.saveScript(path);
+    this.training = { running: true, spec, random: null, generations: [], policy: null, score: null, error: null, total: options.generations };
+    const w = this.trainer = new Worker(new URL('../ml/train.worker.ts', import.meta.url), { type: 'module' });
+    w.onmessage = (e: MessageEvent) => {
+      const m = e.data as { type: string; score?: number; policy?: LinearPolicy; message?: string } & Generation;
+      const t = this.training;
+      if (m.type === 'random') this.training = { ...t, random: m.score! };
+      else if (m.type === 'generation') this.training = { ...t, generations: [...t.generations, { generation: m.generation, best: m.best, eliteMean: m.eliteMean, mean: m.mean, champion: m.champion }], policy: m.champion };
+      else if (m.type === 'done') { this.training = { ...t, running: false, policy: m.policy!, score: m.score! }; this.stopTraining(false); }
+      else if (m.type === 'error') { this.training = { ...t, running: false, error: m.message! }; this.stopTraining(false); }
+      this.changed();
+    };
+    w.onerror = (e) => { this.training = { ...this.training, running: false, error: e.message || 'The trainer stopped' }; this.stopTraining(false); this.changed(); };
+    w.postMessage({ project: JSON.parse(JSON.stringify(this.doc.project)), spec, options });
+    this.changed();
+  }
+
+  stopTraining(mark = true): void {
+    this.trainer?.terminate(); this.trainer = null;
+    if (mark && this.training.running) { this.training = { ...this.training, running: false }; this.changed(); }
   }
 
   private inspectLive(): void {

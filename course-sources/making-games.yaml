@@ -1,0 +1,1503 @@
+# Learn to Program by Making Games (working title): the course around Game Studio.
+# Plan: docs/game-studio-course-plan.md. Each lesson teaches one idea, then sends the learner to Game
+# Studio with a task (the GameStudioTask card, src/courses/making-games/viz/GameStudioTask.jsx); the
+# task's checks tick as they work, and "Back to the lesson" returns here.
+#
+#   npm run course:create -- course-sources/making-games.yaml --dry-run
+#   npm run course:create -- course-sources/making-games.yaml --force   (after editing; review the diff)
+
+schemaVersion: 1
+
+course:
+  id: making-games
+  label: Learn to Program by Making Games
+  description: >-
+    Learn to program by building real games in Game Studio, one idea at a time: each lesson explains it, you
+    try it in the editor with checks that tick as you work, then come back to see why it works.
+  icon: "🎮"
+  color: sky
+  domain: cs
+
+chapters:
+  - number: 1
+    slug: first-steps
+    lessons:
+      # ───────────────────────────────────────────────────────────── 1.1
+      - order: 1
+        id: mg1-001
+        slug: scenes-nodes-and-positions
+        title: Scenes, Nodes and Positions
+        subtitle: Put a character exactly where you want it, and know why (0, 0) is in the top-left corner.
+        tags:
+          - game-studio
+          - nodes
+          - coordinates
+        aliases: game studio editor scene tree inspector sprite2d position coordinates y down top-left origin
+        timeToComplete: 25
+        coreConcept: >-
+          A game is a tree of nodes, and every visible node has a position: two numbers saying how far right and
+          how far down it is from the top-left corner of the game area.
+        prerequisites: []
+        nextLesson: mg1-002
+
+        hook:
+          question: >-
+            A game window is 960 pixels wide and 540 pixels tall. Which two numbers put a character in its exact
+            middle, and which way does the second number count?
+          realWorldContext: >-
+            Every 2D game engine (Godot, Unity, Phaser, Game Studio) places things with x and y numbers. Getting
+            the direction of y wrong is the most common first mistake, and it makes characters fall upwards and
+            menus appear off the screen.
+
+        intuition:
+          prose:
+            - >-
+              Start with a game area 960 pixels wide and 540 tall. A green astronaut sits at x = 480, y = 270.
+              The x number says how far right it is from the left edge: 480 of 960 is half way. The y number says
+              how far **down** it is from the top edge: 270 of 540 is half way down. So (480, 270) is the middle.
+            - >-
+              Now move it to (480, 100). Before reading on, predict: does it go up or down on the screen? It goes
+              **up**. y = 100 is only 100 pixels below the top edge, closer to the top than 270 was. In a game, a
+              bigger y means lower on the screen, the opposite of a graph in a maths book.
+            - >-
+              The point (0, 0) is called the **origin**. In Game Studio it is the top-left corner of the game area,
+              drawn as a blue rectangle in the viewport. Every position is measured from it: x to the right, y down.
+            - >-
+              The astronaut itself is a **node**: one thing in the game, with a type and properties. This one is a
+              Sprite2D, the type that shows a picture. Its properties include `texture` (which picture) and
+              `position` (where). A **scene** is a tree of nodes: the scene tree on the left shows it.
+            - >-
+              Three panels do the work. The **scene tree** lists the nodes; **+ Add…** above it adds one under the
+              node selected. The **viewport** in the middle shows them; you can drag them there. The **Inspector**
+              on the right shows the selected node's properties as fields you can type into.
+          callouts:
+            - type: procedure
+              title: "Procedure: Place a node at an exact position"
+              body: |-
+                Step 1. Add the node: + Add… above the scene tree, then pick its type (Sprite2D for a picture).
+                Step 2. Select it in the scene tree, so the Inspector shows its properties.
+                Step 3. Give it what it needs to be seen: for a Sprite2D, choose a texture.
+                Step 4. Name it: double-click it in the scene tree and type a name (names are case-sensitive).
+                Step 5. Type its position in the Inspector: x is pixels right of the left edge, y is pixels down from the top.
+                Step 6. Check it in the viewport against the blue game-area rectangle.
+            - type: warning
+              title: y counts downwards
+              body: >-
+                If you think of y as "up", everything lands mirrored top-to-bottom. A character meant to be near the
+                bottom at y = 50 appears near the top instead. Near the bottom of a 540-tall area is y ≈ 500.
+            - type: insight
+              title: Godot's names
+              body: >-
+                Game Studio uses Godot's names on purpose: Sprite2D, the scene tree, the Inspector, and +y pointing
+                down are all the same in Godot, so what you learn here carries straight over.
+          visualizations:
+            - id: GameStudioTask
+              title: Put a character on the screen
+              props:
+                task: first-sprite
+                lesson: mg1-001
+                checkpoint: cp-mg1-001-4
+
+        math:
+          prose:
+            - >-
+              **Under the hood (optional).** A position is a pair of numbers $(x, y)$. In screen coordinates the
+              origin is the top-left corner, $x$ grows to the right and $y$ grows downward. The middle of an area
+              of width $W$ and height $H$ is $(W/2, H/2)$; for $960 \times 540$ that is $(480, 270)$.
+            - >-
+              Maths books draw $y$ upward, with the origin at the bottom-left. A point at maths height $y_m$ in an
+              area of height $H$ is at screen height $y_s = H - y_m$, because it is $y_m$ above the bottom edge and
+              the bottom edge is $H$ below the top. So $y_m = 100$ in a 540-tall area is $y_s = 440$: near the bottom.
+            - >-
+              Converting back uses the same formula, $y_m = H - y_s$, because subtracting from $H$ twice returns
+              where you started: $H - (H - y) = y$. A transformation that undoes itself like this is called an
+              involution.
+            - >-
+              Moving a node by $(dx, dy)$ adds to each number separately: $(x + dx, y + dy)$. Moving the astronaut
+              from the middle by $(0, -170)$ gives $(480, 100)$: a negative $dy$ means up the screen.
+          equations: []
+          callouts: []
+          visualizations: []
+
+        rigor:
+          prose:
+            - >-
+              Formally, screen coordinates are a basis for the plane with origin at the area's top-left corner, unit
+              vector $(1, 0)$ one pixel right and $(0, 1)$ one pixel down. A position is a vector in that basis,
+              valid for any real numbers: a node at $(-50, 270)$ exists, it is just left of the visible area.
+            - >-
+              What does not change when you switch between maths and screen coordinates is distance:
+              $\sqrt{dx^2 + dy^2}$ is the same in both, because flipping $y$ only changes the sign of $dy$, and
+              squaring removes the sign. That is why speeds and sizes need no conversion, only directions do.
+            - >-
+              Geometrically, the conversion $y \mapsto H - y$ is a reflection in the horizontal line $y = H/2$,
+              followed by nothing else: the middle row of the screen stays where it is, and the top and bottom swap.
+            - >-
+              Later, nodes inside other nodes have positions relative to their parent. The screen position is then
+              the parent's transform applied to the child's position: the same idea as here, with the parent's
+              position as the origin. Chapter 6 uses this for scenes inside scenes.
+          callouts: []
+          visualizations: []
+
+        examples:
+          - id: mg1-001-ex1
+            title: The middle of the game area
+            difficulty: easy
+            problem: The game area is 960 × 540. Where must the Hero sprite go to be exactly in the middle?
+            steps:
+              - expression: 'x = \tfrac{960}{2} = 480'
+                annotation: Half the width is the middle across, counted from the left edge.
+                strategyTitle: "Step 1: Halve the width"
+              - expression: 'y = \tfrac{540}{2} = 270'
+                annotation: Half the height is the middle down, counted from the top edge (y grows downward).
+                strategyTitle: "Step 2: Halve the height"
+              - expression: '(x, y) = (480, 270)'
+                annotation: Type 480 and 270 into the Inspector's position fields with Hero selected.
+                strategyTitle: "Step 3: Type it in the Inspector"
+            answer: Hero goes at (480, 270), half way across and half way down the 960 × 540 game area.
+          - id: mg1-001-ex2
+            title: Near the bottom-right corner
+            difficulty: medium
+            problem: >-
+              Place a coin 40 pixels in from the right edge and 40 pixels up from the bottom edge of a 960 × 540
+              game area.
+            steps:
+              - expression: 'x = 960 - 40 = 920'
+                annotation: The right edge is at x = 960; 40 pixels in from it is 40 less.
+                strategyTitle: "Step 1: Measure x from the right edge"
+              - expression: 'y = 540 - 40 = 500'
+                annotation: Up from the bottom edge means a smaller y, because y counts down from the top.
+                strategyTitle: "Step 2: Measure y from the bottom edge"
+              - expression: '(920, 500)'
+                annotation: Check in the viewport that the coin sits just inside the blue rectangle's bottom-right corner.
+                strategyTitle: "Step 3: Check it in the viewport"
+            answer: The coin goes at (920, 500); "up from the bottom" became a subtraction from 540.
+          - id: mg1-001-ex3
+            title: A position from a maths graph
+            difficulty: hard
+            problem: >-
+              A level designer sketched a platform on graph paper at (300, 120), with y measured up from the bottom
+              of a 540-tall game. Where is it in Game Studio?
+            steps:
+              - expression: 'x_s = x_m = 300'
+                annotation: Both systems measure x from the left edge to the right, so x does not change.
+                strategyTitle: "Step 1: Keep x"
+              - expression: 'y_s = H - y_m = 540 - 120 = 420'
+                annotation: 120 above the bottom edge is 420 below the top edge.
+                strategyTitle: "Step 2: Flip y with H − y"
+              - expression: '(300, 420)'
+                annotation: The platform is in the lower part of the screen, as the sketch showed.
+                strategyTitle: "Step 3: Check the picture matches"
+            answer: The platform is at (300, 420) in Game Studio's coordinates.
+
+        challenges:
+          - id: mg1-001-ch1
+            title: The top-left quarter
+            difficulty: easy
+            problem: Where is the middle of the top-left quarter of a 960 × 540 game area?
+            hint: The top-left quarter is 480 wide and 270 tall, starting at (0, 0).
+            answer: Its middle is (240, 135), half of 480 across and half of 270 down.
+            walkthrough:
+              - expression: '(\tfrac{480}{2}, \tfrac{270}{2}) = (240, 135)'
+                annotation: The quarter starts at the origin, so its middle is half its own size in each direction.
+          - id: mg1-001-ch2
+            title: Which way did it move?
+            difficulty: medium
+            problem: >-
+              A sprite's position changes from (480, 270) to (430, 320). Describe the move on screen in words.
+            hint: Work out the change in x and the change in y separately, and remember which way y counts.
+            answer: It moved 50 pixels left and 50 pixels down, diagonally towards the bottom-left.
+            walkthrough:
+              - expression: 'dx = 430 - 480 = -50,\quad dy = 320 - 270 = +50'
+                annotation: A negative dx is left; a positive dy is down, because y grows downward.
+          - id: mg1-001-ch3
+            title: Debug the falling title
+            difficulty: hard
+            problem: >-
+              A learner wanted a title 60 pixels below the top of the screen and typed y = 480, thinking "540 minus
+              60". The title appears near the bottom. What went wrong, and what should y be?
+            hint: Which edge is y measured from in Game Studio?
+            answer: >-
+              They converted as if y counted up from the bottom; in Game Studio y already counts down from the top,
+              so 60 below the top is simply y = 60.
+            walkthrough:
+              - expression: 'y = 60'
+                annotation: No conversion is needed when the distance is already measured from the top edge.
+
+        semantics:
+          core:
+            - symbol: node
+              meaning: One thing in the game, with a type that decides what it does and properties that set how.
+            - symbol: scene
+              meaning: A tree of nodes that is saved as one file and can be run as a game.
+            - symbol: Sprite2D
+              meaning: The node type that shows a picture (its texture) at its position.
+            - symbol: position (x, y)
+              meaning: Where a node is; x counts pixels right from the left edge, y counts pixels down from the top.
+            - symbol: origin (0, 0)
+              meaning: The point every position is measured from; in Game Studio, the game area's top-left corner.
+          rulesOfThumb:
+            - Bigger y means lower on the screen; if something is upside down, check the sign of y first.
+            - The middle of the game area is half the width and half the height.
+            - Measure "from the right" as width minus distance and "from the bottom" as height minus distance.
+            - Name nodes as you make them; checks, scripts and you will look for them by name.
+
+        misconceptions:
+          - falseBelief: A bigger y moves a node up the screen, as on a graph.
+            whyStudentsThinkIt: Maths lessons draw y upward from an origin at the bottom-left.
+            correctionExample: In a 540-tall game, y = 500 is 40 pixels above the bottom edge, near the bottom.
+            contrastCase: >-
+              Placing a ground strip at y = 20 "to be low" puts it at the top of the screen, so a player standing
+              on it would hang from the ceiling.
+          - falseBelief: The origin (0, 0) is in the middle of the screen.
+            whyStudentsThinkIt: Graphs often centre the axes, and the camera later follows the player.
+            correctionExample: A node at (0, 0) shows its centre exactly on the top-left corner of the game area.
+            contrastCase: To be in the middle a node needs (480, 270) in a 960 × 540 game, not (0, 0).
+
+        transferPrompts:
+          - situation: >-
+              You are given a 640 × 360 game instead of 960 × 540 and asked to put a sign in the middle.
+            competingTechniques:
+              - Halve this game's width and height
+              - Reuse (480, 270) from the bigger game
+            whyThisTechniqueWins: >-
+              The middle depends on the area's size; (320, 180) is the middle of 640 × 360, while (480, 270) would
+              sit right of and below it.
+          - situation: >-
+              A maths tool gives you a list of points with y measured up from the bottom, for a 540-tall level.
+            competingTechniques:
+              - Convert each y with 540 − y
+              - Type the numbers in as they are
+            whyThisTechniqueWins: >-
+              Typing them in unchanged mirrors the level top-to-bottom; 540 − y measures the same distances from the
+              top edge, which is what Game Studio expects.
+
+        debugging:
+          - commonError: Typing a position into the wrong node's Inspector.
+            symptom: The node you meant to move stays put while another one jumps.
+            whyItHappened: The Inspector always shows the node selected in the scene tree, which was not the one in mind.
+            repairStrategy: Click the node's name in the scene tree first and read its name at the top of the Inspector.
+          - commonError: Naming the node "hero" when the task asks for "Hero".
+            symptom: The task says there is no Sprite2D called Hero, although you can see it.
+            whyItHappened: Names are case-sensitive, so hero and Hero are different names.
+            repairStrategy: Double-click the node and retype the name exactly, including capitals.
+
+        mastery:
+          targetLevel: 3
+          solveIndependently: Place any node at a position described in words, such as "40 pixels in from the right edge".
+          explainVerbally: Explain why a bigger y is lower on the screen, and where the origin is.
+          detectIncorrectApplication: Spot a position that was converted as if y counted upward, and fix it.
+          transferToUnfamiliar: Convert graph-paper coordinates (y up) into Game Studio's for a game of any height.
+
+        assessment:
+          questions:
+            - id: mg1-001-assess-1
+              type: choice
+              text: In a 960 × 540 game, a node at (100, 500) is near which corner?
+              options:
+                - The bottom-left
+                - The top-left
+                - The bottom-right
+                - The top-right
+              answer: The bottom-left
+              hint: x = 100 is near the left edge; y = 500 is near the bottom because y counts down from the top.
+
+        quiz:
+          - id: mg1-001-quiz-1
+            type: choice
+            text: Where is (0, 0) in Game Studio's game area?
+            options:
+              - The top-left corner
+              - The middle
+              - The bottom-left corner
+              - Wherever the camera points
+            answer: The top-left corner
+            hints:
+              - The blue rectangle in the viewport starts at the origin.
+            reviewSection: "Intuition — the origin paragraph"
+          - id: mg1-001-quiz-2
+            type: choice
+            text: A sprite moves from (200, 300) to (200, 250). Which way did it go on screen?
+            options:
+              - Up by 50 pixels
+              - Down by 50 pixels
+              - Left by 50 pixels
+              - It did not move
+            answer: Up by 50 pixels
+            hints:
+              - y got smaller, and smaller y is higher on the screen.
+            reviewSection: "Intuition — Warning: y counts downwards"
+          - id: mg1-001-quiz-3
+            type: choice
+            text: Which node type shows a picture?
+            options:
+              - Sprite2D
+              - Node2D
+              - Camera2D
+              - Label
+            answer: Sprite2D
+            hints:
+              - Its texture property chooses the picture.
+            reviewSection: "Intuition — the node paragraph"
+          - id: mg1-001-quiz-4
+            type: choice
+            text: What is the middle of a 640 × 360 game area?
+            options:
+              - (320, 180)
+              - (480, 270)
+              - (640, 360)
+              - (180, 320)
+            answer: (320, 180)
+            hints:
+              - Halve this area's width and height; (480, 270) is the middle of a different size.
+            reviewSection: "Examples — The middle of the game area"
+          - id: mg1-001-quiz-5
+            type: choice
+            text: >-
+              Which of these is NOT a correct way to put a node 40 pixels above the bottom of a 540-tall game?
+            options:
+              - Setting y to 40
+              - Setting y to 500
+              - Setting y to 540 − 40
+              - Dragging it until the Inspector shows y = 500
+            answer: Setting y to 40
+            hints:
+              - y = 40 is 40 pixels below the top edge, not above the bottom one.
+            reviewSection: "Examples — Near the bottom-right corner"
+          - id: mg1-001-quiz-6
+            type: choice
+            text: >-
+              A graph-paper point is at maths height 90 in a 540-tall game. What is its y in Game Studio?
+            options:
+              - "450"
+              - "90"
+              - "630"
+              - "-90"
+            answer: "450"
+            hints:
+              - Use y_s = H − y_m. A near-miss is to keep 90, forgetting that the two systems measure from different edges.
+            reviewSection: "Under the hood — converting from maths coordinates"
+
+        checkpoints:
+          - id: cp-mg1-001-1
+            label: Read the middle-of-the-screen example
+            type: read
+          - id: cp-mg1-001-2
+            label: Read why y counts downwards
+            type: read
+          - id: cp-mg1-001-3
+            label: Read the procedure for placing a node
+            type: read
+          - id: cp-mg1-001-4
+            label: Complete "Put a character on the screen" in Game Studio
+            type: lab
+          - id: cp-mg1-001-5
+            label: Move Hero to (480, 100) in Game Studio and check your prediction
+            type: lab
+          - id: cp-mg1-001-6
+            label: Work through the bottom-right corner example
+            type: example
+          - id: cp-mg1-001-7
+            label: Work through the graph-paper example
+            type: example
+          - id: cp-mg1-001-8
+            label: Attempt the falling-title debugging challenge
+            type: challenge
+
+      # ───────────────────────────────────────────────────────────── 1.2
+      - order: 2
+        id: mg1-002
+        slug: run-and-stop
+        title: Run and Stop
+        subtitle: What happens when you press Run, and why changes made while the game runs are not kept.
+        tags:
+          - game-studio
+          - game-loop
+          - editor
+        aliases: run stop play test game loop frames per second editor runtime project settings background
+        timeToComplete: 20
+        coreConcept: >-
+          The editor holds the game's design; Run starts a separate copy of it that plays frame by frame, and Stop
+          throws that copy away, so only changes made in the editor are kept.
+        prerequisites:
+          - mg1-001
+        nextLesson: mg1-003
+
+        hook:
+          question: >-
+            You press Run, and while the game plays you drag the hero somewhere else. Then you press Stop. Where is
+            the hero now?
+          realWorldContext: >-
+            Every engine separates editing from playing. Game designers rely on it to experiment freely while a
+            game runs, and are caught out by it when an hour of tuning vanishes on Stop.
+
+        intuition:
+          prose:
+            - >-
+              Your project has Hero at (480, 270). Press **▶ Run** (or F5). The game starts in the middle of the
+              editor, and Hero appears at (480, 270). Nothing moves yet, because nothing tells it to.
+            - >-
+              While it runs, the Inspector shows some values in purple. Purple values are the **running game's**:
+              they change as the game plays. They are not saved. Press **■ Stop** (or F8) and the editor's own
+              values come back.
+            - >-
+              Before reading on, predict: if a script moves Hero to (700, 270) while the game runs, where is Hero
+              after Stop? It is back at (480, 270). Run gave the game a **copy** of the project. The copy changed;
+              the project did not.
+            - >-
+              While running, the game repeats one thing many times a second: it updates every node, then draws the
+              picture. One repeat is a **frame**. At 60 frames per second each frame lasts $1/60$ of a second,
+              about 16.7 milliseconds.
+            - >-
+              Changes that should last are made in the editor, when the game is stopped. The background colour is
+              one: **Project › Project settings…** holds it, with the game's size, and saving keeps it.
+          callouts:
+            - type: procedure
+              title: "Procedure: Change something and test it"
+              body: |-
+                Step 1. With the game stopped, make the change in the editor (a property, a setting, a script).
+                Step 2. Press ▶ Run (F5) to play the game as a player would.
+                Step 3. Watch for the change; purple values in the Inspector are what the running game has now.
+                Step 4. Press ■ Stop (F8). The editor's values are in charge again.
+                Step 5. If it was wrong, change it in the editor and run again. Save (Ctrl+S) when it is right.
+            - type: warning
+              title: Changes while running are thrown away
+              body: >-
+                Tuning a value while the game runs is a good way to find the right number, but Stop undoes it.
+                Write the number down, stop, then type it into the editor.
+          visualizations:
+            - id: GameStudioTask
+              title: Run your game
+              props:
+                task: run-and-stop
+                lesson: mg1-002
+                checkpoint: cp-mg1-002-4
+
+        math:
+          prose:
+            - >-
+              **Under the hood (optional).** A game runs as a loop. Each pass, a **frame**, does two things: update
+              every node by the time since the last frame, then draw. If frames come $f$ times a second, each lasts
+              $T = 1/f$ seconds: $1/60 \approx 0.0167$ s at 60 fps, $1/144 \approx 0.0069$ s on a fast screen.
+            - >-
+              In $t$ seconds there are $f \cdot t$ frames. Ten seconds at 60 fps is 600 frames; at 144 fps it is
+              1440. The number of frames depends on the screen, which is why the next lesson measures movement in
+              seconds rather than frames.
+            - >-
+              Run copies the project into a sandboxed frame (an iframe) and builds the nodes from the copy. The
+              editor keeps the original. Stop deletes the sandbox, and with it every change the game made. This is
+              the same reason a spreadsheet's "preview" never edits your file.
+          equations: []
+          callouts: []
+          visualizations: []
+
+        rigor:
+          prose:
+            - >-
+              Formally, the running game is a state machine: a state (every node's properties) and a step function
+              that maps the state at frame $n$ to frame $n + 1$ given the elapsed time and the input. Run sets the
+              initial state from the project; Stop discards the state.
+            - >-
+              The invariant is the project itself: no step of the running game writes to it. That is what makes it
+              safe to experiment while the game runs, and also why those experiments vanish.
+            - >-
+              Picture two copies side by side: the editor's scene on the left, unchanging, and the running copy on
+              the right, changing every 16.7 ms. The purple Inspector values are a window onto the right-hand copy.
+            - >-
+              Later lessons rely on this separation. A script's ready() starts from the project's values every Run,
+              and a saved game (chapter 6) must be written on purpose, because nothing the running game does is
+              kept by itself.
+          callouts: []
+          visualizations: []
+
+        examples:
+          - id: mg1-002-ex1
+            title: How long is one frame?
+            difficulty: easy
+            problem: A game runs at 60 frames per second. How long does one frame last?
+            steps:
+              - expression: 'T = \tfrac{1}{f}'
+                annotation: If 60 frames fit in one second, each one gets one sixtieth of it.
+                strategyTitle: "Step 1: One second shared between the frames"
+              - expression: 'T = \tfrac{1}{60} \approx 0.0167\ \text{s} = 16.7\ \text{ms}'
+                annotation: Multiply by 1000 to turn seconds into milliseconds.
+                strategyTitle: "Step 2: Put in the numbers"
+            answer: One frame lasts about 0.0167 seconds, or 16.7 milliseconds.
+          - id: mg1-002-ex2
+            title: Frames in a short game
+            difficulty: medium
+            problem: You run your game for 5 seconds on a 144 fps screen. How many frames are drawn?
+            steps:
+              - expression: 'n = f \cdot t'
+                annotation: Frames per second times seconds counts the frames.
+                strategyTitle: "Step 1: Frames are rate times time"
+              - expression: 'n = 144 \times 5 = 720'
+                annotation: The same 5 seconds on a 60 fps screen would be 300 frames.
+                strategyTitle: "Step 2: Put in the numbers"
+            answer: 720 frames are drawn; a 60 fps screen would draw 300 in the same time.
+          - id: mg1-002-ex3
+            title: Where did the tuning go?
+            difficulty: hard
+            problem: >-
+              While the game ran, you dragged a platform from y = 400 to y = 360 until a jump just reached it, then
+              pressed Stop. The platform is back at 400. How do you keep the change?
+            steps:
+              - expression: '\text{running copy: } y = 360,\quad \text{project: } y = 400'
+                annotation: The drag changed the running copy only; the project still says 400.
+                strategyTitle: "Step 1: Say which copy changed"
+              - expression: '\text{Stop, then set } y = 360 \text{ in the Inspector}'
+                annotation: With the game stopped, the Inspector edits the project.
+                strategyTitle: "Step 2: Make the change in the editor"
+              - expression: '\text{Run again: } y = 360'
+                annotation: The next Run copies the new value, and Save keeps it.
+                strategyTitle: "Step 3: Run to confirm, then save"
+            answer: Stop, type 360 into the platform's y in the Inspector, run to confirm, and save.
+
+        challenges:
+          - id: mg1-002-ch1
+            title: A slow screen
+            difficulty: easy
+            problem: How long is one frame at 30 frames per second?
+            hint: Share one second between the frames.
+            answer: One frame lasts 1/30 of a second, about 33.3 milliseconds.
+            walkthrough:
+              - expression: 'T = \tfrac{1}{30} \approx 0.0333\ \text{s}'
+                annotation: Fewer frames a second means each frame lasts longer.
+          - id: mg1-002-ch2
+            title: Which change survives?
+            difficulty: medium
+            problem: >-
+              You change the background colour in Project settings, then press Run, then move Hero while running,
+              then press Stop. Which of the two changes is still there?
+            hint: Which change was made in the editor, and which in the running copy?
+            answer: >-
+              The background colour stays, because it was set in the editor; Hero's move is gone, because it was
+              made in the running copy.
+            walkthrough: []
+          - id: mg1-002-ch3
+            title: Count frames backwards
+            difficulty: hard
+            problem: >-
+              A test counts 900 frames in 15 seconds. What frame rate was the game running at, and how long was each
+              frame?
+            hint: Rearrange n = f · t for f, then use T = 1/f.
+            answer: It ran at 60 frames per second, so each frame lasted about 16.7 milliseconds.
+            walkthrough:
+              - expression: 'f = \tfrac{n}{t} = \tfrac{900}{15} = 60,\quad T = \tfrac{1}{60}'
+                annotation: Divide frames by seconds for the rate, then invert the rate for the frame time.
+
+        semantics:
+          core:
+            - symbol: Run (F5)
+              meaning: Starts a copy of the project as a game, in a sandbox inside the editor.
+            - symbol: Stop (F8)
+              meaning: Ends the running copy and throws away every change it made.
+            - symbol: frame
+              meaning: One pass of the game loop, which updates every node and then draws the picture.
+            - symbol: f (frames per second)
+              meaning: How many frames the game draws each second; 60 on most screens.
+            - symbol: T = 1/f
+              meaning: How long one frame lasts, in seconds.
+          rulesOfThumb:
+            - Make lasting changes with the game stopped; use the running game only to try numbers out.
+            - Purple Inspector values are the running game's and will not be saved.
+            - More frames per second means shorter frames, not a longer game.
+            - Run after every small change, so a mistake is found while you still remember what you changed.
+
+        misconceptions:
+          - falseBelief: Moving a node while the game runs moves it in the project too.
+            whyStudentsThinkIt: It is the same node in the same window, and it really did move.
+            correctionExample: Drag Hero from x = 480 to x = 700 while running, press Stop, and x is 480 again.
+            contrastCase: Moving Hero with the game stopped changes the project, and the next Run starts it at 700.
+          - falseBelief: A game at 120 fps runs twice as long as one at 60 fps.
+            whyStudentsThinkIt: Twice as many frames sounds like twice as much game.
+            correctionExample: In 1 second, 120 fps draws 120 frames of 1/120 s each; 60 fps draws 60 of 1/60 s.
+            contrastCase: Both games last exactly 1 second; only the number of pictures in that second differs.
+
+        transferPrompts:
+          - situation: >-
+              You want to find the jump height that just clears a gap, trying many values quickly.
+            competingTechniques:
+              - Tune it while the game runs, write the number down, then set it in the editor
+              - Edit the value in the editor and press Run for every try
+            whyThisTechniqueWins: >-
+              Tuning live finds the number fastest, as long as you copy the final number into the editor after Stop.
+          - situation: >-
+              A friend says your game "lost its colour" when they reopened it, though it looked right when you ran it.
+            competingTechniques:
+              - Check whether the colour was set in Project settings and saved
+              - Assume the running game saves its own changes
+            whyThisTechniqueWins: >-
+              Only the project, edited with the game stopped and saved, is kept; a colour set by the running game is
+              gone when it stops.
+
+        debugging:
+          - commonError: Tuning values while the game runs and expecting them to stay.
+            symptom: After Stop, everything snaps back to how it was before Run.
+            whyItHappened: The running game is a copy; Stop throws it away.
+            repairStrategy: Note the numbers that worked, stop, type them into the Inspector, then save.
+          - commonError: Pressing Run before the main scene is set.
+            symptom: Game Studio says to set a main scene first, and nothing starts.
+            whyItHappened: Run plays the main scene, and the project does not have one yet.
+            repairStrategy: Open Project › Project settings… and choose the scene in Main scene, or star it in Files.
+
+        mastery:
+          targetLevel: 2
+          solveIndependently: Change a project setting, run the game to check it, and stop it.
+          explainVerbally: Explain why a change made while the game runs is gone after Stop.
+          detectIncorrectApplication: Recognise when a lost change was made in the running copy rather than the editor.
+          transferToUnfamiliar: Compute frame times and frame counts for any frame rate and duration.
+
+        assessment:
+          questions:
+            - id: mg1-002-assess-1
+              type: choice
+              text: After Stop, which values does the editor show?
+              options:
+                - The project's values, from before Run
+                - The values the running game ended with
+                - An average of the two
+              answer: The project's values, from before Run
+              hint: The running game was a copy, and Stop threw the copy away.
+
+        quiz:
+          - id: mg1-002-quiz-1
+            type: choice
+            text: What does a frame consist of?
+            options:
+              - Updating every node, then drawing the picture
+              - Saving the project, then running it
+              - Loading one image
+              - One second of game time
+            answer: Updating every node, then drawing the picture
+            hints:
+              - A frame is one pass of the game loop.
+            reviewSection: "Intuition — the frame paragraph"
+          - id: mg1-002-quiz-2
+            type: choice
+            text: How long is one frame at 60 frames per second?
+            options:
+              - About 16.7 milliseconds
+              - About 60 milliseconds
+              - 1 second
+              - About 1.67 milliseconds
+            answer: About 16.7 milliseconds
+            hints:
+              - T = 1/60 seconds; multiply by 1000 for milliseconds.
+            reviewSection: "Examples — How long is one frame?"
+          - id: mg1-002-quiz-3
+            type: choice
+            text: What do purple values in the Inspector mean?
+            options:
+              - They are the running game's values, and will not be saved
+              - They are values with errors
+              - They are the saved values
+              - They are values set by a script in the editor
+            answer: They are the running game's values, and will not be saved
+            hints:
+              - They only appear while the game runs.
+            reviewSection: "Intuition — Warning: changes while running are thrown away"
+          - id: mg1-002-quiz-4
+            type: choice
+            text: Where do you change the game's background colour so it is kept?
+            options:
+              - Project › Project settings…, with the game stopped
+              - In the Inspector while the game runs
+              - In the Output panel
+              - Anywhere, as long as the game is running
+            answer: Project › Project settings…, with the game stopped
+            hints:
+              - Lasting changes are made in the editor.
+            reviewSection: "Intuition — Procedure: Change something and test it"
+          - id: mg1-002-quiz-5
+            type: choice
+            text: >-
+              Which of these changes is NOT kept after Stop?
+            options:
+              - A node dragged in the viewport while the game ran
+              - A position typed into the Inspector before Run
+              - A background colour set in Project settings before Run
+              - A script saved before Run
+            answer: A node dragged in the viewport while the game ran
+            hints:
+              - Only one of these was made in the running copy.
+            reviewSection: "Intuition — the prediction paragraph"
+          - id: mg1-002-quiz-6
+            type: choice
+            text: A game draws 600 frames in 5 seconds. What is its frame rate?
+            options:
+              - 120 frames per second
+              - 60 frames per second
+              - 3000 frames per second
+              - 600 frames per second
+            answer: 120 frames per second
+            hints:
+              - f = n / t. A near-miss is 60, the usual rate, but 600 / 5 is 120.
+            reviewSection: "Under the hood — frames in t seconds"
+
+        checkpoints:
+          - id: cp-mg1-002-1
+            label: Read what Run does
+            type: read
+          - id: cp-mg1-002-2
+            label: Read why changes while running are not kept
+            type: read
+          - id: cp-mg1-002-3
+            label: Read what a frame is
+            type: read
+          - id: cp-mg1-002-4
+            label: Complete "Run your game" in Game Studio
+            type: lab
+          - id: cp-mg1-002-5
+            label: Move Hero while running, stop, and check it returned
+            type: lab
+          - id: cp-mg1-002-6
+            label: Work through the frame-time example
+            type: example
+          - id: cp-mg1-002-7
+            label: Work through the lost-tuning example
+            type: example
+          - id: cp-mg1-002-8
+            label: Attempt the count-frames-backwards challenge
+            type: challenge
+
+      # ───────────────────────────────────────────────────────────── 1.3
+      - order: 3
+        id: mg1-003
+        slug: your-first-script
+        title: Your First Script
+        subtitle: Make Hero move at 100 pixels a second, the same on every screen, with update(dt).
+        tags:
+          - game-studio
+          - scripting
+          - javascript
+          - delta-time
+        aliases: script class extends sprite2d ready update dt delta time speed pixels per second frame rate independent
+        timeToComplete: 30
+        coreConcept: >-
+          A script is a class whose update(dt) runs every frame; moving by speed × dt each frame moves the same
+          distance every second, whatever the frame rate.
+        prerequisites:
+          - mg1-002
+        nextLesson: mg1-004
+
+        hook:
+          question: >-
+            Two players run your game, one on a 60 fps laptop and one on a 144 fps monitor. Your hero moves 2
+            pixels every frame. Who wins the race across the screen, and by how much?
+          realWorldContext: >-
+            Early PC games tied movement to frames, and became unplayably fast on newer computers. Every engine since
+            gives scripts the frame's duration, dt, so that speed is measured in seconds.
+
+        intuition:
+          prose:
+            - >-
+              Hero is at x = 480. Every frame, add 2 to x. After 60 frames x is 600: Hero moved 120 pixels. At 60
+              frames per second, that took one second, so the speed is 120 pixels per second.
+            - >-
+              Before reading on, predict: on a 144 fps screen, how far does the same code move Hero in one second?
+              144 frames × 2 pixels = 288 pixels. The faster screen makes Hero more than twice as fast. That is the
+              bug this lesson fixes.
+            - >-
+              A **script** is code attached to a node. In Game Studio it is a JavaScript **class** that extends the
+              node's type: `export default class Hero extends Sprite2D`. Inside, `this` is the node, so
+              `this.position` is Hero's position.
+            - >-
+              Game Studio calls two methods for you. `ready()` runs once, when the game starts. `update(dt)` runs
+              every frame, and `dt` is the time since the last frame in seconds: 1/60 ≈ 0.0167 at 60 fps.
+            - >-
+              The fix is to move by **speed × dt** each frame. With speed = 100: at 60 fps each frame moves
+              100 × (1/60) ≈ 1.67 pixels, and 60 of them make 100. At 144 fps each moves 0.69, and 144 of them make
+              100. Same distance per second, on any screen.
+          callouts:
+            - type: procedure
+              title: "Procedure: Move a node at a steady speed"
+              body: |-
+                Step 1. Select the node and press New script in the Inspector; the script opens with ready() and update(dt).
+                Step 2. Add a field for the speed in pixels per second: speed = 100;
+                Step 3. In update(dt), work out this frame's distance: this.speed * dt.
+                Step 4. Set the position with x increased by that distance: this.position = { x: this.position.x + this.speed * dt, y: this.position.y };
+                Step 5. Run, and check the speed against a known distance (100 px in 1 s).
+            - type: warning
+              title: A number per frame is not a speed
+              body: >-
+                Adding a fixed number each frame ties the speed to the screen: 2 per frame is 120 px/s at 60 fps and
+                288 px/s at 144 fps. Always multiply by dt.
+            - type: definition
+              title: Class, field and method
+              body: >-
+                A class describes a kind of object. A field (speed = 100) is a value each object keeps. A method
+                (update) is something it can do. Game Studio makes one object of your class for the node.
+          visualizations:
+            - id: GameStudioTask
+              title: Make Hero move
+              props:
+                task: first-script
+                lesson: mg1-003
+                checkpoint: cp-mg1-003-4
+
+        math:
+          prose:
+            - >-
+              **Under the hood (optional).** Let the frames last $dt_1, dt_2, \ldots, dt_n$ seconds. They add up to
+              the elapsed time: $dt_1 + dt_2 + \cdots + dt_n = t$. Moving by $v \cdot dt_i$ in frame $i$ gives a
+              total distance $v \cdot dt_1 + \cdots + v \cdot dt_n$.
+            - >-
+              Factor out $v$: the total is $v (dt_1 + \cdots + dt_n) = v \cdot t$. That is distance = speed × time,
+              true however many frames there were and however long each one was. This is why the result does not
+              depend on the frame rate.
+            - >-
+              With a fixed step $s$ per frame instead, the total is $n \cdot s = f t s$, because there are $f t$
+              frames in $t$ seconds. It grows with the frame rate $f$: at $s = 2$, $t = 1$, it is 120 at 60 fps and
+              288 at 144 fps.
+            - >-
+              The game checks this exactly: the task runs your script at 30 and at 144 frames per second and
+              measures how far Hero went in one second. With speed × dt both are 100 pixels, to within rounding.
+          equations: []
+          callouts: []
+          visualizations: []
+
+        rigor:
+          prose:
+            - >-
+              Formally, update(dt) is a numerical integration of position over time: $x_{n+1} = x_n + v \, dt_n$
+              (Euler's method). For constant $v$ it is exact, because the velocity does not change inside a frame.
+            - >-
+              The invariant is distance per second, $v$. The number of frames and their lengths vary from screen to
+              screen; their sum, the elapsed time, does not, and the method only ever uses that sum.
+            - >-
+              On a graph of position against time, each frame is a short straight segment of slope $v$. Whatever
+              the segment lengths, consecutive segments of the same slope form one straight line.
+            - >-
+              When speed itself changes, as with gravity in chapter 2, Euler's method is no longer exact: the error
+              depends on $dt$. That is why physics runs at a fixed step of 1/60 s, a topic for that chapter.
+          callouts: []
+          visualizations: []
+
+        examples:
+          - id: mg1-003-ex1
+            title: One frame's distance
+            difficulty: easy
+            problem: Hero's speed is 100 pixels per second. How far does it move in one frame at 60 fps?
+            steps:
+              - expression: 'dt = \tfrac{1}{60} \approx 0.0167\ \text{s}'
+                annotation: dt is the time since the last frame; at 60 fps it is a sixtieth of a second.
+                strategyTitle: "Step 1: Find dt"
+              - expression: 'v \cdot dt = 100 \times \tfrac{1}{60} \approx 1.67\ \text{px}'
+                annotation: This is what `this.speed * dt` works out each frame.
+                strategyTitle: "Step 2: Multiply speed by dt"
+            answer: Hero moves about 1.67 pixels each frame, which adds up to 100 pixels over 60 frames.
+          - id: mg1-003-ex2
+            title: The same second on two screens
+            difficulty: medium
+            problem: Show that speed × dt moves Hero 100 pixels in one second at both 30 fps and 144 fps.
+            steps:
+              - expression: '30 \times \left(100 \times \tfrac{1}{30}\right) = 30 \times 3.33 = 100'
+                annotation: Fewer, longer frames each move further.
+                strategyTitle: "Step 1: 30 frames of 1/30 s"
+              - expression: '144 \times \left(100 \times \tfrac{1}{144}\right) = 144 \times 0.694 = 100'
+                annotation: More, shorter frames each move less.
+                strategyTitle: "Step 2: 144 frames of 1/144 s"
+              - expression: '100 = 100'
+                annotation: "The task checks exactly this: it runs your script at 30 and 144 fps."
+                strategyTitle: "Step 3: Compare"
+            answer: Both screens move Hero 100 pixels in one second, because frames × (speed × dt) = speed × time.
+          - id: mg1-003-ex3
+            title: Fixing a frame-tied speed
+            difficulty: hard
+            problem: >-
+              A script does `this.position = { x: this.position.x + 3, y: this.position.y }` and the designer liked
+              the speed on their 60 fps laptop. Rewrite it so every screen gets that speed.
+            steps:
+              - expression: '3 \times 60 = 180\ \text{px/s}'
+                annotation: The speed the designer saw was 3 pixels per frame times 60 frames per second.
+                strategyTitle: "Step 1: Find the speed they liked"
+              - expression: 'x \leftarrow x + 180 \cdot dt'
+                annotation: Add a field `speed = 180;` and use `this.position.x + this.speed * dt`.
+                strategyTitle: "Step 2: Multiply that speed by dt"
+              - expression: '144 \times 180 \times \tfrac{1}{144} = 180'
+                annotation: On a 144 fps screen it is now 180 px/s too, instead of 432.
+                strategyTitle: "Step 3: Check on another screen"
+            answer: Use speed = 180 and move by this.speed * dt; every screen then moves 180 pixels per second.
+
+        challenges:
+          - id: mg1-003-ch1
+            title: Slower hero
+            difficulty: easy
+            problem: How far does a hero with speed 50 move in 4 seconds?
+            hint: Distance is speed × time.
+            answer: It moves 200 pixels, because 50 × 4 = 200.
+            walkthrough:
+              - expression: '50 \times 4 = 200'
+                annotation: The frame rate does not appear, because speed × dt adds up to speed × time.
+          - id: mg1-003-ch2
+            title: Crossing the screen
+            difficulty: medium
+            problem: >-
+              Hero starts at x = 0 with speed 240. How long until it reaches the right edge of a 960-wide game?
+            hint: Rearrange distance = speed × time for time.
+            answer: It takes 4 seconds, because 960 / 240 = 4.
+            walkthrough:
+              - expression: 't = \tfrac{960}{240} = 4\ \text{s}'
+                annotation: Time is distance divided by speed.
+          - id: mg1-003-ch3
+            title: Diagnose the race
+            difficulty: hard
+            problem: >-
+              Two testers report the same race: one finished in 8 seconds, the other in 3.3 seconds. The code adds 2
+              to x every frame and the track is 960 pixels. What were their frame rates?
+            hint: With a fixed step, speed is step × frames per second.
+            answer: >-
+              About 60 fps and 144 fps: 960 / (2 × 60) = 8 s and 960 / (2 × 144) ≈ 3.3 s; multiplying by dt would
+              make both take the same time.
+            walkthrough:
+              - expression: 'f = \tfrac{960}{2 \cdot t}: \quad \tfrac{960}{16} = 60,\ \tfrac{960}{6.67} \approx 144'
+                annotation: Solve t = 960 / (2f) for f with each tester's time.
+
+        semantics:
+          core:
+            - symbol: script
+              meaning: A class attached to a node that gives it behaviour; this inside it is the node.
+            - symbol: ready()
+              meaning: Runs once when the game starts, for setting things up.
+            - symbol: update(dt)
+              meaning: Runs every frame; the place to change things over time.
+            - symbol: dt
+              meaning: The seconds since the last frame, about 0.0167 at 60 fps; frames' dt add up to the elapsed time.
+            - symbol: speed × dt
+              meaning: This frame's distance, so that the total per second is the speed on any screen.
+          rulesOfThumb:
+            - Every change over time in update(dt) is multiplied by dt.
+            - Keep speeds in fields measured per second, so they read like real speeds.
+            - Check movement against a known distance and time, such as 100 px in 1 s.
+            - If a game feels faster on a better screen, look for a change without dt.
+
+        misconceptions:
+          - falseBelief: update(dt) runs once per second.
+            whyStudentsThinkIt: Speeds are written per second, so the code looks like it describes one second.
+            correctionExample: At 60 fps, update runs 60 times a second, each time with dt ≈ 0.0167.
+            contrastCase: If update ran once a second, Hero would jump 100 pixels at a time instead of gliding.
+          - falseBelief: Multiplying by dt makes a game slower.
+            whyStudentsThinkIt: dt is a small number, and multiplying by a small number shrinks things.
+            correctionExample: Speed 100 × dt 0.0167 is 1.67 px a frame, and 60 frames make exactly 100 px.
+            contrastCase: The per-frame step is small, but there are many frames; the per-second speed is the field's value.
+
+        transferPrompts:
+          - situation: >-
+              A cloud should drift across the sky so it takes exactly 30 seconds, on every player's screen.
+            competingTechniques:
+              - A speed in pixels per second multiplied by dt
+              - A fixed number of pixels added each frame
+            whyThisTechniqueWins: >-
+              speed × dt makes the crossing take distance / speed seconds everywhere; a fixed step takes longer on
+              slow screens and less on fast ones.
+          - situation: >-
+              A timer should count down from 10 seconds to 0 in update.
+            competingTechniques:
+              - Subtract dt from the timer each frame
+              - Subtract 1 from the timer each frame
+            whyThisTechniqueWins: >-
+              The dts add up to real seconds, so subtracting dt reaches 0 after 10 seconds; subtracting 1 reaches 0
+              after 10 frames, a sixth of a second.
+
+        debugging:
+          - commonError: Writing this.position.x += 2 without dt.
+            symptom: The task says Hero moved different distances at 30 and 144 frames a second.
+            whyItHappened: A fixed step per frame makes the speed depend on how many frames there are.
+            repairStrategy: Replace the 2 with this.speed * dt and add a speed field in pixels per second.
+          - commonError: Spelling the class's method Update or update() without dt.
+            symptom: Nothing moves, or dt is undefined and Hero's position becomes NaN.
+            whyItHappened: Game Studio calls exactly update(dt); a different name is never called, and a missing parameter has no value.
+            repairStrategy: Write update(dt) exactly, lower-case, with dt between the brackets.
+
+        mastery:
+          targetLevel: 3
+          solveIndependently: Write a script that moves a node at a given speed in pixels per second.
+          explainVerbally: Explain why speed × dt gives the same distance per second at any frame rate.
+          detectIncorrectApplication: Spot movement that is tied to the frame rate and fix it.
+          transferToUnfamiliar: Use dt for any change over time, such as a countdown or a fading colour.
+
+        assessment:
+          questions:
+            - id: mg1-003-assess-1
+              type: choice
+              text: At 60 fps, what is dt?
+              options:
+                - About 0.0167 seconds
+                - 60 seconds
+                - 1 second
+                - About 16.7 seconds
+              answer: About 0.0167 seconds
+              hint: dt is the time of one frame, 1/60 of a second.
+
+        quiz:
+          - id: mg1-003-quiz-1
+            type: choice
+            text: How often does update(dt) run?
+            options:
+              - Once every frame
+              - Once when the game starts
+              - Once a second
+              - Only when a key is pressed
+            answer: Once every frame
+            hints:
+              - ready() is the one that runs once.
+            reviewSection: "Intuition — the ready and update paragraph"
+          - id: mg1-003-quiz-2
+            type: choice
+            text: Hero adds 2 pixels to x every frame. How fast is it at 144 fps?
+            options:
+              - 288 pixels per second
+              - 120 pixels per second
+              - 2 pixels per second
+              - 144 pixels per second
+            answer: 288 pixels per second
+            hints:
+              - Frames per second times pixels per frame. 120 is the near-miss, the speed at 60 fps.
+            reviewSection: "Intuition — the prediction paragraph"
+          - id: mg1-003-quiz-3
+            type: choice
+            text: Which line moves Hero right at 100 pixels per second on any screen, with speed = 100?
+            options:
+              - "this.position = { x: this.position.x + this.speed * dt, y: this.position.y }"
+              - "this.position = { x: this.position.x + this.speed, y: this.position.y }"
+              - "this.position = { x: this.position.x + dt, y: this.position.y }"
+              - "this.position = { x: this.speed * dt, y: this.position.y }"
+            answer: "this.position = { x: this.position.x + this.speed * dt, y: this.position.y }"
+            hints:
+              - It must add to the old x, and the amount must be speed × dt.
+            reviewSection: "Intuition — Procedure: Move a node at a steady speed"
+          - id: mg1-003-quiz-4
+            type: choice
+            text: Inside Hero's script, what is this?
+            options:
+              - The Hero node itself
+              - The whole game
+              - The script file
+              - The scene tree
+            answer: The Hero node itself
+            hints:
+              - this.position is Hero's position.
+            reviewSection: "Intuition — the script paragraph"
+          - id: mg1-003-quiz-5
+            type: choice
+            text: >-
+              Which of these does NOT need multiplying by dt in update?
+            options:
+              - Setting a sprite's texture when a key is pressed
+              - Moving at 200 pixels per second
+              - Counting a timer down in seconds
+              - Turning at 90 degrees per second
+            answer: Setting a sprite's texture when a key is pressed
+            hints:
+              - dt is for amounts per second; a one-off change is not an amount per second.
+            reviewSection: "Rules of thumb — every change over time is multiplied by dt"
+          - id: mg1-003-quiz-6
+            type: choice
+            text: Why does speed × dt give the same distance per second on every screen?
+            options:
+              - Because the dts of all the frames add up to the elapsed time
+              - Because every screen runs at 60 fps
+              - Because dt is always 1/60
+              - Because the engine skips frames on fast screens
+            answer: Because the dts of all the frames add up to the elapsed time
+            hints:
+              - Factor the speed out of the sum of the frames' distances.
+            reviewSection: "Under the hood — factoring out v"
+
+        checkpoints:
+          - id: cp-mg1-003-1
+            label: Read the 2-pixels-per-frame example
+            type: read
+          - id: cp-mg1-003-2
+            label: Read what ready and update(dt) do
+            type: read
+          - id: cp-mg1-003-3
+            label: Read why speed × dt works on every screen
+            type: read
+          - id: cp-mg1-003-4
+            label: Complete "Make Hero move" in Game Studio
+            type: lab
+          - id: cp-mg1-003-5
+            label: Change speed to 200 in Game Studio and predict where Hero is after 1 second
+            type: lab
+          - id: cp-mg1-003-6
+            label: Work through the two-screens example
+            type: example
+          - id: cp-mg1-003-7
+            label: Work through the frame-tied speed fix
+            type: example
+          - id: cp-mg1-003-8
+            label: Attempt the diagnose-the-race challenge
+            type: challenge
+
+      # ───────────────────────────────────────────────────────────── 1.4
+      - order: 4
+        id: mg1-004
+        slug: input-actions
+        title: Steering with Input Actions
+        subtitle: Move with the arrow keys or WASD, at the same speed in every direction, diagonals included.
+        tags:
+          - game-studio
+          - input
+          - vectors
+          - normalization
+        aliases: input actions keyboard arrow keys wasd move_left move_right input.vector direction normalize diagonal speed
+        timeToComplete: 30
+        coreConcept: >-
+          Scripts ask about named actions instead of keys, and turn four of them into a direction of length 1, so
+          moving by direction × speed × dt is equally fast in every direction.
+        prerequisites:
+          - mg1-003
+        nextLesson: null
+
+        hook:
+          question: >-
+            Hero moves 100 pixels a second when you hold →, and 100 when you hold ↓. How fast does it go when you
+            hold both?
+          realWorldContext: >-
+            Many early games let players move faster diagonally, and speedrunners still exploit it. Input actions
+            and normalized directions are how every modern engine avoids it, and let players choose their keys.
+
+        intuition:
+          prose:
+            - >-
+              Hold → and Hero should go right. Write the direction as two numbers: (1, 0) means one step right and
+              none down. Holding ↓ gives (0, 1). Moving by direction × 100 × dt goes 100 pixels a second either way.
+            - >-
+              Before reading on, predict: hold → and ↓ together, the direction is (1, 1). How far is that in one
+              second at speed 100? Each second Hero goes 100 right and 100 down. That is the diagonal of a
+              100-by-100 square: about 141 pixels. Diagonals are 41% faster.
+            - >-
+              The length of a direction (x, y) is $\sqrt{x^2 + y^2}$, by Pythagoras. (1, 0) has length 1, but (1, 1)
+              has length $\sqrt{2} \approx 1.414$. To fix it, divide each number by the length: (1, 1) becomes
+              (0.707, 0.707), which has length 1. Making a direction length 1 is called **normalizing** it.
+            - >-
+              Scripts should not ask about keys either. An **input action** is a name, such as `move_left`, bound to
+              keys: ← and A. The script asks `input.isPressed('move_left')`, and a player can rebind the keys in
+              **Project › Project settings…** without the script changing.
+            - >-
+              Game Studio does both jobs in one call: `input.vector('move_left', 'move_right', 'move_up',
+              'move_down')` looks at the four actions and gives a direction already normalized, or (0, 0) when no
+              key is held. `direction.scale(this.speed * dt)` turns it into this frame's step.
+          callouts:
+            - type: procedure
+              title: "Procedure: Steer a node with the keyboard"
+              body: |-
+                Step 1. Open the node's script; keep the speed field (pixels per second).
+                Step 2. In update(dt), get a direction: const direction = input.vector('move_left', 'move_right', 'move_up', 'move_down');
+                Step 3. Turn it into this frame's step: direction.scale(this.speed * dt).
+                Step 4. Add the step to the position: this.position = this.position.add(direction.scale(this.speed * dt));
+                Step 5. Run and check: no key, no movement; each arrow, 100 px/s; two arrows together, still 100 px/s.
+            - type: warning
+              title: Adding two directions yourself
+              body: >-
+                If you build the direction by adding (1, 0) and (0, 1) for two held keys, you get (1, 1), of length
+                1.414. Normalize the sum, or use input.vector, which already does.
+            - type: definition
+              title: Vector
+              body: >-
+                A vector is a pair of numbers (x, y) treated as one thing: a position, a step or a direction. Game
+                Studio's Vec2 has add, scale, length and normalized, so you can work with whole vectors at once.
+          visualizations:
+            - id: GameStudioTask
+              title: Steer Hero with the keyboard
+              props:
+                task: input-actions
+                lesson: mg1-004
+                checkpoint: cp-mg1-004-4
+
+        math:
+          prose:
+            - >-
+              **Under the hood (optional).** A direction is a vector $\mathbf{d} = (x, y)$. Its length is
+              $|\mathbf{d}| = \sqrt{x^2 + y^2}$: the two numbers are the sides of a right-angled triangle, and the
+              length is its hypotenuse, by Pythagoras' theorem.
+            - >-
+              Moving by $\mathbf{d} \cdot v \cdot dt$ each frame covers $|\mathbf{d}| \cdot v$ pixels per second,
+              because scaling a vector by a number scales its length by that number. With $|\mathbf{d}| = 1$ that is
+              exactly $v$. With $\mathbf{d} = (1, 1)$ it is $\sqrt{2}\, v \approx 141$ at $v = 100$.
+            - >-
+              Normalizing divides by the length: $\hat{\mathbf{d}} = \mathbf{d} / |\mathbf{d}|$. Its length is
+              $|\mathbf{d}| / |\mathbf{d}| = 1$. For $(1, 1)$: $(1/\sqrt{2}, 1/\sqrt{2}) \approx (0.707, 0.707)$,
+              and $0.707^2 + 0.707^2 = 0.5 + 0.5 = 1$.
+            - >-
+              The zero vector $(0, 0)$ has length 0 and cannot be divided by it. input.vector returns $(0, 0)$ when no
+              key is held, and Vec2's normalized() does the same for a zero vector, so standing still never divides
+              by zero.
+          equations: []
+          callouts: []
+          visualizations: []
+
+        rigor:
+          prose:
+            - >-
+              Formally, normalization maps every non-zero vector $\mathbf{d}$ to the unit vector
+              $\mathbf{d}/|\mathbf{d}|$ with the same direction; it is undefined at $\mathbf{0}$, which input.vector
+              handles by returning $\mathbf{0}$.
+            - >-
+              The invariant is direction: $\mathbf{d}$ and $\hat{\mathbf{d}}$ point the same way, because one is a
+              positive multiple of the other. Only the length changes, to 1, which is what makes speed the same in
+              every direction.
+            - >-
+              Geometrically, the eight directions from four keys lie on a square of side 2 around the origin;
+              normalizing pulls the four corners in to the unit circle, so all eight lie on it.
+            - >-
+              A gamepad stick gives directions anywhere inside the circle, with length meaning "how far pushed".
+              There, a length below 1 is wanted (walking slowly), and only lengths above 1 are reduced: clamping
+              instead of normalizing. Chapter 2's velocity uses the same vector operations.
+          callouts: []
+          visualizations: []
+
+        examples:
+          - id: mg1-004-ex1
+            title: The length of a diagonal
+            difficulty: easy
+            problem: How long is the direction (1, 1)?
+            steps:
+              - expression: '|(1, 1)| = \sqrt{1^2 + 1^2}'
+                annotation: The two numbers are the sides of a right-angled triangle; the length is the long side.
+                strategyTitle: "Step 1: Use Pythagoras"
+              - expression: '= \sqrt{2} \approx 1.414'
+                annotation: Longer than 1, so moving by it is about 41% faster than moving by (1, 0).
+                strategyTitle: "Step 2: Work it out"
+            answer: The direction (1, 1) is about 1.414 long, not 1.
+          - id: mg1-004-ex2
+            title: Normalizing the diagonal
+            difficulty: medium
+            problem: Normalize (1, 1), and check that the result has length 1.
+            steps:
+              - expression: '\tfrac{(1, 1)}{\sqrt{2}} = (0.707, 0.707)'
+                annotation: Divide each number by the length, 1.414.
+                strategyTitle: "Step 1: Divide by the length"
+              - expression: '\sqrt{0.707^2 + 0.707^2} = \sqrt{0.5 + 0.5} = 1'
+                annotation: Measuring again gives 1, so this direction moves at exactly the speed.
+                strategyTitle: "Step 2: Check the length"
+            answer: (1, 1) normalized is about (0.707, 0.707), which has length 1.
+          - id: mg1-004-ex3
+            title: A step for one frame
+            difficulty: hard
+            problem: >-
+              → and ↓ are held. Speed is 100 and dt is 1/60. What does `direction.scale(this.speed * dt)` give,
+              and how far is that step?
+            steps:
+              - expression: '\mathbf{d} = (0.707, 0.707)'
+                annotation: input.vector gives the normalized direction for → and ↓ together.
+                strategyTitle: "Step 1: The direction"
+              - expression: '100 \times \tfrac{1}{60} = 1.667'
+                annotation: speed × dt is this frame's distance.
+                strategyTitle: "Step 2: This frame's distance"
+              - expression: '(0.707, 0.707) \times 1.667 = (1.18, 1.18),\quad |(1.18, 1.18)| = 1.667'
+                annotation: Scaling the direction by the distance gives the step, and its length is that distance.
+                strategyTitle: "Step 3: Scale the direction"
+            answer: The step is about (1.18, 1.18), a distance of 1.667 pixels, the same as a straight step.
+
+        challenges:
+          - id: mg1-004-ch1
+            title: Straight left
+            difficulty: easy
+            problem: Which direction does input.vector give when only ← is held, and how long is it?
+            hint: Left is negative x.
+            answer: It gives (−1, 0), which has length 1.
+            walkthrough:
+              - expression: '|(-1, 0)| = \sqrt{1 + 0} = 1'
+                annotation: A single key already gives a direction of length 1.
+          - id: mg1-004-ch2
+            title: Up and left
+            difficulty: medium
+            problem: Normalize (−1, −1). Which way does it point on screen?
+            hint: Divide by the length, then remember that negative y is up.
+            answer: It is about (−0.707, −0.707), pointing up and to the left.
+            walkthrough:
+              - expression: '\tfrac{(-1, -1)}{\sqrt{2}} \approx (-0.707, -0.707)'
+                annotation: Negative x is left and negative y is up the screen.
+          - id: mg1-004-ch3
+            title: Debug the speedy diagonal
+            difficulty: hard
+            problem: >-
+              A script builds the direction with input.axis('move_left', 'move_right') for x and
+              input.axis('move_up', 'move_down') for y, then moves by it times speed × dt. The task says diagonals
+              go 141 px a second. Fix it.
+            hint: input.axis gives each number separately; together they make (1, 1) on a diagonal.
+            answer: >-
+              Normalize the direction before scaling it (new Vec2(x, y).normalized()), or use input.vector, which
+              returns it normalized; the diagonal then moves 100 px a second.
+            walkthrough:
+              - expression: '|(1, 1)| = 1.414 \;\Rightarrow\; \tfrac{(1, 1)}{1.414} = (0.707, 0.707)'
+                annotation: Dividing by the length brings the diagonal back to length 1.
+
+        semantics:
+          core:
+            - symbol: input action
+              meaning: A name such as move_left bound to keys; scripts ask about the name, players choose the keys.
+            - symbol: input.vector(left, right, up, down)
+              meaning: The direction the four actions point, normalized, or (0, 0) when none is held.
+            - symbol: vector (x, y)
+              meaning: Two numbers treated as one, for a position, a step or a direction.
+            - symbol: "|d| = √(x² + y²)"
+              meaning: A vector's length, the hypotenuse of the triangle its two numbers make.
+            - symbol: normalize
+              meaning: Divide a vector by its length so it keeps its direction and has length 1.
+          rulesOfThumb:
+            - Ask about actions, never keys, so players can rebind them.
+            - A direction should be length 1 before you multiply it by a speed.
+            - If diagonals feel fast, print the direction's length; 1.414 means it was not normalized.
+            - Build the step as direction × speed × dt, then add it to the position.
+
+        misconceptions:
+          - falseBelief: Holding two arrow keys moves at the same speed as one, without doing anything.
+            whyStudentsThinkIt: Each key is set up to move 100 px a second, so both together feel like 100 too.
+            correctionExample: (1, 1) × 100 moves 100 right and 100 down each second, which is 141 px along the diagonal.
+            contrastCase: Normalized, (0.707, 0.707) × 100 moves 70.7 right and 70.7 down, which is 100 px along the diagonal.
+          - falseBelief: Normalizing changes which way the vector points.
+            whyStudentsThinkIt: All the numbers change, so it seems the direction must have changed too.
+            correctionExample: (2, 0) normalized is (1, 0); both point right, only the length changed from 2 to 1.
+            contrastCase: Swapping x and y, (0, 2), would change the direction; dividing both by the same number never does.
+
+        transferPrompts:
+          - situation: >-
+              An enemy should walk towards the player at 80 px a second, from wherever it is.
+            competingTechniques:
+              - Normalize (player − enemy) and scale it by 80 × dt
+              - Add (player − enemy) × dt to the enemy's position
+            whyThisTechniqueWins: >-
+              (player − enemy) is longer when the player is far away, so using it directly makes the enemy faster
+              at a distance; normalizing keeps 80 px a second at any distance.
+          - situation: >-
+              Players ask to use I, J, K and L to move instead of the arrow keys.
+            competingTechniques:
+              - Bind the keys to the existing actions in Project settings
+              - Change every script to check for the new keys
+            whyThisTechniqueWins: >-
+              Scripts ask about move_left and friends, so binding new keys to those actions needs no code change.
+
+        debugging:
+          - commonError: Adding the direction to the position without speed × dt.
+            symptom: Hero shoots off the screen, moving one pixel every frame (60 px/s at 60 fps, more on fast screens).
+            whyItHappened: A direction is length 1; without scaling it is a step of one pixel per frame.
+            repairStrategy: Scale it first, this.position.add(direction.scale(this.speed * dt)).
+          - commonError: Misspelling an action, input.vector('move_left', 'move_rigth', …).
+            symptom: Game Studio reports there is no input action "move_rigth", and points to the Input map.
+            whyItHappened: Actions are looked up by name; a misspelt name does not exist.
+            repairStrategy: Copy the name from Project › Project settings… › Input map.
+
+        mastery:
+          targetLevel: 3
+          solveIndependently: Write a script that steers a node with input.vector at a given speed.
+          explainVerbally: Explain why an unnormalized diagonal is about 41% faster.
+          detectIncorrectApplication: Recognise a direction that is not length 1 from its symptom and fix it.
+          transferToUnfamiliar: Normalize any vector, such as the direction from an enemy to the player.
+
+        assessment:
+          questions:
+            - id: mg1-004-assess-1
+              type: choice
+              text: What is the length of (0.6, 0.8)?
+              options:
+                - "1"
+                - "1.4"
+                - "0.7"
+                - "0.2"
+              answer: "1"
+              hint: 0.36 + 0.64 = 1, and the square root of 1 is 1.
+
+        quiz:
+          - id: mg1-004-quiz-1
+            type: choice
+            text: Unnormalized, how fast does Hero go diagonally with speed 100?
+            options:
+              - About 141 pixels per second
+              - 100 pixels per second
+              - 200 pixels per second
+              - About 70.7 pixels per second
+            answer: About 141 pixels per second
+            hints:
+              - The length of (1, 1) is √2 ≈ 1.414. 200 is the near-miss of adding the two speeds.
+            reviewSection: "Intuition — the prediction paragraph"
+          - id: mg1-004-quiz-2
+            type: choice
+            text: What does normalizing a vector do?
+            options:
+              - Keeps its direction and makes its length 1
+              - Makes both numbers equal
+              - Rounds both numbers to whole pixels
+              - Turns it to point right
+            answer: Keeps its direction and makes its length 1
+            hints:
+              - Divide by the length.
+            reviewSection: "Intuition — Definition: Vector"
+          - id: mg1-004-quiz-3
+            type: choice
+            text: Why do scripts ask about input actions instead of keys?
+            options:
+              - So players can change the keys without changing the scripts
+              - Because keys cannot be read in JavaScript
+              - Because actions are faster
+              - So that diagonals are normalized
+            answer: So players can change the keys without changing the scripts
+            hints:
+              - Actions are names bound to keys in Project settings.
+            reviewSection: "Intuition — the input action paragraph"
+          - id: mg1-004-quiz-4
+            type: choice
+            text: What does input.vector return when no key is held?
+            options:
+              - (0, 0)
+              - (1, 0)
+              - An error
+              - (1, 1)
+            answer: (0, 0)
+            hints:
+              - Standing still is the zero vector, which is not normalized because it cannot be.
+            reviewSection: "Under the hood — the zero vector"
+          - id: mg1-004-quiz-5
+            type: choice
+            text: >-
+              Which of these directions would NOT give the speed you set if scaled by speed × dt?
+            options:
+              - (1, 1)
+              - (0.707, 0.707)
+              - (0, −1)
+              - (0.6, 0.8)
+            answer: (1, 1)
+            hints:
+              - Work out each length; only one is not 1.
+            reviewSection: "Examples — The length of a diagonal"
+          - id: mg1-004-quiz-6
+            type: choice
+            text: Which line steers Hero correctly?
+            options:
+              - "this.position = this.position.add(input.vector('move_left', 'move_right', 'move_up', 'move_down').scale(this.speed * dt))"
+              - "this.position = this.position.add(input.vector('move_left', 'move_right', 'move_up', 'move_down'))"
+              - "this.position = input.vector('move_left', 'move_right', 'move_up', 'move_down').scale(this.speed * dt)"
+              - "this.position = this.position.add(input.vector('move_left', 'move_right', 'move_up', 'move_down').scale(this.speed))"
+            answer: "this.position = this.position.add(input.vector('move_left', 'move_right', 'move_up', 'move_down').scale(this.speed * dt))"
+            hints:
+              - It must add a step to the old position, and the step is direction × speed × dt.
+            reviewSection: "Intuition — Procedure: Steer a node with the keyboard"
+
+        checkpoints:
+          - id: cp-mg1-004-1
+            label: Read the diagonal prediction
+            type: read
+          - id: cp-mg1-004-2
+            label: Read how normalizing fixes the diagonal
+            type: read
+          - id: cp-mg1-004-3
+            label: Read what input actions are for
+            type: read
+          - id: cp-mg1-004-4
+            label: Complete "Steer Hero with the keyboard" in Game Studio
+            type: lab
+          - id: cp-mg1-004-5
+            label: Bind I, J, K and L to the move actions in Project settings and try them
+            type: lab
+          - id: cp-mg1-004-6
+            label: Work through the normalizing example
+            type: example
+          - id: cp-mg1-004-7
+            label: Work through the one-frame step example
+            type: example
+          - id: cp-mg1-004-8
+            label: Attempt the speedy-diagonal debugging challenge
+            type: challenge

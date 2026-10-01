@@ -7,16 +7,27 @@ import type { Store } from './store';
 import { C, useStore } from './kit';
 import { nextTask } from '../tasks';
 
+// Pictures of each step done in the editor, made by e2e/tutorials.shots.mjs (npm run game:shots).
+const SHOTS = import.meta.glob('../tasks/shots/*.jpg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+const shot = (task: string, step: number): string | undefined => SHOTS[`../tasks/shots/${task}-${step}.jpg`];
+
 export function TaskPanel({ store, onBack }: { store: Store; onBack: (route: string) => void }) {
   useStore(store);
   const [open, setOpen] = useState(true);
   const [hint, setHint] = useState<number | null>(null);
+  const [big, setBig] = useState<string | null>(null);
   const t = store.task;
   if (!t || !store.project) return null;
   const current = t.results.findIndex((r) => r !== true);
   const next = nextTask(t.def.id);
   const btn: React.CSSProperties = { background: C.raised, border: `1px solid ${C.border}`, borderRadius: 3, color: C.text, fontSize: 12, cursor: 'pointer', padding: '2px 8px' };
   return (
+    <>
+    {big && (
+      <div data-testid="task-picture-big" onClick={() => setBig(null)} title="Click to close" style={{ position: 'fixed', inset: 0, background: '#000c', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
+        <img src={big} alt="" style={{ maxWidth: '92%', maxHeight: '92%', borderRadius: 4, boxShadow: '0 10px 40px #000' }} />
+      </div>
+    )}
     <div data-testid="task-panel" style={{ position: 'absolute', right: 10, top: 10, width: 340, maxWidth: 'calc(100% - 20px)', maxHeight: 'calc(100% - 20px)', overflowY: 'auto', background: '#16181cf2', border: `1px solid ${t.finished ? C.ok : C.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 12, color: C.dim, lineHeight: 1.5, zIndex: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ color: C.faint, fontSize: 11 }}>TRY IT · {t.def.chain}</span>
@@ -37,6 +48,10 @@ export function TaskPanel({ store, onBack }: { store: Store; onBack: (route: str
                   <div style={{ flex: 1 }}>
                     <div style={{ color: ok ? C.dim : C.text }}>{step.text}</div>
                     {here && typeof t.results[i] === 'string' && t.results[i] !== 'Not checked yet' && <div data-testid="task-why" style={{ color: C.warn, fontSize: 11, marginTop: 2 }}>Not yet: {t.results[i] as string}</div>}
+                    {here && shot(t.def.id, i) && (
+                      <img data-testid="task-picture" src={shot(t.def.id, i)} alt={`Step ${i + 1}, done in the editor`} title="What it looks like when this step is done (the orange outline shows where). Click to enlarge."
+                        onClick={() => setBig(shot(t.def.id, i)!)} style={{ display: 'block', width: '100%', marginTop: 4, borderRadius: 3, border: `1px solid ${C.border}`, cursor: 'zoom-in' }} />
+                    )}
                     {here && step.hint && (hint === i
                       ? <div style={{ color: C.faint, fontSize: 11, marginTop: 2 }}>Hint: {step.hint}</div>
                       : <span role="link" data-testid="task-hint" onClick={() => setHint(i)} style={{ color: C.accent, fontSize: 11, cursor: 'pointer' }}>Hint</span>)}
@@ -64,5 +79,6 @@ export function TaskPanel({ store, onBack }: { store: Store; onBack: (route: str
         </>
       )}
     </div>
+    </>
   );
 }

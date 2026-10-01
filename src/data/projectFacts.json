@@ -8,9 +8,9 @@
     "game": "An entry in GAMES in src/games/registry.js."
   },
   "counts": {
-    "courses": 43,
-    "chapters": 217,
-    "lessons": 1232,
+    "courses": 44,
+    "chapters": 218,
+    "lessons": 1236,
     "labs": 52,
     "games": 15
   },
@@ -246,6 +246,14 @@
       "description": "Machine learning derived from first principles — the mathematics, the algorithms, and the engineering",
       "chapters": 1,
       "lessons": 1
+    },
+    {
+      "id": "making-games",
+      "label": "Learn to Program by Making Games",
+      "domain": "cs",
+      "description": "Learn to program by building real games in Game Studio, one idea at a time: each lesson explains it, you try it in the editor with checks that tick as you work, then come back to see why it works.",
+      "chapters": 1,
+      "lessons": 4
     },
     {
       "id": "mesh-engine",

@@ -75,6 +75,15 @@ export default function DesktopProvider({ children }) {
     setDesktopStyle: setStyle,
   }), [windows, openWindow, closeWindow, minimizeWindow, toggleMaximize, focusWindow, style, setStyle])
 
+  // A maximized window sits above the page's own bars (1800). Every window focused after it, maximized
+  // or not, goes above it too: otherwise a window opened from a maximized one (Game Studio opening
+  // Sprite Forge) opened behind it, out of sight.
+  const firstMaximized = Math.min(...windows.filter(w => w.state === 'maximized').map(w => focusOrder.indexOf(w.id)).filter(i => i >= 0))
+  const zOf = (w) => {
+    const order = focusOrder.indexOf(w.id)
+    return (order >= firstMaximized ? 1800 : BASE_Z) + order
+  }
+
   return (
     <DesktopContext.Provider value={value}>
       {children}
@@ -103,12 +112,12 @@ export default function DesktopProvider({ children }) {
                   position: 'fixed',
                   inset: 0,
                   pointerEvents: 'none',
-                  zIndex: w.state === 'maximized' ? 1800 : BASE_Z + focusOrder.indexOf(w.id)
+                  zIndex: zOf(w)
                 }}
               >
                 <FloatingWindow
                   win={w}
-                  zIndex={w.state === 'maximized' ? 1800 : BASE_Z + focusOrder.indexOf(w.id)}
+                  zIndex={zOf(w)}
                   onClose={() => closeWindow(w.id)}
                   onMinimize={() => minimizeWindow(w.id)}
                   onMaximize={() => toggleMaximize(w.id)}

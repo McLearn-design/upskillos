@@ -1,6 +1,7 @@
 # Course plan: Making Games with Game Studio
 
-Status (2026-10-01): **"Try it" is built and tested; lessons 1.1–1.4 are next.** Decided with the user (2026-10-01):
+Status (2026-10-01): **Lessons 1.1–1.4 are written, as the trial for the user to review** (see "Lessons as
+built" below). "Try it" is built and tested. Decided with the user (2026-10-01):
 - **Full, deep maths in every lesson, labelled optional:** "Under the hood (optional)". A learner can skip it
   and still finish the course.
 - **Both forms: the course, and learning inside Game Studio.** The same tasks serve the course's "Try it"
@@ -177,6 +178,37 @@ hood** is the maths or algorithm the lesson explains.
 **9. Machine learning (after Phase 9)**
 - A game as an environment, a reward, and an agent that learns to play Breakout. It links to the ML Lab.
 
+## Lessons as built (2026-10-01)
+
+**Course:** `src/courses/making-games/`, "Learn to Program by Making Games" (working title), generated from
+`course-sources/making-games.yaml` with `npm run course:create`. Edit the YAML, then regenerate with `--force`.
+
+**Chapter 1, First steps:** four lessons, each built round one existing task:
+
+| Lesson | Id | Task | Under the hood (optional) |
+|---|---|---|---|
+| 1.1 Scenes, Nodes and Positions | mg1-001 | first-sprite | screen against maths coordinates, y_s = H − y_m |
+| 1.2 Run and Stop | mg1-002 | run-and-stop | the frame loop, T = 1/f, and why Run works on a copy |
+| 1.3 Your First Script | mg1-003 | first-script | why the sum of v·dt is v·t at any frame rate |
+| 1.4 Steering with Input Actions | mg1-004 | input-actions | vector length, normalizing, the zero vector |
+
+- **Each lesson** follows the lesson standard: concrete numbers first, a prediction, a numbered procedure, a
+  warning, three examples, three challenges, misconceptions, transfer prompts, debugging, a six-question quiz and
+  eight checkpoints.
+- **"Under the hood (optional)"** is the lesson's math section, and opens with that heading.
+- **The Try it card** (`src/courses/making-games/viz/GameStudioTask.jsx`) sits at the end of the intuition. It
+  shows the task's steps with the same pictures as the task panel, and opens Game Studio with the task, carrying
+  the lesson's route and checkpoint. Finished, the card says ✓ Done.
+- **Tested:**
+  - `tasks/tasks.test.ts`: every card names a real task and a lab checkpoint its lesson declares.
+  - `e2e/course.acceptance.mjs` (4/4), in `npm run game:acceptance`: the lesson page, its card and pictures,
+    opening the task, finishing it, Back to the lesson, and ✓ Done.
+
+**For the user to decide after reviewing:**
+- whether Part 1 should start here, with the editor, or with programming basics before Game Studio (the series
+  idea above);
+- the course's name.
+
 ## Order of work
 
 1. **"Try it" in Game Studio:** links, tasks, checks, the task panel, the way back, progress, and tests. About
@@ -190,6 +222,101 @@ hood** is the maths or algorithm the lesson explains.
 
 Phase 8 (export) can go before or after; no lesson before chapter 8 needs it.
 
+## Added 2026-10-01: Tetris, a programming series, pictures, and the art labs
+
+The user asked for four things after the first tutorials.
+
+**1. Build Tetris, step by step, as the course's big project.** By the end the learner has built Tetris and
+understands every part, and so knows how a whole game is made. As a chain of tasks (each checked by playing the
+learner's game), roughly:
+- **The board:** a TileMapLayer as a 10 × 20 grid; the playfield drawn from tiles.
+- **A piece:** the seven tetrominoes as data (lists of cells); drawing one; moving it left, right and down
+  with the keys.
+- **Falling:** a timer that drops the piece one row a step; landing on the floor or on other blocks; locking it
+  into the board.
+- **Rotation**, with the optional maths: turning cells a quarter turn with (x, y) → (−y, x), a rotation matrix.
+  Then wall kicks, so a piece next to a wall can still turn.
+- **Clearing lines:** finding full rows, removing them, and moving everything above down.
+- **Game rules:** a random bag of all seven pieces (no long droughts), the next-piece preview, scoring and
+  levels (faster drops), game over.
+- **Polish:** a hard drop, the ghost piece, sound later (when there is audio), and a title and game-over scene.
+
+The optional maths covers grids as arrays (row × width + column), rotation matrices, collision as checking cells,
+random bags (shuffling, Fisher–Yates), and how speed grows with level.
+
+**Tetris as built (2026-10-01):** Help › Tutorials › Tetris, nine tasks and 26 steps (`tasks/tetris.ts`), each step
+with its picture:
+
+| Task | Steps |
+|---|---|
+| 1 The board | New script on Board; `this.cells`, 20 rows of 10 zeros; 200 Sprite2Ds made in `ready()`, in `this.sprites[row][col]`; `draw()` sets each sprite's picture from its number |
+| 2 A piece | `spawn(type)` makes `this.piece` (type, cells, x, y); `draw()` paints it over the board |
+| 3 Moving, and walls | `canPlace(cells, x, y)`; `move(dx, dy)`; ← → with `isJustPressed` (one press, one column) |
+| 4 Falling and landing | a timer made from `dt`; `lock()` copies the piece into the board; soft drop with ↓ |
+| 5 Turning | `rotated(cells)`, [x, y] → [−y, x]; `rotate()` with wall kicks (the O does not turn); ↑ |
+| 6 Clearing lines | `clearLines()` with `filter` and new empty rows (each its own array); called from `lock()` |
+| 7 Score | a HUD with Score and Lines labels; 100 / 300 / 500 / 800 points; shown in `draw()` |
+| 8 Every piece, and the end | a shuffled bag of seven (Fisher–Yates); a Message label; game over when a new piece cannot fit |
+| 9 Hard drop, levels and next | Space; `get level()` and `get interval()` (15% faster a level, points × level); the Next label |
+
+How it differs from the outline above:
+- **The board is sprites, not a TileMapLayer.** Each cell is a Sprite2D whose picture is set from the board's
+  number every frame. It shows the central idea directly: the game is the numbers, and the screen only shows them.
+  It also needs only one colour per piece, not a tileset.
+- **Not done yet:** the ghost piece, sound, and title and game-over scenes. They are the obvious exercises to set
+  after the chain, or a tenth task.
+- **The optional maths** (rotation matrices, Fisher–Yates, the level speed as 0.5 × 0.85^(level − 1)) is named
+  in each task's closing line and belongs in the course lessons, which are still to be written.
+
+**How it is built:** each step adds one feature to `scripts/board.js`, in a fixed order. The script after any step
+is generated from that order, so a task's start is the previous task's finished script, "Show me" gives this
+task's, and the pictures script types each step's script into the real editor. The tests check every step's
+script, from the task's start, passes that step and all before it.
+
+**2. A series, "Learn to Program by Making Games".** Programming taught through games, in this app: variables and
+expressions (a score), conditions (a key pressed), loops (drawing a grid), functions (a piece's moves), arrays
+and objects (the board, a piece), events (signals), state (game states). It suggests the course is that series:
+- **Part 1:** programming basics through small games;
+- **Part 2:** Game Studio's features (the chapters above);
+- **Part 3:** Tetris, then the other projects.
+
+The name is the user's to confirm; "Learn to Program by Making Games" is the working title now.
+
+**3. Pictures of what to do, at every step.** Each tutorial step gets a screenshot of the real editor, showing
+where to click. They are made by a script that does each task's steps in a browser and photographs the editor at
+each one (as the browser tests already do). So the pictures always match the app, and are made again when the app
+changes, instead of going stale.
+
+**4. Sprite Forge and Tile Mapper connected to Game Studio** (part of bringing them up to Game Studio's
+standard, see game-studio-status.md):
+- From Game Studio: **New sprite…** and **Edit in Sprite Forge** for an image, and **New map…** and **Edit in
+  Tile Mapper** for a tile layer.
+- From the labs: **Send to Game Studio** puts the sprite (with its animation frames, as an AnimatedSprite2D) or
+  the map (its tileset and layers, as Tiled import does now) into the open project.
+- **Round trip:** edit an image or map in its lab, and the Game Studio project updates.
+- **Files:** download and upload still work everywhere (PNG, sprite sheet and atlas JSON, `.tmj`), for using
+  the art in other engines or bringing it in from elsewhere.
+
+All three labs run in the same page, so they can hand work over directly, with no files in between.
+
+**As built (2026-10-01):**
+- **In Game Studio:**
+  - Files › assets/ has **New sprite…**, and a ✎ beside each picture up to 128 × 128 (Sprite Forge's limit)
+    opens it in Sprite Forge.
+  - The TileMap panel has **New map…**, and **Edit in Tile Mapper** when a tile layer, or the node holding a
+    map's layers, is selected.
+- **In the labs:** **Send to Game Studio** is in each lab's header.
+  - A sprite comes back as one image per frame. The first time, from New sprite…, it is also put in the scene:
+    a Sprite2D, or an AnimatedSprite2D with one animation per tag.
+  - A map comes back as a Node2D of TileMapLayers. Collision layers become hidden layers whose tile is solid.
+- **Round trip:**
+  - A picture made in Sprite Forge reopens as the original document.
+  - Sending a picture again updates it everywhere it is used (Ctrl+Z undoes it).
+  - Sending a map again repaints the same layer nodes by name.
+- **Not kept on the way to Tile Mapper:** flipped tiles and layers with two picture tilesets. Game Studio says so
+  rather than losing them silently; Tile Mapper has neither.
+- **Art that arrives while no project is open** waits, and goes into the next project opened.
+
 ## Still open
 
-- **The course's name** in the catalogue. Working title: "Making Games with Game Studio".
+- **The course's name** in the catalogue. Working title now: "Learn to Program by Making Games" (see above).

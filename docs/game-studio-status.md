@@ -577,6 +577,237 @@ below the first override only their picture. Its tests pass unchanged.
 - `e2e/phase7.acceptance.mjs` (9/9).
 - `npm run game:acceptance`: all eight browser tests pass (15, 6, 9, 12, 10, 10, 13 and 9 checks).
 
+## Done: Phase 9, machine learning, in Game Studio (2026-10-01)
+
+**A game is now a Gymnasium-style environment** (`ml/env.ts`):
+```text
+env = await GameEnv.create(project, spec, loadScripts)
+reset(seed) → observation
+step(action) → observation, reward, terminated, truncated
+```
+- It runs the game's own scripts on the real engine, headless, as the task checks do.
+- **The agent sees the game's state,** not its pixels. The spec is plain JSON, so Python can send it later:
+  - observation: node paths such as `Ball:position.x`, with an optional `minus` for a difference, and a scale;
+  - actions: sets of input actions held for a step, so the agent uses the player's controls;
+  - reward: how much chosen values change;
+  - when an episode ends.
+- **Repeatable:** a seed fixes the game's own randomness (`Math.random`, while the game runs).
+
+**An agent learns Breakout from its state** (`ml/cem.ts`, `ml/breakout.ts`):
+- the method is the cross-entropy method on a linear policy, with elitism;
+- random play averages −5; after 10 generations (about 15 seconds) the agent averages 37, keeping the ball in play
+  and breaking 37 bricks in 80 seconds of play;
+- its weights read as "move towards the ball".
+
+**In the editor:** Run › Train an agent… holds the spec (the Breakout example comes with one), Train in a worker,
+the learning curve against random play, a table of what it learned, and **Watch it play**, which runs the real
+game in the runtime with the agent at the controls (the runtime's new `agent` message).
+
+**What we learned building it** (worth a lesson):
+- **The first reward taught nothing.** Each launch breaks a few bricks for free, so losing a ball cost almost
+  nothing, and random play scored as well as anything. Losing a ball now costs 3.
+- **The first features gave nothing to choose between.** With the ball's x and the paddle's x as separate
+  numbers, almost every random weighting behaved alike. Observing the difference (`minus`) made "move towards
+  the ball" easy to find.
+
+**Tested:**
+- `ml/env.test.ts` (5):
+  - reset and step;
+  - actions move the paddle and launch the ball;
+  - the rewards add up to the score, less 3 a ball;
+  - the same seed gives the same episode;
+  - spec mistakes are refused before play;
+  - training: random below 0, trained 30 or more, and the policy moves towards the ball.
+- `e2e/ml.acceptance.mjs` (6/6), in `npm run game:acceptance`:
+  - the dialog opens with Breakout's spec;
+  - training reports each generation;
+  - the trained score is 37 against random's −5.3;
+  - the weights table;
+  - Watch it play moves the paddle with no key pressed.
+
+**Next for Phase 9: the ML Lab.** The same environment, used from the ML Lab's Python, so a lesson can write the
+learning algorithm itself (policy gradients, Q-learning on a grid game). That needs the engine in the Python
+worker, or a bridge to it. It is a design decision about the ML Lab's runtime, so it is left for the user.
+
+## Done: Phase 8, export (2026-10-01)
+
+**Project › Export game for a website (.zip)…** gives `index.html`, `game.js` (the runtime), `project.json` and the
+images the game uses. Every path is relative, so it runs from any static host, a GitHub Pages subpath included.
+
+**Project › Export game as one file (.html)…** puts the runtime, the project and its images in one page, which
+opens by double-click, even from disk.
+- **Both forms run the very file the editor runs** (`runtime/dist/game-runtime.js`). With no editor around it, the
+  runtime loads its own project: from the page (`window.GAME_DATA`), or from `project.json` beside it. If it cannot
+  start, it says why on the page.
+- **Only the images it needs:** those its scenes use, its tilesets' pictures, and any a script names, such as
+  Tetris's `pieces.js` (`usedAssets`).
+
+**Project › Export project (.zip)…** and **Import project (.zip)…** (also in the Projects dialog) move a project
+between browsers:
+- inside the .zip: `project.json`, each scene as its own file, each script as plain JavaScript, and the images;
+- importing migrates and checks it, as opening a saved project does, and says exactly what is missing or wrong;
+- a .zip whose files sit inside one folder, as file managers make them, also works.
+
+**Tested:**
+- `core/archive.test.ts` (11):
+  - every example goes out and comes back exactly;
+  - a folder-wrapped .zip is read;
+  - five kinds of broken .zip are refused with their reason;
+  - the images a game needs, including Tetris's;
+  - the website .zip's files and relative paths;
+  - the one-file game's contents and its escaped `</script`;
+  - no main scene, no export.
+- `e2e/export.acceptance.mjs` (5/5), added to `npm run game:acceptance`:
+  - Breakout, exported for a website, is unzipped under `/my-games/breakout/` on a plain static file server and
+    plays there with no editor (Space launches the ball);
+  - the one-file export plays from `file://`;
+  - Export project, then Import project, gives back the identical project with every image.
+
+## Done: the course's first lessons, 1.1 to 1.4 (2026-10-01)
+
+**"Learn to Program by Making Games"** (working title) is in the catalogue (`src/courses/making-games/`), with
+chapter 1's four lessons. Each teaches one idea, sends the learner to Game Studio with a Try it card, and explains
+the maths under "Under the hood (optional)". The details and the decisions left to the user are in the course plan,
+under "Lessons as built". They are the trial the plan asked for: the user reviews them before more are written.
+- **Why a card:** lesson prose cannot hold links or pictures, so the Try it card is a registered visualization
+  (`GameStudioTask`). It fits the lesson schema as it is.
+- **Checks:**
+  - `validate-lesson-schema` and `check_latex` pass for all four;
+  - `npm run facts` regenerated the catalogue (44 courses, 1236 lessons);
+  - `catalog:check` passes;
+  - the browser test does the whole loop.
+
+## Done: Sprite Forge and Tile Mapper connected to Game Studio (2026-10-01)
+
+You can now make or edit art in either lab and send it straight back, with no files. What is where is in the
+course plan, under "Sprite Forge and Tile Mapper connected", "As built". How it works is change 21 in the
+architecture record.
+- **Sprites:**
+  - **New sprite…** opens Sprite Forge with a new 32 × 32 sprite.
+  - **Send to Game Studio** adds it: one image per frame. The first time it is also put in the middle of the
+    scene, as a Sprite2D or as an AnimatedSprite2D with an animation per tag.
+  - **✎ (Edit in Sprite Forge)** beside a picture opens it in Sprite Forge. A picture made there opens as the
+    original, frames and all.
+  - Sending it back updates that picture everywhere it is used, and Ctrl+Z puts the old one back.
+- **Maps:**
+  - **New map…** opens Tile Mapper. Sending the map adds a Node2D of TileMapLayers to the scene; a collision
+    layer becomes a hidden layer whose tile is solid.
+  - **Edit in Tile Mapper** opens a map's layers there. Sending it back repaints the same nodes by layer name,
+    so their scripts and connections stay. The tileset picture is matched by its bytes, so it is not added twice.
+- **Fixed, in the desktop:** a window opened or focused while another was maximized opened behind it. A
+  maximized window always sat at z-index 1800, so Game Studio maximized would hide Sprite Forge. Windows focused
+  after a maximized one now go above it (`src/components/desktop/DesktopProvider.jsx`).
+- **Tested:**
+  - `core/artMaps.test.ts`: new map, re-send (same ids, dropped layer, undo), the round trip giving identical
+    cells, cells left of the origin, the refusals, and `replaceAsset` with undo.
+  - `tile-mapper/gameStudio.test.js`.
+  - `e2e/artlabs.acceptance.mjs` (9/9), added to `npm run game:acceptance`. It does the whole round trip through
+    the real windows: draw, send, edit, send, undo; choose a starter tileset, paint, send, edit, paint, send.
+  - Unit tests for the three labs: 282 pass.
+
+- **Tile Mapper can now use the starter art:** its tileset dialog has a Starter art tab with Kenney's four tile
+  sheets (Tiny Dungeon, Pixel Platformer and its backgrounds, Top-down Shooter). Their tile sizes are known, so
+  there is nothing to set. A PNG chosen from disk is now named after its file, not "Imported tileset".
+
+**Up to Game Studio's standard** (the user's ask, 2026-09-30: the same architecture, commands with undo, GUI →
+code, tests and examples). Done on 2026-10-01:
+- **GUI → code in both labs.** Every edit is a command that is also a line of code, as in Game Studio:
+  - Tile Mapper: `map.paint("Ground", [[x, y, tile]])`, `map.addLayer('collision')` and so on (`mapApi.js`);
+  - Sprite Forge: `sprite.paint(0, [[x, y, colour]])`, `sprite.flipH('all')`, `sprite.color(1, '#ff004d')`
+    and so on (`spriteApi.js`).
+- **The Code panel** (`</> Code`, in each lab's header; `src/components/ui/CodeLogPanel.jsx`):
+  - it lists the lines;
+  - **Copy all** copies them;
+  - code typed in its box runs as one edit, one undo step.
+- **Undo and redo keep the log in step** (`src/utils/useCommandHistory.js`, shared by both labs). The log always
+  rebuilds the document on screen from the one the session started with. The hook now keeps the document in a
+  ref, so two edits in one event cannot overwrite each other.
+- **Tile Mapper examples, made by code** (Examples…):
+  - a dungeon room with walls, a doorway and collision;
+  - a maze generated by a recursive backtracker, written in the map API itself.
+  Opening one shows its code in the Code panel.
+- **Tested:**
+  - replay tests in both labs: a session of every kind of edit, and its log run on the start, give the same
+    document;
+  - undo and redo with the log, through the real hook;
+  - the code runners' error messages;
+  - the examples: the room's doorway and walls, and the maze connected with no loops;
+  - in the browser: `tile-mapper/e2e/tilemapper.acceptance.mjs` (8/8) and
+    `sprite-forge/e2e/spriteforge.acceptance.mjs` (8/8), both in `npm run game:acceptance`.
+
+- **Sprite Forge examples, made by code** (Examples…):
+  - a heart drawn from its implicit curve, (x² + y² − 1)³ − x²y³ ≤ 0, with an outline;
+  - a four-frame spinning coin whose width follows |cos θ|, tagged "spin".
+  They are tested for their shape, symmetry and frame widths, and in the Sprite Forge browser test (now 8/8).
+
+Still open: a look that matches Game Studio's (both labs keep the app's light and dark themes).
+
+## Done: the Tetris tutorial (2026-10-01)
+
+**Help › Tutorials › Tetris:** nine tasks and 26 steps, from an empty Board to a whole game (`tasks/tetris.ts`):
+1. the board;
+2. a piece;
+3. moving, and walls;
+4. falling and landing;
+5. turning, with wall kicks;
+6. clearing lines;
+7. score and a HUD;
+8. a shuffled bag of seven, and game over;
+9. hard drop, levels and the Next label.
+
+The task list and how it differs from the plan are in the course plan, under "Tetris as built". That makes
+**32 tasks in 7 tutorials**.
+
+- **One script, built step by step:** every step adds one feature to `scripts/board.js`, in a fixed order, so
+  each step has its own script. The tests check each one passes its step from that task's start. The pictures
+  script types each one into the editor and runs the game, so the picture shows what that step does.
+- **The checks call the learner's own methods** on the running game: `canPlace` against each wall, the floor
+  and a full cell; `rotate` against the wall; `clearLines` on a board with two full rows. They give an exact
+  "not yet" message for the usual mistakes. Each of these was tried and gave the right message:
+  - `isPressed` instead of `isJustPressed`: "Holding ← took the piece from column 4 to 1";
+  - new top rows that are one shared array;
+  - `rotated()` changing the cells it was given;
+  - no wall kicks;
+  - sprites placed by their corner, not their centre;
+  - a bag that is never shuffled;
+  - a timer that is never reset.
+- **Art:** Kenney Puzzle Pack 2 squares in orange, pink, grey and black are added to the starter set (black is an
+  empty cell), so each of the seven pieces has its own colour (`starter/CREDITS.md`).
+- **Pictures:** `npm run game:shots` (or `npm run game:shots -- tetris` for just these) now makes 88 pictures,
+  3.1 MB. All 26 Tetris steps were done through the real editor, ticked, and pictured.
+
+**Fixed:** the task checker loaded the learner's scripts before putting the node classes (Node2D…) where scripts
+can see them, so the first script loaded in a fresh checker failed with "Node2D is not defined". The tests passed
+only because an earlier task had left them there. The classes now go first.
+
+**Tested:** `npx vitest run src/labs/game-studio` passes 201 tests; `tsc` is clean for Game Studio.
+
+## Done: Scenes tutorials, and pictures for every step (2026-10-01)
+
+**The Scenes tutorial** (5 tasks): one coin scene used three times; a gun that fires (instantiate); bullets that
+hit only enemies (groups); a health display wired with a signal (no code joins them); a title screen
+(scene.change). That makes **23 tasks in 6 tutorials**.
+
+**A new scene's root can be any node type:** Files › scenes/ › + now asks for the root (Node2D unless you pick
+another), as Godot does. A coin scene's root is an Area2D. It starts at Node2D each time; it used to remember
+the last choice and quietly make the next scene an Area2D.
+
+**Pictures for every step**, made by `npm run game:shots` (`e2e/tutorials.shots.mjs`):
+- It plays every tutorial in a browser, doing each step through the editor as the step says, waits for the tick,
+  outlines the control used, and saves `tasks/shots/<task>-<step>.jpg`: 62 pictures, 2.7 MB.
+- The task panel shows the picture under the step you are on; click to enlarge.
+- **It is also a test:** every one of the 62 steps can be done as written, and ticks.
+
+**What it found:**
+- The task panel hid while the game ran, so "run the game" could not be seen ticking. It now stays.
+- "Walls that stop you" never said where to put Player. New nodes start at (0, 0), so Player walked above the
+  wall. The step now says 300, 270, and the check explains when the wall is not in Player's way.
+- The new-scene root choice remembered the last one (above).
+
+**Fixed for the browser tests:** the app's "What's new" popup now appears for returning visitors, and test
+browsers count as returning, because the welcome tour is marked seen. The harness now marks the latest What's
+new as read too, using the app's own data (`src/data/whatsNew.js`).
+
 ## Fixed: switching projects could silently do nothing (2026-10-01)
 
 The user found that creating a project, opening another, or starting a tutorial left the current project open.
@@ -663,29 +894,17 @@ closes; it came and went in Phase 3's browser test. Only that exact error is now
 
 ## Next
 
-1. **The course, "Making Games with Game Studio"** (the user asked for it, 2026-10-01): lessons that send the
-   learner into Game Studio to try each idea and back for the next. **"Try it" is done,** with 18 tutorials
-   (below). Next: more tutorials (Scenes, then Game logic and the projects), then lessons 1.1–1.4 as a trial. The plan is in
-   [game-studio-course-plan.md](game-studio-course-plan.md).
-2. **Phase 8, export:** the project as a zip, and the game exported to run on its own (Pages-safe).
-3. **Phase 9, machine learning (the user asked for it at the end of the plan).** A Gymnasium-style environment
-   around any Game Studio game:
-   - `reset()` and `step(action)`, returning what the agent sees, its reward, and whether the game has ended;
-   - the game runs headless, faster than real time, as the example tests already do;
-   - the author chooses the observation (game state, such as ball and paddle positions), the actions (the input
-     map) and the reward.
-   The same environment would be usable from Python in the ML Lab (Pyodide, beside Lab 37 on reinforcement
-   learning), with a way to watch a trained agent play in the editor. It learns from game state, not screen
-   pixels: learning from pixels is too slow in a browser. About 2–3 sessions.
-4. **After Game Studio is finished: bring Tile Mapper up to Game Studio's standard (the user asked for this,
-   2026-09-30).** `src/labs/tile-mapper` should get the same treatment:
-   - a real architecture with an architecture doc;
-   - commands with undo, and GUI → code;
-   - "no fake controls" tests and browser acceptance tests;
-   - examples built only from real features;
-   - the same look, and an API reference if it has scripting.
-   It should also work with Game Studio's tilemaps (Phase 6). Sprite Lab (`src/labs/sprite-forge`) is to be
-   integrated the same way.
+In this order (proposed to the user, 2026-10-01):
+
+1. ~~Scenes tutorials~~ and ~~pictures for every step~~: done (above).
+2. ~~Tetris, step by step~~: done (above). The optional maths waits for the course lessons.
+3. ~~Sprite Forge and Tile Mapper connected~~ and ~~brought to Game Studio's standard~~: done (above): round-trip
+   editing, GUI → code with a Code panel, examples in both, and browser tests. Still open: the look.
+4. **The course lessons, "Learn to Program by Making Games":** lessons 1.1–1.4 are written (above), for the user to
+   review before the rest. The plan is in [game-studio-course-plan.md](game-studio-course-plan.md).
+5. ~~Phase 8, export~~ and ~~Phase 9 in Game Studio~~: done (above). Still open: **Phase 9 in the ML Lab**, using
+   the same environment from the ML Lab's Python. It needs a decision on the ML Lab's runtime first (see Phase 9
+   above).
 
 ## Phases
 
@@ -699,8 +918,8 @@ closes; it came and went in Phase 3's browser test. Only that exact error is now
 | 5 | Animation: sprite frames, property tracks, timeline | Platformer animation | Done: AnimatedSprite2D, AnimationPlayer and the Animation panel; Coin Run uses both |
 | 6 | Tilemaps: tilesets, painting, tile collision, Tiled import | Maze chase | Done: tilesets, TileMapLayer, the TileMap panel, Tiled import, Maze Chase |
 | 7 | Scene instancing, groups, signals, resources | Breakout, puzzle, shooter | Done: instances with overrides, groups, signals, instantiate and change; Breakout (instanced bricks) and Zombie Arena |
-| 8 | Project zip, game export, Pages-safe output | Export test: open the exported game on its own | |
-| 9 | Machine learning: a Gymnasium-style environment for any game, used from the ML Lab | Train an agent to play Breakout from game state | |
+| 8 | Project zip, game export, Pages-safe output | Export test: open the exported game on its own | Done: website .zip, one-file .html, project .zip export and import (export test) |
+| 9 | Machine learning: a Gymnasium-style environment for any game, used from the ML Lab | Train an agent to play Breakout from game state | In Game Studio: the environment, CEM training, Watch it play (ML test). Open: use from the ML Lab's Python |
 | After | Tile Mapper (and Sprite Lab) brought up to Game Studio's standard | Their own acceptance tests, and use from Game Studio | |
 
 ## Size

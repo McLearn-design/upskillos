@@ -3,7 +3,8 @@
 
 import React, { useRef, useState } from 'react';
 import type { Store } from './store';
-import { Btn, C, useStore } from './kit';
+import { Btn, C, selectStyle, useStore } from './kit';
+import { nodeTypes } from '../core/registry';
 import { ASSET_DRAG } from './Viewport';
 
 function Group({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
@@ -25,32 +26,41 @@ export function Files({ store }: { store: Store }) {
   const p = store.project;
   const file = useRef<HTMLInputElement>(null);
   const [naming, setNaming] = useState<'scene' | 'script' | null>(null);
+  const [rootType, setRootType] = useState('Node2D');
   if (!p) return null;
 
   const create = (kind: 'scene' | 'script', raw: string) => {
     setNaming(null);
     const stem = raw.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
     if (!stem) return;
-    if (kind === 'scene') store.createScene(`scenes/${stem}.scene`);
+    if (kind === 'scene') store.createScene(`scenes/${stem}.scene`, rootType);
     else { store.act((d) => d.writeScript(`scripts/${stem}.js`, `// ${stem}.js\n`, `New script scripts/${stem}.js`)); store.openScript(`scripts/${stem}.js`); }
   };
+  // A new scene's root can be any node type, as in Godot: a coin scene's root is an Area2D, a player's a CharacterBody2D.
   const namer = (kind: 'scene' | 'script') => naming === kind && (
-    <input autoFocus data-testid={`new-${kind}-name`} placeholder={kind === 'scene' ? 'level_1' : 'utils'}
-      onBlur={(e) => create(kind, e.target.value)}
-      onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setNaming(null); }}
-      style={{ margin: '2px 8px 4px 14px', width: 'calc(100% - 22px)', background: C.bg, color: C.text, border: `1px solid ${C.accent}`, fontSize: 12, padding: '1px 4px' }} />
+    <div style={{ display: 'flex', gap: 4, margin: '2px 8px 4px 14px' }}
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) create(kind, (e.currentTarget.querySelector('input') as HTMLInputElement).value); }}>
+      {kind === 'scene' && (
+        <select data-testid="new-scene-root" value={rootType} onChange={(e) => setRootType(e.target.value)} title="The scene's root node" style={{ ...selectStyle, width: 96 }}>
+          {nodeTypes().filter((t) => t.addable).map((t) => <option key={t.type} value={t.type}>{t.type}</option>)}
+        </select>
+      )}
+      <input autoFocus data-testid={`new-${kind}-name`} placeholder={kind === 'scene' ? 'level_1' : 'utils'}
+        onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') create(kind, (e.target as HTMLInputElement).value); if (e.key === 'Escape') setNaming(null); }}
+        style={{ flex: 1, minWidth: 0, background: C.bg, color: C.text, border: `1px solid ${C.accent}`, fontSize: 12, padding: '1px 4px' }} />
+    </div>
   );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
       <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 8 }}>
-        <Group title="scenes/" action={<Btn small testid="new-scene" onClick={() => setNaming('scene')} title="New scene">+</Btn>}>
+        <Group title="scenes/" action={<Btn small testid="new-scene" onClick={() => { setRootType('Node2D'); setNaming('scene'); }} title="New scene">+</Btn>}>
           {p.scenes.map((s) => (
             <div key={s.id} data-testid={`file-${s.path}`} onClick={() => store.openScene(s.id)} style={item(store.sceneId === s.id && store.tab.kind === 'scene')}>
               <span>🎬</span><span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.path.replace(/^scenes\//, '')}</span>
               {p.settings.mainScene === s.path
                 ? <span title="The main scene: Run Project starts here" style={{ color: C.warn }}>★</span>
-                : <span title="Make this the main scene" onClick={(e) => { e.stopPropagation(); store.act((d) => d.setMainScene(s.path)); }} style={{ color: C.faint }}>☆</span>}
+                : <span data-testid={`main-scene-${s.path}`} title="Make this the main scene" onClick={(e) => { e.stopPropagation(); store.act((d) => d.setMainScene(s.path)); }} style={{ color: C.faint }}>☆</span>}
               {store.sceneId && store.sceneId !== s.id && (
                 <span data-testid={`instance-${s.path}`} title={`Put an instance of ${s.path} into the scene you are editing (under the selected node). Changing ${s.path} later changes every instance.`}
                   onClick={(e) => { e.stopPropagation(); store.addInstance(s.path); }} style={{ color: C.accent, cursor: 'pointer', marginLeft: 4 }}>⧉</span>
@@ -76,7 +86,10 @@ export function Files({ store }: { store: Store }) {
             ))}
           </Group>
         )}
-        <Group title="assets/" action={<Btn small testid="import-image" onClick={() => file.current?.click()} title="Import images (PNG, JPEG, WebP, GIF), or a Tiled map (.tmx or .tmj) with its tileset files (.tsx, .tsj): choose them together">Import…</Btn>}>
+        <Group title="assets/" action={<>
+          <Btn small testid="new-sprite" onClick={() => store.newSprite()} title="Draw a new sprite in Sprite Forge. Send it back from there (Send to Game Studio) and it is added here and put in the scene.">New sprite…</Btn>
+          <Btn small testid="import-image" onClick={() => file.current?.click()} title="Import images (PNG, JPEG, WebP, GIF), or a Tiled map (.tmx or .tmj) with its tileset files (.tsx, .tsj): choose them together">Import…</Btn>
+        </>}>
           <input ref={file} data-testid="import-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,.tmx,.tmj,.tsx,.tsj" multiple style={{ display: 'none' }}
             onChange={async (e) => { await store.importFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
           {p.assets.map((a) => {
@@ -85,7 +98,12 @@ export function Files({ store }: { store: Store }) {
               <div key={a.id} data-testid={`asset-${a.path}`} draggable onDragStart={(e) => { e.dataTransfer.setData(ASSET_DRAG, a.path); e.dataTransfer.effectAllowed = 'copy'; }}
                 title={`${a.path} · ${a.width} × ${a.height}. Drag into the viewport to make a Sprite2D.`} style={item(false)}>
                 {img ? <img src={img.src} alt="" style={{ width: 18, height: 18, objectFit: 'contain', imageRendering: 'pixelated' }} /> : <span>🖼</span>}
-                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.path.replace(/^assets\//, '')}</span>
+                <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.path.replace(/^assets\//, '')}</span>
+                {a.width <= 128 && a.height <= 128 && (
+                  <button type="button" data-testid={`edit-sprite-${a.path}`} onClick={(e) => { e.stopPropagation(); store.editInSpriteForge(a.path); }}
+                    title={`Edit in Sprite Forge. Send it back from there and this picture is updated everywhere it is used (Ctrl+Z puts the old one back).${a.origin?.startsWith('sprite-forge:') ? ' It was made there, so the original opens, frames and all.' : ''}`}
+                    style={{ background: 'none', border: 'none', color: C.dim, cursor: 'pointer', padding: '0 2px', fontSize: 12 }}>✎</button>
+                )}
               </div>
             );
           })}

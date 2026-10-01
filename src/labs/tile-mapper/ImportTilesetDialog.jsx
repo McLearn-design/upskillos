@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { buildTileset, fileToDataUrl, guessTileSize, listSprites, loadImage, sliceInfo, tilesetFromSprite } from './tileset.js'
+import { STARTER_SHEETS, starterTileset } from './starterSheets.js'
 
-// Choosing a tileset. Two routes in: a sprite you already made next door, or
-// any PNG. The sprite route needs no configuration at all — the frame size is
-// the tile size, by construction — which is the point of having both labs.
+// Choosing a tileset. Three routes in: a sprite you already made next door, a
+// tile sheet from the starter art Game Studio bundles (Kenney, CC0), or any PNG.
+// The first two need no configuration at all: a sprite's frame size is the tile
+// size by construction, and the starter sheets' grids are known.
+
 
 export default function ImportTilesetDialog({ doc, onApply, onClose }) {
   const [tab, setTab] = useState('sprite')
   const [sprites, setSprites] = useState(null)
   const [img, setImg] = useState(null)
   const [dataUrl, setDataUrl] = useState('')
+  const [fileName, setFileName] = useState('')
   const [tileW, setTileW] = useState(doc.tileW)
   const [tileH, setTileH] = useState(doc.tileH)
   const [margin, setMargin] = useState(0)
@@ -30,6 +34,7 @@ export default function ImportTilesetDialog({ doc, onApply, onClose }) {
       const url = await fileToDataUrl(file)
       const loaded = await loadImage(url)
       setDataUrl(url)
+      setFileName(file.name || '')
       setImg(loaded)
       const guess = guessTileSize(loaded.naturalWidth, loaded.naturalHeight)
       setTileW(guess)
@@ -95,6 +100,18 @@ export default function ImportTilesetDialog({ doc, onApply, onClose }) {
     }
   }
 
+  const applyStarter = async (sheet) => {
+    setBusy(true)
+    setError('')
+    try {
+      onApply(await starterTileset(sheet))
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const applyFile = () => {
     if (!img || !info?.count) return
     onApply(
@@ -106,7 +123,7 @@ export default function ImportTilesetDialog({ doc, onApply, onClose }) {
         tileH,
         margin,
         spacing,
-        name: 'Imported tileset',
+        name: fileName || 'Imported tileset',
       }),
     )
   }
@@ -133,11 +150,13 @@ export default function ImportTilesetDialog({ doc, onApply, onClose }) {
         <div className="flex gap-1 border-b border-slate-200 px-4 pt-2 dark:border-slate-800">
           {[
             ['sprite', 'From Sprite Forge'],
+            ['starter', 'Starter art'],
             ['file', 'From a PNG'],
           ].map(([id, label]) => (
             <button
               key={id}
               type="button"
+              data-testid={`tileset-tab-${id}`}
               onClick={() => setTab(id)}
               className={`rounded-t px-3 py-1.5 text-xs ${
                 tab === id
@@ -179,6 +198,36 @@ export default function ImportTilesetDialog({ doc, onApply, onClose }) {
                       <span className="block font-mono text-[10px] text-slate-400">
                         {s.width}×{s.height} · {s.frameCount} frame{s.frameCount === 1 ? '' : 's'} →{' '}
                         {s.frameCount} tile{s.frameCount === 1 ? '' : 's'}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {tab === 'starter' && (
+            <>
+              <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                Kenney&apos;s tile sheets (CC0), the ones Game Studio&apos;s starter art has. Their tile sizes are known, so
+                there is nothing to set; a map sent to Game Studio uses the same picture.
+              </p>
+              <ul className="flex flex-col gap-1">
+                {STARTER_SHEETS.map((sheet) => (
+                  <li key={sheet.file}>
+                    <button
+                      type="button"
+                      data-testid={`starter-sheet-${sheet.file}`}
+                      disabled={busy}
+                      onClick={() => applyStarter(sheet)}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800"
+                    >
+                      <img src={sheet.url} alt="" className="h-10 w-16 shrink-0 object-contain" style={{ imageRendering: 'pixelated' }} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-medium">{sheet.name}</span>
+                        <span className="block font-mono text-[10px] text-slate-400">
+                          {sheet.tile}×{sheet.tile} tiles · {sheet.about}
+                        </span>
                       </span>
                     </button>
                   </li>

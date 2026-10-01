@@ -14,6 +14,13 @@ const failed = await withGameStudio(5186, async ({ page, t, check, answer }) => 
   const done = (i) => page.locator(`[data-testid="task-step-${i}"][data-done="yes"]`).waitFor({ timeout: 8000 }).then(() => true, () => false);
   check('A lesson’s link opens the task, with its steps', (await t('task-step-0').getAttribute('data-done')) === 'no' && (await t('task-panel').innerText()).includes('Put a character on the screen'));
 
+  // The step you are on shows a picture of it done in the editor; it enlarges on a click.
+  const pic = await t('task-picture').isVisible();
+  await t('task-picture').click();
+  const enlarged = await t('task-picture-big').isVisible();
+  await t('task-picture-big').click();
+  check('The step shows a picture of it done in the editor, which enlarges', pic && enlarged);
+
   // Step by step in the editor, each ticked when Game Studio sees it.
   await t('add-node').selectOption('Sprite2D');
   const s0 = await done(0);
@@ -77,6 +84,7 @@ const failed = await withGameStudio(5186, async ({ page, t, check, answer }) => 
   await t('tree-Main').click();
   await t('add-node').selectOption('CharacterBody2D');
   await t('tree-CharacterBody2D').dblclick(); await t('rename-input').fill('Player'); await t('rename-input').press('Enter');
+  await t('tree-Player').click(); await t('prop-position-x').fill('300'); await t('prop-position-x').press('Enter'); await t('prop-position-y').fill('270'); await t('prop-position-y').press('Enter');
   const p0 = await done(0);
   await t('tree-Player').click(); await t('add-node').selectOption('Sprite2D');
   await t('tree-Sprite2D').click(); await t('prop-texture').selectOption(HERO);

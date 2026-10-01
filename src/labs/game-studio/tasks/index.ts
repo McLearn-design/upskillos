@@ -4,9 +4,11 @@ import { FIRST_STEPS } from './firstSteps';
 import { PHYSICS } from './physics';
 import { CAMERA_HUD } from './cameraHud';
 import { ANIMATION, TILEMAPS } from './animationTiles';
+import { SCENES } from './scenes';
+import { TETRIS } from './tetris';
 
 export type { GameTask };
-export const TASKS: GameTask[] = [...FIRST_STEPS, ...PHYSICS, ...CAMERA_HUD, ...ANIMATION, ...TILEMAPS];
+export const TASKS: GameTask[] = [...FIRST_STEPS, ...PHYSICS, ...CAMERA_HUD, ...ANIMATION, ...TILEMAPS, ...SCENES, ...TETRIS];
 
 export function taskById(id: string): GameTask | undefined { return TASKS.find((t) => t.id === id); }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   clampDim,
   createDoc,
@@ -8,6 +8,7 @@ import {
   shiftCells,
 } from './tilemapDoc.js'
 import { saveMap } from './db.js'
+import { useCommandHistory } from '../../utils/useCommandHistory.js'
 
 const HISTORY_LIMIT = 60
 
@@ -16,70 +17,12 @@ const HISTORY_LIMIT = 60
 // reference. A 40x25 layer is 2KB, so even sixty steps of history on a
 // multi-layer map stays comfortably small, and layer reordering, tileset
 // swaps and resizes all become the same trivial case.
+//
+// Each edit is also a line of code (mapApi.js): `act(command)` makes the edit and logs its code, and undo
+// and redo take the line off and put it back, so the log always says how the map on screen was made from
+// the one the session started with.
 export function useTilemapDoc(initial) {
-  const [doc, setDoc] = useState(() => initial ?? createDoc())
-  const past = useRef([])
-  const future = useRef([])
-  const [depths, setDepths] = useState({ canUndo: false, canRedo: false })
-
-  const syncDepths = useCallback(() => {
-    setDepths({ canUndo: past.current.length > 0, canRedo: future.current.length > 0 })
-  }, [])
-
-  const commit = useCallback(
-    (next) => {
-      setDoc((prev) => {
-        const resolved = typeof next === 'function' ? next(prev) : next
-        if (!resolved || resolved === prev) return prev
-        past.current = [...past.current.slice(-(HISTORY_LIMIT - 1)), prev]
-        future.current = []
-        return resolved
-      })
-      syncDepths()
-    },
-    [syncDepths],
-  )
-
-  const apply = useCallback((next) => {
-    setDoc((prev) => {
-      const resolved = typeof next === 'function' ? next(prev) : next
-      return resolved && resolved !== prev ? resolved : prev
-    })
-  }, [])
-
-  const undo = useCallback(() => {
-    setDoc((prev) => {
-      if (!past.current.length) return prev
-      const target = past.current[past.current.length - 1]
-      past.current = past.current.slice(0, -1)
-      future.current = [...future.current, prev]
-      return target
-    })
-    syncDepths()
-  }, [syncDepths])
-
-  const redo = useCallback(() => {
-    setDoc((prev) => {
-      if (!future.current.length) return prev
-      const target = future.current[future.current.length - 1]
-      future.current = future.current.slice(0, -1)
-      past.current = [...past.current, prev]
-      return target
-    })
-    syncDepths()
-  }, [syncDepths])
-
-  const replaceDoc = useCallback(
-    (next) => {
-      past.current = []
-      future.current = []
-      setDoc(next)
-      syncDepths()
-    },
-    [syncDepths],
-  )
-
-  return { doc, commit, apply, undo, redo, replaceDoc, ...depths }
+  return useCommandHistory(() => initial ?? createDoc(), HISTORY_LIMIT)
 }
 
 // --- document edits ------------------------------------------------------

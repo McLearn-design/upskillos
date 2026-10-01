@@ -280,8 +280,15 @@ export class Doc {
     this.run(label, scene.path, `scene.get(${lit(this.pathIn(sceneId, id))}).paint(${lit(edits)})`, () => { (nodeHandleFor(this.project, this.scene(sceneId), id) as unknown as { paint: (e: unknown) => void }).paint(edits); });
   }
 
-  importAsset(path: string, info: { mime: string; width: number; height: number }): string {
-    return this.run(`Import ${path}`, null, `project.importAsset(${lit(path)}, ${lit({ mime: info.mime, width: info.width, height: info.height })})`, () => projectApi(this.project).importAsset(path, info));
+  importAsset(path: string, info: { mime: string; width: number; height: number; origin?: string }): string {
+    const i = { mime: info.mime, width: info.width, height: info.height, ...(info.origin ? { origin: info.origin } : {}) };
+    return this.run(`Import ${path}`, null, `project.importAsset(${lit(path)}, ${lit(i)})`, () => projectApi(this.project).importAsset(path, i));
+  }
+
+  /** New bytes for an image at the same path (see ProjectApi.replaceAsset). Returns the new id. */
+  replaceAsset(path: string, info: { mime: string; width: number; height: number; origin?: string }, label = `Update ${path}`): string {
+    const i = { mime: info.mime, width: info.width, height: info.height, ...(info.origin ? { origin: info.origin } : {}) };
+    return this.run(label, null, `project.replaceAsset(${lit(path)}, ${lit(i)})`, () => projectApi(this.project).replaceAsset(path, i));
   }
 
   setMainScene(path: string): void {

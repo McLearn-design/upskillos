@@ -402,6 +402,8 @@ export function normalizeDoc(raw) {
     tileset: raw.tileset ?? null,
     layers: layers.length ? layers : [createLayer(cols, rows, 'Ground')],
     terrains: Array.isArray(raw.terrains) ? raw.terrains : [],
+    // Where in Game Studio this map goes back to, when it came from there (see gameStudio.js).
+    link: raw.link && typeof raw.link === 'object' ? raw.link : null,
     updatedAt: raw.updatedAt ?? Date.now(),
   }
 }

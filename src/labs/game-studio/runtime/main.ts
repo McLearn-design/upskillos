@@ -16,6 +16,8 @@ import { propsOf } from '../core/registry';
 import { CHANNEL, type FromRuntime, type LogLevel, type ToRuntime } from './protocol';
 import { loadScripts, locate, type LoadedScripts } from './scripts';
 import { PhaserRenderer } from './phaserRenderer';
+import { observeGame, pressAction, type EnvSpec } from '../ml/env';
+import { act, type LinearPolicy } from '../ml/cem';
 
 const send = (m: FromRuntime) => parent.postMessage({ channel: CHANNEL, ...m }, '*');
 
@@ -81,7 +83,7 @@ async function start(msg: Extract<ToRuntime, { type: 'load' }>): Promise<void> {
       send({ type: 'running', scene: scene!.path });
     }
     update(_time: number, delta: number) {
-      if (game && !paused) game.step(Math.min(delta / 1000, 0.25));
+      if (game && !paused) { if (agent) drive(game); game.step(Math.min(delta / 1000, 0.25)); }
     }
   };
   phaser = new Phaser.Game({
@@ -89,6 +91,18 @@ async function start(msg: Extract<ToRuntime, { type: 'load' }>): Promise<void> {
     scene: scenes, banner: false, input: { keyboard: false }, pixelArt: s.pixelArt !== false, roundPixels: s.pixelArt !== false,
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   });
+}
+
+// ── a trained agent playing (ml/) ─────────────────────────────────────────
+// Every frameSkip frames it reads the same numbers it was trained on and holds the keys of its action,
+// as GameEnv.step does in training.
+let agent: { spec: EnvSpec; policy: LinearPolicy; frame: number; held: string[] } | null = null;
+function drive(g: Game): void {
+  const a = agent!;
+  if (a.frame++ % (a.spec.frameSkip ?? 4) !== 0) return;
+  const action = a.spec.actions[act(a.policy, observeGame(g, a.spec))] ?? [];
+  pressAction(g, lastLoad!.project.input, a.held, action);
+  a.held = action;
 }
 
 // Keys go to the engine's input map. Phaser's own keyboard is off: scripts use actions.
@@ -115,6 +129,36 @@ addEventListener('message', (ev: MessageEvent) => {
   else if (m.type === 'pause' || m.type === 'resume') { paused = m.type === 'pause'; game?.input.releaseAll(); send({ type: 'paused', paused }); }
   else if (m.type === 'restart' && lastLoad) void start(lastLoad);
   else if (m.type === 'inspect') send({ type: 'state', path: m.path, props: inspect(m.path) });
+  else if (m.type === 'agent') { if (agent && game) pressAction(game, lastLoad!.project.input, agent.held, []); agent = m.policy ? { spec: m.spec, policy: m.policy, frame: 0, held: [] } : null; }
 });
 
 send({ type: 'ready' });
+
+// ── an exported game (ADR 10) ─────────────────────────────────────────────
+// With no editor around it, the game loads its own project: from the page itself (the one-file export
+// sets window.GAME_DATA), or from project.json and the images beside index.html (the website export).
+// Every path is relative, so it runs from any static host, a GitHub Pages subpath included.
+type GameData = { project: Extract<ToRuntime, { type: 'load' }>['project']; assets: { path: string; mime: string; data: string }[] };
+async function standalone(): Promise<void> {
+  try {
+    const inline = (window as unknown as { GAME_DATA?: GameData }).GAME_DATA;
+    const project = inline?.project ?? await (await fetch('project.json')).json();
+    const assets = inline
+      ? inline.assets.map((a) => ({ path: a.path, mime: a.mime, bytes: Uint8Array.from(atob(a.data), (c) => c.charCodeAt(0)).buffer }))
+      : await Promise.all(project.assets.map(async (a: { path: string; mime: string }) => {
+        const r = await fetch(a.path);
+        if (!r.ok) throw new Error(`Could not load ${a.path} (${r.status})`);
+        return { path: a.path, mime: a.mime, bytes: await r.arrayBuffer() };
+      }));
+    if (!project.settings.mainScene) throw new Error('The game has no main scene');
+    await start({ type: 'load', project, scene: project.settings.mainScene, assets });
+    window.focus();
+  } catch (e) {
+    // Said on the page: there is no editor to show it, and a blank page explains nothing.
+    const box = document.createElement('pre');
+    box.textContent = `This game could not start: ${e instanceof Error ? e.message : String(e)}${location.protocol === 'file:' ? '\n\nOpened from a file? Browsers do not let a page read files beside it. Use the one-file export, or put the folder on a web server.' : ''}`;
+    Object.assign(box.style, { color: '#fff', font: '14px system-ui, sans-serif', padding: '24px', whiteSpace: 'pre-wrap' });
+    document.body.appendChild(box);
+  }
+}
+if (window.parent === window) void standalone();

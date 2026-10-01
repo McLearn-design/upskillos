@@ -91,6 +91,8 @@ export interface AssetData {
   mime: string;
   width: number;
   height: number;
+  /** Where the picture was made, so it can be opened there again: "sprite-forge:<sprite id>". */
+  origin?: string;
 }
 
 /** A named input action and the keys bound to it (KeyboardEvent.code values, e.g. "ArrowLeft", "KeyA"). */

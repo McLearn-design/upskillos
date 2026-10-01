@@ -5,7 +5,8 @@
 // below.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Store } from './editor/store';
+import { Store, type ArtMessage } from './editor/store';
+import { TrainDialog } from './editor/TrainDialog';
 import { Btn, C, useStore } from './editor/kit';
 import { Viewport } from './editor/Viewport';
 import { SceneTree } from './editor/SceneTree';
@@ -15,6 +16,9 @@ import { Guide } from './editor/Guide';
 import { TaskPanel } from './editor/TaskPanel';
 import { QuestionDialog, TutorialsDialog } from './editor/Dialogs';
 import { parseTaskLink } from './tasks/links';
+import { solutionScripts } from './tasks/solutions';
+import { tetrisStepScripts } from './tasks/tetris';
+import { listenForArt } from '../../utils/artBridge.js';
 import { takeEntryLink } from '../../utils/entryLinks';
 import { useNavigate } from 'react-router-dom';
 import { useProgress } from '../../hooks/useProgress';
@@ -63,8 +67,9 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
   const store = useMemo(() => new Store(), []);
   useStore(store);
   const gameBox = useRef<HTMLDivElement>(null);
+  const importFile = useRef<HTMLInputElement>(null);
   const frameFns = useRef<{ frameAll: () => void; frameSelected: () => void; frameGameArea: () => void } | null>(null);
-  const [dialog, setDialog] = useState<'projects' | 'settings' | 'tutorials' | null>(null);
+  const [dialog, setDialog] = useState<'projects' | 'settings' | 'tutorials' | 'train' | null>(null);
   const [booting, setBooting] = useState(true);
   const [left, setLeft] = useState<'files' | 'art'>('files');
   // The bottom panel's height: drag its top edge. Remembered in this browser (a convenience only).
@@ -72,7 +77,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
   const resizing = useRef<{ y: number; h: number } | null>(null);
 
   // A handle for debugging and browser tests, in development only.
-  useEffect(() => { if (import.meta.env?.DEV) (window as unknown as { __gameStudio?: unknown }).__gameStudio = { store }; }, [store]);
+  useEffect(() => { if (import.meta.env?.DEV) (window as unknown as { __gameStudio?: unknown }).__gameStudio = { store, solutionScripts, tetrisStepScripts }; }, [store]);
 
   // A lesson's "Try it" link opens its task; otherwise open the last project, or show the project list.
   useEffect(() => {
@@ -102,9 +107,13 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
     return () => window.removeEventListener('entry-link', onEntry);
   }, [store]);
 
+  // Sprites and maps sent from Sprite Forge and Tile Mapper (src/utils/artBridge.js); and opening those labs.
+  useEffect(() => listenForArt('game-studio', (m: ArtMessage) => void store.receiveArt(m)), [store]);
+
   // Finishing a task from a lesson ticks the lesson's checkpoint (the app's progress), and "Back to the lesson" returns there.
   const progress = useProgress() as { markCheckpoint?: (lesson: string, checkpoint: string) => void } | null;
   const navigate = useNavigate();
+  useEffect(() => { store.openLab = (lab) => navigate(`/lab/${lab}`); }, [store, navigate]);
   useEffect(() => { store.onTaskDone = (_task, link) => { if (link?.lesson && link.checkpoint) progress?.markCheckpoint?.(link.lesson, link.checkpoint); }; }, [store, progress]);
 
   // Warn before losing unsaved work.
@@ -148,6 +157,10 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
       ['Projects and examples…', () => setDialog('projects')],
       ['Save', () => void store.save(), 'Ctrl+S', noProject],
       ['Project settings…', () => setDialog('settings'), '', noProject],
+      ['Export project (.zip)…', () => void store.exportProject(), '', noProject],
+      ['Import project (.zip)…', () => importFile.current?.click()],
+      ['Export game for a website (.zip)…', () => void store.exportGame('website'), '', noProject],
+      ['Export game as one file (.html)…', () => void store.exportGame('html'), '', noProject],
       ['Close project', closeProject, '', noProject],
     ],
     Edit: [
@@ -168,6 +181,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
       [running?.paused ? 'Resume' : 'Pause', () => store.pause(), '', !running],
       ['Restart', () => store.restart(), '', !running],
       ['Stop', () => store.stop(), 'F8', !running],
+      ['Train an agent…', () => setDialog('train'), '', noProject],
     ],
     Help: [
       ['API reference', () => store.showReference(), 'F1'],
@@ -242,7 +256,8 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
             <Viewport store={store} onFrameRef={(f) => { frameFns.current = f; }} />
           </div>
           {!running && store.tab.kind === 'scene' && !store.task && <Guide store={store} />}
-          {!running && <TaskPanel store={store} onBack={(route) => navigate(route)} />}
+          {/* Shown while the game runs too, so a step like "run the game" ticks where you can see it. */}
+          <TaskPanel store={store} onBack={(route) => navigate(route)} />
           {!running && store.tab.kind === 'script' && <div style={{ position: 'absolute', inset: 0 }}><ScriptEditor key={store.tab.path} store={store} path={store.tab.path} /></div>}
           <div ref={gameBox} data-testid="game-box" style={{ position: 'absolute', inset: 0, display: running ? 'block' : 'none', background: '#000' }} />
         </div>
@@ -271,7 +286,10 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
       {dialog === 'projects' && <ProjectsDialog store={store} onClose={store.project ? () => setDialog(null) : undefined} onDone={() => setDialog(null)} />}
       {dialog === 'settings' && <SettingsDialog store={store} onClose={() => setDialog(null)} />}
       {dialog === 'tutorials' && <TutorialsDialog store={store} onClose={() => setDialog(null)} />}
+      {dialog === 'train' && <TrainDialog store={store} onClose={() => setDialog(null)} onWatch={() => { setDialog(null); if (gameBox.current) void store.run('project', gameBox.current, { agent: true }); }} />}
       <QuestionDialog store={store} />
+      <input ref={importFile} data-testid="import-project-file" type="file" accept=".zip,application/zip" style={{ display: 'none' }}
+        onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f && await store.importProject(f)) setDialog(null); }} />
     </div>
   );
 }

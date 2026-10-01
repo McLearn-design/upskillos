@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   MAX_PALETTE,
   clampSize,
@@ -10,6 +10,7 @@ import {
   withFramePixels,
 } from './pixelDoc.js'
 import { saveSprite } from './db.js'
+import { useCommandHistory } from '../../utils/useCommandHistory.js'
 
 const HISTORY_LIMIT = 80
 
@@ -20,82 +21,11 @@ const HISTORY_LIMIT = 80
 // stroke on a 64x64 frame costs 4KB plus a shallow object. Deltas would buy
 // little and cost a lot of correctness — palette edits, frame reordering and
 // canvas resizes all become the same trivial case under snapshots.
+//
+// Each edit is also a line of code (spriteApi.js), logged by `act` and kept in step with undo and redo
+// (src/utils/useCommandHistory.js, shared with Tile Mapper).
 export function useSpriteDoc(initial) {
-  const [doc, setDoc] = useState(() => initial ?? createDoc())
-  const past = useRef([])
-  const future = useRef([])
-  // Only the *availability* of undo/redo needs to be React state — the stacks
-  // themselves live in refs so pushing to them never triggers a render.
-  const [depths, setDepths] = useState({ canUndo: false, canRedo: false })
-
-  const syncDepths = useCallback(() => {
-    setDepths({ canUndo: past.current.length > 0, canRedo: future.current.length > 0 })
-  }, [])
-
-  // Records the current document as an undo point, then applies the change.
-  // Every discrete user action goes through here.
-  const commit = useCallback(
-    (next) => {
-      setDoc((prev) => {
-        const resolved = typeof next === 'function' ? next(prev) : next
-        if (!resolved || resolved === prev) return prev
-        past.current = [...past.current.slice(-(HISTORY_LIMIT - 1)), prev]
-        future.current = []
-        return resolved
-      })
-      syncDepths()
-    },
-    [syncDepths],
-  )
-
-  // Applies a change *without* recording history. Nothing in the editor needs
-  // it for drawing — SpriteCanvas accumulates a whole stroke off-React and
-  // commits once — but a live-preview control (dragging a palette color picker)
-  // wants to show its effect without filling the undo stack with every
-  // intermediate value.
-  const apply = useCallback((next) => {
-    setDoc((prev) => {
-      const resolved = typeof next === 'function' ? next(prev) : next
-      return resolved && resolved !== prev ? resolved : prev
-    })
-  }, [])
-
-  const undo = useCallback(() => {
-    setDoc((prev) => {
-      if (!past.current.length) return prev
-      const target = past.current[past.current.length - 1]
-      past.current = past.current.slice(0, -1)
-      future.current = [...future.current, prev]
-      return target
-    })
-    syncDepths()
-  }, [syncDepths])
-
-  const redo = useCallback(() => {
-    setDoc((prev) => {
-      if (!future.current.length) return prev
-      const target = future.current[future.current.length - 1]
-      future.current = future.current.slice(0, -1)
-      past.current = [...past.current, prev]
-      return target
-    })
-    syncDepths()
-  }, [syncDepths])
-
-  // Replacing the open document (new / open / import) starts a fresh history:
-  // undoing across a document boundary would silently resurrect art the user
-  // believes they closed.
-  const replaceDoc = useCallback(
-    (next) => {
-      past.current = []
-      future.current = []
-      setDoc(next)
-      syncDepths()
-    },
-    [syncDepths],
-  )
-
-  return { doc, commit, apply, undo, redo, replaceDoc, ...depths }
+  return useCommandHistory(() => initial ?? createDoc(), HISTORY_LIMIT)
 }
 
 // --- document edits ------------------------------------------------------

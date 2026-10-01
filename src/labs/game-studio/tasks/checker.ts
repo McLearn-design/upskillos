@@ -34,10 +34,11 @@ export async function evaluateTask(task: GameTask, project: Project, editor: Edi
   const view = projectView(project);
   let classes: Map<string, unknown> | null = null;
   const play = async (opts: PlayOptions): Promise<PlayResult> => {
+    // The node classes first: a script's class extends one as soon as it is loaded.
+    Object.assign(globalThis, NODE_CLASSES, { Vec2, math: MATH, PhysicsBody2D });
     classes ??= await load(project);
     const scene = project.scenes.find((s) => s.path === project.settings.mainScene);
     if (!scene) throw new Error('There is no main scene to run');
-    Object.assign(globalThis, NODE_CLASSES, { Vec2, math: MATH, PhysicsBody2D });
     const errors: string[] = [];
     let view: View = { x: 0, y: 0, zoom: 1 }, drawn: DrawItem[] = [];
     const game = new Game(project, scene, { frame: (items, v) => { drawn = items; view = v; } }, { scriptClass: (p) => classes!.get(p) as typeof Node | undefined, onError: (e) => errors.push(`${e.file ?? e.node}: ${e.message}`) });

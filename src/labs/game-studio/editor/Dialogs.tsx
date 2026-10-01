@@ -8,7 +8,7 @@ import * as storage from './storage';
 import { EXAMPLES } from '../examples';
 import { chains } from '../tasks';
 
-function Modal({ title, onClose, children, width = 520, testid }: { title: string; onClose?: () => void; children: React.ReactNode; width?: number; testid?: string }) {
+export function Modal({ title, onClose, children, width = 520, testid }: { title: string; onClose?: () => void; children: React.ReactNode; width?: number; testid?: string }) {
   return (
     // Centred with flexbox: in a grid the row grows to fit the dialog, so its 86% height limit would limit nothing.
     <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: '#000a', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
@@ -38,6 +38,11 @@ export function ProjectsDialog({ store, onClose, onDone }: { store: Store; onClo
         <input data-testid="new-project-name" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.stopPropagation()}
           style={{ flex: 1, background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 3, padding: '4px 6px', fontSize: 13 }} />
         <Btn testid="create-project" onClick={async () => { if (!name.trim() || !(await guard())) return; store.newProject(name.trim()); onDone(); }}>Create</Btn>
+        <label title="Open a project exported from Game Studio (Project › Export project), from this browser or another" style={{ fontSize: 12, color: C.dim, cursor: 'pointer', border: `1px solid ${C.border}`, borderRadius: 3, padding: '3px 8px' }}>
+          Import .zip…
+          <input data-testid="projects-import" type="file" accept=".zip,application/zip" style={{ display: 'none' }}
+            onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f && await store.importProject(f)) onDone(); }} />
+        </label>
       </div>
       <div style={{ color: C.faint, fontSize: 11, fontWeight: 700, marginBottom: 6 }}>START FROM AN EXAMPLE</div>
       {EXAMPLES.map((ex) => (
@@ -90,7 +95,7 @@ export function SettingsDialog({ store, onClose }: { store: Store; onClose: () =
         <span style={{ color: C.faint }}>×</span>
         <NumberField value={p.settings.height} step={16} digits={0} onCommit={(v) => store.act((d) => d.setSettings({ height: Math.round(v) }))} />
       </Row>
-      <Row label="Background"><input type="color" value={p.settings.background} onChange={(e) => store.act((d) => d.setSettings({ background: e.target.value }))} /></Row>
+      <Row label="Background"><input data-testid="setting-background" type="color" value={p.settings.background} onChange={(e) => store.act((d) => d.setSettings({ background: e.target.value }))} /></Row>
       <Row label="Pixel art" help="Scale images with hard edges, so pixel art stays crisp when the camera zooms. Turn off for smooth, painted art.">
         <input type="checkbox" checked={p.settings.pixelArt !== false} onChange={(e) => store.act((d) => d.setSettings({ pixelArt: e.target.checked }))} />
       </Row>

@@ -24,7 +24,7 @@
 UpSkillOS is a complete STEM learning environment that runs entirely in the browser — no account, no subscription, no install required. It is the only open-source platform that combines university-level curriculum, real interactive coding environments, physics and CNC simulations, a built-in AI tutor, and a WYSIWYG lesson authoring system in a single free application.
 
 <!-- facts:headline -->
-**1232 lessons. 43 courses. 52 interactive labs and simulators. 15 games built on real math and physics. All free. All open source.**
+**1236 lessons. 44 courses. 52 interactive labs and simulators. 15 games built on real math and physics. All free. All open source.**
 <!-- /facts:headline -->
 
 ---
@@ -78,8 +78,8 @@ This structure is not cosmetic. It is the architecture of the lesson files in th
 | | Count |
 |---|---|
 <!-- facts:scale -->
-| Lessons | **1232** |
-| Courses | **43** |
+| Lessons | **1236** |
+| Courses | **44** |
 | Interactive labs & simulators | **52** |
 | Games built on real math & physics | **15** |
 <!-- /facts:scale -->
@@ -91,7 +91,7 @@ This structure is not cosmetic. It is the architecture of the lesson files in th
 ## What's Inside
 
 <!-- facts:courses-heading -->
-### 43 Courses
+### 44 Courses
 <!-- /facts:courses-heading -->
 
 <details>
@@ -357,7 +357,7 @@ Access to high-quality, interactive STEM education is not equally distributed. T
 
 Without institutional funding, one developer has shipped:
 <!-- facts:built -->
-- **1232 lessons** across **43 courses** covering the full STEM-to-employability pipeline
+- **1236 lessons** across **44 courses** covering the full STEM-to-employability pipeline
 <!-- /facts:built -->
 - A **live Python execution environment** (Pyodide) that runs numpy, scipy, pandas, matplotlib, and scikit-learn with no server
 - A **CNC programming simulator** — one of the most in-demand industrial skills in the country, fully learnable without access to a physical machine

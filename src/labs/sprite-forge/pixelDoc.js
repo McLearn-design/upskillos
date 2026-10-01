@@ -380,6 +380,8 @@ export function normalizeDoc(raw) {
     palette: palette.length ? palette : getPalette(DEFAULT_PALETTE_ID),
     frames: frames.length ? frames : [createFrame(width, height, 'Frame 1')],
     tags: Array.isArray(raw.tags) ? raw.tags : [],
+    // Where in Game Studio this sprite goes back to, when it came from there (see gameStudio.js).
+    link: raw.link && typeof raw.link === 'object' ? raw.link : null,
     updatedAt: raw.updatedAt ?? Date.now(),
   }
 }

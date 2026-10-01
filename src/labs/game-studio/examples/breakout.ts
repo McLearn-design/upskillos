@@ -8,6 +8,7 @@
 // instances of one brick scene, in a group.
 
 import type { GameExample } from './types';
+import { BREAKOUT_SPEC } from '../ml/breakout';
 
 const P = 'assets/puzzle-pack';
 const BRICKS = ['red', 'yellow', 'green', 'blue'].map((c) => `${P}/tiles-${c}/tile${c}_62.png`);   // 208 × 108
@@ -156,6 +157,7 @@ scene.add('Label', { name: 'Message', parent: 'HUD', position: { x: 340, y: 300 
 export const breakout: GameExample = {
   id: 'breakout',
   title: 'Breakout',
+  agent: BREAKOUT_SPEC,
   blurb: 'Bat the ball into a wall of 48 bricks with the paddle, and clear them all with three balls. A ball that moves by itself and bounces, bricks that break, aiming off the paddle, and collision layers.',
   art: 'Kenney Puzzle Pack 2 (CC0)',
   images: [...BRICKS, PADDLE, BALL],

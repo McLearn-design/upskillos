@@ -87,8 +87,8 @@ export const PHYSICS: GameTask[] = [
     images: [CHAR, GROUND],
     start: main,
     steps: [
-      { text: 'Add a CharacterBody2D and name it Player. A CharacterBody2D is a body your script moves.',
-        check: { kind: 'project', test: (v) => { need(v, 'Player', 'CharacterBody2D'); return true; } } },
+      { text: 'Add a CharacterBody2D, name it Player, and put it on the left of the game area: position 300, 270. A CharacterBody2D is a body your script moves.', hint: 'New nodes start at 0, 0, the top-left corner.',
+        check: { kind: 'project', test: (v) => { const p = need(v, 'Player', 'CharacterBody2D'); const at = v.prop(p, 'position') as Pos; return (at.x > 40 && at.y > 40) || 'Player is still at the top-left corner: put it at 300, 270.'; } } },
       { text: 'Under Player, add a Sprite2D showing the green astronaut, and a CollisionShape2D. The picture is what you see; the shape is what bumps into things.', hint: 'Select Player first, then + Add… adds under it.',
         check: { kind: 'project', test: (v) => { const p = need(v, 'Player', 'CharacterBody2D'); if (!childrenOf(p, 'Sprite2D').some((s) => v.prop(s, 'texture') === CHAR)) return 'Player has no Sprite2D showing the astronaut under it.'; return childrenOf(p, 'CollisionShape2D').length > 0 || 'Player has no CollisionShape2D under it.'; } } },
       { text: 'Give Player a new script. For a CharacterBody2D it starts as arrow-key movement with moveAndSlide(). Run it and walk around.',
@@ -97,8 +97,10 @@ export const PHYSICS: GameTask[] = [
         check: { kind: 'play', test: async (v) => {
           const w = need(v, 'Wall', 'StaticBody2D');
           if (!childrenOf(w, 'CollisionShape2D').length) return 'Wall has no CollisionShape2D under it.';
-          const wx = (v.prop(w, 'position') as Pos).x, px = (v.prop(v.byName('Player')!, 'position') as Pos).x;
+          const wp = v.prop(w, 'position') as Pos, pp = v.prop(v.byName('Player')!, 'position') as Pos;
+          const wx = wp.x, px = pp.x, half = ((v.prop(childrenOf(w, 'CollisionShape2D')[0], 'size') as Pos).y * Math.abs((v.prop(w, 'scale') as Pos).y)) / 2;
           if (wx < px + 30) return 'Put the wall to the right of Player, with a gap.';
+          if (Math.abs(wp.y - pp.y) > half + 11) return `The wall is not in Player\u2019s way: Player is at y ${Math.round(pp.y)}, and the wall covers y ${Math.round(wp.y - half)} to ${Math.round(wp.y + half)}.`;
           const r = await v.play({ seconds: 5, keys: ['ArrowRight'] }); noErrors(r);
           const p = named<Body>(r.game, 'Player')!;
           return (p.position.x < wx && p.isOnWall()) || `After 5 seconds of →, Player is at x ${Math.round(p.position.x)}: it went through the wall at ${Math.round(wx)}.`;

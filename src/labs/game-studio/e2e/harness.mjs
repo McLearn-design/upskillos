@@ -4,8 +4,9 @@ import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
+import { getLatestWhatsNewId } from '../../../data/whatsNew.js';
 
-/** opts.hash: where to open (a task link, say); opts.ready: the test id to wait for first. */
+/** opts.hash: where to open (a task link, say); opts.ready: the test id to wait for first; opts.scale: the device pixel ratio (pictures). */
 export async function withGameStudio(port, body, opts = {}) {
   const hash = opts.hash ?? '#/lab/game-studio', ready = opts.ready ?? 'projects-dialog';
   const results = [];
@@ -21,10 +22,11 @@ export async function withGameStudio(port, body, opts = {}) {
       await new Promise((r) => setTimeout(r, 1000));
     }
     browser = await chromium.launch();
-    const context = await browser.newContext({ viewport: { width: 1500, height: 950 }, permissions: ['clipboard-read', 'clipboard-write'] });
+    const context = await browser.newContext({ viewport: { width: 1500, height: 950 }, deviceScaleFactor: opts.scale ?? 1, permissions: ['clipboard-read', 'clipboard-write'] });
     // Mark the site's welcome tour as seen (src/context/TourContext.jsx), so its popup
     // never appears part-way through and covers what a test clicks.
-    await context.addInitScript(() => { try { localStorage.setItem('oc-tour-seen', '1'); } catch { /* the sandboxed game frame has no storage */ } });
+    // …and the latest "What's new" as read: a visitor who has seen the tour is a returning one, who gets it otherwise.
+    await context.addInitScript((whatsNew) => { try { localStorage.setItem('oc-tour-seen', '1'); if (whatsNew) localStorage.setItem('oc-whatsnew-last-seen', whatsNew); } catch { /* the sandboxed game frame has no storage */ } }, getLatestWhatsNewId());
     page = await context.newPage();
     const pageErrors = [];
     page.on('pageerror', (e) => pageErrors.push(e.message));

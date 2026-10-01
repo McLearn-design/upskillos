@@ -1,0 +1,235 @@
+// Pictures for every tutorial step, and proof that every step can be done as it says.
+//
+// For each task: start it from Help › Tutorials, then for each step do what the step says through
+// the editor (as a learner would), wait for Game Studio to tick it, outline the control used, and
+// save a picture to tasks/shots/<task>-<step>.jpg. A step that does not tick is reported, and the
+// run fails. The task panel shows the picture for the step you are on.
+//
+//   npm run game:shots   (starts and stops its own server; rewrites the pictures)
+
+import { mkdirSync } from 'node:fs';
+import { withGameStudio } from './harness.mjs';
+
+const OUT = new URL('../tasks/shots/', import.meta.url);
+mkdirSync(OUT, { recursive: true });
+const PP = 'assets/pixel-platformer';
+const CHAR = `${PP}/characters/tile_0000.png`, WALK2 = `${PP}/characters/tile_0001.png`, COIN = `${PP}/tiles/tile_0151.png`;
+const BALL = 'assets/puzzle-pack/balls/ballblue_01.png', SHEET = 'assets/tiny-dungeon/tilemap/tilemap_packed.png';
+const only = process.argv[2];   // a task id (or the start of one, like tetris), to make just those pictures
+
+const failed = await withGameStudio(5182, async ({ page, t, check, answer }) => {
+  let focus = null;
+  const mark = (loc) => { focus = loc; return loc; };
+  const node = (name, last = false) => (last ? page.getByTestId(`tree-${name}`).last() : page.getByTestId(`tree-${name}`).first());
+  const ui = {
+    add: async (type, parent) => { if (parent) await node(parent).click(); await mark(t('add-node')).selectOption(type); },
+    rename: async (from, to, last = false) => { await node(from, last).dblclick(); await t('rename-input').fill(to); await t('rename-input').press('Enter'); mark(node(to)); },
+    select: async (name, last = false) => { await mark(node(name, last)).click(); },
+    prop: async (id, value) => { const f = mark(t(`prop-${id}`)); await f.fill(String(value)); await f.press('Enter'); },
+    choose: async (id, value) => { await mark(t(`prop-${id}`)).selectOption(value); },
+    click: async (id) => { await mark(t(id)).click(); },
+    script: async (text) => {
+      const ed = page.locator('.monaco-editor');
+      await ed.waitFor(); await page.waitForTimeout(500);
+      await page.evaluate((x) => navigator.clipboard.writeText(x), text);
+      await ed.click({ position: { x: 120, y: 80 } });
+      await page.keyboard.press('ControlOrMeta+A'); await page.keyboard.press('ControlOrMeta+V');
+      await page.waitForTimeout(300);
+      mark(ed);
+    },
+    openScript: async (path) => { await t(`file-${path}`).click(); },
+    solution: (task, path) => page.evaluate(([a, b]) => window.__gameStudio.solutionScripts(a)[b], [task, path]),
+    run: async () => { await mark(t('run-project')).click(); await page.locator('iframe[title="Running game"]').waitFor({ timeout: 20000 }); await page.waitForTimeout(800); },
+    stop: async () => { if (await t('stop').isEnabled()) await t('stop').click(); },
+    palette: async (id, columns = 12, k = 2, tile = 16) => { const b = await t('tile-palette').boundingBox(); await page.mouse.click(b.x + (id % columns) * tile * k + tile * k / 2, b.y + Math.floor(id / columns) * tile * k + tile * k / 2); mark(t('tile-palette')); },
+    drag: async (fx0, fy0, fx1, fy1) => { const v = await t('viewport').boundingBox(); await page.mouse.move(v.x + v.width * fx0, v.y + v.height * fy0); await page.mouse.down(); await page.mouse.move(v.x + v.width * fx1, v.y + v.height * fy1, { steps: 8 }); await page.mouse.up(); mark(t('viewport')); },
+    store: (fn, arg) => page.evaluate(fn, arg),
+    // Tetris: type board.js as it is after this step (tasks/tetris.ts), then run the game, so the picture shows what it does.
+    board: async (task, step) => {
+      await t('left-files').click(); await ui.openScript('scripts/board.js');
+      await ui.script(await page.evaluate(([a, b]) => window.__gameStudio.tetrisStepScripts(a)[b], [task, step]));
+      await ui.run(); mark(page.locator('iframe[title="Running game"]'));
+    },
+    label: async (name, y, text) => { await ui.add('Label', 'HUD'); await ui.rename('Label', name); await ui.select(name); await ui.prop('text', text); await ui.prop('position-x', 640); await ui.prop('position-y', y); },
+  };
+  const boardSteps = (task, n) => Array.from({ length: n }, (_, k) => () => ui.board(task, k));
+
+  // What each step says to do, for every task (in the order of the task's steps).
+  const STEPS = {
+    'first-sprite': [
+      () => ui.add('Sprite2D'),
+      async () => { await ui.select('Sprite2D'); await ui.choose('texture', CHAR); },
+      () => ui.rename('Sprite2D', 'Hero'),
+      async () => { await ui.select('Hero'); await ui.prop('position-x', 480); await ui.prop('position-y', 270); },
+    ],
+    'run-and-stop': [
+      async () => { await t('menu-Project').click(); await t('item-Project settings…').click(); await mark(t('setting-background')).fill('#2a6f97'); },
+      async () => { await t('dialog-close').click(); await ui.run(); },
+    ],
+    'first-script': [
+      async () => { await ui.select('Hero'); await ui.click('new-script'); },
+      () => ui.script("export default class Hero extends Sprite2D {\n  update(dt) {\n    this.position = { x: this.position.x + 2, y: this.position.y };\n  }\n}\n"),
+      async () => ui.script(await ui.solution('first-script', 'scripts/hero.js')),
+    ],
+    'input-actions': [
+      async () => { await ui.select('Hero'); await t('open-script').click(); await ui.script("export default class Hero extends Sprite2D {\n  speed = 100;\n\n  update(dt) {\n    if (input.isPressed('move_right')) this.position = { x: this.position.x + this.speed * dt, y: this.position.y };\n  }\n}\n"); },
+      () => ui.script("export default class Hero extends Sprite2D {\n  speed = 100;\n\n  update(dt) {\n    const x = input.axis('move_left', 'move_right'), y = input.axis('move_up', 'move_down');\n    this.position = { x: this.position.x + x * this.speed * dt, y: this.position.y + y * this.speed * dt };\n  }\n}\n"),
+      async () => ui.script(await ui.solution('input-actions', 'scripts/hero.js')),
+    ],
+    'stop-at-walls': [
+      async () => { await ui.add('CharacterBody2D', 'Main'); await ui.rename('CharacterBody2D', 'Player'); await ui.select('Player'); await ui.prop('position-x', 300); await ui.prop('position-y', 270); },
+      async () => { await ui.add('Sprite2D', 'Player'); await ui.select('Sprite2D'); await ui.choose('texture', CHAR); await ui.add('CollisionShape2D', 'Player'); },
+      async () => { await ui.select('Player'); await ui.click('new-script'); },
+      async () => { await t('file-scenes/main.scene').click(); await ui.add('StaticBody2D', 'Main'); await ui.rename('StaticBody2D', 'Wall'); await ui.select('Wall'); await ui.prop('position-x', 600); await ui.prop('position-y', 270); await ui.add('CollisionShape2D', 'Wall'); await ui.select('CollisionShape2D', true); await ui.prop('size-y', 200); },
+    ],
+    'gravity-and-jumping': [
+      async () => { await ui.select('Player'); await t('open-script').click(); await ui.script("export default class Player extends CharacterBody2D {\n  speed = 200;\n\n  physicsUpdate(dt) {\n    const v = this.velocity;\n    v.x = input.vector('move_left', 'move_right', 'move_up', 'move_down').x * this.speed;\n    v.y += physics.gravity * dt;\n    this.velocity = v;\n    this.moveAndSlide();\n  }\n}\n"); },
+      async () => {},
+      async () => ui.script(await ui.solution('gravity-and-jumping', 'scripts/player.js')),
+      async () => {},
+    ],
+    'collect-coins': [
+      async () => { await ui.add('Area2D', 'Main'); await ui.rename('Area2D', 'Coin'); await ui.select('Coin'); await ui.prop('position-x', 450); await ui.prop('position-y', 389); await ui.add('Sprite2D', 'Coin'); await ui.select('Sprite2D'); await ui.choose('texture', COIN); await ui.add('CollisionShape2D', 'Coin'); },
+      async () => { await ui.select('Coin'); await ui.click('new-script'); await ui.script("export default class Coin extends Area2D {\n  bodyEntered(body) {\n    if (body.name !== 'Player') return;\n    this.queueFree();\n  }\n}\n"); },
+      async () => { await ui.script(await ui.solution('collect-coins', 'scripts/coin.js')); await ui.openScript('scripts/player.js'); await ui.script(await ui.solution('collect-coins', 'scripts/player.js')); },
+    ],
+    'bouncing-ball': [
+      async () => { await ui.add('RigidBody2D', 'Main'); await ui.rename('RigidBody2D', 'Ball'); await ui.select('Ball'); await ui.prop('position-x', 480); await ui.prop('position-y', 120); await ui.add('CollisionShape2D', 'Ball'); await ui.select('CollisionShape2D'); await ui.choose('shape', 'circle'); await ui.prop('size-x', 26); await ui.add('Sprite2D', 'Ball'); await ui.select('Sprite2D'); await ui.choose('texture', BALL); await ui.prop('scale-x', 0.2); await ui.prop('scale-y', 0.2); },
+      async () => { await ui.select('Ball'); },
+      async () => { await ui.select('Ball'); await ui.prop('bounce', 0.8); },
+    ],
+    'collision-layers': [
+      async () => { await ui.select('Glass'); await ui.click('prop-collisionLayer-1'); await ui.click('prop-collisionLayer-2'); },
+      async () => { await ui.select('Ball'); await page.keyboard.press('ControlOrMeta+d'); await ui.select('Ball2'); await ui.click('prop-collisionMask-2'); },
+    ],
+    'follow-camera': [
+      () => ui.add('Camera2D', 'Player'),
+      async () => { await ui.run(); await ui.stop(); },
+      async () => { await ui.select('Camera2D'); await ui.prop('smoothing', 5); },
+    ],
+    'camera-limits': [
+      async () => { await ui.select('Camera'); await ui.prop('limitTopLeft-x', 0); },
+      () => ui.prop('limitBottomRight-x', 3000),
+      () => ui.prop('limitBottomRight-y', 540),
+    ],
+    'hud': [
+      async () => { await ui.add('Label', 'Main'); await ui.rename('Label', 'Score'); await ui.select('Score'); await ui.prop('text', 'Score: 0'); await ui.prop('position-x', 16); await ui.prop('position-y', 12); },
+      async () => { await ui.add('CanvasLayer', 'Main'); await ui.rename('CanvasLayer', 'HUD'); await node('Score').dragTo(node('HUD')); mark(node('HUD')); },
+    ],
+    'walk-animation': [
+      async () => { await ui.select('Sprite', true); await page.keyboard.press('Delete'); await ui.add('AnimatedSprite2D', 'Player'); await ui.rename('AnimatedSprite2D', 'Sprite'); await ui.select('Sprite', true); await ui.click('frames-add-animation'); await t('frames-add-picture-0').selectOption(CHAR); await t('frames-add-picture-0').selectOption(WALK2); await t('frames-fps-0').fill('8'); await t('frames-fps-0').press('Enter'); await t('frames-name-0').fill('walk'); await t('frames-name-0').press('Enter'); mark(t('frames-editor')); },
+      async () => { await ui.click('frames-add-animation'); await t('frames-add-picture-1').selectOption(CHAR); await t('frames-name-1').fill('idle'); await t('frames-name-1').press('Enter'); await ui.openScript('scripts/player.js'); await ui.script(await ui.solution('walk-animation', 'scripts/player.js')); },
+    ],
+    'sliding-door': [
+      async () => { await ui.add('AnimationPlayer', 'Main'); await ui.rename('AnimationPlayer', 'DoorAnimation'); await ui.select('DoorAnimation'); },
+      async () => { await t('anim-new').click(); await t('anim-name').fill('open'); await t('anim-name').press('Enter'); await t('anim-length').fill('1'); await t('anim-length').press('Enter'); await ui.select('Door'); await ui.click('key-position'); const r = await t('anim-ruler').boundingBox(); await page.mouse.click(r.x + r.width - 3, r.y + 10); await ui.prop('position-y', 220); mark(t('timeline')); },
+      async () => { await ui.select('DoorAnimation'); await ui.click('anim-autoplay'); },
+    ],
+    'door-switch': [
+      async () => { await ui.add('Area2D', 'Main'); await ui.rename('Area2D', 'Switch'); await ui.select('Switch'); await ui.prop('position-x', 420); await ui.prop('position-y', 389); await ui.add('CollisionShape2D', 'Switch'); },
+      async () => { await ui.select('Switch'); await ui.click('new-script'); await ui.script(await ui.solution('door-switch', 'scripts/switch.js')); },
+    ],
+    'paint-a-floor': [
+      async () => { await ui.add('TileMapLayer', 'Main'); await ui.rename('TileMapLayer', 'Floor'); await ui.select('Floor'); },
+      async () => { await ui.click('tile-new-tileset'); await t('new-tileset-image').selectOption(SHEET); await ui.click('new-tileset-create'); },
+      async () => { await ui.palette(48); await t('tile-tool-rect').click(); await ui.drag(0.3, 0.3, 0.55, 0.5); },
+    ],
+    'solid-walls': [
+      async () => {
+        await ui.add('TileMapLayer', 'Main'); await ui.rename('TileMapLayer', 'Walls'); await ui.select('Walls');
+        await t('tile-tileset').selectOption('tilesets/dungeon.tileset'); await ui.palette(40); await t('tile-tool-rect').click();
+        // The border, painted with the rectangle tool four times (the cells are set directly, so they land exactly on the edge).
+        await ui.store(() => { const s = window.__gameStudio.store; const w = s.selected; const e = []; for (let x = 0; x < 20; x++) e.push([x, 0, 40], [x, 11, 40]); for (let y = 1; y < 11; y++) e.push([0, y, 40], [19, y, 40]); s.act((d) => d.paintCells(s.sceneId, w.id, e, 'Fill a rectangle')); });
+        mark(t('tile-panel'));
+      },
+      async () => { await ui.click('tile-collision'); await ui.palette(40); },
+      async () => { await ui.run(); await ui.stop(); },
+    ],
+    'tiled-map': [
+      async () => { await t('left-art').click(); await t('starter-pack').selectOption('tiny-dungeon'); await ui.click('starter-map-sample-map.tmx'); },
+    ],
+    'scene-instances': [
+      async () => { await t('left-files').click(); await t('new-scene').click(); await t('new-scene-root').selectOption('Area2D'); await t('new-scene-name').fill('coin'); await t('new-scene-name').press('Enter'); await ui.add('Sprite2D', 'Coin'); await ui.select('Sprite2D'); await ui.choose('texture', COIN); await ui.add('CollisionShape2D', 'Coin'); },
+      async () => { await t('file-scenes/main.scene').click(); for (const [i, x] of [400, 500, 600].entries()) { await ui.select('Main'); await t('instance-scenes/coin.scene').click(); await ui.prop('position-x', x); await ui.prop('position-y', 389); void i; } mark(t('instance-scenes/coin.scene')); },
+      async () => { await t('file-scenes/coin.scene').click(); await ui.select('Coin'); await ui.click('new-script'); await ui.script(await ui.solution('scene-instances', 'scripts/coin.js')); },
+    ],
+    'spawn-bullets': [
+      async () => { await ui.select('Player'); await t('open-script').click(); const s = await ui.solution('spawn-bullets', 'scripts/player.js'); await ui.script(s.replace("input.isPressed('jump') && this.cooldown <= 0", "input.isJustPressed('jump')")); },
+      async () => ui.script(await ui.solution('spawn-bullets', 'scripts/player.js')),
+    ],
+    'enemy-group': [
+      async () => { for (const e of ['Enemy', 'Enemy2']) { await ui.select(e); await t('group-add').fill('enemies'); await t('group-add').press('Enter'); } mark(t('groups')); },
+      async () => { await ui.openScript('scripts/bullet.js'); await ui.script(await ui.solution('enemy-group', 'scripts/bullet.js')); },
+    ],
+    'health-signal': [
+      async () => { await ui.select('Player'); await t('open-script').click(); await ui.script(await ui.solution('health-signal', 'scripts/player.js')); },
+      async () => { await t('file-scenes/main.scene').click(); await ui.select('Player'); await t('signal-name').fill('healthChanged'); await t('signal-target').selectOption({ label: 'HUD/Health' }); await t('signal-method').fill('show'); await ui.click('signal-connect'); mark(t('signals')); },
+      async () => { await ui.run(); await ui.stop(); },
+    ],
+    'title-scene': [
+      async () => { await t('new-scene').click(); await t('new-scene-name').fill('title'); await t('new-scene-name').press('Enter'); await ui.add('Label', 'Title'); await ui.select('Label'); await ui.prop('text', 'MY GAME'); await ui.click('main-scene-scenes/title.scene'); },
+      async () => { await ui.select('Title'); await ui.click('new-script'); await ui.script(await ui.solution('title-scene', 'scripts/title.js')); },
+    ],
+    'tetris-board': [
+      async () => { await ui.select('Board'); await ui.click('new-script'); },
+      ...boardSteps('tetris-board', 4).slice(1),
+    ],
+    'tetris-piece': boardSteps('tetris-piece', 2),
+    'tetris-move': boardSteps('tetris-move', 3),
+    'tetris-fall': boardSteps('tetris-fall', 3),
+    'tetris-rotate': boardSteps('tetris-rotate', 3),
+    'tetris-lines': boardSteps('tetris-lines', 2),
+    'tetris-score': [
+      async () => { await t('file-scenes/main.scene').click(); await ui.add('CanvasLayer', 'Main'); await ui.rename('CanvasLayer', 'HUD'); await ui.label('Score', 20, 'Score 0'); await ui.label('Lines', 56, 'Lines 0'); },
+      ...boardSteps('tetris-score', 3).slice(1),
+    ],
+    'tetris-bag': [
+      () => ui.board('tetris-bag', 0),
+      async () => { await t('file-scenes/main.scene').click(); await ui.label('Message', 140, ''); },
+      () => ui.board('tetris-bag', 2),
+    ],
+    'tetris-finish': [
+      () => ui.board('tetris-finish', 0),
+      () => ui.board('tetris-finish', 1),
+      async () => { await t('file-scenes/main.scene').click(); await ui.label('Next', 92, 'Next'); await ui.board('tetris-finish', 2); },
+    ],
+  };
+
+  const ids = await page.evaluate(() => [...document.querySelectorAll('[data-testid^="example-"]')].length >= 0);
+  void ids;
+  await t('create-project').click();
+  const tasks = await page.evaluate(() => window.__gameStudio.store.constructor && null);
+  void tasks;
+  const all = Object.keys(STEPS).filter((id) => !only || id.startsWith(only));
+  const bad = [];
+  for (const id of all) {
+    try {
+      await t('menu-Help').click(); await t('item-Tutorials…').click();
+      await t(`tutorial-${id}`).scrollIntoViewIfNeeded(); await t(`tutorial-${id}`).click();
+      await answer('discard');
+      await t('task-panel').waitFor({ timeout: 15000 });
+      for (const [i, act] of STEPS[id].entries()) {
+        focus = null;
+        try { await act(); } catch (e) { bad.push(`${id} step ${i + 1}: ${e.message.split('\n')[0]}`); }
+        const ok = await page.locator(`[data-testid="task-step-${i}"][data-done="yes"]`).waitFor({ timeout: 12000 }).then(() => true, () => false);
+        const why = ok ? '' : await page.getByTestId('task-why').innerText({ timeout: 1000 }).catch(() => '(no task panel)');
+        if (!ok) bad.push(`${id} step ${i + 1} did not tick: ${why}`);
+        console.log(`${ok ? '✓' : '✗'} ${id} ${i + 1}${ok ? '' : `  ${why}`}`);
+        if (focus) await focus.evaluate((el) => { el.dataset.gsShot = '1'; el.style.outline = '3px solid #ff9f1c'; el.style.outlineOffset = '2px'; }).catch(() => {});
+        // The picture is shown in the task panel, so it shows the editor without the panel.
+        await page.evaluate(() => { const p = document.querySelector('[data-testid="task-panel"]'); if (p) p.style.visibility = 'hidden'; });
+        await page.screenshot({ path: new URL(`${id}-${i}.jpg`, OUT).pathname, type: 'jpeg', quality: 72 });
+        await page.evaluate(() => { const p = document.querySelector('[data-testid="task-panel"]'); if (p) p.style.visibility = ''; });
+        await page.evaluate(() => document.querySelectorAll('[data-gs-shot]').forEach((el) => { el.style.outline = ''; delete el.dataset.gsShot; }));
+        await ui.stop();
+      }
+      await page.locator('[data-testid="task-finished"]').waitFor({ timeout: 8000 }).catch(() => bad.push(`${id}: not finished`));
+    } catch (e) {
+      bad.push(`${id}: ${e.message.split('\n')[0]}`);
+      console.log(`✗ ${id}: ${e.message.split('\n')[0]}`);
+      if (await t('dialog-close').count()) await t('dialog-close').click().catch(() => {});
+    }
+  }
+  check(`Every step of ${all.length} tutorials done as it says, ticked, and pictured`, bad.length === 0, bad.join(' | '));
+}, { scale: 0.6 });
+process.exit(failed ? 1 : 0);

@@ -412,3 +412,27 @@ Recorded during Phase 1 (2026-09-30). None of them change a boundary.
    code must look. Those runs happen in a worker, because the game's script globals (`Node`, `scene`, `input`)
    must not touch the editor's page. Every task is tested to fail on its start and pass on its solution, so a task
    cannot quietly become impossible or trivial.
+21. **The art labs hand work over in the page, not as files.** Game Studio, Sprite Forge and Tile Mapper are windows
+   on one page, so `src/utils/artBridge.js` passes pictures as Blobs through a per-lab inbox and an event; a lab
+   that is just opening takes what is waiting when it mounts. Downloads and uploads still work in each lab, for
+   other engines. A picture made in Sprite Forge is marked on its asset (`origin: "sprite-forge:<id>"`), so Edit
+   reopens the original document, frames and all, not a re-read PNG. A picture coming back replaces the asset's
+   bytes with `replaceAsset`: a new id at the same path, so every node using it changes, and undo restores the old
+   id, whose bytes are kept. A map coming back is painted into its parent node by layer name, so the layers' ids,
+   scripts and connections survive the round trip (`core/artMaps.ts`).
+22. **An exported game is the editor's runtime, starting itself (ADR 10).** The runtime file the editor puts in
+   its iframe also ships as the game. When it has no parent window it loads its own project, from the page (the
+   one-file export) or from `project.json` beside it (the website export). There is no second "player" build to
+   drift from the one you test. A game carries only the images it uses; a script that names an image path counts
+   as using it, because scripts choose pictures by path too.
+23. **Machine learning uses the game's state and the player's controls (Phase 9).** The environment reads numbers
+   from node properties by path and presses input actions, so any game can be learned without changing it, and
+   the agent cannot do what a player could not. The spec is JSON so it can come from Python. The same two
+   functions, `observeGame` and `pressAction`, serve training and Watch it play in the runtime, so the agent sees
+   and acts exactly as it was trained. Training runs in a worker, for the same reason the task checks do.
+24. **The art labs follow ADR 8 too.** Tile Mapper and Sprite Forge now treat every edit as a command, `{ label, code,
+   run }`. The command is an undo step and a line of code at once: `map.paint(...)` (`mapApi.js`) or
+   `sprite.paint(...)` (`spriteApi.js`). The shared hook `src/utils/useCommandHistory.js` keeps the log in step
+   with undo and redo, so the log always rebuilds the document on screen from the session's start; a replay test
+   in each lab holds it to that. Code typed in a lab's Code panel goes through the same runner as one command, and
+   each lab's examples are code on its API, as Game Studio's are on the Scene API.

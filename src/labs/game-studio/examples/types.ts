@@ -3,6 +3,8 @@
 // its images from the starter art, and runs its code as one command, so GUI → code
 // shows exactly how it was built.
 
+import type { EnvSpec } from '../ml/env';
+
 export interface GameExample {
   id: string;
   title: string;
@@ -16,4 +18,6 @@ export interface GameExample {
   code: string;
   /** What to look at and try, in order. */
   guide: string[];
+  /** What a learning agent sees, does and earns in it (Run › Train an agent…), if it has been set up. */
+  agent?: EnvSpec;
 }

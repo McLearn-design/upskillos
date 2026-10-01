@@ -314,7 +314,12 @@ export interface ProjectApi {
   setActionKeys(name: string, keys: string[]): void;
   removeAction(name: string): void;
   /** Records an imported file. Its bytes are stored separately, under the returned id. */
-  importAsset(path: string, info: { kind?: 'image'; mime: string; width: number; height: number }): string;
+  importAsset(path: string, info: { kind?: 'image'; mime: string; width: number; height: number; origin?: string }): string;
+  /**
+   * New bytes for an image, at the same path (edited in Sprite Forge, say): every node using the path
+   * shows the new picture. It gets a new id, so undo brings back the old one, whose bytes are kept.
+   */
+  replaceAsset(path: string, info: { mime: string; width: number; height: number; origin?: string }): string;
   /** A new tileset file: an image cut into tiles of this size. */
   createTileset(path: string, opts: { image: string; tileWidth: number; tileHeight: number; margin?: number; spacing?: number; solid?: number[] }): TilesetHandle;
   /** An existing tileset: set its fields, e.g. project.tileset('tilesets/a.tileset').solid = [1, 2]. */
@@ -419,7 +424,18 @@ export function projectApi(p: Project): ProjectApi {
       if (bad) throw new Error(bad);
       if (p.assets.some((a) => a.path === path)) throw new Error(`There is already an asset at "${path}"`);
       const a: AssetData = { id: nextId(p, 'a'), path, kind: info.kind ?? 'image', mime: info.mime, width: info.width, height: info.height };
+      if (info.origin) a.origin = info.origin;
       p.assets.push(a);
+      return a.id;
+    },
+    replaceAsset(path, info) {
+      const i = p.assets.findIndex((a) => a.path === path);
+      if (i < 0) throw new Error(`There is no asset at "${path}"`);
+      const old = p.assets[i];
+      const a: AssetData = { id: nextId(p, 'a'), path, kind: old.kind, mime: info.mime, width: info.width, height: info.height };
+      const origin = info.origin ?? old.origin;
+      if (origin) a.origin = origin;
+      p.assets[i] = a;
       return a.id;
     },
   };

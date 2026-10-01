@@ -90,9 +90,18 @@ export function TilePanel({ store }: { store: Store }) {
   useStore(store);
   const [creating, setCreating] = useState(false);
   const s = store.scene, layer = store.selected?.type === 'TileMapLayer' ? store.selected : null;
+  const labBtn: React.CSSProperties = { ...btn(false), marginLeft: 'auto' };
+  // Maps can be made and edited in Tile Mapper too (src/labs/tile-mapper): sent back, they are painted in here.
+  const lab = (
+    <span style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+      {store.selected && store.isMapNode(store.selected.id) && <button type="button" data-testid="tile-edit-in-tile-mapper" style={labBtn} title="Open this map's layers in Tile Mapper (autotiling, collision painting, PNG and .tmj export). Send to Game Studio there and these layers are repainted; Ctrl+Z puts them back." onClick={() => store.editInTileMapper(store.selected!.id)}>Edit in Tile Mapper</button>}
+      <button type="button" data-testid="tile-new-map" style={btn(false)} title="Make a new map in Tile Mapper. Send it back from there and it goes into this scene as a Node2D of TileMapLayers." onClick={() => store.newMap()}>New map…</button>
+    </span>
+  );
   if (!s || !layer) {
-    return <div style={{ color: C.faint, fontSize: 12, padding: 4 }}>
-      Select a TileMapLayer to paint it (add one with <b>+ Add… › TileMapLayer</b>). Layers are separate TileMapLayer nodes: a floor layer, a walls layer in front of it, and so on.
+    return <div style={{ color: C.faint, fontSize: 12, padding: 4, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+      <span>Select a TileMapLayer to paint it (add one with <b>+ Add… › TileMapLayer</b>). Layers are separate TileMapLayer nodes: a floor layer, a walls layer in front of it, and so on.</span>
+      {s && lab}
     </div>;
   }
   const path = propValue('TileMapLayer', layer.props, 'tileset') as string | null;
@@ -118,6 +127,7 @@ export function TilePanel({ store }: { store: Store }) {
             onClick={() => { store.tile = { ...store.tile, collision: !store.tile.collision }; store.changed(); }}>■ Solid tiles</button>
           <span style={{ color: C.faint }}>{store.tile.collision ? `${info.data.solid.length} solid` : `tile ${store.tile.tileId}`} · {info.data.tileWidth} × {info.data.tileHeight} px</span>
         </>}
+        {lab}
       </div>
       {creating && <NewTileset store={store} onDone={(created) => { setCreating(false); if (created) store.act((d) => d.setProp(s.id, layer.id, 'tileset', created, `${layer.name}: tileset ${created}`)); }} />}
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', border: `1px solid ${C.border}`, borderRadius: 3, padding: 4 }}>

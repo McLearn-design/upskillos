@@ -3,13 +3,17 @@
 // no message and works even when a game has hung.
 
 import type { Project } from '../core/types';
+import type { EnvSpec } from '../ml/env';
+import type { LinearPolicy } from '../ml/cem';
 
 export type ToRuntime =
   | { type: 'load'; project: Project; scene: string; assets: { path: string; mime: string; bytes: ArrayBuffer }[] }
   | { type: 'pause' }
   | { type: 'resume' }
   | { type: 'restart' }
-  | { type: 'inspect'; path: string };
+  | { type: 'inspect'; path: string }
+  /** A trained agent plays (ml/): every frameSkip frames it looks at the game and holds an action's keys. null stops it. */
+  | { type: 'agent'; spec: EnvSpec; policy: LinearPolicy | null };
 
 export type LogLevel = 'log' | 'info' | 'warn' | 'error';
 

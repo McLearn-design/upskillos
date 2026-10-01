@@ -12,36 +12,22 @@ import {
   TRANSPARENT,
   clampSize,
   createDoc,
-  createFrame,
-  flipH,
-  flipV,
   normalizeDoc,
-  rotate90,
-  shift,
   totalDuration,
-  withFramePixels,
 } from './pixelDoc.js'
-import {
-  addFrame,
-  addPaletteColor,
-  applyPalette,
-  mapFrames,
-  moveFrame,
-  removeFrame,
-  removePaletteColor,
-  resizeDoc,
-  setAllDurations,
-  setPaletteColor,
-  updateFrame,
-  useAutosave,
-  useSpriteDoc,
-} from './useSpriteDoc.js'
-import { getPref, loadSprite, setPref } from './db.js'
+import { useAutosave, useSpriteDoc } from './useSpriteDoc.js'
+import { getPref, loadSprite, saveSprite, setPref } from './db.js'
+import { useNavigate } from 'react-router-dom'
+import { listenForArt, sendArt } from '../../utils/artBridge.js'
+import { docFromBlob, spriteMessage } from './gameStudio.js'
+import { SPRITE_API_NAMES, cmd, runSpriteCode } from './spriteApi.js'
+import { EXAMPLES } from './examples.js'
+import CodeLogPanel from '../../components/ui/CodeLogPanel.jsx'
 
 const SIZE_PRESETS = [8, 16, 24, 32, 48, 64]
 
 export default function SpriteForge({ onBack }) {
-  const { doc, commit, apply, undo, redo, replaceDoc, canUndo, canRedo } = useSpriteDoc()
+  const { doc, act, log, start, apply, undo, redo, replaceDoc, canUndo, canRedo } = useSpriteDoc()
   // Nothing may be written to storage until the attempt to restore the previous
   // session has settled. Otherwise the blank document this hook starts with
   // races the restore: it saves itself, overwrites "last opened", and the real
@@ -64,6 +50,7 @@ export default function SpriteForge({ onBack }) {
   const [applyToAll, setApplyToAll] = useState(false)
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [codeOpen, setCodeOpen] = useState(false)
   const canvasRef = useRef(null)
 
   const [playbackIndex] = usePlayback(doc, playing)
@@ -97,6 +84,41 @@ export default function SpriteForge({ onBack }) {
     if (ready) setPref('lastSpriteId', doc.id)
   }, [doc.id, ready])
 
+  // Game Studio asks for a new sprite, or sends one of its pictures to edit (src/utils/artBridge.js).
+  // Taken only once the restore above has settled, so the restored sprite cannot replace it.
+  const navigate = useNavigate()
+  const [bridgeNote, setBridgeNote] = useState('')
+  useEffect(() => {
+    if (!ready) return undefined
+    return listenForArt('sprite-forge', async (m) => {
+      try {
+        if (m.type === 'new-sprite') {
+          replaceDoc({ ...createDoc({ width: 32, height: 32, name: m.name }), link: m.link })
+        } else if (m.type === 'edit-sprite') {
+          // Made here before: open the original, frames and all. Otherwise read the picture.
+          const original = m.doc ? await loadSprite(m.doc) : null
+          replaceDoc(original ? { ...original, link: m.link } : await docFromBlob(m.blob, m.name, m.link))
+        } else return
+        setFrameIndex(0)
+        setBridgeNote(`For Game Studio (${m.link?.projectName ?? 'a project'}): Send to Game Studio when it is done`)
+      } catch (e) {
+        setBridgeNote(e instanceof Error ? e.message : String(e))
+      }
+    })
+  }, [ready, replaceDoc])
+
+  // Every frame as a PNG, with its timing and tags; Game Studio adds them, or updates the picture this came from.
+  const sendToGameStudio = async () => {
+    try {
+      await saveSprite(doc) // so Edit in Sprite Forge can open this document again later
+      sendArt('game-studio', await spriteMessage(doc))
+      setBridgeNote(`Sent to Game Studio${doc.link?.projectName ? ` (${doc.link.projectName})` : ''}`)
+      navigate('/lab/game-studio')
+    } catch (e) {
+      setBridgeNote(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   // Deleting frames can leave the edit cursor past the end of the array.
   useEffect(() => {
     if (frameIndex > doc.frames.length - 1) setFrameIndex(doc.frames.length - 1)
@@ -120,37 +142,33 @@ export default function SpriteForge({ onBack }) {
 
   const commitPixels = useCallback(
     (pixels) => {
-      commit((prev) => withFramePixels(prev, frameIndex, pixels))
+      act((d) => cmd.paint(d, frameIndex, pixels))
     },
-    [commit, frameIndex],
+    [act, frameIndex],
   )
 
   // Frame transforms respect the "all frames" switch, because a flip or a nudge
   // that has to be repeated by hand across eight frames of a walk cycle is how
-  // frames drift out of alignment in the first place.
-  const transform = useCallback(
-    (fn) => {
-      commit((prev) => {
-        if (applyToAll) return mapFrames(prev, (px) => fn(px, prev.width, prev.height))
-        const px = prev.frames[frameIndex].pixels.slice()
-        return withFramePixels(prev, frameIndex, fn(px, prev.width, prev.height))
-      })
-    },
-    [commit, frameIndex, applyToAll],
-  )
-
-  const clearFrame = () =>
-    commit((prev) =>
-      applyToAll
-        ? mapFrames(prev, (px) => px.fill(TRANSPARENT))
-        : withFramePixels(prev, frameIndex, new Uint8Array(prev.width * prev.height)),
-    )
+  // frames drift out of alignment in the first place. Each is a named command
+  // (spriteApi.js), so it is logged as the line that makes it.
+  const which = applyToAll ? 'all' : frameIndex
+  const transform = (name, ...args) => act((d) => cmd[name](d, ...args, which))
+  const clearFrame = () => transform('clear')
 
   const newSprite = (opts) => {
     replaceDoc(createDoc(opts))
     setFrameIndex(0)
     setValue(1)
     setLibraryOpen(false)
+  }
+
+  // An example is code on the sprite API, run on an empty sprite: the Code panel shows how it was drawn.
+  const openExample = (ex) => {
+    replaceDoc(createDoc({ width: ex.width, height: ex.height, name: ex.title }))
+    const err = act({ label: `Example: ${ex.title}`, code: ex.code, run: (d) => runSpriteCode(d, ex.code) })
+    setFrameIndex(0)
+    setCodeOpen(true)
+    setBridgeNote(err ?? `${ex.title}: ${ex.about}`)
   }
 
   const openSprite = async (id) => {
@@ -171,18 +189,7 @@ export default function SpriteForge({ onBack }) {
   // Imported frames arrive as bare pixel arrays; whether they replace the
   // document or extend it is the user's call in the dialog.
   const applyImport = ({ frames, palette, mode }) => {
-    commit((prev) => {
-      const made = frames.map((pixels, i) => ({
-        ...createFrame(prev.width, prev.height, `Imported ${i + 1}`),
-        pixels,
-      }))
-      const next = palette ? applyPalette(prev, palette) : prev
-      return {
-        ...next,
-        frames: mode === 'replace' ? made : [...next.frames, ...made],
-        updatedAt: Date.now(),
-      }
-    })
+    act((d) => cmd.importFrames(d, mode, frames, palette))
     setImportOpen(false)
   }
 
@@ -226,7 +233,7 @@ export default function SpriteForge({ onBack }) {
       if (k === 'Y' && e.shiftKey) return setSymmetry((s) => ({ ...s, mirrorY: !s.mirrorY }))
       if (e.altKey && k.toLowerCase() === 'n') {
         e.preventDefault()
-        commit((prev) => addFrame(prev, frameIndex, { copy: true }))
+        act((d) => cmd.addFrame(d, frameIndex, { copy: true }))
         setFrameIndex((i) => i + 1)
         return
       }
@@ -255,7 +262,7 @@ export default function SpriteForge({ onBack }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [undo, redo, commit, frameIndex, doc.frames.length, doc.palette.length])
+  }, [undo, redo, act, frameIndex, doc.frames.length, doc.palette.length])
 
   // --- chrome -------------------------------------------------------------
 
@@ -299,7 +306,7 @@ export default function SpriteForge({ onBack }) {
             min={MIN_SIZE}
             max={MAX_SIZE}
             value={doc.width}
-            onChange={(e) => commit((prev) => resizeDoc(prev, e.target.value, prev.height))}
+            onChange={(e) => act((d) => cmd.resize(d, e.target.value, d.height))}
             className="w-14 rounded border border-slate-300 bg-white px-1 py-0.5 font-mono text-[11px] dark:border-slate-600 dark:bg-slate-800"
           />
           ×
@@ -308,7 +315,7 @@ export default function SpriteForge({ onBack }) {
             min={MIN_SIZE}
             max={MAX_SIZE}
             value={doc.height}
-            onChange={(e) => commit((prev) => resizeDoc(prev, prev.width, e.target.value))}
+            onChange={(e) => act((d) => cmd.resize(d, d.width, e.target.value))}
             className="w-14 rounded border border-slate-300 bg-white px-1 py-0.5 font-mono text-[11px] dark:border-slate-600 dark:bg-slate-800"
           />
         </label>
@@ -316,7 +323,7 @@ export default function SpriteForge({ onBack }) {
           value=""
           onChange={(e) => {
             const s = clampSize(e.target.value)
-            commit((prev) => resizeDoc(prev, s, s))
+            act((d) => cmd.resize(d, s, s))
           }}
           className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px] text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
           title="Square size presets"
@@ -330,6 +337,17 @@ export default function SpriteForge({ onBack }) {
         </select>
 
         <div className="ml-auto flex items-center gap-1">
+          <button
+            type="button"
+            data-testid="sprite-forge-send"
+            onClick={sendToGameStudio}
+            className={`${headerBtn} font-semibold text-fuchsia-700 dark:text-fuchsia-300`}
+            title={doc.link?.asset
+              ? `Update ${doc.link.asset} in Game Studio${doc.link.projectName ? ` (${doc.link.projectName})` : ''}: every node using it shows the new picture`
+              : 'Add this sprite to the project open in Game Studio: one image per frame, and an AnimatedSprite2D when it has several'}
+          >
+            Send to Game Studio
+          </button>
           <button type="button" onClick={() => setImportOpen(true)} className={headerBtn} title="Import a PNG — including slicing an existing sheet back into frames">
             Import image
           </button>
@@ -346,6 +364,19 @@ export default function SpriteForge({ onBack }) {
               }}
             />
           </label>
+          <select
+            data-testid="sprite-forge-examples"
+            value=""
+            onChange={(e) => { const ex = EXAMPLES.find((x) => x.id === e.target.value); if (ex) openExample(ex) }}
+            className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px] text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            title="Example sprites, drawn by code: open one and read how in the Code panel"
+          >
+            <option value="">Examples…</option>
+            {EXAMPLES.map((ex) => <option key={ex.id} value={ex.id}>{ex.title}</option>)}
+          </select>
+          <button type="button" data-testid="sprite-forge-code-toggle" onClick={() => setCodeOpen(!codeOpen)} className={headerBtn} title="GUI → code: every edit as the line of code that makes it, and a box to run your own">
+            {'</> Code'}{log.length ? ` (${log.length})` : ''}
+          </button>
           <button type="button" onClick={() => setLibraryOpen(true)} className={headerBtn}>
             Sprites…
           </button>
@@ -395,6 +426,19 @@ export default function SpriteForge({ onBack }) {
             />
           </div>
 
+          {codeOpen && (
+            <CodeLogPanel
+              testid="sprite-forge-code"
+              log={log}
+              start={`from ${start.name}, ${start.width} × ${start.height}, ${start.frames.length} frame${start.frames.length === 1 ? '' : 's'}, as it was opened`}
+              run={runSpriteCode}
+              onRun={act}
+              onClose={() => setCodeOpen(false)}
+              placeholder={`sprite.paint(${frameIndex}, [[0, 0, 1]])   ·   for (let x = 0; x < sprite.width; x++) sprite.paint(${frameIndex}, [[x, sprite.height - 1, 2]])`}
+              help={`The sprite API: ${SPRITE_API_NAMES.map((n) => `sprite.${n}`).join(', ')}; and sprite.width, sprite.height, sprite.frames, sprite.colors. Colour 0 is transparent; n is the nth swatch.`}
+            />
+          )}
+
           {/* Status bar */}
           <div className="flex shrink-0 items-center gap-3 border-t border-slate-200 px-3 py-1 font-mono text-[10px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
             <span className="w-24">
@@ -414,6 +458,11 @@ export default function SpriteForge({ onBack }) {
             <button type="button" onClick={() => canvasRef.current?.fit()} className="px-1 hover:text-slate-800 dark:hover:text-slate-100">
               fit
             </button>
+            {bridgeNote && (
+              <span data-testid="sprite-forge-note" className="truncate text-fuchsia-700 dark:text-fuchsia-300">
+                {bridgeNote}
+              </span>
+            )}
             <span className="ml-auto hidden sm:inline">
               right-drag erases · space+drag or middle-drag pans · wheel zooms
             </span>
@@ -427,16 +476,16 @@ export default function SpriteForge({ onBack }) {
             value={value}
             colorUsage={colorUsage}
             onSelectValue={setValue}
-            onEditColor={(i, hex) => commit((prev) => setPaletteColor(prev, i, hex))}
+            onEditColor={(i, hex) => act((d) => cmd.color(d, i, hex))}
             onAddColor={() => {
-              commit((prev) => addPaletteColor(prev))
+              act((d) => cmd.addColor(d))
               setValue(doc.palette.length + 1)
             }}
             onRemoveColor={(i) => {
-              commit((prev) => removePaletteColor(prev, i))
+              act((d) => cmd.removeColor(d, i))
               setValue(TRANSPARENT)
             }}
-            onApplyPreset={(preset) => commit((prev) => applyPalette(prev, preset.colors, preset.id))}
+            onApplyPreset={(preset) => act((d) => cmd.palette(d, preset.colors, preset.id))}
           />
 
           <AnimationPreview
@@ -466,14 +515,14 @@ export default function SpriteForge({ onBack }) {
               </label>
             </div>
             <div className="grid grid-cols-4 gap-1">
-              <TBtn onClick={() => transform((px, w, h) => flipH(px, w, h))} title="Flip horizontally">
+              <TBtn onClick={() => transform('flipH')} title="Flip horizontally">
                 ⇔
               </TBtn>
-              <TBtn onClick={() => transform((px, w, h) => flipV(px, w, h))} title="Flip vertically">
+              <TBtn onClick={() => transform('flipV')} title="Flip vertically">
                 ⇕
               </TBtn>
               <TBtn
-                onClick={() => transform((px, w, h) => rotate90(px, w, h))}
+                onClick={() => transform('rotate')}
                 title={doc.width === doc.height ? 'Rotate 90° clockwise' : 'Rotation needs a square canvas'}
                 disabled={doc.width !== doc.height}
               >
@@ -482,16 +531,16 @@ export default function SpriteForge({ onBack }) {
               <TBtn onClick={clearFrame} title="Clear to transparent">
                 ⌫
               </TBtn>
-              <TBtn onClick={() => transform((px, w, h) => shift(px, w, h, 0, -1))} title="Nudge up (wraps)">
+              <TBtn onClick={() => transform('nudge', 0, -1)} title="Nudge up (wraps)">
                 ↑
               </TBtn>
-              <TBtn onClick={() => transform((px, w, h) => shift(px, w, h, 0, 1))} title="Nudge down (wraps)">
+              <TBtn onClick={() => transform('nudge', 0, 1)} title="Nudge down (wraps)">
                 ↓
               </TBtn>
-              <TBtn onClick={() => transform((px, w, h) => shift(px, w, h, -1, 0))} title="Nudge left (wraps)">
+              <TBtn onClick={() => transform('nudge', -1, 0)} title="Nudge left (wraps)">
                 ←
               </TBtn>
-              <TBtn onClick={() => transform((px, w, h) => shift(px, w, h, 1, 0))} title="Nudge right (wraps)">
+              <TBtn onClick={() => transform('nudge', 1, 0)} title="Nudge right (wraps)">
                 →
               </TBtn>
             </div>
@@ -501,7 +550,7 @@ export default function SpriteForge({ onBack }) {
             </p>
           </div>
 
-          <ExportPanel doc={doc} onTagsChange={(tags) => commit((prev) => ({ ...prev, tags }))} />
+          <ExportPanel doc={doc} onTagsChange={(tags) => act((d) => cmd.tags(d, tags))} />
         </div>
       </div>
 
@@ -512,20 +561,20 @@ export default function SpriteForge({ onBack }) {
         playing={playing}
         onSelect={setFrameIndex}
         onAdd={(i, opts) => {
-          commit((prev) => addFrame(prev, i, opts))
+          act((d) => cmd.addFrame(d, i, opts))
           setFrameIndex(i + 1)
         }}
         onDuplicate={(i) => {
-          commit((prev) => addFrame(prev, i, { copy: true }))
+          act((d) => cmd.addFrame(d, i, { copy: true }))
           setFrameIndex(i + 1)
         }}
-        onRemove={(i) => commit((prev) => removeFrame(prev, i))}
+        onRemove={(i) => act((d) => cmd.removeFrame(d, i))}
         onMove={(from, to) => {
-          commit((prev) => moveFrame(prev, from, to))
+          act((d) => cmd.moveFrame(d, from, to))
           if (to >= 0 && to < doc.frames.length) setFrameIndex(to)
         }}
-        onDurationChange={(i, ms) => commit((prev) => updateFrame(prev, i, { duration: ms }))}
-        onAllDurations={(ms) => commit((prev) => setAllDurations(prev, ms))}
+        onDurationChange={(i, ms) => act((d) => cmd.frame(d, i, { duration: ms }))}
+        onAllDurations={(ms) => act((d) => cmd.durations(d, ms))}
       />
 
       {libraryOpen && (

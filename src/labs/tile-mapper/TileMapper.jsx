@@ -6,24 +6,15 @@ import ExportPanel from './ExportPanel.jsx'
 import MapLibrary from './MapLibrary.jsx'
 import ImportTilesetDialog from './ImportTilesetDialog.jsx'
 import { MAX_DIM, MIN_DIM, createDoc, normalizeDoc } from './tilemapDoc.js'
-import {
-  addLayer,
-  addTerrain,
-  clearLayer,
-  duplicateLayer,
-  moveLayer,
-  refreshTerrains,
-  removeLayer,
-  removeTerrain,
-  resizeDoc,
-  shiftDoc,
-  updateLayer,
-  updateTerrain,
-  useAutosave,
-  useTilemapDoc,
-  withLayerCells,
-} from './useTilemapDoc.js'
-import { getPref, loadMap, setPref } from './db.js'
+import { useAutosave, useTilemapDoc } from './useTilemapDoc.js'
+import { getPref, loadMap, saveMap, setPref } from './db.js'
+import { useNavigate } from 'react-router-dom'
+import { listenForArt, sendArt } from '../../utils/artBridge.js'
+import { docFromMap, mapMessage } from './gameStudio.js'
+import { MAP_API_NAMES, cmd, runMapCode } from './mapApi.js'
+import { EXAMPLES } from './examples.js'
+import { STARTER_SHEETS, starterTileset } from './starterSheets.js'
+import CodeLogPanel from '../../components/ui/CodeLogPanel.jsx'
 import { loadImage } from './tileset.js'
 
 const TOOLS = [
@@ -38,7 +29,7 @@ const TOOLS = [
 ]
 
 export default function TileMapper({ onBack }) {
-  const { doc, commit, apply, undo, redo, replaceDoc, canUndo, canRedo } = useTilemapDoc()
+  const { doc, act, log, start, apply, undo, redo, replaceDoc, canUndo, canRedo } = useTilemapDoc()
   // As in the sprite editor: nothing is written to storage until the restore
   // attempt settles, or the blank starting document races it and overwrites
   // the pointer to the real map.
@@ -57,6 +48,7 @@ export default function TileMapper({ onBack }) {
   const [image, setImage] = useState(null)
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [codeOpen, setCodeOpen] = useState(false)
   const canvasRef = useRef(null)
 
   const terrain = doc.terrains.find((t) => t.id === terrainId) ?? doc.terrains[0] ?? null
@@ -104,6 +96,44 @@ export default function TileMapper({ onBack }) {
     if (ready) setPref('lastMapId', doc.id)
   }, [doc.id, ready])
 
+  // Game Studio asks for a new map, or sends one of its maps to edit (src/utils/artBridge.js); after a
+  // send it says where the map went, so the next send repaints those layers. Taken only once the
+  // restore above has settled.
+  const navigate = useNavigate()
+  const [bridgeNote, setBridgeNote] = useState('')
+  useEffect(() => {
+    if (!ready) return undefined
+    return listenForArt('tile-mapper', async (m) => {
+      try {
+        if (m.type === 'new-map') {
+          replaceDoc({ ...createDoc({ name: m.name }), link: m.link })
+          setBridgeNote(`For Game Studio (${m.link?.projectName ?? 'a project'}): choose a tileset, paint, then Send to Game Studio`)
+        } else if (m.type === 'edit-map') {
+          replaceDoc(await docFromMap(m.map, m.tileset, m.link))
+          setBridgeNote(`From Game Studio (${m.link?.projectName ?? 'a project'}): Send to Game Studio when it is done`)
+        } else if (m.type === 'linked') {
+          apply((prev) => (prev.id === m.doc ? { ...prev, link: { ...m.link, origin: prev.link?.origin ?? { x: 0, y: 0 } } } : prev))
+          return
+        } else return
+        setLayerIndex(0)
+      } catch (e) {
+        setBridgeNote(e instanceof Error ? e.message : String(e))
+      }
+    })
+  }, [ready, replaceDoc, apply])
+
+  const sendToGameStudio = async () => {
+    try {
+      const message = mapMessage(doc)
+      await saveMap(doc)
+      sendArt('game-studio', message)
+      setBridgeNote(`Sent to Game Studio${doc.link?.projectName ? ` (${doc.link.projectName})` : ''}`)
+      navigate('/lab/game-studio')
+    } catch (e) {
+      setBridgeNote(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   useEffect(() => {
     if (layerIndex > doc.layers.length - 1) setLayerIndex(doc.layers.length - 1)
   }, [doc.layers.length, layerIndex])
@@ -116,15 +146,31 @@ export default function TileMapper({ onBack }) {
 
   const commitCells = useCallback(
     (cells) => {
-      commit((prev) => withLayerCells(prev, layerIndex, cells))
+      act((d) => cmd.paint(d, layerIndex, cells))
     },
-    [commit, layerIndex],
+    [act, layerIndex],
   )
 
   const newMap = (opts) => {
     replaceDoc(createDoc(opts))
     setLayerIndex(0)
     setLibraryOpen(false)
+  }
+
+  // An example is code on the map API, run on an empty map with its starter tileset: the Code panel shows it.
+  const openExample = async (ex) => {
+    try {
+      const sheet = STARTER_SHEETS.find((sh) => sh.file === ex.sheet)
+      const tileset = await starterTileset(sheet)
+      replaceDoc({ ...createDoc({ cols: ex.cols, rows: ex.rows, tileW: sheet.tile, tileH: sheet.tile, name: ex.title }), tileset })
+      const err = act({ label: `Example: ${ex.title}`, code: ex.code, run: (d) => runMapCode(d, ex.code) })
+      if (err) throw new Error(err)
+      setLayerIndex(0)
+      setCodeOpen(true)
+      setBridgeNote(`${ex.title}: ${ex.about} Its code is in the Code panel.`)
+    } catch (e) {
+      setBridgeNote(e instanceof Error ? e.message : String(e))
+    }
   }
 
   const openMap = async (id) => {
@@ -225,7 +271,7 @@ export default function TileMapper({ onBack }) {
             min={MIN_DIM}
             max={MAX_DIM}
             value={doc.cols}
-            onChange={(e) => commit((prev) => resizeDoc(prev, e.target.value, prev.rows))}
+            onChange={(e) => act((d) => cmd.resize(d, e.target.value, d.rows))}
             className="w-14 rounded border border-slate-300 bg-white px-1 py-0.5 font-mono text-[11px] dark:border-slate-600 dark:bg-slate-800"
           />
           ×
@@ -234,7 +280,7 @@ export default function TileMapper({ onBack }) {
             min={MIN_DIM}
             max={MAX_DIM}
             value={doc.rows}
-            onChange={(e) => commit((prev) => resizeDoc(prev, prev.cols, e.target.value))}
+            onChange={(e) => act((d) => cmd.resize(d, d.cols, e.target.value))}
             className="w-14 rounded border border-slate-300 bg-white px-1 py-0.5 font-mono text-[11px] dark:border-slate-600 dark:bg-slate-800"
           />
         </label>
@@ -242,7 +288,19 @@ export default function TileMapper({ onBack }) {
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
-            onClick={() => commit((prev) => refreshTerrains(prev))}
+            data-testid="tile-mapper-send"
+            onClick={sendToGameStudio}
+            disabled={!doc.tileset}
+            className={`${headerBtn} font-semibold text-emerald-700 dark:text-emerald-300`}
+            title={doc.link?.node
+              ? `Repaint this map's layers in Game Studio${doc.link.projectName ? ` (${doc.link.projectName})` : ''}, by layer name; Ctrl+Z there puts them back`
+              : 'Add this map to the scene open in Game Studio: a Node2D of TileMapLayers, with collision layers as hidden solid ones'}
+          >
+            Send to Game Studio
+          </button>
+          <button
+            type="button"
+            onClick={() => act(cmd.refreshAutotiles())}
             disabled={!doc.terrains.length}
             className={headerBtn}
             title="Re-derive every autotiled cell — the repair for terrain placed before the 4×4 block was marked"
@@ -262,6 +320,19 @@ export default function TileMapper({ onBack }) {
               }}
             />
           </label>
+          <select
+            data-testid="tile-mapper-examples"
+            value=""
+            onChange={(e) => { const ex = EXAMPLES.find((x) => x.id === e.target.value); if (ex) openExample(ex) }}
+            className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px] text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            title="Example maps, made by code: open one and read how in the Code panel"
+          >
+            <option value="">Examples…</option>
+            {EXAMPLES.map((ex) => <option key={ex.id} value={ex.id}>{ex.title}</option>)}
+          </select>
+          <button type="button" data-testid="tile-mapper-code-toggle" onClick={() => setCodeOpen(!codeOpen)} className={headerBtn} title="GUI → code: every edit as the line of code that makes it, and a box to run your own">
+            {'</> Code'}{log.length ? ` (${log.length})` : ''}
+          </button>
           <button type="button" onClick={() => setLibraryOpen(true)} className={headerBtn}>
             Maps…
           </button>
@@ -348,12 +419,30 @@ export default function TileMapper({ onBack }) {
             />
           </div>
 
+          {codeOpen && (
+            <CodeLogPanel
+              testid="tile-mapper-code"
+              log={log}
+              start={`from ${start.name}, ${start.cols} × ${start.rows}${start.tileset ? `, tileset ${start.tileset.name}` : ''}, as it was opened`}
+              run={runMapCode}
+              onRun={act}
+              onClose={() => setCodeOpen(false)}
+              placeholder={`map.paint("Ground", [[0, 0, 5]])   ·   for (let x = 0; x < map.cols; x++) map.paint("Ground", [[x, ${Math.max(0, doc.rows - 1)}, 5]])`}
+              help={`The map API: ${MAP_API_NAMES.map((n) => `map.${n}`).join(', ')}; and map.cols, map.rows, map.layers.`}
+            />
+          )}
+
           <div className="flex shrink-0 items-center gap-3 border-t border-slate-200 px-3 py-1 font-mono text-[10px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
             <span className="w-20">{hover?.inside ? `${hover.x}, ${hover.y}` : '—'}</span>
             <span>
               {doc.cols}×{doc.rows} @ {doc.tileW}px
             </span>
             <span className="truncate">{doc.layers[layerIndex]?.name}</span>
+            {bridgeNote && (
+              <span data-testid="tile-mapper-note" className="truncate text-emerald-700 dark:text-emerald-300">
+                {bridgeNote}
+              </span>
+            )}
             <button type="button" onClick={() => canvasRef.current?.zoomOut()} className="px-1 hover:text-slate-800 dark:hover:text-slate-100">
               −
             </button>
@@ -375,7 +464,7 @@ export default function TileMapper({ onBack }) {
                 <button
                   key={icon}
                   type="button"
-                  onClick={() => commit((prev) => shiftDoc(prev, dx, dy))}
+                  onClick={() => act((d) => cmd.shift(d, dx, dy))}
                   className="px-1 hover:text-slate-800 dark:hover:text-slate-100"
                   title="Shift every layer by one tile"
                 >
@@ -397,12 +486,12 @@ export default function TileMapper({ onBack }) {
             activeTerrainId={terrain?.id ?? null}
             onSelectTerrain={setTerrainId}
             onAddTerrain={(t) => {
-              commit((prev) => addTerrain(prev, t))
+              act((d) => cmd.addTerrain(d, t))
               setTerrainId(t.id)
               setTool('terrain')
             }}
-            onRemoveTerrain={(id) => commit((prev) => removeTerrain(prev, id))}
-            onEditTerrain={(id, patch) => commit((prev) => updateTerrain(prev, id, patch))}
+            onRemoveTerrain={(id) => act((d) => cmd.removeTerrain(d, id))}
+            onEditTerrain={(id, patch) => act((d) => cmd.terrain(d, id, patch))}
             onOpenImport={() => setImportOpen(true)}
           />
 
@@ -410,18 +499,18 @@ export default function TileMapper({ onBack }) {
             doc={doc}
             layerIndex={layerIndex}
             onSelect={setLayerIndex}
-            onUpdate={(i, patch) => commit((prev) => updateLayer(prev, i, patch))}
+            onUpdate={(i, patch) => act((d) => cmd.layer(d, i, patch))}
             onAdd={(kind) => {
-              commit((prev) => addLayer(prev, kind))
+              act((d) => cmd.addLayer(d, kind))
               setLayerIndex(doc.layers.length)
             }}
-            onRemove={(i) => commit((prev) => removeLayer(prev, i))}
-            onDuplicate={(i) => commit((prev) => duplicateLayer(prev, i))}
+            onRemove={(i) => act((d) => cmd.removeLayer(d, i))}
+            onDuplicate={(i) => act((d) => cmd.duplicateLayer(d, i))}
             onMove={(from, to) => {
-              commit((prev) => moveLayer(prev, from, to))
+              act((d) => cmd.moveLayer(d, from, to))
               setLayerIndex(to)
             }}
-            onClear={(i) => commit((prev) => clearLayer(prev, i))}
+            onClear={(i) => act((d) => cmd.clearLayer(d, i))}
           />
 
           <ExportPanel doc={doc} image={image} />
@@ -435,15 +524,9 @@ export default function TileMapper({ onBack }) {
         <ImportTilesetDialog
           doc={doc}
           onApply={(tileset) => {
-            commit((prev) => ({
-              ...prev,
-              tileset,
-              // A tileset carries its own tile size; adopting it keeps the map
-              // grid and the art in step instead of scaling tiles to fit.
-              tileW: tileset.tileW,
-              tileH: tileset.tileH,
-              updatedAt: Date.now(),
-            }))
+            // A tileset carries its own tile size; adopting it keeps the map
+            // grid and the art in step instead of scaling tiles to fit.
+            act((d) => cmd.tileset(d, tileset))
             setBrush({ w: 1, h: 1, tiles: [0] })
             setImportOpen(false)
           }}

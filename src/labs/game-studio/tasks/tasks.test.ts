@@ -12,6 +12,7 @@ import { evaluateTask, type ScriptLoader } from './checker';
 import { TASKS, chains, nextTask } from './index';
 import { gameStudioLink, parseTaskLink } from './links';
 import type { GameTask } from './types';
+import { TETRIS, tetrisStepCode } from './tetris';
 
 const pngSize = (path: string) => { const b = readFileSync(fileURLToPath(new URL(`../starter/${path.replace(/^assets\//, '')}`, import.meta.url))); return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) }; };
 
@@ -51,6 +52,35 @@ describe('every task', () => {
     });
   }
 
+});
+
+describe('Tetris, step by step', () => {
+  for (const task of TETRIS) {
+    it(`"${task.title}": each step's code, from the start, passes that step and every one before it`, async () => {
+      for (let k = 0; k < task.steps.length; k++) {
+        const d = begin(task);
+        d.runCode('Steps', tetrisStepCode(task.id, k));
+        expect(problems(d.project)).toEqual([]);
+        const got = await evaluateTask(task, d.project, { ran: true }, load);
+        expect(got.slice(0, k + 1), `${task.id} after step ${k + 1}`).toEqual(got.slice(0, k + 1).map(() => true));
+      }
+    });
+  }
+});
+
+describe('the course\'s Try it cards', () => {
+  // Every GameStudioTask card in "Learn to Program by Making Games" names a task that exists, and a lab
+  // checkpoint the lesson declares, so a renamed task fails here, not in a learner's browser.
+  const LESSONS = import.meta.glob('../../../courses/making-games/*/*.js', { eager: true, import: 'default' }) as Record<string, { id: string; checkpoints: { id: string; type: string }[]; intuition: { visualizations?: { id: string; props?: Record<string, string> }[] } }>;
+  it('name real tasks and declared lab checkpoints', () => {
+    const cards = Object.values(LESSONS).flatMap((l) => (l.intuition.visualizations ?? []).filter((v) => v.id === 'GameStudioTask').map((v) => ({ lesson: l, props: v.props ?? {} })));
+    expect(cards.length).toBeGreaterThanOrEqual(4);
+    for (const { lesson, props } of cards) {
+      expect(() => gameStudioLink(props.task), lesson.id).not.toThrow();
+      expect(props.lesson).toBe(lesson.id);
+      expect(lesson.checkpoints.find((c) => c.id === props.checkpoint)?.type, `${lesson.id} ${props.checkpoint}`).toBe('lab');
+    }
+  });
 });
 
 describe('links', () => {
