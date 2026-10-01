@@ -7,6 +7,7 @@ import { getLabInProgressItems } from '../data/labProgress.js'
 import UniverseBackground from '../components/backgrounds/UniverseBackground.jsx'
 import TopicFilterHeader from '../components/ui/TopicFilterHeader.jsx'
 import TopicTable from '../components/ui/TopicTable.jsx'
+import SpotlightGrid from '../components/ui/SpotlightGrid.jsx'
 import { TOPICS, TOPIC_ORDER, getSubtopicGroup, firstSubtopicId, ALL_ITEMS } from '../data/topicGroups.js'
 
 // Category words ("games", "labs", "courses") are deliberately stripped as
@@ -92,8 +93,9 @@ const COURSE_ENTRIES = ALL_COURSES
 export default function HomePage() {
   const { getLessonProgress } = useProgress()
   const [searchQuery, setSearchQuery] = useState('')
-  const [activeTopicId, setActiveTopicId] = useState('all')
-  const [activeSubtopicId, setActiveSubtopicId] = useState(firstSubtopicId('all'))
+  // Opens on the Spotlight: the apps that give a learner the most for their time.
+  const [activeTopicId, setActiveTopicId] = useState('spotlight')
+  const [activeSubtopicId, setActiveSubtopicId] = useState(firstSubtopicId('spotlight'))
 
   function selectTopic(topicId) {
     setActiveTopicId(topicId)
@@ -149,7 +151,11 @@ export default function HomePage() {
 
         {/* ── RESULTS ──────────────────────────────────────────────────────── */}
         <section className="px-4 pb-10">
-          {group ? (
+          {!isSearching && activeTopicId === 'spotlight' ? (
+            <div className="w-[90vw] max-w-none mx-auto">
+              <SpotlightGrid />
+            </div>
+          ) : group ? (
             <div className="w-[90vw] max-w-none mx-auto">
               <TopicTable group={group} query={isSearching ? searchQuery : ''} matchItem={matchItem} />
             </div>

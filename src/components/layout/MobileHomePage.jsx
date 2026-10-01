@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { COURSES, ALL_LESSONS } from "../../courses/index.js";
 import { useProgress } from "../../hooks/useProgress.js";
 import TopicTable from '../ui/TopicTable.jsx';
+import SpotlightGrid from '../ui/SpotlightGrid.jsx';
 import { LABS } from '../../labs/labRegistryLoader.js';
 import { buildProgressKey } from '../../context/progressMigration.ts';
 
@@ -128,6 +129,10 @@ export default function MobileHomePage() {
           </div>
         </section>
       )}
+
+      <div className="mb-12">
+        <SpotlightGrid intro="The apps that give you the most for your time. Start here." />
+      </div>
 
       <section data-tour="courses-grid" className="pb-12">
         <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-500 dark:text-sky-400 mb-4 flex items-center gap-2">

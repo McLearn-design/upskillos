@@ -2,6 +2,7 @@ import { getAllCourses } from '../courses/courseLoader.js'
 import { LABS } from '../labs/labRegistryLoader.js'
 import { GAMES } from '../games/registry.js'
 import { completeTopics } from './catalogNavigation.js'
+import { SPOTLIGHT } from './spotlight.js'
 
 // Curated topic → subtopic tree for the home page's "Explore" section.
 // Two-level nav: pick a topic (Mathematics, Science, ...), then a subtopic
@@ -23,6 +24,21 @@ import { completeTopics } from './catalogNavigation.js'
 // Unknown subjects go under General; All content always includes every entry.
 // Adding content therefore does not require editing this navigation file.
 const CURATED_TOPICS = {
+  // The Home page opens here. HomePage renders this topic with SpotlightGrid (full
+  // descriptions); the items below keep it consistent with search and the topic filter.
+  spotlight: {
+    label: 'Spotlight',
+    icon: '★',
+    color: 'amber',
+    subtopics: {
+      featured: {
+        label: 'Featured apps',
+        color: 'amber',
+        items: SPOTLIGHT.map(({ kind, key, headline }) => ({ kind, key, differentiator: headline })),
+      },
+    },
+  },
+
   mathematics: {
     label: 'Mathematics',
     icon: '∑',
@@ -232,6 +248,10 @@ const CURATED_TOPICS = {
             differentiator: 'Build a real social platform frontend from scratch in vanilla TypeScript against a live REST API — no framework.' },
           { kind: 'lab', key: 'dsa-patterns',
             differentiator: 'Data structures and classic design patterns, written in TypeScript throughout.' },
+          { kind: 'lab', key: 'lesson-engine',
+            differentiator: 'TypeScript Fundamentals lesson series, with challenges graded by real tests.' },
+          { kind: 'lab', key: 'codelens',
+            differentiator: 'Step through TypeScript as it runs — compiled with the real TypeScript compiler, traced line by line.' },
         ],
       },
       cpp: {
@@ -243,7 +263,27 @@ const CURATED_TOPICS = {
           { kind: 'lab', key: 'visual-code',
             differentiator: 'Block-based programming that can generate real, runnable C++ alongside JS and Python.' },
           { kind: 'lab', key: 'lesson-engine',
-            differentiator: 'Runs narrated lessons in this general-purpose teaching runtime — usable for C++ content too.' },
+            differentiator: 'C++ Fundamentals lesson series with challenges graded by real tests — compiled on your own g++ in the desktop app.' },
+        ],
+      },
+      csharp: {
+        label: 'C# & .NET',
+        color: 'purple',
+        items: [
+          { kind: 'lab', key: 'lesson-engine',
+            differentiator: 'C# Fundamentals (26 levels) and WPF & .NET Mastery — real windows built on your own .NET SDK, tested by clicking through your UI. Desktop app for WPF.' },
+          { kind: 'course', key: 'native-languages',
+            differentiator: 'Run C#, Java and Common Lisp locally on real toolchains in the desktop app.' },
+        ],
+      },
+      'more-languages': {
+        label: 'Java, Kotlin, Rust & Go',
+        color: 'red',
+        items: [
+          { kind: 'lab', key: 'lesson-engine',
+            differentiator: 'Java Fundamentals, Java Architecture, Kotlin, Rust and Go lesson series — each with challenges graded by real tests.' },
+          { kind: 'course', key: 'native-languages',
+            differentiator: 'Run Java and other compiled languages locally on real toolchains in the desktop app.' },
         ],
       },
       'web-development': {
@@ -586,7 +626,7 @@ TOPICS.all = {
 }
 
 export const TOPIC_ORDER = [
-  'all', 'mathematics', 'science', 'programming', 'computer-science',
+  'spotlight', 'all', 'mathematics', 'science', 'programming', 'computer-science',
   'engineering', 'data-ai', 'creative', 'general',
 ]
 

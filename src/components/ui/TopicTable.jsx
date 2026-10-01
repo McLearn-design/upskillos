@@ -38,7 +38,7 @@ function PremiumHeaderBackground({ meta }) {
 // Resolves one curated { kind, key, differentiator } entry into real,
 // live display data from the registry that actually owns it — this file
 // never duplicates label/emoji/color/tags, only the curated differentiator.
-function resolveEntry(entry) {
+export function resolveEntry(entry) {
   if (entry.kind === 'course') {
     const meta = ALL_COURSES.find(c => c.key === entry.key)
     if (!meta) return null
@@ -74,6 +74,25 @@ function resolveEntry(entry) {
   }
 }
 
+// Opens a resolved entry: a course by route, a lab or game through the pin launcher
+// (which opens it the same way the sidebar pins do). Shared with SpotlightGrid.
+export function launchEntry(entry, { navigate, openPin }) {
+  if (entry.kind === 'course') {
+    navigate(entry.path)
+    return
+  }
+  openPin({
+    id: entry.key,
+    label: entry.label,
+    emoji: entry.emoji,
+    type: entry.kind,
+    path: entry.path,
+    event: entry.event,
+    color: entry.color,
+    ...(entry.kind === 'lab' ? { labKey: entry.key } : { gameKey: entry.key }),
+  })
+}
+
 const TINT = {
   teal: 'bg-teal-50/50 dark:bg-teal-950/10 border-teal-200/70 dark:border-teal-500/25',
   slate: 'bg-slate-50/50 dark:bg-slate-900/20 border-slate-200/70 dark:border-slate-700/50',
@@ -98,21 +117,7 @@ export default function TopicTable({ group, query, matchItem }) {
 
   function launch(entry) {
     setOpenItem(null)
-    if (entry.kind === 'course') {
-      navigate(entry.path)
-      return
-    }
-    const pin = {
-      id: entry.key,
-      label: entry.label,
-      emoji: entry.emoji,
-      type: entry.kind,
-      path: entry.path,
-      event: entry.event,
-      color: entry.color,
-      ...(entry.kind === 'lab' ? { labKey: entry.key } : { gameKey: entry.key }),
-    }
-    openPin(pin)
+    launchEntry(entry, { navigate, openPin })
   }
 
   const groupMeta = filtered.length > 0 ? (GLASS_META[filtered[0].cardItem.color] ?? GLASS_META.slate) : GLASS_META.slate;
