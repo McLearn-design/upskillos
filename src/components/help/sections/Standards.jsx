@@ -34,14 +34,14 @@ const REQUIREMENTS = [
   {
     zone: "🪪 Identity",
     items: [
-      { req: true, text: "id, chapter, title, subject all set" },
+      { req: true, text: "id, slug, title and subtitle set; the id is unique and never changes once published" },
       {
         req: true,
-        text: "prerequisites[] lists actual lesson ids, not topic names",
+        text: "Prerequisites list actual lesson ids, not topic names",
       },
       {
         req: false,
-        text: 'mentalModel provided (1–2 sentences: what this "is" in plain language)',
+        text: 'mentalModel provided: 3–5 short lines on what this "is" in plain language',
       },
     ],
   },
@@ -54,11 +54,11 @@ const REQUIREMENTS = [
       },
       {
         req: true,
-        text: "hook.setup — 1–3 sentences framing why the question is hard",
+        text: "hook.realWorldContext — 1–3 sentences on why the question matters",
       },
       {
         req: false,
-        text: "hook.visualization — interactive viz (text-only hooks rarely land)",
+        text: "hook.previewVisualizationId — an interactive viz in the hook (text-only hooks rarely land)",
       },
     ],
   },
@@ -67,7 +67,7 @@ const REQUIREMENTS = [
     items: [
       {
         req: true,
-        text: "intuition.explanation — 2+ paragraphs building geometric or physical sense",
+        text: "Intuition — 2+ prose paragraphs building geometric or physical sense",
       },
       {
         req: true,
@@ -75,21 +75,21 @@ const REQUIREMENTS = [
       },
       {
         req: false,
-        text: "semantics[] markers linking callouts to explanation paragraphs",
+        text: "semantics.core — the symbols the lesson introduces, with their meaning",
       },
     ],
   },
   {
     zone: "🔢 Math",
     items: [
-      { req: true, text: "deepDive / proof section with KaTeX-formatted math" },
+      { req: true, text: "Math (and Rigor, for proofs) with KaTeX-formatted math" },
       {
         req: true,
         text: 'Every step of every proof or derivation is shown — no "it follows that"',
       },
       {
         req: false,
-        text: "spiral.forward / spiral.backward links to related lessons",
+        text: "spiral.recoveryPoints (prerequisites to revisit) and spiral.futureLinks (where this leads)",
       },
     ],
   },
@@ -102,11 +102,11 @@ const REQUIREMENTS = [
       },
       {
         req: true,
-        text: "quiz[] — at least one question per major learning objective",
+        text: "quiz (an array) — at least one question per major learning objective",
       },
       {
         req: true,
-        text: "All quiz answers verified correct; partialCredit and hints filled in",
+        text: "All quiz answers verified correct, and hints filled in",
       },
     ],
   },
@@ -269,10 +269,10 @@ export function SectionStandards() {
         </span>
         See{" "}
         <code className="font-mono bg-white/60 dark:bg-black/20 px-1 rounded">
-          CONTRIBUTING.md
+          docs/lesson-writing-standard.md
         </code>{" "}
-        section&nbsp;1c for the complete standards specification and PR
-        checklist.
+        in the repository for the full writing standard, and the pull request
+        template for the checklist.
       </div>
     </div>
   );

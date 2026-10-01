@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { TPL_CANVAS, TPL_VIZ } from "../lessonTemplates.js";
-import { CodeBlock, DownloadCard, H3, Note, Para, SectionHeading } from "../primitives.jsx";
+import { Cb, CodeBlock, DownloadCard, H3, Note, Para, SectionHeading } from "../primitives.jsx";
 
 // ─── SECTION: BUILD VIZ ──────────────────────────────────────────────────────
 
@@ -14,28 +14,23 @@ export function SectionBuildViz() {
         Building a Visualization
       </SectionHeading>
       <Para>
-        A visualization is a React component file. You write it in JSX, drop it
-        in a folder, and register it with one line. Then it's available in any
-        lesson.
+        A visualization is a React component file. Save it in a course's{" "}
+        <Cb>viz/</Cb> folder and it's available to every lesson — there's
+        nothing to register.
       </Para>
 
-      <H3>The 3-step process</H3>
+      <H3>The 2-step process</H3>
       <div className="space-y-3 my-4">
         {[
           {
             n: "1",
             t: "Create the file",
-            d: "Make a new .jsx file in src/components/viz/react/. Name it exactly as you want to call it from a lesson.",
+            d: "Save a .jsx file in src/courses/<course>/viz/, for example src/courses/calculus/viz/MyVizComponent.jsx. It is found automatically; the file name (without .jsx) is its id.",
           },
           {
             n: "2",
-            t: "Register in VizFrame.jsx",
-            d: "Add one line to the VIZ_REGISTRY object at the top of VizFrame.jsx.",
-          },
-          {
-            n: "3",
             t: "Use it in a lesson",
-            d: "Add { id: 'YourComponentName', props: {} } to the visualizations array in any lesson file.",
+            d: "Add { type: 'viz', id: 'MyVizComponent' } to a section's blocks, or { id: 'MyVizComponent' } to its visualizations list. Any course's lessons can use it.",
           },
         ].map((item) => (
           <div
@@ -57,12 +52,13 @@ export function SectionBuildViz() {
         ))}
       </div>
 
-      <H3>Register in VizFrame.jsx</H3>
-      <CodeBlock>{`// In src/components/viz/VizFrame.jsx, add to VIZ_REGISTRY:
-MyVizComponent: lazy(() => import('./react/MyVizComponent.jsx')),`}</CodeBlock>
       <Note color="amber">
-        The key is CASE-SENSITIVE and must EXACTLY match the id you use in the
-        lesson file and the default export name in the jsx file.
+        The id is CASE-SENSITIVE: <Cb>MyVizComponent.jsx</Cb> is used as{" "}
+        <Cb>MyVizComponent</Cb>. Give the file a default export. Ids are shared
+        across courses, so pick a name no other course's <Cb>viz/</Cb> folder
+        uses. Only shared components used everywhere (such as{" "}
+        <Cb>PythonNotebook</Cb>) are registered by hand in{" "}
+        <Cb>src/components/viz/VizFrame.jsx</Cb>.
       </Note>
 
       <H3>Download a template</H3>
@@ -119,7 +115,7 @@ export default function MyVizComponent() {
             p: "A",
             t: 'canvasRef (not "ref")',
             c: "const canvasRef = useRef(null)",
-            d: '"ref" is semi-reserved in React. Name the canvas ref canvasRef — nothing else.',
+            d: "A house convention: every canvas viz names it canvasRef, so they all read the same way in review.",
           },
           {
             p: "B",

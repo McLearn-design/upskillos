@@ -6,144 +6,160 @@
 
 export const TPL_MATH = `// math-lesson-template.js
 // ================================================================
-// MATH / CALCULUS LESSON TEMPLATE  —  open-calc
+// MATH LESSON TEMPLATE  —  UpSkillOS
 // ================================================================
-// Lines starting with // are INSTRUCTIONS. Delete when done.
+// Save as src/courses/<course>/<N>-<chapter>/<NNN>-<slug>.js
+// e.g.     src/courses/calculus/3-derivatives/005-chain-rule.js
+// The folder sets the course and chapter, the NNN prefix sets the order in the
+// chapter, and the rest of the filename is the slug in the URL
+// (#/chapter/calculus-3/chain-rule). Nothing needs registering.
+// Lines starting with // are instructions. Delete them when you're done.
 // ================================================================
 
 export default {
-
-  // ── IDENTITY (REQUIRED) ─────────────────────────────────────
-  id: 'ch1-your-topic',
-  //  ^ Unique label. Format: ch{N}-topic-name
-  //    Example: 'ch0-real-numbers'   'ch3-chain-rule'
-  //    IMPORTANT: Must be unique — no two lessons share one.
-
+  // ── IDENTITY ──────────────────────────────────────────────────
+  id: 'calc-your-topic',
+  //  ^ Learners' progress is saved under this id. It must not be used by any
+  //    other lesson, and must never change once the lesson is published.
   slug: 'your-topic',
-  //   ^ Appears in the URL: /chapter/1/your-topic
-
-  chapter: 1,
-  //       ^ Chapter NUMBER. Must match chapter file exactly.
-
-  order: 0,
-  //     ^ Position in chapter list (0 = first).
-
+  //    ^ Match the filename without its number: 005-your-topic.js -> 'your-topic'
   title: 'Your Lesson Title',
   subtitle: 'One sentence describing what this teaches.',
   tags: ['keyword1', 'keyword2'],
 
-  // ── HOOK ────────────────────────────────────────────────────
+  // ── HOOK: the question the lesson answers ─────────────────────
   hook: {
     question: 'What question does this lesson answer?',
     realWorldContext: 'One or two sentences of real-world motivation.',
   },
 
-  // ── INTUITION ───────────────────────────────────────────────
+  // ── INTUITION: blocks render top to bottom ────────────────────
+  // Block types: prose, callout, viz, image.
   intuition: {
-    text: \`
-Write your explanation here.
-
-Formatting: **bold** *italic* \\\`code\\\` $f(x)$ inline math $display math$
-
-Tip: Explain the concept as if talking to a curious 16-year-old.
-Don't introduce the formula yet — build the IDEA first.
-    \`,
-
-    visualizations: [
-      // { id: 'ComponentName', props: {} }
-      // Common: PythonNotebook, JSNotebook, RiemannSum, UnitCircle
-    ],
-  },
-
-  // ── FORMAL MATH (optional) ──────────────────────────────────
-  math: {
-    definition: 'Formal statement. LaTeX: $f\\'(x) =\\\\lim_{h \\\\to 0} \\\\frac{f(x+h)-f(x)}{h}$',
-    examples: [
+    blocks: [
       {
-        problem:  'Find the derivative of $f(x) = x^2$.',
-        solution: 'Using the power rule: $f\'(x) = 2x$.',
+        type: 'prose',
+        paragraphs: [
+          'Explain the idea before the formula, as if to a curious 16-year-old.',
+          'Formatting: **bold**, *italic*, \`code\`, $f(x)$ inline math, and $$\\\\int_0^1 x^2 \\\\, dx$$ on its own.',
+        ],
       },
+      {
+        type: 'callout',
+        kind: 'insight',
+        title: 'The key idea',
+        body: 'One sentence the learner should remember.',
+      },
+      // A registered visualization, by id (case-sensitive):
+      // { type: 'viz', id: 'RiemannSum', props: {} },
     ],
   },
 
-  // ── UNDERSTANDING CHECK (ungraded) ───────────────────────────
+  // ── FORMAL MATH (optional) ────────────────────────────────────
+  math: {
+    prose: [
+      "The formal statement: $f'(x) = \\\\lim_{h \\\\to 0} \\\\frac{f(x+h)-f(x)}{h}$.",
+    ],
+    callouts: [],
+    visualizations: [],
+  },
+
+  // ── WORKED EXAMPLES (optional) ────────────────────────────────
+  examples: [
+    {
+      id: 'ex1',
+      title: 'Differentiate x²',
+      problem: 'Find the derivative of $f(x) = x^2$.',
+      steps: [
+        { expression: "f'(x) = 2x^{2-1}", annotation: 'Power rule: bring the exponent down and subtract one.' },
+        { expression: "f'(x) = 2x", annotation: 'Simplify.' },
+      ],
+      conclusion: "$f'(x) = 2x$.",
+    },
+  ],
+
+  // ── UNDERSTANDING CHECK (not scored) ──────────────────────────
   assessment: {
     questions: [
       {
-        question: 'In your own words, what does this concept mean?',
-        answer:   'Expected answer here.',
-        hint:     'Think about... (a nudge toward the answer)',
+        id: 'assess-1',
+        type: 'input',
+        text: 'In your own words, what does this concept mean?',
+        answer: 'Expected answer here.',
+        hint: 'A nudge toward the answer.',
       },
     ],
   },
 
-  // ── SCORED QUIZ ──────────────────────────────────────────────
-  quiz: {
-    questions: [
-      {
-        question: 'What is the derivative of $x^3$?',
-        answer:   '$3x^2$',
-        hints: [
-          'Try the power rule.',
-          'Multiply by the exponent, then reduce it by 1.',
-        ],
-      },
-    ],
-  },
-
+  // ── QUIZ (scored) ─────────────────────────────────────────────
+  // An array of questions. The lesson counts as complete when every question
+  // is answered correctly.
+  quiz: [
+    {
+      id: 'q1',
+      type: 'choice',
+      text: 'What is the derivative of $x^3$?',
+      options: ['$3x^2$', '$x^2$', '$3x^3$'],
+      answer: '$3x^2$',
+      //      ^ Must match one option exactly.
+      hints: ['Try the power rule.', 'Multiply by the exponent, then reduce it by 1.'],
+    },
+    {
+      id: 'q2',
+      type: 'input',
+      text: 'Differentiate $x^4$.',
+      answer: '4*x^3',
+      //      ^ Checked mathematically, so 4x^3 and 4*x^3 both count.
+      hints: ['Power rule again.'],
+    },
+  ],
 }
 `;
 
 export const TPL_PYTHON = `// python-lesson-template.js
 // ================================================================
-// PYTHON / CODING LESSON TEMPLATE  —  open-calc
+// PYTHON LESSON TEMPLATE  —  UpSkillOS
+// ================================================================
+// Save as src/courses/<course>/<N>-<chapter>/<NNN>-<slug>.js
+// e.g.     src/courses/python/1-basics/003-your-topic.js
+// Nothing needs registering: the file's location puts it in the course.
 // ================================================================
 
 export default {
-  id: 'py1-your-topic',
+  id: 'py-your-topic',
+  //  ^ Unique across all lessons; never change it once published.
   slug: 'your-topic',
-  chapter: 1,
-  order: 0,
   title: 'Your Python Lesson Title',
-  subtitle: 'What will students build or learn to do?',
+  subtitle: 'What will learners build or learn to do?',
   tags: ['python', 'your-topic'],
 
   hook: {
-    question: 'What will students be able to do by the end of this?',
+    question: 'What will learners be able to do by the end of this?',
     realWorldContext: 'Why is this Python skill useful in the real world?',
   },
 
   intuition: {
-    text: \`
-Explain the concept here — BEFORE any code.
-
-What is the big idea? What problem are we solving?
-Then the notebook below lets students try it themselves.
-    \`,
-    visualizations: [
-      // PythonNotebook adds an interactive Python editor right here.
-      //
-      // THE CELLS MUST LIVE IN props.initialCells.
-      // normalizeViz() keeps only { id, initialProps, props, title, caption,
-      // mathBridge } off this entry, so a \`cells:\` written at the top level
-      // of it is dropped — and the notebook then renders its built-in
-      // STARTER_CELLS instead. You get a working notebook containing somebody
-      // else's content, with no error anywhere. 58 lessons had this.
-      //
-      // \`id\` is required. Without it the whole entry is discarded.
+    blocks: [
       {
+        type: 'prose',
+        paragraphs: [
+          'Explain the concept here, before any code. What problem are we solving?',
+          'The notebook below lets learners try it themselves. Ask them to predict the output before running a cell.',
+        ],
+      },
+      {
+        // An interactive Python notebook (runs in the browser with Pyodide).
+        // The cells must be in props.initialCells; cells written anywhere else
+        // are ignored and the notebook shows placeholder cells instead.
+        type: 'viz',
         id: 'PythonNotebook',
         title: 'Optional heading shown above the notebook',
-        caption: 'Optional line under it — say what to run and in what order.',
         props: {
           initialCells: [
             {
               id: 1,
               cellTitle: 'What this cell demonstrates',
-              prose: [
-                'One short paragraph per entry. Say what the code does and what to watch for.',
-                'Ask for a prediction before the cell is run — that is what makes it a lesson.',
-              ],
+              prose: ['One short paragraph per entry: what the code does and what to watch for.'],
               code: [
                 'import numpy as np',
                 '',
@@ -153,8 +169,8 @@ Then the notebook below lets students try it themselves.
             {
               id: 2,
               cellTitle: 'Cells share one namespace, in order',
-              prose: ['Anything cell 1 defined is still here.'],
-              code: 'print("cell 2 can use cell 1\'s variables")',
+              prose: ['Anything cell 1 defined is still available here.'],
+              code: "print(\\"cell 2 can use cell 1's variables\\")",
             },
           ],
         },
@@ -165,35 +181,42 @@ Then the notebook below lets students try it themselves.
   assessment: {
     questions: [
       {
-        question: 'What does this code print?  print(2 ** 10)',
+        id: 'assess-1',
+        type: 'input',
+        text: 'What does this code print?  print(2 ** 10)',
         answer: '1024',
         hint: '** is the Python exponentiation operator.',
       },
     ],
   },
 
-  quiz: {
-    questions: [
-      {
-        question: 'How do you define a function in Python?',
-        answer: 'Use: def function_name(parameters): then indent the body.',
-        hints: ['Start with the keyword: def', 'def add(a, b): return a + b'],
-      },
-    ],
-  },
+  // A lesson with a quiz counts as complete when every question is answered correctly.
+  quiz: [
+    {
+      id: 'q1',
+      type: 'choice',
+      text: 'Which keyword defines a function in Python?',
+      options: ['def', 'function', 'fn', 'lambda'],
+      answer: 'def',
+      hints: ['It is three letters long.'],
+    },
+  ],
 }
 `;
 
 export const TPL_PROOF = `// proof-lesson-template.js
 // ================================================================
-// PROOF / GEOMETRY LESSON TEMPLATE  —  open-calc
+// PROOF LESSON TEMPLATE  —  UpSkillOS
+// ================================================================
+// Save as src/courses/<course>/<N>-<chapter>/<NNN>-<slug>.js
+// e.g.     src/courses/geometry/2-geometry-2/004-your-proof.js
+// Nothing needs registering: the file's location puts it in the course.
 // ================================================================
 
 export default {
-  id: 'geo1-your-proof',
+  id: 'geo-your-proof',
+  //  ^ Unique across all lessons; never change it once published.
   slug: 'your-proof',
-  chapter: 1,
-  order: 0,
   title: 'Your Theorem Name',
   subtitle: 'What surprising result does this prove?',
   tags: ['proof', 'geometry', 'theorem'],
@@ -203,46 +226,47 @@ export default {
     realWorldContext: 'Where is this theorem used in the real world?',
   },
 
+  // Before the proof: why should this result be true?
   intuition: {
-    text: \`
-Before the proof, explain WHY this result should be true.
-
-Draw a picture in words. Walk the student through the
-geometric or intuitive argument first.
-    \`,
-    visualizations: [],
+    blocks: [
+      {
+        type: 'prose',
+        paragraphs: [
+          'Draw a picture in words. Walk the learner through the geometric or intuitive argument first.',
+        ],
+      },
+    ],
   },
 
   math: {
-    definition: \`
-**Theorem:** State the theorem formally here.
-
-**Given:** What we are starting with (the hypothesis).
-
-**Prove:** What we need to show (the conclusion).
-    \`,
-    examples: [],
+    prose: [
+      '**Theorem:** State the theorem formally here.',
+      '**Given:** What we start with (the hypothesis).',
+      '**Prove:** What we need to show (the conclusion).',
+    ],
+    callouts: [],
+    visualizations: [],
   },
 
+  // The proof, one step per entry: the statement and why it holds.
   rigor: {
-    text: \`
-**Proof:**
-
-**Step 1:** First step.
-*Justification: why this step is valid.*
-
-**Step 2:** Second step. ...
-
-**Therefore:** Final conclusion. $\\\\square$
-    \`,
-    examples: [],
+    prose: ['**Proof.**'],
+    proofSteps: [
+      { expression: 'AB = AC', annotation: 'Given: the triangle is isosceles.' },
+      { expression: '\\\\angle B = \\\\angle C', annotation: 'Base angles of an isosceles triangle are equal.' },
+    ],
+    callouts: [],
+    visualizations: [],
   },
 
+  // Proof lessons often have no scored quiz: ask learners to restate the result.
   assessment: {
     questions: [
       {
-        question: 'Can you state the theorem in your own words?',
-        answer: 'Student should describe the core result in plain language.',
+        id: 'assess-1',
+        type: 'input',
+        text: 'Can you state the theorem in your own words?',
+        answer: 'The core result in plain language.',
         hint: 'Focus on what the theorem guarantees, not the proof steps.',
       },
     ],
@@ -252,15 +276,17 @@ geometric or intuitive argument first.
 
 export const TPL_VIZ = `// MyVizComponent.jsx
 // ================================================================
-// VIZ COMPONENT (prose + toggles)  —  open-calc
+// VIZ COMPONENT (prose + toggles)  —  UpSkillOS
 // ================================================================
+// Save as src/courses/<course>/viz/<Name>.jsx — it is found automatically,
+// nothing to register. The filename (without .jsx) is the id lessons use.
 
 import { useState, useEffect } from 'react'
 import { useThemeColors } from '../../../hooks/useThemeColors'
 // ── COLORS HOOK: shared across every viz — import it, don't copy it. ──
 // (Adding a color? Edit src/hooks/useThemeColors.js once and every viz gets it.)
 
-// IMPORTANT: Function name must EXACTLY match filename and VizFrame.jsx key.
+// Name the file after the component: MyVizComponent.jsx -> id 'MyVizComponent'.
 export default function MyVizComponent({ params = {} }) {
   const C = useThemeColors()
 
@@ -275,17 +301,18 @@ export default function MyVizComponent({ params = {} }) {
   )
 }
 
-// NEXT STEPS:
-// 1. Register in VizFrame.jsx:
-//    MyVizComponent: lazy(() => import('./react/MyVizComponent.jsx')),
-// 2. Use in a lesson:
+// USE IT IN A LESSON:
+//    intuition: { blocks: [ { type: 'viz', id: 'MyVizComponent', props: {} } ] }
+// or in a section's visualizations list:
 //    visualizations: [{ id: 'MyVizComponent', props: {} }]
 `;
 
 export const TPL_CANVAS = `// MyCanvasViz.jsx
 // ================================================================
-// VIZ COMPONENT (HTML5 Canvas)  —  open-calc
+// VIZ COMPONENT (HTML5 Canvas)  —  UpSkillOS
 // ================================================================
+// Save as src/courses/<course>/viz/<Name>.jsx — it is found automatically,
+// nothing to register. The filename (without .jsx) is the id lessons use.
 
 import { useState, useEffect, useRef } from 'react'
 import { useThemeColors } from '../../../hooks/useThemeColors'

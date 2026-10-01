@@ -19,18 +19,18 @@ export function SectionTypes() {
     math: (
       <div>
         <Para>
-          The classic lesson type. Build it in the Lesson Builder: one or more
-          Markdown cells for explanation, a Viz cell for the interactive, and a
-          Quiz cell at the end. Emphasis on building intuition first, then
-          formal definition, then practice.
+          The classic lesson type. Build intuition first, then the formal
+          statement, then practice. In the Lesson Builder, add these sections in
+          order.
         </Para>
-        <H3>Recommended cell order</H3>
-        <CodeBlock>{`Markdown (hook question + real-world context)
-Markdown (intuitive explanation, no formulas yet)
-Viz      (interactive — SecantToTangent, RiemannSum, etc.)
-Markdown (formal definition with LaTeX)
-Assessment (open-ended reflection)
-Quiz     (scored — ≥80% earns ★)`}</CodeBlock>
+        <H3>Recommended sections</H3>
+        <CodeBlock>{`Hook        the question the lesson answers + real-world context
+Intuition   prose (no formulas yet) + a Visualization block
+            (SecantToTangent, RiemannSum, …)
+Math        the formal definition, with LaTeX
+Examples    worked examples, step by step
+Assessment  open-ended reflection (not scored)
+Quiz        scored — complete when every answer is correct`}</CodeBlock>
         <H3>Inline algebra popovers</H3>
         <Para>
           In any prose string, use <Cb>{"{{"}</Cb>
@@ -60,15 +60,18 @@ Quiz     (scored — ≥80% earns ★)`}</CodeBlock>
     python: (
       <div>
         <Para>
-          For lessons where students write and run Python code. An interactive
-          Python notebook (powered by Pyodide — no installation needed) is
-          embedded as a Viz cell.
+          For lessons where learners write and run Python code. An interactive
+          Python notebook (powered by Pyodide — no installation needed) is a
+          visualization you place in the lesson.
         </Para>
         <H3>In the Lesson Builder</H3>
         <Para>
-          Add a Viz cell and set the ID to <Cb>PythonNotebook</Cb>. That's it.
-          The cell appears with syntax highlighting and Shift+Enter to run.
-          Students edit it live — output appears immediately.
+          In Intuition (or another section), add a Visualization block with the
+          id <Cb>PythonNotebook</Cb>. Its cells go in{" "}
+          <Cb>props.initialCells</Cb> — cells written anywhere else are ignored
+          and the notebook shows placeholder cells instead. Learners edit the
+          code and run it with Shift+Enter; cells share one namespace, in
+          order.
         </Para>
         <H3>opencalc library</H3>
         <Para>
@@ -88,24 +91,29 @@ Quiz     (scored — ≥80% earns ★)`}</CodeBlock>
     proof: (
       <div>
         <Para>
-          For lessons that walk through a mathematical proof step by step. Heavy
-          on prose (Markdown cells) — build intuition first, then present the
-          formal proof. Often no scored quiz — just an Assessment cell asking
-          students to paraphrase the result.
+          For lessons that walk through a mathematical proof step by step. Build
+          intuition first, then state the theorem, then prove it. Often there's
+          no scored quiz — just an Assessment question asking learners to
+          restate the result.
         </Para>
-        <H3>Recommended cell order</H3>
-        <CodeBlock>{`Markdown (hook — why should this result be true?)
-Markdown (intuitive geometric argument, no symbols)
-Markdown (formal proof — use **Step 1:**, **Step 2:**)
-Assessment (explain the result in your own words)`}</CodeBlock>
-        <H3>Writing the proof body in Markdown</H3>
-        <CodeBlock>{`**Proof:**
-
-**Step 1:** Since triangle ABC is isosceles, $AB = AC$.
-
-**Step 2:** By the Angle Bisector Theorem...
-
-**Therefore:** $\\angle B = \\angle C$. $\\square$`}</CodeBlock>
+        <H3>Recommended sections</H3>
+        <CodeBlock>{`Hook        why should this result be true?
+Intuition   the geometric or intuitive argument, no symbols yet
+Math        **Theorem:** / **Given:** / **Prove:**
+Rigor       the proof, as proofSteps
+Assessment  explain the result in your own words`}</CodeBlock>
+        <H3>Proof steps</H3>
+        <Para>
+          Put the proof in <Cb>rigor.proofSteps</Cb>: one entry per step, each a
+          statement in LaTeX and the reason it holds. Learners step through
+          them one at a time.
+        </Para>
+        <CodeBlock>{`rigor: {
+  proofSteps: [
+    { expression: 'AB = AC', annotation: 'Given: the triangle is isosceles.' },
+    { expression: '\\\\angle B = \\\\angle C', annotation: 'Base angles of an isosceles triangle are equal.' },
+  ],
+}`}</CodeBlock>
         <DownloadCard
           icon="📝"
           title="Proof Lesson Template (.js)"
@@ -118,46 +126,35 @@ Assessment (explain the result in your own words)`}</CodeBlock>
     science: (
       <div>
         <Para>
-          Used for chemistry and digital-fundamentals lessons. The entire lesson
-          — prose, callouts, steps, and interactive viz — is packaged inside a{" "}
-          <Cb>ScienceNotebook</Cb> component. This is <strong>Schema E</strong>.
-          Requires a code editor (not available in the Lesson Builder yet).
+          Used by the geometry, chemistry and digital-fundamentals courses. A{" "}
+          <Cb>ScienceNotebook</Cb> shows a list of cells: prose, live previews,
+          multiple-choice questions, coding exercises and walkthroughs. In the
+          Lesson Builder, the <strong>Cells</strong> section edits them.
         </Para>
-        <H3>File structure — two exports required</H3>
-        <CodeBlock>{`// lesson1-0.js
-const LESSON_CHEM_1_0 = { ...full lesson object... }
-export { LESSON_CHEM_1_0 }   // named export — for the viz wrapper
-export default LESSON_CHEM_1_0  // default export — for the chapter index`}</CodeBlock>
-        <H3>Cells in a ScienceNotebook lesson</H3>
+        <H3>Cell types</H3>
         <CodeBlock>{`cells: [
-  { type: 'prose',    content: 'Explanation text...' },
-  { type: 'callout',  variant: 'key-idea', title: 'Big Idea', body: '...' },
-  { type: 'step',     label: '1', content: 'First step...' },
-  { type: 'formula',  latex: 'E = mc^2' },
-  { type: 'viz',      id: 'MyVizId' },
+  { type: 'markdown',    instruction: 'Explanation text with **Markdown** and $math$.' },
+  { type: 'js',          ... },   // a canvas or animation that runs by itself
+  { type: 'challenge',   instruction: 'Question?', options: [...], check: ... },
+  { type: 'coding',      ... },   // editor + Run + check(code)
+  { type: 'walkthrough', ... },   // numbered steps with a live preview
 ]`}</CodeBlock>
-        <H3>Viz wrapper — required for every ScienceNotebook lesson</H3>
+        <H3>Showing the cells in the lesson</H3>
         <Para>
-          Create a wrapper file in <Cb>src/components/viz/react/</Cb> that
-          self-imports the lesson and passes it to ScienceNotebook. Each lesson
-          needs its own wrapper so VizFrame can load it by ID.
+          Pass the cells to <Cb>ScienceNotebook</Cb> with a Visualization block.
+          It's already registered, so there's no wrapper file to write and
+          nothing to register:
         </Para>
-        <CodeBlock>{`// src/components/viz/react/WhyChemistry.jsx
-import ScienceNotebook from './ScienceNotebook.jsx'
-import { LESSON_CHEM_1_0 } from '../../../courses/chemistry/1-elements-atomic-structure/001-lesson1-0.js'
-
-export default function WhyChemistry({ params }) {
-  return <ScienceNotebook lesson={LESSON_CHEM_1_0} params={params} />
+        <CodeBlock>{`intuition: {
+  blocks: [
+    { type: 'viz', id: 'ScienceNotebook',
+      props: { lesson: { title: 'Your lesson title', cells: [ /* cells */ ] } } },
+  ],
 }`}</CodeBlock>
-        <Para>
-          Then register it in <Cb>VizFrame.jsx</Cb>:
-        </Para>
-        <CodeBlock>{`WhyChemistry: lazy(() => import('./react/WhyChemistry.jsx')),`}</CodeBlock>
         <Note color="amber">
-          Do NOT set <Cb>previewVisualizationId</Cb> in the lesson's{" "}
-          <Cb>hook</Cb> — the viz is rendered from{" "}
-          <Cb>intuition.visualizations</Cb> only. Setting it in both causes a
-          double-render.
+          Cells kept only in a separate named export are not shown: the lesson
+          page renders the file's default export. Some older chemistry lessons
+          are built this way; check the page after adding cells.
         </Note>
       </div>
     ),
@@ -170,8 +167,8 @@ export default function WhyChemistry({ params }) {
         </Para>
         <H3>In the Lesson Builder</H3>
         <Para>
-          Add a Viz cell and set the ID to <Cb>JSNotebook</Cb>. The Monaco
-          editor appears with live HTML/CSS/JS output in a panel beside it.
+          Add a Visualization block with the id <Cb>JSNotebook</Cb>. Learners
+          get a code editor with live HTML/CSS/JS output beside it.
         </Para>
         <H3>Python vs. JavaScript notebooks</H3>
         <div className="grid grid-cols-2 gap-3 mt-3 text-xs">
@@ -193,14 +190,14 @@ export default function WhyChemistry({ params }) {
   };
   return (
     <div>
-      <SectionHeading sub="Conventions for which cells to use based on subject matter.">
+      <SectionHeading sub="Which sections to use, by subject.">
         Lesson Types
       </SectionHeading>
       <Para>
-        "Types" are conventions for cell order and content style based on
-        subject. The Lesson Builder supports all types except Science Notebook
-        (which requires a code editor). Check ARCHITECTURE.md § 4 for the
-        course→schema mapping before starting.
+        "Types" are conventions for which sections a lesson uses and in what
+        order, depending on the subject. The Lesson Builder can build all of
+        them. When in doubt, open an existing lesson from the same course with
+        🔨 Edit in Builder and follow its shape.
       </Para>
       <div className="flex flex-wrap gap-2 mb-6">
         {types.map((t) => (

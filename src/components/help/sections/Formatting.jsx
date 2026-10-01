@@ -59,7 +59,7 @@ const LATEX_CHEATSHEET = [
 const PIPELINE_ROWS = [
   {
     field: "expression",
-    where: "math.examples[].steps[].expression",
+    where: "examples[].steps[].expression, rigor.proofSteps[].expression",
     pipeline: "KatexBlock",
     rules:
       "Pure LaTeX. No $…$ delimiters. Backslashes must be doubled in JS strings.",
@@ -67,7 +67,7 @@ const PIPELINE_ROWS = [
   },
   {
     field: "annotation",
-    where: "math.examples[].steps[].annotation",
+    where: "examples[].steps[].annotation, rigor.proofSteps[].annotation",
     pipeline: "parseProse()",
     rules:
       "Mixed prose + math. Wrap EVERY math fragment in $…$. Use **bold**. Write prose, not \\\\n lists.",
@@ -75,7 +75,7 @@ const PIPELINE_ROWS = [
   },
   {
     field: "Prose fields",
-    where: "intuition.text, rigor.text, hook.realWorldContext",
+    where: "intuition / math / rigor: prose[] and prose blocks' paragraphs[]; hook.realWorldContext",
     pipeline: "MarkdownProse",
     rules:
       "Full Markdown + KaTeX. $…$ for inline math, \\[…\\] or $$…$$ for display math. GFM supported.",
@@ -159,28 +159,17 @@ export function SectionFormatting() {
             </div>
           </div>
 
-          <H3>Rule 3 — No \\n for line breaks in annotations</H3>
+          <H3>Rule 3 — Line breaks in annotations</H3>
           <Para>
-            The <Cb>\\n</Cb> character collapses to a space in HTML. Write
-            annotations as natural flowing prose. Use <Cb>**Step 1:**</Cb>{" "}
-            inline rather than separate lines for multi-step explanations.
+            In an <Cb>annotation</Cb>, <Cb>{"\\n"}</Cb> starts a new line and a
+            blank line (<Cb>{"\\n\\n"}</Cb>) starts a new paragraph. For short
+            multi-step notes, bold labels in flowing prose often read better.
           </Para>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-            <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-4">
-              <div className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider mb-2">
-                ✗ Wrong
-              </div>
-              <CodeBlock>{`annotation: "Step 1: factor\\nStep 2: cancel"
-// Renders as: Step 1: factor Step 2: cancel`}</CodeBlock>
-            </div>
-            <div className="rounded-xl border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 p-4">
-              <div className="text-xs font-bold text-green-600 dark:text-green-400 uppercase tracking-wider mb-2">
-                ✓ Correct
-              </div>
-              <CodeBlock>{`annotation: "**Step 1:** factor $(x-1)$, then **Step 2:** cancel the common term."
-// Renders bold labels inline with flowing prose`}</CodeBlock>
-            </div>
-          </div>
+          <CodeBlock>{`annotation: "Step 1: factor\\nStep 2: cancel"
+// Renders on two lines
+
+annotation: "**Step 1:** factor $(x-1)$, then **Step 2:** cancel the common term."
+// Renders as one sentence with bold labels`}</CodeBlock>
 
           <H3>Rule 4 — No Unicode math symbols</H3>
           <Para>

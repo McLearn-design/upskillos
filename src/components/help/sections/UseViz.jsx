@@ -12,9 +12,9 @@ export function SectionUseViz({ onNavigate }) {
         Using Existing Visualizations
       </SectionHeading>
       <Para>
-        The app has dozens of pre-built interactive visualizations. Adding one
-        to your lesson takes exactly one line in the <Cb>visualizations</Cb>{" "}
-        array.
+        The app has hundreds of interactive visualizations. Adding one to a
+        lesson takes one line: a Visualization block in a section's{" "}
+        <Cb>blocks</Cb>, or an entry in its <Cb>visualizations</Cb> list.
       </Para>
 
       <Note color="green">
@@ -29,24 +29,40 @@ export function SectionUseViz({ onNavigate }) {
 
       <H3>How to add a viz</H3>
       <CodeBlock>{`intuition: {
-  text: 'Your explanation...',
-  visualizations: [
-    { id: 'RiemannSum', props: {} },
+  blocks: [
+    { type: 'prose', paragraphs: ['Your explanation…'] },
+    { type: 'viz', id: 'RiemannSum' },   // shown right here, in order
   ],
+},
+
+// or, at the end of a section:
+math: {
+  prose: ['…'],
+  visualizations: [{ id: 'RiemannSum' }],
 },`}</CodeBlock>
       <Para>
-        The <Cb>id</Cb> must exactly match the registration name in{" "}
-        <Cb>VizFrame.jsx</Cb>. It is case-sensitive.
+        The <Cb>id</Cb> is the visualization's file name: a file in{" "}
+        <Cb>src/courses/&lt;course&gt;/viz/</Cb> (for example{" "}
+        <Cb>RiemannSum.jsx</Cb> → <Cb>RiemannSum</Cb>) is found automatically.
+        A few shared ones, such as <Cb>PythonNotebook</Cb>,{" "}
+        <Cb>JSNotebook</Cb> and <Cb>ScienceNotebook</Cb>, are registered in{" "}
+        <Cb>src/components/viz/VizFrame.jsx</Cb>. Ids are case-sensitive.
       </Para>
 
       <H3>Multiple vizs</H3>
       <CodeBlock>{`visualizations: [
-  { id: 'SecantToTangent', props: {} },
-  { id: 'PythonNotebook', props: {} },
+  { id: 'SecantToTangent' },
+  { id: 'UnitCircle' },
 ],`}</CodeBlock>
 
       <H3>Passing parameters</H3>
-      <CodeBlock>{`{ id: 'RiemannSum', props: { defaultN: 10, defaultMethod: 'midpoint' } }`}</CodeBlock>
+      <Para>
+        <Cb>props</Cb> reach the visualization as <Cb>params</Cb>. Most
+        visualizations take none; check the component for{" "}
+        <Cb>params.something</Cb> before relying on a prop.
+      </Para>
+      <CodeBlock>{`{ id: 'ContinuityViz', props: { variant: 'Jump' } }   // opens on the jump discontinuity
+{ id: 'PythonNotebook', props: { initialCells: [ /* cells */ ] } }`}</CodeBlock>
 
       <H3>Available visualizations</H3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 my-3">
@@ -84,8 +100,9 @@ export function SectionUseViz({ onNavigate }) {
         ))}
       </div>
       <Note color="blue">
-        For the full list, open <Cb>src/components/viz/VizFrame.jsx</Cb> — every
-        registered name is at the top of that file in <Cb>VIZ_REGISTRY</Cb>.
+        For the full list, browse the <strong>Viz Builder</strong>'s gallery,
+        or look in the <Cb>viz/</Cb> folder of each course under{" "}
+        <Cb>src/courses/</Cb>.
       </Note>
     </div>
   );

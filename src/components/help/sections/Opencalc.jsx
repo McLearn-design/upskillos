@@ -26,10 +26,11 @@ fig = Figure(xmin=-5, xmax=5, ymin=-2, ymax=10)
 fig.grid().axes()
 fig.plot(lambda x: x**2, color='blue', label='x²')
 fig.point([1, 1], label='(1, 1)')
-print(fig.show())   # ← always print()`}</CodeBlock>
+fig.show()          # ← draws the figure`}</CodeBlock>
       <Note color="amber">
-        Always end with <Cb>print(fig.show())</Cb>. Calling <Cb>fig.show()</Cb>{" "}
-        alone won't display the figure.
+        End the cell with <Cb>fig.show()</Cb>, or print it with{" "}
+        <Cb>print(fig.show())</Cb> — both draw the figure. A cell shows one
+        figure: the last one it produces.
       </Note>
 
       <H3>Drawing methods (all chainable)</H3>

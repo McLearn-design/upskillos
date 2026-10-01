@@ -26,7 +26,7 @@ const BUILDER_TOUR_STEPS = [
   },
   {
     title: 'Submit it as a real contribution',
-    body: "When you're done, \"Export .js\" in the top bar downloads the file. Use the GitHub contributor flow (coming soon) to open a pull request directly from the app.",
+    body: "When you're done, press \"Export .js\" in the top bar. From there you can copy the lesson, or paste a GitHub token and open a pull request straight from the app — the builder forks the repository, commits the file and opens the pull request for you.",
   },
 ]
 

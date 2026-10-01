@@ -50,38 +50,43 @@ export default {
     ],
   },
 
+  // semantics: symbol glossary — what every variable and notation means (optional)
+  semantics: {
+    core: [
+      { symbol: 'f(x)', meaning: 'first factor' },
+      { symbol: 'g(x)', meaning: 'second factor' },
+    ],
+    rulesOfThumb: [
+      "You can't just multiply the individual derivatives — try f=x², g=x² and verify.",
+    ],
+  },
+
   intuition: {
-    // semantics: symbol glossary — what every variable and notation means (optional)
-    semantics: {
-      core: [
-        { symbol: 'f(x)', meaning: 'first factor' },
-        { symbol: 'g(x)', meaning: 'second factor' },
-      ],
-      rulesOfThumb: [
-        "You can't just multiply the individual derivatives — try f=x², g=x² and verify.",
-      ],
-    },
-    // blocks: ordered content blocks — mix prose, images, and visualizations
+    // blocks: ordered content blocks — mix prose, callouts, images, and visualizations
     blocks: [
       {
         type: 'prose',
         paragraphs: [
-          'Paragraph 1 in plain English. No LaTeX here.',
+          'Paragraph 1. **Markdown** and inline math like $f(x)g(x)$ both work.',
           'Paragraph 2.',
         ],
       },
       // { type: 'image', src: importedSvgUrl, alt: 'Alt text', caption: 'Caption.' },
       // { type: 'viz',   id: 'SecantToTangent', title: 'Display title', props: {} },
-      // { type: 'callout', calloutType: 'important', title: 'Key idea', body: 'Explanation.' },
+      // { type: 'callout', kind: 'insight', title: 'Key idea', body: 'Explanation.' },
     ],
   },
 
   examples: [
     {
+      id: 'ex1',
       title: 'Example: Power functions',
-      problem: 'Find the derivative of f(x) = x² · x³.',
-      solution: 'Apply the product rule: f\'g + fg\'.',
-      latex: 'f\'(x)=2x \\\\cdot x^3 + x^2 \\\\cdot 3x^2 = 5x^4',
+      problem: 'Find the derivative of $f(x) = x^2 \\\\cdot x^3$.',
+      steps: [
+        { expression: "f'(x) = 2x \\\\cdot x^3 + x^2 \\\\cdot 3x^2", annotation: "Product rule: f'g + fg'." },
+        { expression: "f'(x) = 5x^4", annotation: 'Collect like terms.' },
+      ],
+      conclusion: "$f'(x) = 5x^4$.",
     },
   ],
 
@@ -101,9 +106,9 @@ export default {
 RULES:
 - id and slug are the same short kebab-case string — NO chapter prefix, no numbers
 - chapter is an integer matching the leading N in the chapter folder name
-- prose paragraphs are plain English — NO LaTeX, NO Markdown formatting
-- LaTeX goes in: latex fields and callout body strings (use \\\\frac, not \\frac)
-- calloutType must be one of: 'important', 'tip', 'warning'
+- prose paragraphs support Markdown and inline LaTeX ($...$); in a JS string write \\\\frac, not \\frac
+- example steps are { expression, annotation }: expression is LaTeX without $ signs
+- callout kind is one of: definition, theorem, tip, warning, intuition, insight, procedure, example, misconception
 - Do not invent visualization IDs — only use ones explicitly provided to you
 - triggers and spiral are optional but strongly recommended for completeness
 - id must be unique across the entire codebase`,
@@ -126,7 +131,7 @@ const LESSON_MY_TOPIC = {
     // MARKDOWN cell — explanation/context only, no code
     {
       type: 'markdown',
-      instruction: '## Section heading\n\nExplanation prose. Use **bold** for emphasis.',
+      instruction: '## Section heading\\n\\nExplanation prose. Use **bold** for emphasis.',
     },
     // JS cell — live runnable code
     {
@@ -166,7 +171,7 @@ export default {
   title: 'Describing a Piece',
   subtitle: '...',
   tags: ['javascript', 'arrays'],
-  hook: { question: '...', realWorldContext: '...', previewVisualizationId: 'JSNotebook' },
+  hook: { question: '...', realWorldContext: '...' },
   intuition: {
     prose: ['...'],
     callouts: [],
@@ -208,35 +213,19 @@ It renders inside a lesson card — roughly 300–500px tall, full container wid
 Students interact with it: drag points, move sliders, step through stages, watch values update live.
 The goal is to make the concept physically tangible — not just a static diagram.
 
-File: src/components/viz/react/MyComponent.jsx
+File: src/courses/{course-id}/viz/MyComponent.jsx
+It is found automatically — nothing to register. The file name (without .jsx) is the id
+lessons use: { type: 'viz', id: 'MyComponent' }. Pick a name no other course's viz/ folder uses.
 One file, one default export. No TypeScript. Vite + React 18 + JSX.
 Props: ({ params = {} }) — params is optional config from the lesson.
 
 ═══════════════════════════════════════════════
-DARK MODE — copy this hook verbatim into the file
+COLORS — use the shared hook, do not write your own
 ═══════════════════════════════════════════════
-function useIsDark() {
-  const isDark = () => document.documentElement.classList.contains('dark');
-  const [dark, setDark] = useState(isDark);
-  useEffect(() => {
-    const obs = new MutationObserver(() => setDark(isDark()));
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => obs.disconnect();
-  }, []);
-  return dark;
-}
-// In draw() or render: const dark = useIsDark();
-// Then produce a color object branching on dark, e.g.:
-// const C = {
-//   bg:    dark ? '#0f172a' : '#ffffff',   // slate-900 / white
-//   panel: dark ? '#1e293b' : '#f1f5f9',   // slate-800 / slate-100
-//   axis:  dark ? '#475569' : '#94a3b8',   // slate-600 / slate-400
-//   curve: dark ? '#38bdf8' : '#0284c7',   // sky-400 / sky-600
-//   accent:dark ? '#34d399' : '#059669',   // emerald-400 / emerald-600
-//   warn:  dark ? '#fbbf24' : '#d97706',   // amber-400 / amber-600
-//   point: dark ? '#f472b6' : '#db2777',   // pink-400 / pink-700
-//   text:  dark ? '#94a3b8' : '#64748b',   // slate-400 / slate-500
-// };
+import { useThemeColors } from '../../../hooks/useThemeColors'
+// const C = useThemeColors()
+// C.bg, C.surface, C.border, C.text, C.muted, C.blue, C.teal, C.amber, C.green, C.red, C.purple, C.orange
+// It follows light/dark mode and the active theme automatically.
 
 ═══════════════════════════════════════════════
 CSS VARIABLES (defined in the app — safe to use)
@@ -249,34 +238,34 @@ var(--color-text-muted)  // #64748b light / #94a3b8 dark — captions
 CANVAS PATTERN — for math graphs, geometry, animations
 ═══════════════════════════════════════════════
 import { useRef, useEffect, useState } from 'react';
+import * as d3 from 'd3';
+import { useThemeColors } from '../../../hooks/useThemeColors';
 
 export default function MyComponent({ params = {} }) {
-  const dark = useIsDark();
+  const C = useThemeColors();
   const containerRef = useRef(null);
   const svgRef = useRef(null);
   const [value, setValue] = useState(1); // example slider state
 
   useEffect(() => {
     const draw = () => {
-      const C = { bg: dark ? '#0f172a' : '#ffffff', curve: dark ? '#38bdf8' : '#0284c7' /* etc */ };
       const W = containerRef.current?.clientWidth || 480;
       const H = 260;
-      // d3 is available globally — do NOT import it
       const svg = d3.select(svgRef.current);
       svg.selectAll('*').remove();
       svg.attr('width', W).attr('height', H);
-      // build scales, draw axes, paths, circles...
+      // build scales, draw axes, paths, circles... using C.blue, C.text, etc.
     };
     const ro = new ResizeObserver(draw);
     if (containerRef.current) ro.observe(containerRef.current);
     draw();
     return () => ro.disconnect();
-  }, [dark, value]); // re-draw on theme change OR state change
+  }, [C, value]); // re-draw on theme change OR state change
 
   return (
     <div ref={containerRef} style={{ padding: 12 }}>
       <input type="range" min={0} max={10} step={0.1} value={value}
-        onChange={e => setValue(+e.target.value)} style={{ width: '100%', accentColor: '#38bdf8' }} />
+        onChange={e => setValue(+e.target.value)} style={{ width: '100%', accentColor: C.blue }} />
       <svg ref={svgRef} style={{ width: '100%', display: 'block', borderRadius: 8,
         background: 'var(--color-surface)', border: '1px solid var(--color-border)' }} />
     </div>
@@ -287,32 +276,28 @@ export default function MyComponent({ params = {} }) {
 PROSE + TOGGLES PATTERN — for step-through, comparisons, interactive panels
 ═══════════════════════════════════════════════
 export default function MyComponent({ params = {} }) {
-  const dark = useIsDark();
+  const C = useThemeColors();
   const [step, setStep] = useState(0);
-  const panel = dark ? '#1e293b' : '#f1f5f9';
-  const border = dark ? '#334155' : '#e2e8f0';
-  const text   = dark ? '#e2e8f0' : '#1e293b';
-  const muted  = dark ? '#94a3b8' : '#64748b';
 
   const steps = ['Step 1 content', 'Step 2 content', 'Step 3 content'];
   return (
-    <div style={{ background: panel, borderRadius: 12, padding: 16, border: \`1px solid \${border}\` }}>
-      <p style={{ color: text, fontSize: 14 }}>{steps[step]}</p>
+    <div style={{ background: C.surface, borderRadius: 12, padding: 16, border: '1px solid ' + C.border }}>
+      <p style={{ color: C.text, fontSize: 14 }}>{steps[step]}</p>
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
         <button onClick={() => setStep(s => Math.max(0, s - 1))}
-          style={{ padding: '6px 14px', borderRadius: 6, background: dark ? '#334155' : '#e2e8f0', color: text, border: 'none', cursor: 'pointer' }}>← Back</button>
+          style={{ padding: '6px 14px', borderRadius: 6, background: C.border, color: C.text, border: 'none', cursor: 'pointer' }}>← Back</button>
         <button onClick={() => setStep(s => Math.min(steps.length - 1, s + 1))}
-          style={{ padding: '6px 14px', borderRadius: 6, background: '#0284c7', color: '#fff', border: 'none', cursor: 'pointer' }}>Next →</button>
+          style={{ padding: '6px 14px', borderRadius: 6, background: C.blue, color: '#fff', border: 'none', cursor: 'pointer' }}>Next →</button>
       </div>
     </div>
   );
 }
 
 ═══════════════════════════════════════════════
-AVAILABLE GLOBALS (do NOT import these)
+LIBRARIES — import them; they are not globals
 ═══════════════════════════════════════════════
-d3    — full D3 library (scales, shapes, selections, transitions)
-THREE — Three.js for 3D
+import * as d3 from 'd3';         // scales, shapes, selections, transitions
+import * as THREE from 'three';   // 3D
 
 ═══════════════════════════════════════════════
 HARD RULES
@@ -342,11 +327,12 @@ Example for a new "statistics" course, chapter 1 "Probability", lesson 1:
 
 STEP 1 — Create src/courses/{course-id}/meta.json
 {
+  "label": "Statistics",
   "icon": "📊",
   "description": "One sentence describing the course.",
   "domain": "math"
 }
-domain options: "math" | "cs" | "science" | "engineering" | "creative" | "other"
+domain options: "math" | "science" | "cs" | "data" | "engineering" | "creative" | "other"
 
 STEP 2 — Create the chapter folder and first lesson
 Folder: src/courses/{course-id}/1-{chapter-slug}/
@@ -362,11 +348,11 @@ Each new N-{chapter-slug}/ folder is a new chapter.
 Each new NNN-{lesson-slug}.js inside it is a new lesson.
 courseLoader.js auto-discovers all of them via import.meta.glob.
 
-STEP 4 (only if lessons use new viz components) — Register in VizFrame.jsx
-Add the import and a case in the viz switch. Otherwise skip this step.
+STEP 4 (only if lessons use new viz components) — add them to src/courses/{course-id}/viz/
+Each file there is found automatically; nothing to register.
 
-VALIDATION: Run npm run dev and navigate to /courses to confirm the course appears.
-  ✔ Course card shows on the courses page
+VALIDATION: Run npm run dev, then npm run facts so the course is counted.
+  ✔ The course appears on the home page, and #/course/{course-id} opens it
   ✔ Chapter and lesson nav renders correctly
   ✔ "npm run build" completes with no errors`,
   },

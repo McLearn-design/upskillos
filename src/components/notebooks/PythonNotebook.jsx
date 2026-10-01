@@ -1168,6 +1168,20 @@ export default function PythonNotebook({ params, onParamChange, onCellsChange })
         const resultStr =
           result !== undefined && result !== null ? String(result) : "";
         const isFigure = isFigureOutput(resultStr);
+        // A figure can also be printed — print(fig.show()) is used in lessons and taught in the
+        // Help guide. Without this the printed figure appeared as a wall of raw JSON. The cell has
+        // one figure slot: the returned figure wins, otherwise the last printed one is drawn and
+        // its line removed from the text output.
+        let printedFigure = null;
+        if (!isFigure) {
+          const lines = textOutput.split("\n");
+          const idx = lines.map((l) => isFigureOutput(l)).lastIndexOf(true);
+          if (idx !== -1) {
+            printedFigure = lines[idx].trim();
+            lines.splice(idx, 1);
+            textOutput = lines.join("\n");
+          }
+        }
 
         // Capture any matplotlib figures rendered during the cell run
         let matplotlibImages = [];
@@ -1195,7 +1209,7 @@ export default function PythonNotebook({ params, onParamChange, onCellsChange })
                     [textOutput.trimEnd(), !isFigure && resultStr ? resultStr : ""]
                       .filter(Boolean)
                       .join("\n"),
-                  figureJson: isFigure ? resultStr : null,
+                  figureJson: isFigure ? resultStr : printedFigure,
                   matplotlibImages,
                   testResult: testFeedback,
                 }
