@@ -14,6 +14,9 @@ import { Vec2 } from './vec2';
 import { IDENTITY, local, multiply, apply, type Mat2D } from '../core/math2d';
 import type { Game } from './game';
 import type { WorldShape } from './physics';
+import type { AnimationClip } from '../core/types';
+import { blendOf, clipTime, sampleTrack } from '../core/animation';
+import { propDef } from '../core/registry';
 
 export class Node {
   name = 'Node';
@@ -132,6 +135,137 @@ export class Sprite2D extends Node2D {
   flipX = false;
   flipY = false;
   opacity = 1;
+}
+
+/** Changes other nodes' properties over time, from keyframes (core/animation.ts does the sampling). */
+export class AnimationPlayer extends Node {
+  name = 'AnimationPlayer';
+  animations: AnimationClip[] = [];
+  autoplay = '';
+  speedScale = 1;
+  _playing = false;
+  _clip = '';
+  _elapsed = 0;
+
+  get currentAnimation(): string { return this._clip; }
+  get currentTime(): number { const c = this._current(); return c ? clipTime(c, this._elapsed).time : 0; }
+
+  play(name?: string): void {
+    if (name !== undefined && name !== this._clip) {
+      if (!this.animations.some((a) => a.name === name)) throw new Error(`"${this.path}" has no animation "${name}". It has: ${this.animations.map((a) => `"${a.name}"`).join(', ') || 'none'}`);
+      this._clip = name; this._elapsed = 0;
+    } else if (!this._clip) {
+      throw new Error(`"${this.path}": play() needs an animation name the first time`);
+    } else if (!this._playing) {
+      const c = this._current();
+      if (c && !c.loop && this._elapsed >= c.length) this._elapsed = 0;
+    }
+    this._playing = true;
+    this._apply();
+  }
+
+  pause(): void { this._playing = false; }
+  stop(): void { this._playing = false; this._elapsed = 0; }
+  seek(time: number): void { this._elapsed = time; this._apply(); }
+  isPlaying(): boolean { return this._playing; }
+
+  /** Called when an animation that does not loop reaches its end. */
+  animationFinished(_name: string): void {}
+
+  _current(): AnimationClip | undefined { return this.animations.find((a) => a.name === this._clip); }
+
+  /** Move on by dt seconds and set every track's property. True when an animation that does not loop has just ended. */
+  _advance(dt: number): boolean {
+    const c = this._current();
+    if (!this._playing || !c) return false;
+    this._elapsed += dt * this.speedScale;
+    const { finished } = clipTime(c, this._elapsed);
+    this._apply();
+    if (finished) { this._playing = false; return true; }
+    return false;
+  }
+
+  /** Set each track's property to its value at the current time. Paths start at this player's parent. */
+  _apply(): void {
+    const c = this._current();
+    if (!c) return;
+    const t = clipTime(c, this._elapsed).time;
+    for (const tr of c.tracks) {
+      const target = this._parent?.find(tr.path);
+      if (!target) throw new Error(`Animation "${c.name}": there is no node "${tr.path}" (track paths start at the AnimationPlayer's parent)`);
+      const def = propDef(nodeTypeOf(target), tr.property);
+      if (!def) throw new Error(`Animation "${c.name}": ${nodeTypeOf(target)} "${tr.path}" has no property "${tr.property}"`);
+      const v = sampleTrack(tr, t, blendOf(def.type));
+      if (v === undefined) continue;
+      (target as unknown as Record<string, unknown>)[tr.property] = def.type === 'vec2' ? new Vec2((v as Vec2).x, (v as Vec2).y) : v;
+    }
+  }
+}
+
+/** One named animation: pictures shown in turn, fps times a second. */
+export interface SpriteAnimation { name: string; fps: number; loop: boolean; frames: string[] }
+
+/** Draws a picture that changes: the current animation's frames, in turn. */
+export class AnimatedSprite2D extends Node2D {
+  name = 'AnimatedSprite2D';
+  frames: SpriteAnimation[] = [];
+  animation = 'default';
+  playing = true;
+  speedScale = 1;
+  frame = 0;
+  flipX = false;
+  flipY = false;
+  opacity = 1;
+  /** Seconds into the current frame. */
+  _elapsed = 0;
+
+  /** Play an animation by name (or carry on with the current one). A finished animation that does not loop starts again. */
+  play(name?: string): void {
+    if (name !== undefined && name !== this.animation) {
+      if (!this.frames.some((a) => a.name === name)) throw new Error(`"${this.path}" has no animation "${name}". It has: ${this.frames.map((a) => `"${a.name}"`).join(', ') || 'none'}`);
+      this.animation = name; this.frame = 0; this._elapsed = 0;
+    } else if (!this.playing) {
+      const a = this._current();
+      if (a && !a.loop && this.frame >= a.frames.length - 1) { this.frame = 0; this._elapsed = 0; }
+    }
+    this.playing = true;
+  }
+
+  /** Stop where it is; play() carries on from here. */
+  pause(): void { this.playing = false; }
+
+  /** Stop, and go back to the first picture. */
+  stop(): void { this.playing = false; this.frame = 0; this._elapsed = 0; }
+
+  isPlaying(): boolean { return this.playing; }
+
+  /** Called when an animation that does not loop reaches its last picture. */
+  animationFinished(_name: string): void {}
+
+  _current(): SpriteAnimation | undefined { return this.frames.find((a) => a.name === this.animation); }
+
+  /** The picture showing now, or null when there is none (no such animation, or no pictures). */
+  _texture(): string | null {
+    const a = this._current();
+    if (!a || !a.frames.length) return null;
+    return a.frames[Math.min(Math.max(0, Math.floor(this.frame)), a.frames.length - 1)];
+  }
+
+  /** Move on by dt seconds. True when an animation that does not loop has just finished. */
+  _advance(dt: number): boolean {
+    const a = this._current();
+    if (!this.playing || !a || !a.frames.length) return false;
+    this.frame = Math.min(Math.max(0, Math.floor(this.frame)), a.frames.length - 1);
+    this._elapsed += dt * this.speedScale;
+    const each = 1 / a.fps;
+    while (this._elapsed >= each - 1e-9) {
+      this._elapsed -= each;
+      if (this.frame + 1 < a.frames.length) this.frame++;
+      else if (a.loop) this.frame = 0;
+      else { this.playing = false; this._elapsed = 0; return true; }
+    }
+    return false;
+  }
 }
 
 /** What the player sees. Under the player, it follows. The first current camera in the tree is used. */
@@ -263,7 +397,7 @@ export class Area2D extends Node2D {
 }
 
 /** The built-in classes, by registry type name. */
-export const NODE_CLASSES: Record<string, typeof Node> = { Node, Node2D, Sprite2D, Camera2D, Label, CanvasLayer, CollisionShape2D, StaticBody2D, CharacterBody2D, RigidBody2D, Area2D };
+export const NODE_CLASSES: Record<string, typeof Node> = { Node, Node2D, Sprite2D, AnimatedSprite2D, AnimationPlayer, Camera2D, Label, CanvasLayer, CollisionShape2D, StaticBody2D, CharacterBody2D, RigidBody2D, Area2D };
 
 /** The registered type a runtime node is: its class, or the nearest built-in class it extends. */
 export function nodeTypeOf(n: Node): string {

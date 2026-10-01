@@ -11,7 +11,7 @@ import type { Store } from './store';
 import { C, useStore } from './kit';
 
 const GROUPS: [string, string[]][] = [
-  ['Nodes', ['Node', 'Node2D', 'Sprite2D', 'Camera2D', 'Label', 'CanvasLayer', 'CollisionShape2D', 'PhysicsBody2D', 'StaticBody2D', 'CharacterBody2D', 'RigidBody2D', 'Area2D']],
+  ['Nodes', ['Node', 'Node2D', 'Sprite2D', 'AnimatedSprite2D', 'AnimationPlayer', 'Camera2D', 'Label', 'CanvasLayer', 'CollisionShape2D', 'PhysicsBody2D', 'StaticBody2D', 'CharacterBody2D', 'RigidBody2D', 'Area2D']],
   ['Values and globals', ['Vec2', 'input', 'scene', 'time', 'physics', 'math', 'console']],
   ['Building a project (GUI → code)', SCENE_API.map((e) => e.name)],
 ];

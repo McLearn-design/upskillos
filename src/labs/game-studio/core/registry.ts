@@ -6,8 +6,12 @@
 
 import type { PropValue } from './types';
 
-/** 'enum' is one of `options`; 'layers' is a set of collision layers 1–16, stored as bits (layer n is bit n − 1). */
-export type PropType = 'number' | 'angle' | 'vec2' | 'bool' | 'string' | 'color' | 'texture' | 'enum' | 'layers';
+/**
+ * 'enum' is one of `options`; 'layers' is a set of collision layers 1–16, stored as bits (layer n is bit n − 1);
+ * 'spriteFrames' is a list of named animations, each a list of pictures (SpriteAnimation[]);
+ * 'animations' is a list of AnimationPlayer animations, each tracks of keyframes (AnimationClip[]).
+ */
+export type PropType = 'number' | 'angle' | 'vec2' | 'bool' | 'string' | 'color' | 'texture' | 'enum' | 'layers' | 'spriteFrames' | 'animations';
 
 export interface PropDef {
   name: string;
@@ -59,6 +63,29 @@ const TYPES: NodeTypeDef[] = [
       { name: 'flipX', type: 'bool', default: false, help: 'Mirror the image left to right.' },
       { name: 'flipY', type: 'bool', default: false, help: 'Mirror the image top to bottom.' },
       { name: 'opacity', type: 'number', default: 1, min: 0, max: 1, step: 0.05, help: '1 is solid, 0 is invisible.' },
+    ],
+  },
+  {
+    type: 'AnimatedSprite2D', base: 'Node2D', icon: '🎞', addable: true,
+    help: 'Draws a picture that changes: named animations (walk, jump…), each a list of pictures shown in turn.',
+    props: [
+      { name: 'frames', type: 'spriteFrames', default: [], help: 'The animations: each has a name, pictures, a speed in frames per second, and whether it loops.' },
+      { name: 'animation', type: 'string', default: 'default', help: 'The animation shown, by name. A script changes it with play("walk").' },
+      { name: 'playing', type: 'bool', default: true, help: 'Whether it moves through its pictures. On: it plays from the start of the game.' },
+      { name: 'speedScale', type: 'number', default: 1, min: 0, max: 10, step: 0.1, help: 'How fast it plays: 2 is twice as fast, 0.5 half.' },
+      { name: 'frame', type: 'number', default: 0, min: 0, step: 1, help: 'Which picture of the animation is showing, counting from 0.' },
+      { name: 'flipX', type: 'bool', default: false, help: 'Mirror the pictures left to right.' },
+      { name: 'flipY', type: 'bool', default: false, help: 'Mirror the pictures top to bottom.' },
+      { name: 'opacity', type: 'number', default: 1, min: 0, max: 1, step: 0.05, help: '1 is solid, 0 is invisible.' },
+    ],
+  },
+  {
+    type: 'AnimationPlayer', base: 'Node', icon: '⏯', addable: true,
+    help: 'Changes other nodes\u2019 properties over time, from keyframes on a timeline: a door sliding, a coin bobbing, a flash when hit.',
+    props: [
+      { name: 'animations', type: 'animations', default: [], help: 'The animations: each has a length in seconds, whether it loops, and tracks. A track is one property of one node (a path from this player\u2019s parent) with keyframes. Edit them in the Animation panel.' },
+      { name: 'autoplay', type: 'string', default: '', help: 'The animation to play when the game starts, by name. Empty: none, until a script calls play().' },
+      { name: 'speedScale', type: 'number', default: 1, min: 0, max: 10, step: 0.1, help: 'How fast it plays: 2 is twice as fast, 0.5 half.' },
     ],
   },
   {
@@ -164,12 +191,12 @@ export function isA(type: string, base: string): boolean {
   return lineage(type).some((t) => t.type === base);
 }
 
-/** A property's value on a node: stored if set, else the default. Vectors are copied. */
+/** A property's value on a node: stored if set, else the default. Vectors and lists are copied, so changing the result changes nothing. */
 export function propValue(type: string, props: Record<string, PropValue>, name: string): PropValue {
   const def = propDef(type, name);
   if (!def) throw new Error(`${type} has no property "${name}"`);
   const v = name in props ? props[name] : def.default;
-  return v && typeof v === 'object' ? { ...v } : v;
+  return v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) as PropValue : v;
 }
 
 /** Check a value against its property type; returns a message, or null if it fits. */
@@ -195,5 +222,54 @@ export function checkProp(def: PropDef, v: unknown): string | null {
       return typeof v === 'string' && def.options!.includes(v) ? null : `${def.name} must be one of ${def.options!.map((o) => `"${o}"`).join(', ')}`;
     case 'layers':
       return Number.isInteger(v) && (v as number) >= 0 && (v as number) < 2 ** 16 ? null : `${def.name} must be a set of layers 1–16 (a whole number of bits, 0 to 65535)`;
+    case 'animations': {
+      const shape = 'a list of { name, length, loop, tracks: [{ path, property, keys: [{ time, value }] }] }';
+      if (!Array.isArray(v)) return `${def.name} must be ${shape}`;
+      const names = new Set<string>();
+      const isValue = (x: unknown) => x === null || typeof x === 'string' || typeof x === 'boolean' || num(x)
+        || (!!x && typeof x === 'object' && num((x as { x: unknown }).x) && num((x as { y: unknown }).y) && Object.keys(x).length === 2);
+      for (const c of v as unknown[]) {
+        const a = c as Record<string, unknown>;
+        if (!a || typeof a !== 'object' || typeof a.name !== 'string' || !a.name.trim()) return `${def.name}: every animation needs a name (${shape})`;
+        if (names.has(a.name)) return `${def.name}: two animations are both called "${a.name}"`;
+        names.add(a.name);
+        if (!num(a.length) || (a.length as number) <= 0 || (a.length as number) > 3600) return `${def.name}: "${a.name}" needs a length in seconds, above 0`;
+        if (typeof a.loop !== 'boolean') return `${def.name}: "${a.name}" needs loop: true or false`;
+        if (!Array.isArray(a.tracks)) return `${def.name}: "${a.name}" needs tracks: a list`;
+        if (Object.keys(a).some((k) => !['name', 'length', 'loop', 'tracks'].includes(k))) return `${def.name}: "${a.name}" has something other than name, length, loop and tracks`;
+        const seen = new Set<string>();
+        for (const tr of a.tracks as Record<string, unknown>[]) {
+          if (!tr || typeof tr.path !== 'string' || !tr.path || typeof tr.property !== 'string' || !tr.property) return `${def.name}: "${a.name}" has a track without a path and a property`;
+          const id = `${tr.path}.${tr.property}`;
+          if (seen.has(id)) return `${def.name}: "${a.name}" has two tracks for ${id}`;
+          seen.add(id);
+          if (!Array.isArray(tr.keys)) return `${def.name}: "${a.name}", ${id} needs keys: a list of { time, value }`;
+          let last = -Infinity;
+          for (const k of tr.keys as Record<string, unknown>[]) {
+            if (!k || !num(k.time) || !('value' in k) || !isValue(k.value)) return `${def.name}: "${a.name}", ${id}: every key needs a time and a value`;
+            if ((k.time as number) < 0 || (k.time as number) > (a.length as number)) return `${def.name}: "${a.name}", ${id}: a key at ${k.time} s is outside 0 to ${a.length} s`;
+            if ((k.time as number) <= last) return `${def.name}: "${a.name}", ${id}: keys must be in time order, one per time`;
+            last = k.time as number;
+          }
+        }
+      }
+      return null;
+    }
+    case 'spriteFrames': {
+      const shape = 'a list of { name, fps, loop, frames: [image paths] }';
+      if (!Array.isArray(v)) return `${def.name} must be ${shape}`;
+      const names = new Set<string>();
+      for (const a of v as unknown[]) {
+        const x = a as Record<string, unknown>;
+        if (!x || typeof x !== 'object' || typeof x.name !== 'string' || !x.name.trim()) return `${def.name}: every animation needs a name (${shape})`;
+        if (names.has(x.name)) return `${def.name}: two animations are both called "${x.name}"`;
+        names.add(x.name);
+        if (!num(x.fps) || (x.fps as number) <= 0 || (x.fps as number) > 120) return `${def.name}: "${x.name}" needs fps, frames per second, above 0 and at most 120`;
+        if (typeof x.loop !== 'boolean') return `${def.name}: "${x.name}" needs loop: true or false`;
+        if (!Array.isArray(x.frames) || x.frames.some((f) => typeof f !== 'string')) return `${def.name}: "${x.name}" needs frames: a list of image paths`;
+        if (Object.keys(x).some((k) => !['name', 'fps', 'loop', 'frames'].includes(k))) return `${def.name}: "${x.name}" has something other than name, fps, loop and frames`;
+      }
+      return null;
+    }
   }
 }

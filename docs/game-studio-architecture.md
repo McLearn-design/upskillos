@@ -377,3 +377,12 @@ Recorded during Phase 1 (2026-09-30). None of them change a boundary.
    a test checks it against the real engine both ways. So the rule "the engine API is the only surface user code
    sees" is checked, not just stated. The script editor loads JavaScript's own types but not the browser's DOM,
    because scripts do not use the DOM, and its `Node` type hid the engine's.
+12. **Some properties hold lists (ADR 6).** `frames` (an AnimatedSprite2D's animations) and `animations` (an
+   AnimationPlayer's) are lists of plain objects. Reading, setting and running them always copies them, so a
+   script or an editor field cannot change the project behind a command's back. The registry validates their
+   whole shape, and the problem report follows each track to its node and property.
+13. **Animation editing follows the playhead.** While the Animation panel shows an animation, the viewport and
+   Inspector show the scene at the playhead (`applyClip`, the same sampling the engine uses). Editing a
+   property that animation already animates sets its key at the playhead, not the node's own value. Godot
+   writes previewed values into the scene; here the scene is never changed by scrubbing, so nothing is left
+   half-animated when the panel closes.

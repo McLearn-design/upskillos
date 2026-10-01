@@ -295,13 +295,90 @@ in `starter/puzzle-pack/balls/` now, from the same Kenney download (its licence 
 
 **Phase 4 is now proven** by all three examples: Potion Hunt, Coin Run and Breakout.
 
+## Done: Phase 5, animation (2026-09-30)
+
+Two nodes, as in Godot, each with its editor. Both are in the API reference.
+
+**AnimatedSprite2D:** named animations made of pictures, such as idle, walk and jump.
+- Each animation has a speed in frames per second, and loops or not.
+- Properties: `animation`, `playing`, `speedScale`, `frame`, `flipX`, `flipY`, `opacity`.
+- Scripts call `play(name)`, `pause()`, `stop()` and `isPlaying()`, and can write `animationFinished(name)`.
+- The Inspector edits the animations: add, rename, delete, fps, loop, and add or remove pictures. Each
+  animation has a small preview playing at its own speed. `animation` is chosen from the names.
+- Renaming the animation that is showing renames it in `animation` too, as one undo step (`Doc.setProps`,
+  new: several properties of one node as one command).
+
+**AnimationPlayer:** named animations of keyframes.
+- Each animation has a length, loops or not, and has tracks. A track is one property of one node: a path from
+  the player's parent, as in Godot, with keys.
+- Between keys, numbers and vectors move in a straight line, colours blend, and anything else (true/false,
+  text, a picture, layers) switches at each key.
+- Properties: `animations`, `autoplay`, `speedScale`.
+- Scripts call `play(name)`, `pause()`, `stop()`, `seek(time)` and `isPlaying()`, read `currentAnimation`
+  and `currentTime`, and can write `animationFinished(name)`.
+- A track to a missing node or property is reported in Output, and in the problem report with the key
+  values checked against the property.
+
+**The Animation panel** (a bottom-panel tab, opened by selecting an AnimationPlayer):
+- choose, create, rename and delete animations; set the length, loop and autoplay;
+- a ruler to click or drag the playhead along;
+- tracks with keyframe diamonds: click one to edit its time and value, drag it to move it, delete it;
+- ▶ previews at the player's speed.
+
+While it shows an animation:
+- the viewport and the Inspector show the scene as it is at the playhead;
+- ◆ beside every Inspector property adds a key at the playhead;
+- editing a property that already has a track, by typing or by dragging in the viewport, sets its key at the
+  playhead instead of the node's own value.
+
+So what you see is what you edit (architecture doc, change 13).
+
+**The timeline shows what the game does:** the editor's preview (`applyClip`) and the engine use the same
+sampling function (`core/animation.ts`). A test compares them at seven times, including exactly on a key and
+past the end, for a position, an angle, a colour and a true/false.
+
+**In the examples:** Coin Run's player is an AnimatedSprite2D (idle, walk, jump), so the walk no longer needs a
+script swapping pictures. Its flag waves, and reaching the flag plays an AnimationPlayer that grows the
+message from 8 to 40 pixels.
+
+**Problems found and fixed:**
+- **List values were broken in two places.** Reading a list property copied it into a plain object
+  (`propValue`), and the engine turned any object value into a vector (`applyProps`). Both now copy lists
+  properly.
+- **A key could be reached a frame late.** Thirty steps of 1/60 add up to 0.49999999999999994, not 0.5, so a
+  key at 0.5 s was missed until the next frame. Key times now allow for rounding (tested).
+
+**Tested:**
+- `npx vitest run src/labs/game-studio`: 103 tests in 8 files, covering:
+  - frame timing, speed, looping, play, pause, stop and finishing, for both nodes;
+  - validation and the problem report;
+  - the sampling maths;
+  - preview and engine agreeing;
+  - "no fake controls" for every new property;
+  - Coin Run's animations.
+- `e2e/phase5.acceptance.mjs` (10/10), in a browser:
+  - builds a sprite animation in the Inspector, and undoes a rename in one step;
+  - adds an AnimationPlayer, and keys a position at 0 s with ◆;
+  - scrubs to 2 s and types a new x, which becomes a key while the node keeps its own value;
+  - reads x = 150 at 1 s;
+  - turns on autoplay and runs, and reads both the frame and the position changing in the running game.
+- `npm run game:acceptance`: 15/15, 9/9, 8/8, 10/10 and 10/10.
+
 ## Next
 
 1. **Phase 3, the script editor:** a browser test for a run-time script error and click-to-source.
-2. **Phase 5, animation**: sprite frames and an AnimatedSprite2D, so Coin Run's walk no longer needs a
-   script swapping textures.
-3. **Phase 6, tilemaps**: Coin Run and Potion Hunt lay hundreds of Sprite2Ds; a TileMap will replace them.
-   Then a maze chase.
+2. **Phase 6, tilemaps:** Coin Run and Potion Hunt lay hundreds of Sprite2Ds; a TileMap will replace them.
+   Then a maze chase. The user's Tile Mapper lab is to be integrated here.
+3. **Phase 7, scene instancing, groups and signals**, then **Phase 8, export**.
+4. **Phase 9, machine learning (the user asked for it at the end of the plan).** A Gymnasium-style environment
+   around any Game Studio game:
+   - `reset()` and `step(action)`, returning what the agent sees, its reward, and whether the game has ended;
+   - the game runs headless, faster than real time, as the example tests already do;
+   - the author chooses the observation (game state, such as ball and paddle positions), the actions (the input
+     map) and the reward.
+   The same environment would be usable from Python in the ML Lab (Pyodide, beside Lab 37 on reinforcement
+   learning), with a way to watch a trained agent play in the editor. It learns from game state, not screen
+   pixels: learning from pixels is too slow in a browser. About 2–3 sessions.
 
 ## Phases
 
@@ -312,10 +389,11 @@ in `starter/puzzle-pack/balls/` now, from the same Kenney download (its licence 
 | 2 | Camera, more node types, asset browser, drag-and-drop, project settings | Phase 2 browser test | Done |
 | 3 | Script editor completeness, Output with click-to-source, TypeScript later | Script error test | Mostly done: API reference, hover docs, underlined mistakes; the run-time error test is left |
 | 4 | Physics: bodies, shapes, layers and masks, gravity | Platformer, Breakout (physics part) | Done: Potion Hunt, Coin Run and Breakout all pass |
-| 5 | Animation: sprite frames, property tracks, timeline | Platformer animation | |
+| 5 | Animation: sprite frames, property tracks, timeline | Platformer animation | Done: AnimatedSprite2D, AnimationPlayer and the Animation panel; Coin Run uses both |
 | 6 | Tilemaps: tilesets, painting, tile collision, Tiled import | Maze chase | |
 | 7 | Scene instancing, groups, signals, resources | Breakout, puzzle, shooter | |
 | 8 | Project zip, game export, Pages-safe output | Export test: open the exported game on its own | |
+| 9 | Machine learning: a Gymnasium-style environment for any game, used from the ML Lab | Train an agent to play Breakout from game state | |
 
 ## Size
 

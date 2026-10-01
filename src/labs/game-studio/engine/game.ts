@@ -17,7 +17,7 @@ import type { NodeData, Project, PropValue, SceneData } from '../core/types';
 import { propsOf } from '../core/registry';
 import { decompose } from '../core/math2d';
 import { Input } from './input';
-import { NODE_CLASSES, Area2D, Camera2D, CanvasLayer, CharacterBody2D, Label, Node, Node2D, PhysicsBody2D, RigidBody2D, Sprite2D } from './nodes';
+import { NODE_CLASSES, AnimatedSprite2D, AnimationPlayer, Area2D, Camera2D, CanvasLayer, CharacterBody2D, Label, Node, Node2D, PhysicsBody2D, RigidBody2D, Sprite2D } from './nodes';
 import { scans, separate } from './physics';
 import { Vec2 } from './vec2';
 
@@ -108,6 +108,8 @@ export class Game {
     this.started = true;
     const readyAll = (n: Node) => { for (const c of n._children) readyAll(c); this.call(n, 'ready'); };
     readyAll(this.root);
+    // Autoplay: the named animation starts now, so the first frame already shows its values.
+    this.each((n) => { if (n instanceof AnimationPlayer && n.autoplay) this.guard(n, 'autoplay', () => n.play(n.autoplay)); });
     this.updateCamera(0, true);
     this.draw();
   }
@@ -127,6 +129,10 @@ export class Game {
       this.accumulator -= PHYSICS_DT;
     }
     this.stepDelta = dt;
+    // Animations move on before scripts' update, so update sees this frame's values: AnimationPlayers
+    // first (a track may set a sprite's animation or frame), then animated sprites.
+    this.each((n) => { if (n instanceof AnimationPlayer && this.guard(n, 'animation', () => n._advance(dt))) this.call(n, 'animationFinished', n.currentAnimation); });
+    this.each((n) => { if (n instanceof AnimatedSprite2D && this.guard(n, 'animation', () => n._advance(dt))) this.call(n, 'animationFinished', n.animation); });
     this.each((n) => this.call(n, 'update', dt));
     this.flushFree();
     this.updateCamera(dt);
@@ -141,12 +147,18 @@ export class Game {
   }
 
   private call(n: Node, phase: string, ...args: unknown[]): void {
-    if (n._broken) return;
-    try { ((n as unknown as Record<string, (...a: unknown[]) => void>)[phase]).apply(n, args); }
+    this.guard(n, phase, () => ((n as unknown as Record<string, (...a: unknown[]) => void>)[phase]).apply(n, args));
+  }
+
+  /** Run fn for a node; if it throws, report it once and stop that node (its children carry on). */
+  private guard<T>(n: Node, phase: string, fn: () => T): T | undefined {
+    if (n._broken) return undefined;
+    try { return fn(); }
     catch (e) {
       n._broken = true;
       const err = e instanceof Error ? e : new Error(String(e));
       this.opts.onError?.({ message: err.message, stack: err.stack ?? '', file: n._script, node: n.path, phase });
+      return undefined;
     }
   }
 
@@ -271,10 +283,11 @@ export class Game {
       let vis = visible, zz = z, scr = screen;
       if (n instanceof CanvasLayer) { scr = true; zz = 1e6 * n.layer; }
       if (n instanceof Node2D) { vis = visible && n.visible; zz = zz + n.zIndex; }
-      if (vis && n instanceof Node2D && ((n instanceof Sprite2D && n.texture) || n instanceof Label)) {
+      const picture = n instanceof Sprite2D ? n.texture : n instanceof AnimatedSprite2D ? n._texture() : null;
+      if (vis && n instanceof Node2D && (picture || n instanceof Label)) {
         const t = decompose(n.worldTransform);
         const base = { id: idOf(n), x: t.position.x, y: t.position.y, rotation: t.rotation, scaleX: t.scale.x, scaleY: t.scale.y, depth: zz + (order++) * 1e-6, screen: scr };
-        if (n instanceof Sprite2D) items.push({ ...base, kind: 'sprite', texture: n.texture!, flipX: n.flipX, flipY: n.flipY, alpha: n.opacity });
+        if (n instanceof Sprite2D || n instanceof AnimatedSprite2D) items.push({ ...base, kind: 'sprite', texture: picture!, flipX: n.flipX, flipY: n.flipY, alpha: n.opacity });
         else if (n instanceof Label) items.push({ ...base, kind: 'text', text: String(n.text), fontSize: n.fontSize, color: n.color, alpha: 1 });
       }
       for (const c of n._children) visit(c, vis, zz, scr);
@@ -294,7 +307,8 @@ export function applyProps(node: Node, type: string, props: Record<string, PropV
   for (const def of propsOf(type)) {
     if (!(def.name in props)) continue;
     const v = props[def.name];
-    (node as unknown as Record<string, unknown>)[def.name] = v && typeof v === 'object' ? new Vec2((v as { x: number }).x, (v as { y: number }).y) : v;
+    (node as unknown as Record<string, unknown>)[def.name] = def.type === 'vec2' ? new Vec2((v as { x: number }).x, (v as { y: number }).y)
+      : v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v;   // lists are copied, so a script cannot change the project
   }
 }
 

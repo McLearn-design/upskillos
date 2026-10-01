@@ -25,7 +25,7 @@ export function setProp(scene: SceneData, id: string, name: string, value: PropV
   if (!def) throw new Error(`${n.type} has no property "${name}"`);
   const bad = checkProp(def, value);
   if (bad) throw new Error(bad);
-  const v = value && typeof value === 'object' ? { ...(value as Vec2) } : value;
+  const v = value && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) as PropValue : value;   // a copy the caller cannot change later
   if (same(v, def.default)) delete n.props[name]; else n.props[name] = v;
 }
 

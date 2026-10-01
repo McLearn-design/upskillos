@@ -8,12 +8,14 @@ import React, { useEffect } from 'react';
 import type { Store } from './store';
 import { Btn, C, NumberField, Row, Section, TextField, selectStyle, useStore } from './kit';
 import { lineage, nodeType, propValue, type PropDef } from '../core/registry';
-import { pathOf, parentOf } from '../core/project';
+import { findNode, pathOf, parentOf } from '../core/project';
+import { trackPath } from '../core/animation';
 import { lit } from '../core/doc';
-import type { PropValue, Vec2 } from '../core/types';
+import type { PropValue, SpriteAnimation, Vec2 } from '../core/types';
+import { SpriteFramesEditor } from './SpriteFramesEditor';
 
 const DEG = 180 / Math.PI;
-const SECTION: Record<string, string> = { Node2D: 'Transform', Sprite2D: 'Sprite', CharacterBody2D: 'Body', StaticBody2D: 'Body', RigidBody2D: 'Body', Area2D: 'Area', CollisionShape2D: 'Shape' };
+const SECTION: Record<string, string> = { Node2D: 'Transform', Sprite2D: 'Sprite', AnimatedSprite2D: 'Animated sprite', CharacterBody2D: 'Body', StaticBody2D: 'Body', RigidBody2D: 'Body', Area2D: 'Area', CollisionShape2D: 'Shape' };
 
 function liveText(v: unknown, def: PropDef): string | undefined {
   if (v === undefined) return undefined;
@@ -35,11 +37,28 @@ export function Inspector({ store }: { store: Store }) {
   if (!p) return null;
   if (!s || !n) return <div style={{ padding: 12, color: C.faint, fontSize: 12 }}>Select a node in the scene tree or the viewport.</div>;
 
-  const set = (name: string, v: PropValue) => store.act((d) => d.setProp(s.id, n.id, name, v, `Set ${n.name}.${name}`));
+  // While the Animation panel previews, values are shown as they are at the playhead, and an
+  // animated property's edit sets its key there (store.setNodeProp).
+  const set = (name: string, v: PropValue) => store.setNodeProp(n.id, name, v, `Set ${n.name}.${name}`);
+  const shown = (store.animClip && store.viewScene ? findNode(store.viewScene, n.id) : undefined) ?? n;
+  const clip = store.animClip, player = store.animPlayer;
+  const keyPath = clip && player && n.id !== player.id ? trackPath(s, player.id, n.id) : null;
+  const keyed = (def: PropDef, row: React.ReactNode) => {
+    if (keyPath === null || def.type === 'spriteFrames' || def.type === 'animations') return row;
+    const animated = store.isAnimated(n.id, def.name);
+    return (
+      <div key={def.name} style={{ display: 'flex', alignItems: 'center' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>{row}</div>
+        <button type="button" data-testid={`key-${def.name}`} onClick={() => store.setKeyAt(n.id, def.name, propValue(n.type, shown.props, def.name))}
+          title={animated ? `Animated by "${clip!.name}": editing sets the key at ${store.anim.time.toFixed(2)} s. Click to key the value shown.` : `Add a key for ${def.name} at ${store.anim.time.toFixed(2)} s in "${clip!.name}"`}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: animated ? C.warn : C.faint, fontSize: 12, padding: '0 6px 0 0' }}>◆</button>
+      </div>
+    );
+  };
   const live = store.running?.live ?? null;
 
   const control = (def: PropDef) => {
-    const v = propValue(n.type, n.props, def.name);
+    const v = propValue(n.type, shown.props, def.name);
     const lv = live ? liveText(live[def.name], def) : undefined;
     const help = def.help;
     switch (def.type) {
@@ -92,7 +111,22 @@ export function Inspector({ store }: { store: Store }) {
       }
       case 'color':
         return <Row key={def.name} label={def.name} help={help}><input type="color" value={v as string} onChange={(e) => set(def.name, e.target.value)} /></Row>;
+      case 'spriteFrames':
+        return <div key={def.name} title={help}>
+          <SpriteFramesEditor store={store} frames={v as SpriteAnimation[]} current={propValue(n.type, n.props, 'animation') as string}
+            onChange={(frames, animation) => store.act((d) => d.setProps(s.id, n.id, animation === undefined ? { frames } : { frames, animation }, `Edit ${n.name}'s animations`))} />
+        </div>;
       case 'string':
+        // An AnimatedSprite2D's animation is one of its animations' names.
+        if (n.type === 'AnimatedSprite2D' && def.name === 'animation') {
+          const names = (propValue(n.type, n.props, 'frames') as SpriteAnimation[]).map((a) => a.name);
+          return <Row key={def.name} label={def.name} help={help} live={lv}>
+            <select data-testid={`prop-${def.name}`} value={v as string} onChange={(e) => set(def.name, e.target.value)} style={{ ...selectStyle, flex: 1 }}>
+              {!names.includes(v as string) && <option value={v as string}>{v as string} (no such animation: nothing shows)</option>}
+              {names.map((x) => <option key={x} value={x}>{x}</option>)}
+            </select>
+          </Row>;
+        }
         return <Row key={def.name} label={def.name} help={help} live={lv}><TextField testid={`prop-${def.name}`} value={v as string} onCommit={(x) => set(def.name, x)} /></Row>;
     }
   };
@@ -121,7 +155,7 @@ export function Inspector({ store }: { store: Store }) {
       </div>
       {running && <div style={{ margin: '0 8px 6px', color: C.live, fontSize: 11 }}>Purple values are the running game&apos;s. They are not saved: stopping the game puts the editor&apos;s values back in charge.</div>}
       {lineage(n.type).filter((t) => t.props.length).map((t) => (
-        <Section key={t.type} title={SECTION[t.type] ?? t.type}>{t.props.map(control)}</Section>
+        <Section key={t.type} title={SECTION[t.type] ?? t.type}>{t.props.map((def) => keyed(def, control(def)))}</Section>
       ))}
       <Section title="Script">
         {n.script ? (

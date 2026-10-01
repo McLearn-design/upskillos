@@ -2,7 +2,7 @@
 // order, computed exactly as the engine computes them (engine/game.ts), so the editor
 // viewport shows what Run will show.
 
-import type { NodeData, SceneData, Vec2 } from './types';
+import type { NodeData, SceneData, SpriteAnimation, Vec2 } from './types';
 import { isA, propValue } from './registry';
 import { IDENTITY, local, multiply, type Mat2D } from './math2d';
 
@@ -40,4 +40,21 @@ export function placeNodes(scene: SceneData): PlacedNode[] {
   };
   visit(scene.root, IDENTITY, true, 0, false);
   return out;
+}
+
+/** How a node that shows a picture looks in the editor: the same picture the game would show first. */
+export interface SpriteLook { texture: string | null; flipX: boolean; flipY: boolean; opacity: number }
+
+/**
+ * The picture a Sprite2D or AnimatedSprite2D shows, or null for any other node. An
+ * AnimatedSprite2D shows picture `frame` of its current animation, as the engine does
+ * (engine/nodes.ts, AnimatedSprite2D._texture); no such animation shows nothing.
+ */
+export function spriteLook(n: NodeData): SpriteLook | null {
+  const get = (k: string) => propValue(n.type, n.props, k);
+  if (n.type === 'Sprite2D') return { texture: get('texture') as string | null, flipX: !!get('flipX'), flipY: !!get('flipY'), opacity: get('opacity') as number };
+  if (n.type !== 'AnimatedSprite2D') return null;
+  const a = (get('frames') as SpriteAnimation[]).find((x) => x.name === get('animation'));
+  const texture = a && a.frames.length ? a.frames[Math.min(Math.max(0, Math.floor(get('frame') as number)), a.frames.length - 1)] : null;
+  return { texture, flipX: !!get('flipX'), flipY: !!get('flipY'), opacity: get('opacity') as number };
 }

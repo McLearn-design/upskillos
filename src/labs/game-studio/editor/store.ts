@@ -5,8 +5,9 @@
 
 import { Doc } from '../core/doc';
 import { newProject, pathOf, sceneAt, findNode } from '../core/project';
-import type { NodeData, Project, SceneData } from '../core/types';
-import { isA } from '../core/registry';
+import type { AnimationClip, NodeData, Project, PropValue, SceneData } from '../core/types';
+import { applyClip, setKey, trackPath } from '../core/animation';
+import { isA, propValue } from '../core/registry';
 import type { FromRuntime } from '../runtime/protocol';
 import { runGame, type RunningGame } from './runner';
 import { checkSyntax } from '../runtime/scripts';
@@ -195,7 +196,89 @@ export class Store {
 
   openScene(id: string): void { this.sceneId = id; this.selection = []; this.tab = { kind: 'scene' }; this.changed(); }
 
-  select(ids: string[]): void { this.selection = ids; this.changed(); if (this.running) this.inspectLive(); }
+  select(ids: string[]): void {
+    this.selection = ids;
+    // Selecting an AnimationPlayer makes it the one the Animation panel edits.
+    const n = this.selected;
+    if (n?.type === 'AnimationPlayer' && this.anim.playerId !== n.id) {
+      const clips = propValue(n.type, n.props, 'animations') as AnimationClip[];
+      this.anim = { ...this.anim, playerId: n.id, clip: clips[0]?.name ?? '', time: 0, playing: false };
+    }
+    this.changed();
+    if (this.running) this.inspectLive();
+  }
+
+  // ── the Animation panel ────────────────────────────────────────────────
+  // While it shows an animation, the viewport and Inspector show the scene as it is at the
+  // playhead, and editing a property that animation has a track for sets its key at the
+  // playhead instead of the node's own value. So what you see is what you edit.
+
+  /** The AnimationPlayer the panel edits, the animation, the playhead in seconds, and whether it is previewing. */
+  anim: { open: boolean; playerId: string | null; clip: string; time: number; playing: boolean } = { open: false, playerId: null, clip: '', time: 0, playing: false };
+  /** A drag of an animated property: its value while dragging, before it becomes a key. */
+  animDrag: { id: string; prop: string; value: PropValue } | null = null;
+
+  get animPlayer(): NodeData | null {
+    const s = this.scene;
+    const n = s && this.anim.playerId ? findNode(s, this.anim.playerId) : undefined;
+    return n?.type === 'AnimationPlayer' ? n : null;
+  }
+  get animClips(): AnimationClip[] { const n = this.animPlayer; return n ? propValue(n.type, n.props, 'animations') as AnimationClip[] : []; }
+  /** The animation the panel is showing, when it is open and the game is not running. */
+  get animClip(): AnimationClip | null {
+    if (!this.anim.open || this.running) return null;
+    return this.animClips.find((c) => c.name === this.anim.clip) ?? null;
+  }
+
+  /** The scene as the viewport shows it: with the panel's animation applied at the playhead. */
+  get viewScene(): SceneData | null {
+    const s = this.scene, c = this.animClip;
+    if (!s || !c || !this.anim.playerId) return s;
+    const v = applyClip(s, this.anim.playerId, c, this.anim.time);
+    if (this.animDrag) { const n = findNode(v, this.animDrag.id); if (n) n.props[this.animDrag.prop] = this.animDrag.value; }
+    return v;
+  }
+
+  /** Whether the panel's animation has a track for this node's property. */
+  isAnimated(nodeId: string, prop: string): boolean {
+    const s = this.scene, c = this.animClip;
+    if (!s || !c || !this.anim.playerId) return false;
+    const path = trackPath(s, this.anim.playerId, nodeId);
+    return path !== null && c.tracks.some((t) => t.path === path && t.property === prop);
+  }
+
+  /** Set a key at the playhead for a node's property (adding the track if needed), as one command. */
+  setKeyAt(nodeId: string, prop: string, value: PropValue, label?: string): void {
+    const s = this.scene, player = this.animPlayer, c = this.animClip;
+    if (!s || !player || !c) return;
+    const path = trackPath(s, player.id, nodeId);
+    if (path === null) { this.say('Only nodes under the AnimationPlayer\u2019s parent can be animated by it'); return; }
+    const time = +this.anim.time.toFixed(4);
+    const clips = setKey(this.animClips, c.name, path, prop, time, value as never);
+    this.act((d) => d.setProp(s.id, player.id, 'animations', clips, label ?? `Key ${path}.${prop} at ${time} s`));
+  }
+
+  /** Change a node's property from the editor: its key at the playhead if the panel's animation animates it, else the node's own value. */
+  setNodeProp(nodeId: string, prop: string, value: PropValue, label?: string): void {
+    const s = this.scene;
+    if (!s) return;
+    if (this.isAnimated(nodeId, prop)) this.setKeyAt(nodeId, prop, value, label);
+    else this.act((d) => d.setProp(s.id, nodeId, prop, value, label));
+  }
+
+  /** A drag in the viewport, as it goes: an animated property is held aside until the drag ends. */
+  liveEdit(nodeId: string, prop: string, value: PropValue): void {
+    if (this.isAnimated(nodeId, prop)) { this.animDrag = { id: nodeId, prop, value }; this.changed(); return; }
+    this.doc!.beginLive();
+    this.doc!.liveProp(this.sceneId!, nodeId, prop, value);
+  }
+
+  /** The end of a drag: one command, a key or the node's own value. */
+  endLiveEdit(label: string, nodeId: string, prop: string): void {
+    const held = this.animDrag;
+    if (held) { this.animDrag = null; this.setKeyAt(nodeId, prop, held.value, label); this.changed(); return; }
+    if (this.doc && this.sceneId) this.doc.endLive(label, this.sceneId, nodeId, [prop]);
+  }
 
   /** Add a node under the selected one (or the root). */
   addNode(type: string, opts: { parentId?: string; name?: string; props?: Record<string, unknown> } = {}): NodeData | undefined {

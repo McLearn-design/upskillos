@@ -161,3 +161,62 @@ describe('saving and loading', () => {
     expect(() => deserialize('not json')).toThrow(/not valid JSON/);
   });
 });
+
+describe('animated sprites in the model', () => {
+  const walk = { name: 'walk', fps: 8, loop: true, frames: ['assets/player.png'] };
+
+  it('sets frames through a command, logs them as code, and replays to the same project', () => {
+    const { d, s, player } = sample();
+    const a = d.addNode(s.id, 'AnimatedSprite2D', player.id, { name: 'Anim' });
+    d.setProp(s.id, a.id, 'frames', [walk]);
+    d.setProp(s.id, a.id, 'animation', 'walk');
+    expect(d.log.at(-2)!.code).toContain('frames = [{ name: "walk", fps: 8, loop: true, frames: ["assets/player.png"] }]');
+    const replay = newProject('Test');
+    runSceneCode(replay, d.log.map((l) => l.code).join('\n'));
+    expect(serialize(replay)).toBe(serialize(d.project));
+    expect(problems(d.project)).toEqual([]);
+  });
+
+  it('keeps its own copy: changing the list afterwards does not change the project', () => {
+    const { d, s } = sample();
+    const a = d.addNode(s.id, 'AnimatedSprite2D', undefined, { name: 'Anim' });
+    const frames = [{ ...walk, frames: [...walk.frames] }];
+    d.setProp(s.id, a.id, 'frames', frames);
+    frames[0].fps = 99;
+    expect((propValue('AnimatedSprite2D', d.node(s.id, a.id)!.props, 'frames') as typeof frames)[0].fps).toBe(8);
+  });
+
+  it('refuses bad animations, naming what is wrong', () => {
+    const { d, s } = sample();
+    const a = d.addNode(s.id, 'AnimatedSprite2D', undefined, { name: 'Anim' });
+    const bad = (v: unknown) => () => d.setProp(s.id, a.id, 'frames', v as never);
+    expect(bad('walk')).toThrow(/list of \{ name, fps, loop, frames/);
+    expect(bad([walk, walk])).toThrow(/two animations are both called "walk"/);
+    expect(bad([{ ...walk, fps: 0 }])).toThrow(/"walk" needs fps/);
+    expect(bad([{ ...walk, loop: 'yes' }])).toThrow(/needs loop/);
+    expect(bad([{ ...walk, frames: [3] }])).toThrow(/list of image paths/);
+    expect(bad([{ ...walk, speed: 2 }])).toThrow(/something other than/);
+  });
+
+  it('the problem report names an animation picture that is missing', () => {
+    const { d, s } = sample();
+    const a = d.addNode(s.id, 'AnimatedSprite2D', undefined, { name: 'Anim' });
+    d.setProp(s.id, a.id, 'frames', [{ ...walk, frames: ['assets/player.png', 'assets/gone.png'] }]);
+    expect(problems(d.project)).toEqual(['scenes/main.scene: Anim: animation "walk" uses a missing image "assets/gone.png"']);
+  });
+});
+
+describe('setProps', () => {
+  it('changes several properties as one undo step, logged one line each, and replays', () => {
+    const { d, s, sprite } = sample();
+    const steps = d.undoStack.length;
+    d.setProps(s.id, sprite.id, { flipX: true, opacity: 0.5 });
+    expect(d.undoStack.length).toBe(steps + 1);
+    expect(d.log.at(-1)!.code).toBe('scene.get("Player/Sprite").flipX = true\nscene.get("Player/Sprite").opacity = 0.5');
+    const replay = newProject('Test');
+    runSceneCode(replay, d.log.map((l) => l.code).join('\n'));
+    expect(serialize(replay)).toBe(serialize(d.project));
+    d.undo();
+    expect(propValue('Sprite2D', d.node(s.id, sprite.id)!.props, 'flipX')).toBe(false);
+  });
+});

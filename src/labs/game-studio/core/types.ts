@@ -7,8 +7,19 @@ export const FORMAT_VERSION = 1;
 
 export interface Vec2 { x: number; y: number }
 
+/** One named animation of an AnimatedSprite2D: pictures (project paths) shown in turn, fps times a second. */
+export interface SpriteAnimation { name: string; fps: number; loop: boolean; frames: string[] }
+
+/** A property's value at a moment of an AnimationPlayer animation. */
+export interface AnimationKey { time: number; value: KeyValue }
+export type KeyValue = number | string | boolean | Vec2 | null;
+/** One property of one node, changing over time. `path` is from the AnimationPlayer's parent: "Player/Sprite", or "." for the parent itself. */
+export interface AnimationTrack { path: string; property: string; keys: AnimationKey[] }
+/** One named AnimationPlayer animation: tracks over `length` seconds, looping or not. */
+export interface AnimationClip { name: string; length: number; loop: boolean; tracks: AnimationTrack[] }
+
 /** A value a node property can hold. Vectors are {x, y}; textures and scripts are project paths. */
-export type PropValue = number | string | boolean | Vec2 | null;
+export type PropValue = number | string | boolean | Vec2 | SpriteAnimation[] | AnimationClip[] | null;
 
 export interface NodeData {
   /** Stable, never shown, never reused within the project. */

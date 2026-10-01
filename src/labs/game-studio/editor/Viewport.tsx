@@ -12,7 +12,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { Store } from './store';
 import { C, useStore } from './kit';
-import { placeNodes, type PlacedNode } from '../core/sceneView';
+import { placeNodes, spriteLook, type PlacedNode } from '../core/sceneView';
 import { apply, invert, multiply, type Mat2D } from '../core/math2d';
 import { propValue } from '../core/registry';
 import type { Vec2 } from '../core/types';
@@ -27,8 +27,9 @@ const labelFont = (size: number) => `${size}px system-ui, sans-serif`;
 
 /** The rectangle a node is drawn in, in its own coordinates: a sprite's image (centred), a label's text (from its top-left). */
 function localBox(store: Store, p: PlacedNode): { x: number; y: number; w: number; h: number } | null {
-  if (p.node.type === 'Sprite2D') {
-    const img = store.imageFor(propValue(p.node.type, p.node.props, 'texture') as string | null);
+  const look = spriteLook(p.node);
+  if (look) {
+    const img = store.imageFor(look.texture);
     const w = img ? img.naturalWidth : 32, h = img ? img.naturalHeight : 32;
     return { x: -w / 2, y: -h / 2, w, h };
   }
@@ -62,7 +63,7 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
   const toWorld = useCallback((sx: number, sy: number): Vec2 => apply(invert(view()), { x: sx, y: sy }), [view]);
 
   const draw = useCallback(() => {
-    const el = canvas.current, s = store.scene, p = store.project;
+    const el = canvas.current, s = store.viewScene, p = store.project;
     if (!el || !p) return;
     const dpr = window.devicePixelRatio || 1, W = el.clientWidth, H = el.clientHeight;
     if (el.width !== Math.round(W * dpr) || el.height !== Math.round(H * dpr)) { el.width = Math.round(W * dpr); el.height = Math.round(H * dpr); }
@@ -87,12 +88,11 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
     const placed = placeNodes(s), sel = new Set(store.selection);
     // Sprites, in the engine's drawing order.
     for (const pn of [...placed].sort((a, b) => a.depth - b.depth)) {
-      if (!pn.visible || pn.node.type !== 'Sprite2D') continue;
-      const tex = propValue('Sprite2D', pn.node.props, 'texture') as string | null;
-      const img = store.imageFor(tex), box = localBox(store, pn)!;
-      const fx = propValue('Sprite2D', pn.node.props, 'flipX') ? -1 : 1, fy = propValue('Sprite2D', pn.node.props, 'flipY') ? -1 : 1;
-      set(multiply(pn.world, [fx, 0, 0, fy, 0, 0]));
-      g.globalAlpha = propValue('Sprite2D', pn.node.props, 'opacity') as number;
+      const look = pn.visible ? spriteLook(pn.node) : null;
+      if (!look) continue;
+      const img = store.imageFor(look.texture), box = localBox(store, pn)!;
+      set(multiply(pn.world, [look.flipX ? -1 : 1, 0, 0, look.flipY ? -1 : 1, 0, 0]));
+      g.globalAlpha = look.opacity;
       g.imageSmoothingEnabled = p.settings.pixelArt === false;   // pixel art stays crisp when zoomed, as in the game
       if (img) g.drawImage(img, box.x, box.y);
       else { g.setLineDash([4 / z, 3 / z]); g.strokeStyle = C.faint; g.lineWidth = 1 / z; g.strokeRect(-16, -16, 32, 32); g.setLineDash([]); }
@@ -145,7 +145,7 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
       const o = apply(multiply(v, pn.world), { x: 0, y: 0 });
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       const isSel = sel.has(pn.node.id);
-      if (pn.node.type !== 'Sprite2D' && pn.node.id !== s.root.id) {
+      if (!spriteLook(pn.node) && pn.node.id !== s.root.id) {
         g.strokeStyle = isSel ? C.warm : pn.node.type === 'CharacterBody2D' ? '#8bd450' : C.dim; g.lineWidth = 1.5;
         g.beginPath(); g.moveTo(o.x - 7, o.y); g.lineTo(o.x + 7, o.y); g.moveTo(o.x, o.y - 7); g.lineTo(o.x, o.y + 7); g.stroke();
         if (pn.node.type === 'CharacterBody2D') { g.beginPath(); g.arc(o.x, o.y, 5, 0, Math.PI * 2); g.stroke(); }
@@ -211,7 +211,7 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
 
   /** The topmost node under a screen point: sprites by their image box, other 2D nodes by their marker. */
   const hit = (sx: number, sy: number): string | null => {
-    const s = store.scene; if (!s) return null;
+    const s = store.viewScene; if (!s) return null;
     const placed = placeNodes(s).filter((p) => p.is2D && p.visible && p.node.id !== s.root.id).sort((a, b) => b.depth - a.depth);
     const v = view();
     for (const pn of placed) {
@@ -237,7 +237,7 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
     if (!id && store.tool !== 'move' && store.selected && s && store.selected.id !== s.root.id) id = store.selected.id;
     if (!id || !s) { if (!e.shiftKey) store.select([]); return; }
     if (id !== store.selected?.id) store.select(e.shiftKey ? [...store.selection.filter((x) => x !== id), id] : [id]);
-    const pn = placeNodes(s).find((p) => p.node.id === id)!;
+    const pn = placeNodes(store.viewScene ?? s).find((p) => p.node.id === id)!;   // where it is shown: its animated value while the Animation panel previews
     const start = propValue(pn.node.type, pn.node.props, 'position') as Vec2;
     drag.current = {
       kind: 'move', sx, sy, cx: 0, cy: 0, id, start, grab: toWorld(sx, sy), parentInv: invert(pn.parentWorld),
@@ -259,24 +259,21 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
       const o = d.origin!, a0 = Math.atan2(d.grab!.y - o.y, d.grab!.x - o.x), a1 = Math.atan2(w.y - o.y, w.x - o.x);
       let r = d.startRot! + (a1 - a0);
       if (store.snap) r = Math.round(r / (Math.PI / 12)) * (Math.PI / 12);
-      store.doc!.beginLive();
-      store.doc!.liveProp(store.sceneId!, d.id!, 'rotation', +r.toFixed(6));
+      store.liveEdit(d.id!, 'rotation', +r.toFixed(6));
       return;
     }
     if (store.tool === 'scale') {
       // Scale by how much farther from the origin the pointer is than where it started (0.1 steps with Snap).
       const o = d.origin!, r0 = Math.hypot(d.grab!.x - o.x, d.grab!.y - o.y) || 1, k = Math.hypot(w.x - o.x, w.y - o.y) / r0;
       const snapK = (v: number) => (store.snap ? Math.round(v * 10) / 10 : +v.toFixed(3));
-      store.doc!.beginLive();
-      store.doc!.liveProp(store.sceneId!, d.id!, 'scale', { x: snapK(d.startScale!.x * k), y: snapK(d.startScale!.y * k) });
+      store.liveEdit(d.id!, 'scale', { x: snapK(d.startScale!.x * k), y: snapK(d.startScale!.y * k) });
       return;
     }
     // Move: the pointer's movement in the world, turned into the parent's coordinates, added to the start position.
     const a = apply(d.parentInv!, w), b = apply(d.parentInv!, d.grab!);
     let pos = { x: d.start!.x + a.x - b.x, y: d.start!.y + a.y - b.y };
     if (store.snap) pos = { x: Math.round(pos.x / store.grid) * store.grid, y: Math.round(pos.y / store.grid) * store.grid };
-    store.doc!.beginLive();
-    store.doc!.liveProp(store.sceneId!, d.id!, 'position', pos);
+    store.liveEdit(d.id!, 'position', pos);
   };
 
   const onUp = () => {
@@ -284,7 +281,7 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
     if (d?.kind === 'move' && store.doc && store.sceneId) {
       const n = store.doc.node(store.sceneId, d.id!);
       const [verb, prop] = store.tool === 'rotate' ? ['Rotate', 'rotation'] : store.tool === 'scale' ? ['Scale', 'scale'] : ['Move', 'position'];
-      store.doc.endLive(`${verb} ${n?.name}`, store.sceneId, d.id!, [prop]);
+      store.endLiveEdit(`${verb} ${n?.name}`, d.id!, prop);
     }
   };
 

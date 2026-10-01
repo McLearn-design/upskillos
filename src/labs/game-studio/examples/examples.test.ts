@@ -6,7 +6,7 @@ import { newProject } from '../core/project';
 import { runSceneCode } from '../core/api';
 import { problems, serialize } from '../core/serialize';
 import { Game, MATH, scriptGlobals, type DrawItem } from '../engine/game';
-import { NODE_CLASSES, Node, type CharacterBody2D, type Node2D, type RigidBody2D } from '../engine/nodes';
+import { NODE_CLASSES, Node, type AnimatedSprite2D, type CharacterBody2D, type Node2D, type RigidBody2D } from '../engine/nodes';
 import { Vec2 } from '../engine/vec2';
 import { EXAMPLES } from './index';
 import { potionHunt } from './potionHunt';
@@ -205,6 +205,36 @@ describe('Coin Run plays', () => {
     steps(game, 30);
     expect(player.position.x).toBe(x);
     expect(errors).toEqual([]);
+  });
+
+  it('the player\u2019s AnimatedSprite2D plays idle when still, walk (two pictures, 8 a second) when running, and jump in the air', async () => {
+    const { game } = await play(build(platformer));
+    const sprite = game.root.get<AnimatedSprite2D>('Player/Sprite');
+    steps(game, 60);
+    expect(sprite.animation).toBe('idle');
+    game.input.key('ArrowRight', true);
+    const seen = new Set<number>();
+    for (let i = 0; i < 30; i++) { game.step(DT); seen.add(sprite.frame); }
+    expect(sprite.animation).toBe('walk');
+    expect([...seen].sort()).toEqual([0, 1]);   // both pictures in half a second
+    game.input.key('Space', true); steps(game, 5);
+    expect(sprite.animation).toBe('jump');
+  });
+
+  it('the flag waves (an AnimatedSprite2D), and reaching it plays the message\u2019s animation: 8 px growing to 40 in 0.4 s', async () => {
+    const { game } = await play(build(platformer));
+    const cloth = game.root.get<AnimatedSprite2D>('Flag/Cloth');
+    const seen = new Set<number>();
+    for (let i = 0; i < 30; i++) { game.step(DT); seen.add(cloth.frame); }
+    expect([...seen].sort()).toEqual([0, 1]);
+    const message = game.root.get<Node2D & { fontSize: number; visible: boolean }>('HUD/Message');
+    const player = game.root.get<CharacterBody2D>('Player');
+    player.position = { x: 1035, y: 222 };
+    game.step(DT);
+    expect(message.visible).toBe(true);
+    expect(message.fontSize).toBeLessThan(10);
+    steps(game, 30);
+    expect(message.fontSize).toBe(40);
   });
 
   it('the invisible edges stop the player at both ends of the level', async () => {

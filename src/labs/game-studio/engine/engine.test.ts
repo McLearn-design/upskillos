@@ -4,7 +4,7 @@ import { newProject } from '../core/project';
 import { nodeTypes, propsOf, type PropDef } from '../core/registry';
 import type { PropValue } from '../core/types';
 import { Game, PHYSICS_DT, type DrawItem, type ScriptError, type View } from './game';
-import { Area2D, CharacterBody2D, Node, Node2D, RigidBody2D, Sprite2D } from './nodes';
+import { AnimatedSprite2D, AnimationPlayer, Area2D, CharacterBody2D, Node, Node2D, RigidBody2D, Sprite2D } from './nodes';
 
 const recorder = () => { const frames: DrawItem[][] = [], views: View[] = []; return { frames, views, renderer: { frame: (items: DrawItem[], view: View) => { frames.push(items); views.push(view); } } }; };
 
@@ -12,6 +12,7 @@ function scene(build: (d: Doc, sceneId: string) => void) {
   const d = new Doc(newProject());
   const s = d.createScene('scenes/main.scene');
   d.importAsset('assets/a.png', { mime: 'image/png', width: 8, height: 8 });
+  d.importAsset('assets/b.png', { mime: 'image/png', width: 8, height: 8 });
   build(d, s.id);
   return { project: d.project, scene: d.scene(s.id) };
 }
@@ -154,20 +155,157 @@ describe('input', () => {
   });
 });
 
+describe('AnimatedSprite2D', () => {
+  const WALK = { name: 'walk', fps: 10, loop: true, frames: ['assets/a.png', 'assets/b.png', 'assets/a.png'] };
+  const ONCE = { name: 'once', fps: 10, loop: false, frames: ['assets/a.png', 'assets/b.png'] };
+  function setup(props: Record<string, PropValue> = {}) {
+    const { project, scene: s } = scene((d, id) => { d.addNode(id, 'AnimatedSprite2D', undefined, { name: 'A', props: { frames: [WALK, ONCE], animation: 'walk', ...props } }); });
+    const rec = recorder();
+    const finished: string[] = [];
+    const g = new Game(project, s, rec.renderer);
+    const a = g.root.get<AnimatedSprite2D>('A');
+    a.animationFinished = (name) => { finished.push(name); };
+    g.start();
+    const shown = () => (rec.frames.at(-1)!.find((i) => i.kind === 'sprite') as { texture: string } | undefined)?.texture ?? null;
+    return { g, a, shown, finished };
+  }
+
+  it('shows each picture for 1/fps seconds and loops: at 10 fps, frame 1 after 0.1 s, back to 0 after 0.3 s', () => {
+    const { g, a, shown } = setup();
+    expect([a.frame, shown()]).toEqual([0, 'assets/a.png']);
+    for (let i = 0; i < 6; i++) g.step(1 / 60);          // 0.1 s
+    expect([a.frame, shown()]).toEqual([1, 'assets/b.png']);
+    for (let i = 0; i < 12; i++) g.step(1 / 60);         // 0.3 s in all
+    expect(a.frame).toBe(0);
+  });
+
+  it('speedScale 2 plays twice as fast; playing false holds the picture', () => {
+    const fast = setup({ speedScale: 2 });
+    for (let i = 0; i < 3; i++) fast.g.step(1 / 60);     // 0.05 s × 2
+    expect(fast.a.frame).toBe(1);
+    const held = setup({ playing: false });
+    for (let i = 0; i < 30; i++) held.g.step(1 / 60);
+    expect(held.a.frame).toBe(0);
+  });
+
+  it('play(name) switches from the first picture; playing the same one carries on; an unknown name says which exist', () => {
+    const { g, a } = setup();
+    for (let i = 0; i < 6; i++) g.step(1 / 60);
+    a.play('walk');                                       // already playing: carries on
+    expect(a.frame).toBe(1);
+    a.play('once');
+    expect([a.animation, a.frame]).toEqual(['once', 0]);
+    expect(() => a.play('run')).toThrow(/no animation "run"[\s\S]*"walk", "once"/);
+  });
+
+  it('an animation that does not loop stops on its last picture and calls animationFinished once; play() starts it again', () => {
+    const { g, a, shown, finished } = setup({ animation: 'once' });
+    for (let i = 0; i < 30; i++) g.step(1 / 60);
+    expect([a.frame, a.isPlaying(), shown()]).toEqual([1, false, 'assets/b.png']);
+    expect(finished).toEqual(['once']);
+    a.play();
+    expect([a.frame, a.isPlaying()]).toEqual([0, true]);
+  });
+
+  it('stop() goes back to the first picture; pause() stays; no such animation shows nothing', () => {
+    const { g, a, shown } = setup();
+    for (let i = 0; i < 6; i++) g.step(1 / 60);
+    a.pause(); g.step(1 / 60); g.step(0.5);
+    expect(a.frame).toBe(1);
+    a.stop(); g.step(1 / 60);
+    expect([a.frame, shown()]).toEqual([0, 'assets/a.png']);
+    const none = setup({ animation: 'swim' });
+    expect(none.shown()).toBe(null);
+  });
+});
+
+describe('AnimationPlayer', () => {
+  // Box slides from x 0 to 100 over 1 s, and turns invisible at 0.5 s.
+  const GO = { name: 'go', length: 1, loop: false, tracks: [
+    { path: 'Box', property: 'position', keys: [{ time: 0, value: { x: 0, y: 0 } }, { time: 1, value: { x: 100, y: 0 } }] },
+    { path: 'Box', property: 'visible', keys: [{ time: 0, value: true }, { time: 0.5, value: false }] },
+  ] };
+  const SPIN = { name: 'spin', length: 1, loop: true, tracks: [{ path: 'Box', property: 'rotation', keys: [{ time: 0, value: 0 }, { time: 1, value: 1 }] }] };
+  function setup(props: Record<string, PropValue> = {}) {
+    const errors: ScriptError[] = [], finished: string[] = [];
+    const { project, scene: s } = scene((d, id) => {
+      d.addNode(id, 'Node2D', undefined, { name: 'Box' });
+      d.addNode(id, 'AnimationPlayer', undefined, { name: 'Anim', props: { animations: [GO, SPIN], ...props } });
+    });
+    const g = new Game(project, s, recorder().renderer, { onError: (e) => errors.push(e) });
+    const anim = g.root.get<AnimationPlayer>('Anim'), box = g.root.get<Node2D>('Box');
+    anim.animationFinished = (n) => { finished.push(n); };
+    g.start();
+    return { g, anim, box, errors, finished };
+  }
+  const run = (g: Game, seconds: number) => { for (let i = 0; i < Math.round(seconds * 60); i++) g.step(1 / 60); };
+
+  it('autoplay starts at once: after 0.25 s the box is at x 25, still visible; at 0.5 s it disappears', () => {
+    const { g, box, anim } = setup({ autoplay: 'go' });
+    expect(box.position.x).toBe(0);
+    run(g, 0.25);
+    expect(box.position.x).toBeCloseTo(25, 9);
+    expect(box.visible).toBe(true);
+    run(g, 0.25);
+    expect(box.visible).toBe(false);
+    expect(anim.currentTime).toBeCloseTo(0.5, 9);
+  });
+
+  it('a clip that does not loop stops at its end, calls animationFinished once, and play() starts it again', () => {
+    const { g, box, anim, finished } = setup({ autoplay: 'go' });
+    run(g, 2);
+    expect(box.position.x).toBe(100);
+    expect([anim.isPlaying(), finished]).toEqual([false, ['go']]);
+    anim.play();
+    expect(box.position.x).toBe(0);
+  });
+
+  it('a looping clip wraps round; speedScale 2 goes twice as fast', () => {
+    const { g, box, anim } = setup({ speedScale: 2 });
+    anim.play('spin');
+    run(g, 0.75);                                  // 1.5 s of animation: half-way round the second time
+    expect(box.rotation).toBeCloseTo(0.5, 9);
+  });
+
+  it('seek sets every track at once; pause holds; stop goes back to the start', () => {
+    const { g, box, anim } = setup();
+    anim.play('go'); anim.seek(0.8);
+    expect([box.position.x, box.visible]).toEqual([80, false]);
+    anim.pause(); run(g, 0.5);
+    expect(box.position.x).toBeCloseTo(80, 9);
+    anim.stop(); expect(anim.currentTime).toBe(0);
+  });
+
+  it('play() with an unknown name says which exist; a track to a missing node is reported once', () => {
+    const { anim } = setup();
+    expect(() => anim.play('jump')).toThrow(/no animation "jump"[\s\S]*"go", "spin"/);
+    const bad = setup({ autoplay: 'lost', animations: [{ name: 'lost', length: 1, loop: true, tracks: [{ path: 'Lid', property: 'position', keys: [{ time: 0, value: { x: 0, y: 0 } }] }] }] });
+    run(bad.g, 0.5);
+    expect(bad.errors.map((e) => e.message)).toEqual(['Animation "lost": there is no node "Lid" (track paths start at the AnimationPlayer\'s parent)']);
+  });
+});
+
 describe('no fake controls', () => {
   /** A value different from the default, and allowed. */
   const changed = (def: PropDef): PropValue => def.type === 'vec2' ? { x: 3, y: 4 } : def.type === 'angle' ? 0.5 : def.type === 'bool' ? !def.default
     : def.type === 'texture' ? 'assets/a.png' : def.type === 'color' ? '#123456' : def.type === 'layers' ? 2
     : def.type === 'enum' ? def.options!.find((o) => o !== def.default)!
+    : def.type === 'spriteFrames' ? [{ name: 'default', fps: 5, loop: true, frames: ['assets/b.png'] }]
+    : def.type === 'animations' ? [{ name: 'default', length: 1, loop: true, tracks: [{ path: 'N/Drawn', property: 'opacity', keys: [{ time: 0, value: 0.5 }] }] }]
     : def.type === 'number' ? (def.default === 1 ? 0.5 : Math.min(def.max ?? Infinity, (def.default as number) + 2)) : 'x';
 
   // ── what a property changes on screen ─────────────────────────────────
   // A Sprite2D is given a texture so there is something to see, except when the texture itself is the property tested.
+  // An AnimatedSprite2D is given two pictures at 30 fps, so one frame of 1/30 s moves it on.
+  const ANIMATED = { frames: [{ name: 'default', fps: 30, loop: true, frames: ['assets/a.png', 'assets/b.png'] }] };
+  // An AnimationPlayer is given an autoplaying animation that slides its drawn child 100 px in a second.
+  const PLAYER = { autoplay: 'default', animations: [{ name: 'default', length: 1, loop: true, tracks: [{ path: 'N/Drawn', property: 'position', keys: [{ time: 0, value: { x: 0, y: 0 } }, { time: 1, value: { x: 100, y: 0 } }] }] }] };
   const draw = (type: string, props: Record<string, PropValue>, autoTexture = true) => {
     const { project, scene: s } = scene((d, id) => {
       d.addNode(id, 'Node2D', undefined, { name: 'Before', props: { zIndex: 1 } });   // something to be in front of or behind
-      const n = d.addNode(id, type, undefined, { name: 'N', props: type === 'Sprite2D' && autoTexture ? { texture: 'assets/a.png', ...props } : props });
-      if (type !== 'Sprite2D') d.addNode(id, 'Sprite2D', n.id, { name: 'Drawn', props: { texture: 'assets/a.png' } });
+      const auto: Record<string, PropValue> = !autoTexture ? {} : type === 'Sprite2D' ? { texture: 'assets/a.png' } : type === 'AnimatedSprite2D' ? ANIMATED : type === 'AnimationPlayer' ? PLAYER : {};
+      const n = d.addNode(id, type, undefined, { name: 'N', props: { ...auto, ...props } });
+      if (type !== 'Sprite2D' && type !== 'AnimatedSprite2D') d.addNode(id, 'Sprite2D', n.id, { name: 'Drawn', props: { texture: 'assets/a.png' } });
     });
     const rec = recorder();
     const g = new Game(project, s, rec.renderer);
@@ -239,7 +377,7 @@ describe('no fake controls', () => {
         if (own && PHYSICS[key]) {
           expect(PHYSICS[key](changed(def)), `${key} is in the registry but changes nothing its physics does`).not.toBe(PHYSICS[key](undefined));
         } else {
-          const auto = def.name !== 'texture';
+          const auto = def.name !== 'texture' && def.name !== 'frames';   // (an AnimationPlayer keeps its autoplay animation, so changing animations, autoplay or speed shows)
           expect(draw(t.type, { [def.name]: changed(def) }, auto), `${key} is in the registry but changes nothing the engine draws (or has no physics scenario)`).not.toBe(draw(t.type, {}, auto));
         }
         checked++;

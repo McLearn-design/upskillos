@@ -48,6 +48,9 @@ const XY = '{ x: number; y: number }';
 const GODOT_PROPS: Record<string, string> = {
   'Node2D.position': 'position', 'Node2D.rotation': 'rotation', 'Node2D.scale': 'scale', 'Node2D.visible': 'visible', 'Node2D.zIndex': 'z_index',
   'Sprite2D.texture': 'texture (here a project path, not a loaded resource)', 'Sprite2D.flipX': 'flip_h', 'Sprite2D.flipY': 'flip_v', 'Sprite2D.opacity': 'modulate.a',
+  'AnimatedSprite2D.frames': 'sprite_frames (a SpriteFrames resource)', 'AnimatedSprite2D.animation': 'animation', 'AnimatedSprite2D.playing': 'autoplay, is_playing()',
+  'AnimatedSprite2D.speedScale': 'speed_scale', 'AnimatedSprite2D.frame': 'frame', 'AnimatedSprite2D.flipX': 'flip_h', 'AnimatedSprite2D.flipY': 'flip_v', 'AnimatedSprite2D.opacity': 'modulate.a',
+  'AnimationPlayer.animations': 'the AnimationLibrary of Animation resources', 'AnimationPlayer.autoplay': 'autoplay', 'AnimationPlayer.speedScale': 'speed_scale',
   'Camera2D.current': 'enabled, make_current()', 'Camera2D.zoom': 'zoom (a Vector2 in Godot; one number here)', 'Camera2D.smoothing': 'position_smoothing_enabled and position_smoothing_speed',
   'Camera2D.limitTopLeft': 'limit_left, limit_top', 'Camera2D.limitBottomRight': 'limit_right, limit_bottom',
   'Label.text': 'text', 'Label.fontSize': 'theme_override_font_sizes/font_size', 'Label.color': 'theme_override_colors/font_color',
@@ -109,6 +112,49 @@ const ENTRIES: ApiEntry[] = [
   }
 }`,
     members: [],
+  },
+  {
+    name: 'AnimatedSprite2D', kind: 'class', extends: 'Node2D', godot: 'AnimatedSprite2D',
+    doc: 'Draws a picture that changes. It has named animations (walk, jump…), each a list of pictures shown in turn at its fps, looping or not. Build them in the Inspector; play them from a script.',
+    example: `export default class Hero extends CharacterBody2D {
+  ready() {
+    this.sprite = this.get('Sprite');   // an AnimatedSprite2D with "idle" and "walk"
+  }
+
+  physicsUpdate(dt) {
+    this.velocity = { x: input.axis('move_left', 'move_right') * 100, y: 0 };
+    this.moveAndSlide();
+    this.sprite.play(this.velocity.x === 0 ? 'idle' : 'walk');
+    if (this.velocity.x !== 0) this.sprite.flipX = this.velocity.x < 0;
+  }
+}`,
+    members: [
+      m('play', '(name?: string): void', 'Play an animation by name, from its first picture; playing the one already playing carries on, so calling it every frame is fine. With no name, carry on with the current one. Throws, listing the names, if there is no such animation.', 'play()'),
+      m('pause', '(): void', 'Stop on the current picture; play() carries on from it.', 'pause()'),
+      m('stop', '(): void', 'Stop, and go back to the first picture.', 'stop()'),
+      m('isPlaying', '(): boolean', 'Whether it is moving through its pictures.', 'is_playing()'),
+      cb('animationFinished', '(name: string): void', 'Runs when an animation that does not loop reaches its last picture.', 'animation_finished signal'),
+    ],
+  },
+  {
+    name: 'AnimationPlayer', kind: 'class', extends: 'Node', godot: 'AnimationPlayer',
+    doc: 'Changes other nodes\u2019 properties over time, from keyframes: numbers and vectors glide between keys, colours blend, and anything else (true/false, text, a picture) switches at each key. Track paths start at the player\u2019s parent. Make animations in the Animation panel; play them from a script, or with autoplay.',
+    example: `export default class Door extends Area2D {
+  bodyEntered(body) {
+    // An AnimationPlayer beside this area, with an "open" animation that slides the door up.
+    if (body.name === 'Player') this.get('../AnimationPlayer').play('open');
+  }
+}`,
+    members: [
+      p('currentAnimation', 'string', 'The name of the animation playing or last played; empty before any.', 'current_animation', { readonly: true }),
+      p('currentTime', 'number', 'How far into it, in seconds.', 'current_animation_position', { readonly: true }),
+      m('play', '(name?: string): void', 'Play an animation from its start; playing the one already playing carries on. With no name, carry on with the current one. Throws, listing the names, if there is no such animation.', 'play()'),
+      m('pause', '(): void', 'Stop where it is; play() carries on from here.', 'pause()'),
+      m('stop', '(): void', 'Stop, and go back to the start (the properties keep the values they have).', 'stop()'),
+      m('seek', '(time: number): void', 'Jump to a time in the current animation, and set every track\u2019s property to its value there.', 'seek()'),
+      m('isPlaying', '(): boolean', 'Whether it is playing.', 'is_playing()'),
+      cb('animationFinished', '(name: string): void', 'Runs when an animation that does not loop reaches its end.', 'animation_finished signal'),
+    ],
   },
   {
     name: 'Camera2D', kind: 'class', extends: 'Node2D', godot: 'Camera2D',
@@ -305,7 +351,7 @@ const ENTRIES: ApiEntry[] = [
 
 const PROP_TYPE: Record<PropDef['type'], (d: PropDef) => string> = {
   vec2: () => 'Vec2', number: () => 'number', angle: () => 'number', bool: () => 'boolean', string: () => 'string', color: () => 'string',
-  texture: () => 'string | null', enum: (d) => (d.options ?? []).map((o) => `'${o}'`).join(' | '), layers: () => 'number',
+  texture: () => 'string | null', animations: () => '{ name: string; length: number; loop: boolean; tracks: { path: string; property: string; keys: { time: number; value: any }[] }[] }[]', spriteFrames: () => '{ name: string; fps: number; loop: boolean; frames: string[] }[]', enum: (d) => (d.options ?? []).map((o) => `'${o}'`).join(' | '), layers: () => 'number',
 };
 
 /** The Inspector properties a class adds: its registry properties not already declared by a class it extends. */

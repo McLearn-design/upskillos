@@ -5,8 +5,9 @@
 // reported ("scenes/main.scene: Player has no property 'speed'") instead of
 // breaking the editor later.
 
-import { FORMAT_VERSION, type NodeData, type Project } from './types';
-import { checkProp, isNodeType, propDef } from './registry';
+import { FORMAT_VERSION, type AnimationClip, type NodeData, type Project, type SceneData, type SpriteAnimation } from './types';
+import { trackTarget } from './animation';
+import { checkProp, isNodeType, propDef, propValue } from './registry';
 import { walk } from './project';
 
 /** Deterministic: the same project always gives the same text (keys in the model's own order). */
@@ -52,6 +53,8 @@ export function problems(p: Project): string[] {
         const bad = checkProp(def, v);
         if (bad) out.push(`${at}: ${bad}`);
         if (def.type === 'texture' && typeof v === 'string' && !assets.has(v)) out.push(`${at}: missing image "${v}"`);
+        if (def.type === 'animations' && !bad) out.push(...clipProblems(s, n, v as AnimationClip[]).map((m) => `${at}: ${m}`));
+        if (def.type === 'spriteFrames' && !bad) for (const a of v as SpriteAnimation[]) for (const f of a.frames) if (!assets.has(f)) out.push(`${at}: animation "${a.name}" uses a missing image "${f}"`);
       }
       if (n.script && !scripts.has(n.script)) out.push(`${at}: missing script "${n.script}"`);
       const names = n.children.map((c: NodeData) => c.name);
@@ -73,4 +76,23 @@ export function deserialize(text: string): Project {
   const bad = problems(p);
   if (bad.length) throw new Error(`The project has problems:\n${bad.join('\n')}`);
   return p;
+}
+
+/** An AnimationPlayer's tracks must each reach a real node and property, with keys that property accepts. */
+function clipProblems(scene: SceneData, player: NodeData, clips: AnimationClip[]): string[] {
+  const out: string[] = [];
+  for (const c of clips) {
+    for (const tr of c.tracks) {
+      const where = `animation "${c.name}", track ${tr.path}.${tr.property}`;
+      const target = trackTarget(scene, player.id, tr.path);
+      if (!target) { out.push(`${where}: there is no node "${tr.path}" (paths start at the AnimationPlayer's parent)`); continue; }
+      const def = propDef(target.type, tr.property);
+      if (!def) { out.push(`${where}: ${target.type} has no property "${tr.property}"`); continue; }
+      if (def.type === 'spriteFrames' || def.type === 'animations') { out.push(`${where}: ${tr.property} cannot be animated`); continue; }
+      for (const k of tr.keys) { const bad = checkProp(def, k.value); if (bad) { out.push(`${where}: the key at ${k.time} s: ${bad}`); break; } }
+    }
+  }
+  const auto = propValue(player.type, player.props, 'autoplay') as string;
+  if (auto && !clips.some((c) => c.name === auto)) out.push(`autoplay names "${auto}", but there is no animation by that name`);
+  return out;
 }

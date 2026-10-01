@@ -167,6 +167,13 @@ export class Doc {
     this.run(label ?? `Set ${name}`, scene.path, `scene.get(${lit(pathOf(scene, id))}).${name} = ${lit(value)}`, () => setProp(this.scene(sceneId), id, name, value));
   }
 
+  /** Several properties of one node as one command (one undo step), logged as one line each. */
+  setProps(sceneId: string, id: string, values: Record<string, PropValue>, label = 'Set properties'): void {
+    const scene = this.scene(sceneId), at = `scene.get(${lit(pathOf(scene, id))})`;
+    const code = Object.entries(values).map(([k, v]) => `${at}.${k} = ${lit(v)}`).join('\n');
+    this.run(label, scene.path, code, () => { for (const [k, v] of Object.entries(values)) setProp(this.scene(sceneId), id, k, v); });
+  }
+
   rename(sceneId: string, id: string, name: string): string {
     const scene = this.scene(sceneId);
     return this.run(`Rename to ${name}`, scene.path, `scene.get(${lit(pathOf(scene, id))}).name = ${lit(name)}`, () => rename(this.scene(sceneId), id, name));

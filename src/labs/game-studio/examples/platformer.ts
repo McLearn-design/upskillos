@@ -3,8 +3,8 @@
 //
 // Built only with the real Scene API and the engine's real nodes and scripts, like every
 // example. What it adds to Potion Hunt: gravity (the project setting), jumping from a
-// CharacterBody2D standing on a StaticBody2D, a pit you can fall into, a two-frame walk,
-// and a backdrop made of three scaled pictures.
+// CharacterBody2D standing on a StaticBody2D, a pit you can fall into, an AnimatedSprite2D
+// with idle, walk and jump animations, and a backdrop made of three scaled pictures.
 
 import type { GameExample } from './types';
 
@@ -12,8 +12,8 @@ const P = 'assets/pixel-platformer';
 const tile = (n: number) => `${P}/tiles/tile_${String(n).padStart(4, '0')}.png`;
 const back = (n: number) => `${P}/backgrounds/tile_${String(n).padStart(4, '0')}.png`;
 const hero = (n: number) => `${P}/characters/tile_${String(n).padStart(4, '0')}.png`;
-// Grass tops (left end, middle, right end), dirt, a coin, a flag and its pole.
-const LEFT = 1, MID = 2, RIGHT = 3, DIRT = 122, COIN = 151, FLAG = 111, POLE = 131;
+// Grass tops (left end, middle, right end), dirt, a coin, a flag (two pictures: it waves) and its pole.
+const LEFT = 1, MID = 2, RIGHT = 3, DIRT = 122, COIN = 151, FLAG = 111, FLAG2 = 112, POLE = 131;
 // The backdrop: plain sky, a strip of hills and trees (four pictures in a row), and the ground behind.
 const SKY = 0, HILLS = [8, 9, 10, 11], LOW = 16;
 const STAND = 0, WALK = 1;
@@ -49,9 +49,10 @@ const player = `export default class Player extends CharacterBody2D {
   }
 
   update(dt) {
-    // Two pictures make the walk: swap them 8 times a second while moving on the ground.
-    const walking = this.isOnFloor() && this.velocity.x !== 0 && Math.floor(time.now * 8) % 2 === 1;
-    this.sprite.texture = walking || !this.isOnFloor() ? '${hero(WALK)}' : '${hero(STAND)}';
+    // Choose the animation for what the player is doing. play() carries on with the one
+    // already playing, so calling it every frame is fine.
+    if (!this.isOnFloor()) this.sprite.play('jump');
+    else this.sprite.play(this.velocity.x !== 0 ? 'walk' : 'idle');
   }
 
   // A coin calls this when the player touches it.
@@ -62,8 +63,11 @@ const player = `export default class Player extends CharacterBody2D {
 
   // The flag calls this.
   reachFlag() {
+    if (this.won) return;
     this.won = true;
     this.showScore();
+    // An AnimationPlayer in the HUD makes the message grow in (see the Animation panel).
+    scene.get('HUD/WinAnimation').play('show');
   }
 
   fell() {
@@ -159,7 +163,7 @@ for (const [col, row] of coins) {
 
 // The flag at the end: an Area2D two tiles tall, the flag on top of its pole.
 scene.add('Area2D', { name: 'Flag', position: { x: 57 * T + T / 2, y: 12 * T }, zIndex: 1 })
-scene.add('Sprite2D', { name: 'Cloth', parent: 'Flag', position: { x: 0, y: -9 }, texture: '${tile(FLAG)}' })
+scene.add('AnimatedSprite2D', { name: 'Cloth', parent: 'Flag', position: { x: 0, y: -9 }, frames: [{ name: 'default', fps: 4, loop: true, frames: ['${tile(FLAG)}', '${tile(FLAG2)}'] }] })
 scene.add('Sprite2D', { name: 'Pole', parent: 'Flag', position: { x: 0, y: 9 }, texture: '${tile(POLE)}' })
 scene.add('CollisionShape2D', { name: 'Shape', parent: 'Flag', size: { x: 12, y: 36 } })
 project.writeScript('scripts/flag.js', ${JSON.stringify(flag)})
@@ -168,7 +172,12 @@ scene.get('Flag').script = 'scripts/flag.js'
 // The player: a CharacterBody2D its script moves, a picture 24 pixels square, a shape a
 // little narrower than the picture, and a camera that follows it but stays inside the level.
 scene.add('CharacterBody2D', { name: 'Player', position: { x: 27, y: 200 }, zIndex: 2 })
-scene.add('Sprite2D', { name: 'Sprite', parent: 'Player', texture: '${hero(STAND)}' })
+// Its picture: an AnimatedSprite2D with three animations. The walk swaps two pictures 8 times a second.
+scene.add('AnimatedSprite2D', { name: 'Sprite', parent: 'Player', animation: 'idle', frames: [
+  { name: 'idle', fps: 1, loop: true, frames: ['${hero(STAND)}'] },
+  { name: 'walk', fps: 8, loop: true, frames: ['${hero(STAND)}', '${hero(WALK)}'] },
+  { name: 'jump', fps: 1, loop: true, frames: ['${hero(WALK)}'] },
+] })
 scene.add('CollisionShape2D', { name: 'Shape', parent: 'Player', position: { x: 0, y: 1 }, size: { x: 14, y: 22 } })
 scene.add('Camera2D', { name: 'Camera', parent: 'Player', zoom: 3, smoothing: 8, limitTopLeft: { x: 0, y: 0 }, limitBottomRight: { x: 1080, y: 270 } })
 project.writeScript('scripts/player.js', ${JSON.stringify(player)})
@@ -178,6 +187,11 @@ scene.get('Player').script = 'scripts/player.js'
 scene.add('CanvasLayer', { name: 'HUD' })
 scene.add('Label', { name: 'Score', parent: 'HUD', position: { x: 16, y: 12 }, fontSize: 28, color: '#2b2d42', text: 'Coins: 0 / 10' })
 scene.add('Label', { name: 'Message', parent: 'HUD', position: { x: 330, y: 236 }, fontSize: 40, color: '#e76f51', text: 'You reached the flag!', visible: false })
+// An AnimationPlayer: when the player reaches the flag, its "show" animation makes the message grow
+// from 8 to 40 pixels in 0.4 s. Track paths start at the player's parent, the HUD.
+scene.add('AnimationPlayer', { name: 'WinAnimation', parent: 'HUD', animations: [{ name: 'show', length: 0.4, loop: false, tracks: [
+  { path: 'Message', property: 'fontSize', keys: [{ time: 0, value: 8 }, { time: 0.4, value: 40 }] },
+] }] })
 `;
 
 export const platformer: GameExample = {
@@ -186,7 +200,7 @@ export const platformer: GameExample = {
   blurb: 'A side-on platformer: run, jump between platforms, collect ten coins and reach the flag. Gravity, jumping, falling down gaps, a walk made of two pictures, and a camera that scrolls the level.',
   art: 'Kenney Pixel Platformer (CC0)',
   images: [
-    ...[LEFT, MID, RIGHT, DIRT, COIN, FLAG, POLE].map(tile),
+    ...[LEFT, MID, RIGHT, DIRT, COIN, FLAG, FLAG2, POLE].map(tile),
     ...[SKY, ...HILLS, LOW].map(back),
     ...[STAND, WALK].map(hero),
   ],
@@ -195,6 +209,8 @@ export const platformer: GameExample = {
     'Press ▶ Run (F5). ← → or A and D run; Space, ↑ or W jumps. Hold the jump key for a higher jump. Collect the coins and reach the flag at the far right; if you fall down a gap you go back to the start.',
     'Open Project › Settings: gravity is 980. That one number pulls the player down: scripts/player.js adds physics.gravity × dt to velocity.y every physics step. Set it to 400 and run: you float like on the Moon.',
     'In scripts/player.js, the jump only happens when isOnFloor() is true. moveAndSlide() sets that when it stops the player on a surface facing up, so you cannot jump again in mid-air. jumpSpeed 360 gives a jump of 360² ÷ (2 × 980) ≈ 66 pixels: a little over the three tiles up to each platform.',
+    'Select Player › Sprite. It is an AnimatedSprite2D with three animations, idle, walk and jump, each previewing in the Inspector at its own speed. scripts/player.js picks one with play() in update(). Change walk\u2019s fps to 16 and run: a faster walk.',
+    'Select HUD › WinAnimation: the Animation panel opens with its "show" animation. Drag the orange playhead along the ruler and watch the message grow in the viewport. Try it: move the playhead to 0.2 s, select HUD › Message, and press ◆ beside color to add a key; set a colour at 0 and at 0.4 s, and the message changes colour as it grows.',
     'Select Ground in the tree. It is one StaticBody2D holding every tile and eight teal rectangles: each stretch of ground or platform is one shape, however many tiles it has. The function stretch() in GUI → code builds each one.',
     'Select Backdrop › Sky. It is a single 24-pixel picture with scale 45 × 6.25: a plain picture can be stretched to cover the whole sky. The hills have detail, so they are 45 pictures in a row instead.',
     'Try it yourself: select one of the platforms’ shapes (Ground › Shape4 is the first floating one) and drag it up in the viewport. The tiles stay where they are, but the solid part moves: shapes, not pictures, are what the player stands on.',
