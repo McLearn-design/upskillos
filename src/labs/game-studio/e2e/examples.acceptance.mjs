@@ -5,12 +5,13 @@
 
 import { withGameStudio } from './harness.mjs';
 
-const failed = await withGameStudio(5195, async ({ page, t, check }) => {
+const failed = await withGameStudio(5195, async ({ page, t, check, answer }) => {
   const ids = await page.locator('[data-testid^="example-"]').evaluateAll((els) => els.map((e) => e.dataset.testid.replace('example-', '')));
   check('The project list offers examples', ids.length > 0, ids.join(', '));
   for (const [i, id] of ids.entries()) {
     if (i > 0) { await t('menu-Project').click(); await t('item-Projects and examples…').click(); }
     await t(`example-${id}`).click();
+    await answer('discard');   // the previous example was never saved
     await t('guide').waitFor({ timeout: 30000 });
     const problems = await page.evaluate(() => window.__gameStudio.store.doc.log.at(-1).label);
     check(`${id}: opens with its guide`, problems.startsWith('Build the example'), problems);

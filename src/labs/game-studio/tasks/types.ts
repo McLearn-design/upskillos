@@ -1,0 +1,102 @@
+// A task: one thing to try in Game Studio, with checks that see when it is done
+// (docs/game-studio-course-plan.md, "How Try it works").
+//
+// A lesson's "Try it" link opens a task; so does Help › Tutorials. The task panel shows the steps
+// and ticks each one off when its check passes. Checks come in three kinds:
+//   project  looks at the project: "a Sprite2D with a picture", "a script on Hero"
+//   play     runs the learner's own game, headless, on the real engine, with keys held for it:
+//            "holding → for 1 s moves Hero to the right"
+//   editor   looks at what the learner has done in the editor: "the game has been run"
+//
+// A check returns true when the step is done, or a sentence saying what is not right yet, which
+// the panel shows as a hint.
+
+import type { NodeData, Project, SceneData } from '../core/types';
+import type { DrawItem, Game, View } from '../engine/game';
+import type { Node } from '../engine/nodes';
+
+export type CheckResult = true | string;
+
+/** What a project check can look at. */
+export interface ProjectView {
+  project: Project;
+  /** The main scene, with instances expanded, or null when there is none. */
+  main: SceneData | null;
+  /** Every node of the main scene, in tree order. */
+  nodes: NodeData[];
+  /** The first node of the main scene with this name, or null. */
+  byName(name: string): NodeData | null;
+  /** A node's property, its default when not set. */
+  prop(node: NodeData, name: string): unknown;
+  /** A script's source, or null. */
+  script(path: string | null): string | null;
+}
+
+export interface PlayOptions {
+  /** How long to run, in seconds. */
+  seconds: number;
+  /** Frames a second to step at (60 unless given). */
+  fps?: number;
+  /** Keys held down the whole time (KeyboardEvent.code names: "ArrowRight", "Space"). */
+  keys?: string[];
+  /** When the keys go down, in seconds (0 unless given): after landing, say. */
+  keysAt?: number;
+  /** Arrange the game after it starts and before it runs: put the player on a coin, say. */
+  setup?: (game: Game) => void;
+  /** Called after every frame, with where the camera looked, to watch something as it happens: the highest point of a jump. */
+  watch?: (game: Game, view: View) => void;
+}
+
+export interface PlayResult {
+  game: Game;
+  /** A node of the running game by path from the root, or null. */
+  node<T extends Node = Node>(path: string): T | null;
+  /** Script errors while it ran. */
+  errors: string[];
+  /** Where the camera looked on the last frame (the centre of the screen, in the world), and its zoom. */
+  view: View;
+  /** What was drawn on the last frame. */
+  drawn: DrawItem[];
+}
+
+/** What a play check can do: run the learner's game, as many times as it needs. */
+export interface PlayView {
+  play(opts: PlayOptions): Promise<PlayResult>;
+}
+
+/** What an editor check can look at. */
+export interface EditorView {
+  /** The game has been run since the task started. */
+  ran: boolean;
+}
+
+export type Check =
+  | { kind: 'project'; test: (v: ProjectView) => CheckResult }
+  | { kind: 'play'; test: (v: PlayView & ProjectView) => Promise<CheckResult> }
+  | { kind: 'editor'; test: (v: EditorView & ProjectView) => CheckResult };
+
+export interface TaskStep {
+  /** What to do, in a sentence or two. */
+  text: string;
+  check: Check;
+  /** A nudge shown when the step is still not done after a while. */
+  hint?: string;
+}
+
+export interface GameTask {
+  id: string;
+  title: string;
+  /** What you are making, in a sentence. */
+  goal: string;
+  /** The tutorial chain it belongs to (the course chapter), and its place in it. */
+  chain: string;
+  /** Starter-art images the start and solution use; added to the project first. */
+  images: string[];
+  /** Scene API code that makes the starting project. */
+  start: string;
+  steps: TaskStep[];
+  /** Scene API code that completes the task from the start: the tests' proof, and "Show me". */
+  solution: string;
+  /** What to read next, said when it is done (the lesson usually takes over). */
+  done: string;
+}

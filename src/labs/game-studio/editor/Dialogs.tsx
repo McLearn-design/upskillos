@@ -6,15 +6,18 @@ import type { Store } from './store';
 import { Btn, C, NumberField, Row, TextField, selectStyle, useStore } from './kit';
 import * as storage from './storage';
 import { EXAMPLES } from '../examples';
+import { chains } from '../tasks';
 
 function Modal({ title, onClose, children, width = 520, testid }: { title: string; onClose?: () => void; children: React.ReactNode; width?: number; testid?: string }) {
   return (
-    <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: '#000a', display: 'grid', placeItems: 'center', zIndex: 50 }}>
+    // Centred with flexbox: in a grid the row grows to fit the dialog, so its 86% height limit would limit nothing.
+    <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: '#000a', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
       <div data-testid={testid} onClick={(e) => e.stopPropagation()} style={{ width, maxWidth: '94%', maxHeight: '86%', display: 'flex', flexDirection: 'column', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${C.border}` }}>
-          <b style={{ flex: 1, fontSize: 14 }}>{title}</b>{onClose && <Btn small onClick={onClose}>Close</Btn>}
+          <b style={{ flex: 1, fontSize: 14 }}>{title}</b>{onClose && <Btn small testid="dialog-close" onClick={onClose}>Close</Btn>}
         </div>
-        <div style={{ overflowY: 'auto', padding: 14 }}>{children}</div>
+        {/* minHeight 0 lets a long list (the tutorials, many projects) scroll inside the dialog instead of running off the screen. */}
+        <div style={{ overflowY: 'auto', padding: 14, minHeight: 0 }}>{children}</div>
       </div>
     </div>
   );
@@ -27,14 +30,14 @@ export function ProjectsDialog({ store, onClose, onDone }: { store: Store; onClo
   const [err, setErr] = useState('');
   const refresh = () => { storage.listProjects().then(setList).catch((e) => setErr(String(e))); };
   useEffect(refresh, []);
-  const guard = () => !store.dirty || confirm('The open project has unsaved changes. Leave it anyway?');
+  const guard = () => store.leaveProject();
   return (
     <Modal title="Projects" onClose={onClose} testid="projects-dialog">
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 14 }}>
         <span style={{ color: C.dim, fontSize: 12 }}>New project</span>
         <input data-testid="new-project-name" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.stopPropagation()}
           style={{ flex: 1, background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 3, padding: '4px 6px', fontSize: 13 }} />
-        <Btn testid="create-project" onClick={() => { if (!name.trim() || !guard()) return; store.newProject(name.trim()); onDone(); }}>Create</Btn>
+        <Btn testid="create-project" onClick={async () => { if (!name.trim() || !(await guard())) return; store.newProject(name.trim()); onDone(); }}>Create</Btn>
       </div>
       <div style={{ color: C.faint, fontSize: 11, fontWeight: 700, marginBottom: 6 }}>START FROM AN EXAMPLE</div>
       {EXAMPLES.map((ex) => (
@@ -43,7 +46,7 @@ export function ProjectsDialog({ store, onClose, onDone }: { store: Store; onClo
             <div style={{ fontSize: 13, color: C.text }}>{ex.title}</div>
             <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.4 }}>{ex.blurb} <span style={{ color: C.faint }}>Art: {ex.art}.</span></div>
           </div>
-          <Btn small testid={`example-${ex.id}`} onClick={async () => { if (!guard()) return; await store.openExample(ex); onDone(); }}>Open</Btn>
+          <Btn small testid={`example-${ex.id}`} onClick={async () => { if (!(await guard())) return; await store.openExample(ex); onDone(); }}>Open</Btn>
         </div>
       ))}
       <div style={{ color: C.faint, fontSize: 11, fontWeight: 700, margin: '16px 0 6px' }}>SAVED IN THIS BROWSER</div>
@@ -56,7 +59,7 @@ export function ProjectsDialog({ store, onClose, onDone }: { store: Store; onClo
             if (!guard()) return;
             try { await store.openProject(p.id); onDone(); } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
           }}>Open</Btn>
-          <Btn small onClick={async () => { if (confirm(`Delete "${p.name}" and its images from this browser? This cannot be undone.`)) { await storage.deleteProject(p.id); refresh(); } }}>Delete</Btn>
+          <Btn small onClick={async () => { if ((await store.ask(`Delete "${p.name}" and its images from this browser? This cannot be undone.`, [{ label: 'Delete', value: 'yes', primary: true }, { label: 'Cancel', value: 'cancel' }])) === 'yes') { await storage.deleteProject(p.id); refresh(); } }}>Delete</Btn>
         </div>
       ))}
     </Modal>
@@ -123,5 +126,52 @@ export function SettingsDialog({ store, onClose }: { store: Store; onClose: () =
         <Btn small onClick={() => { if (newAction) { store.act((d) => d.addAction(newAction, [])); setNewAction(''); } }}>Add action</Btn>
       </div>
     </Modal>
+  );
+}
+
+/** Help › Tutorials: the tasks, in chains (the course's chapters). Each starts a new project with its task panel. */
+export function TutorialsDialog({ store, onClose }: { store: Store; onClose: () => void }) {
+  return (
+    <Modal title="Tutorials" onClose={onClose} width={560} testid="tutorials-dialog">
+      <div style={{ color: C.dim, fontSize: 12, marginBottom: 8, lineHeight: 1.5 }}>
+        Each task starts a new project and shows its steps beside the viewport, ticking them off as you go. The course
+        &ldquo;Making Games with Game Studio&rdquo; explains each one, with the maths underneath; these are the same tasks.
+      </div>
+      {chains().map((c) => (
+        <div key={c.name} style={{ marginBottom: 10 }}>
+          <div style={{ color: C.text, fontWeight: 600, fontSize: 11, letterSpacing: 0.4, marginBottom: 4 }}>{c.name.toUpperCase()}</div>
+          {c.tasks.map((t, i) => (
+            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', borderBottom: `1px solid ${C.border}` }}>
+              <span style={{ color: C.faint, width: 16 }}>{i + 1}</span>
+              <div style={{ flex: 1 }}><div style={{ color: C.text }}>{t.title}</div><div style={{ color: C.faint, fontSize: 11 }}>{t.goal}</div></div>
+              <Btn small testid={`tutorial-${t.id}`} onClick={async () => { onClose(); if (await store.leaveProject()) await store.startTask(t.id); }}>Start</Btn>
+            </div>
+          ))}
+        </div>
+      ))}
+    </Modal>
+  );
+}
+
+/** A question asked inside the editor (store.ask), on top of everything else. */
+export function QuestionDialog({ store }: { store: Store }) {
+  useStore(store);
+  const q = store.question;
+  useEffect(() => {
+    if (!q) return;
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); q.resolve('cancel'); } };
+    window.addEventListener('keydown', key, true);
+    return () => window.removeEventListener('keydown', key, true);
+  }, [q]);
+  if (!q) return null;
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 60 }}>
+      <Modal title="Game Studio" onClose={() => q.resolve('cancel')} width={440} testid="question">
+        <div style={{ color: C.text, fontSize: 13, lineHeight: 1.5, marginBottom: 12 }}>{q.text}</div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          {q.choices.map((c) => <Btn key={c.value} testid={`answer-${c.value}`} active={c.primary} onClick={() => q.resolve(c.value)}>{c.label}</Btn>)}
+        </div>
+      </Modal>
+    </div>
   );
 }

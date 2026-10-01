@@ -16,6 +16,9 @@ import { runGame, type RunningGame } from './runner';
 import { checkSyntax } from '../runtime/scripts';
 import * as storage from './storage';
 import { starterImage, type StarterMap } from './starterLibrary';
+import { taskById } from '../tasks';
+import type { TaskLink } from '../tasks/links';
+import type { CheckResult, GameTask } from '../tasks/types';
 import type { GameExample } from '../examples/types';
 
 export interface OutputLine { level: 'log' | 'info' | 'warn' | 'error' | 'system'; text: string; file?: string | null; line?: number | null; column?: number | null; node?: string | null }
@@ -113,6 +116,12 @@ export class Store {
   // ── projects ────────────────────────────────────────────────────────────
 
   private attach(id: string, doc: Doc): void {
+    // A running game belongs to the old project: stop it, or it keeps playing over the new one
+    // (switching while the game ran looked as if the old project would not close).
+    this.stop();
+    this.task = null;
+    this.anim = { ...this.anim, playerId: null, clip: '', time: 0, playing: false };
+    this.tileStroke = null; this.animDrag = null;
     this.unsubDoc?.();
     this.projectId = id;
     this.doc = doc;
@@ -130,6 +139,7 @@ export class Store {
       this.tabs = this.tabs.filter((t) => t.kind === 'scene' || doc.project.scripts.some((x) => x.path === t.path));
       if (this.tab.kind === 'script' && !this.tabs.some((t) => t.kind === 'script' && t.path === (this.tab as { path: string }).path)) this.tab = { kind: 'scene' };
       this.scheduleRecovery();
+      if (this.task) this.scheduleCheck();
       this.changed();
     });
     this.changed();
@@ -168,6 +178,101 @@ export class Store {
     this.selection = [];
     this.guide = ex;
     this.say(`Opened the example "${ex.title}". It is a new project: Save keeps your own copy.`);
+  }
+
+  // ── questions: asked inside the editor, never with the browser's confirm() ──
+  // A browser can be told to stop showing confirm() boxes, and then confirm() quietly answers "no":
+  // switching projects silently did nothing. So the editor asks its own questions (QuestionDialog).
+
+  question: { text: string; choices: { label: string; value: string; primary?: boolean }[]; resolve: (v: string) => void } | null = null;
+
+  /** Ask, and wait for the answer: one of the choices' values ('cancel' if it is closed). */
+  ask(text: string, choices: { label: string; value: string; primary?: boolean }[]): Promise<string> {
+    this.question?.resolve('cancel');
+    return new Promise((done) => {
+      this.question = { text, choices, resolve: (v) => { this.question = null; this.changed(); done(v); } };
+      this.changed();
+    });
+  }
+
+  /** Before replacing the open project: if it has unsaved changes, ask to save it, leave it, or stay. True to go on. */
+  async leaveProject(): Promise<boolean> {
+    if (!this.project || !this.dirty) return true;
+    const answer = await this.ask(`"${this.project.name}" has changes that are not saved.`, [
+      { label: 'Save, then continue', value: 'save', primary: true },
+      { label: 'Continue without saving', value: 'discard' },
+      { label: 'Cancel', value: 'cancel' },
+    ]);
+    if (answer === 'save') { await this.save(); return !this.dirty; }
+    return answer === 'discard';
+  }
+
+  // ── tasks: "Try it" from the course, and Help › Tutorials (docs/game-studio-course-plan.md) ──
+
+  /** The task being done, its link back to the lesson, and its checks' latest results. */
+  task: { def: GameTask; link: TaskLink | null; results: CheckResult[]; ran: boolean; finished: boolean } | null = null;
+  /** Called once when a task's every step passes (Game Studio marks the lesson's checkpoint). */
+  onTaskDone: ((task: GameTask, link: TaskLink | null) => void) | null = null;
+  private checker: Worker | null = null;
+  private checkTimer: ReturnType<typeof setTimeout> | null = null;
+  private checkId = 0;
+
+  /** Start a task: a new project made from its start, with its task panel. */
+  async startTask(id: string, link: TaskLink | null = null): Promise<boolean> {
+    const def = taskById(id);
+    if (!def) { this.say(`There is no task called "${id}"`); return false; }
+    this.newProject(def.title);
+    for (const path of def.images) {
+      const img = starterImage(path);
+      if (!img || !(await this.importStarter(path, img.url))) { this.say(`The task needs ${path}, which is not in the starter art`); return false; }
+    }
+    this.act((d) => d.runCode(`Start the task "${def.title}"`, def.start));
+    const p = this.doc!.project;
+    this.sceneId = p.scenes.find((x) => x.path === p.settings.mainScene)?.id ?? p.scenes[0]?.id ?? null;
+    this.selection = [];
+    this.guide = null;
+    this.task = { def, link, results: def.steps.map(() => 'Not checked yet'), ran: false, finished: false };
+    this.say(`Task: ${def.title}. The steps are beside the viewport.`);
+    this.scheduleCheck(0);
+    return true;
+  }
+
+  /** Apply the task's solution (one undo step), for when the learner is stuck. */
+  showSolution(): void {
+    const t = this.task;
+    if (!t) return;
+    this.act((d) => d.runCode(`Show me: ${t.def.title}`, t.def.solution));
+    // The solution writes scripts; open editors show the new text.
+    for (const sc of this.doc?.project.scripts ?? []) this.buffers.delete(sc.path);
+    this.changed();
+  }
+
+  closeTask(): void { this.task = null; this.changed(); }
+
+  /** Check the task again soon (after edits settle). Play checks run in a worker. */
+  scheduleCheck(delay = 400): void {
+    if (!this.task || !this.doc) return;
+    if (this.checkTimer) clearTimeout(this.checkTimer);
+    this.checkTimer = setTimeout(() => {
+      const t = this.task, doc = this.doc;
+      if (!t || !doc) return;
+      if (!this.checker) {
+        this.checker = new Worker(new URL('../tasks/checker.worker.ts', import.meta.url), { type: 'module' });
+        this.checker.onmessage = (e: MessageEvent<{ id: number; results: CheckResult[] }>) => {
+          if (e.data.id !== this.checkId || !this.task) return;   // an older check, overtaken by a newer one
+          this.task = { ...this.task, results: e.data.results };
+          if (!this.task.finished && e.data.results.length && e.data.results.every((r) => r === true)) {
+            this.task = { ...this.task, finished: true };
+            this.onTaskDone?.(this.task.def, this.task.link);
+          }
+          this.changed();
+        };
+      }
+      // Checked as typed: open scripts count with their unsaved text (Run saves them first anyway).
+      const project = JSON.parse(JSON.stringify(doc.project)) as Project;
+      for (const sc of project.scripts) sc.source = this.scriptText(sc.path);
+      this.checker.postMessage({ id: ++this.checkId, taskId: t.def.id, project, editor: { ran: t.ran } });
+    }, delay);
   }
 
   async openProject(id: string): Promise<void> {
@@ -448,7 +553,7 @@ export class Store {
     const b = this.buffers.get(path);
     return b !== undefined && b !== this.doc?.project.scripts.find((s) => s.path === path)?.source;
   }
-  editScript(path: string, text: string): void { this.buffers.set(path, text); this.changed(); }
+  editScript(path: string, text: string): void { this.buffers.set(path, text); if (this.task) this.scheduleCheck(700); this.changed(); }
   saveScript(path: string): void {
     const b = this.buffers.get(path);
     if (b === undefined || !this.isScriptDirty(path)) return;
@@ -502,6 +607,7 @@ export class Store {
     const assets = await Promise.all(p.assets.map(async (a) => ({ path: a.path, mime: a.mime, bytes: await (this.blobs.get(a.id) ?? new Blob()).arrayBuffer() })));
     const game = await runGame({ project: p, scene, assets, container, onMessage: (m) => this.onRuntime(m) });
     this.running = { game, scene, paused: false, live: null };
+    if (this.task && !this.task.ran) { this.task = { ...this.task, ran: true }; this.scheduleCheck(0); }
     this.changed();
     game.frame.focus();
   }

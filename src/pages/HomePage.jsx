@@ -30,14 +30,6 @@ export function matchItem(item, query, kinds) {
   const q = query.toLowerCase().trim();
   const words = q.split(/[\s,]+/).filter(Boolean)
 
-  const namedCategories = Object.entries(CATEGORY_KEYWORDS)
-    .filter(([, kws]) => kws.some(w => words.includes(w)))
-    .map(([cat]) => cat)
-  if (namedCategories.length > 0 && kinds) {
-    const itemCategories = [kinds.kind, kinds.badgeKind].filter(Boolean)
-    if (!namedCategories.some(cat => itemCategories.includes(cat))) return false
-  }
-
   const searchableText = [
     item.label,
     item.desc,
@@ -48,7 +40,17 @@ export function matchItem(item, query, kinds) {
     ...(item.tags || [])
   ].filter(Boolean).join(' ').toLowerCase();
 
+  // The whole query in the item's own text always matches, before category words narrow
+  // anything: "game studio" is Game Studio (a builder), not a filter for games.
   if (searchableText.includes(q)) return true;
+
+  const namedCategories = Object.entries(CATEGORY_KEYWORDS)
+    .filter(([, kws]) => kws.some(w => words.includes(w)))
+    .map(([cat]) => cat)
+  if (namedCategories.length > 0 && kinds) {
+    const itemCategories = [kinds.kind, kinds.badgeKind].filter(Boolean)
+    if (!namedCategories.some(cat => itemCategories.includes(cat))) return false
+  }
 
   // Extract keywords by removing conversational filler
   const stopWords = [

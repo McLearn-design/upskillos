@@ -12,6 +12,12 @@ import { SceneTree } from './editor/SceneTree';
 import { Files } from './editor/Files';
 import { StarterArt } from './editor/StarterArt';
 import { Guide } from './editor/Guide';
+import { TaskPanel } from './editor/TaskPanel';
+import { QuestionDialog, TutorialsDialog } from './editor/Dialogs';
+import { parseTaskLink } from './tasks/links';
+import { takeEntryLink } from '../../utils/entryLinks';
+import { useNavigate } from 'react-router-dom';
+import { useProgress } from '../../hooks/useProgress';
 import { Reference } from './editor/Reference';
 import { Inspector } from './editor/Inspector';
 import { ScriptEditor } from './editor/ScriptEditor';
@@ -58,7 +64,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
   useStore(store);
   const gameBox = useRef<HTMLDivElement>(null);
   const frameFns = useRef<{ frameAll: () => void; frameSelected: () => void; frameGameArea: () => void } | null>(null);
-  const [dialog, setDialog] = useState<'projects' | 'settings' | null>(null);
+  const [dialog, setDialog] = useState<'projects' | 'settings' | 'tutorials' | null>(null);
   const [booting, setBooting] = useState(true);
   const [left, setLeft] = useState<'files' | 'art'>('files');
   // The bottom panel's height: drag its top edge. Remembered in this browser (a convenience only).
@@ -68,15 +74,38 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
   // A handle for debugging and browser tests, in development only.
   useEffect(() => { if (import.meta.env?.DEV) (window as unknown as { __gameStudio?: unknown }).__gameStudio = { store }; }, [store]);
 
-  // Open the last project, or show the project list.
+  // A lesson's "Try it" link opens its task; otherwise open the last project, or show the project list.
   useEffect(() => {
     (async () => {
-      try { const id = await storage.lastProjectId(); if (id) await store.openProject(id); }
+      try {
+        // EntryShell opens the lab and navigates back to the listing, so it hands the link's query over (src/utils/entryLinks.js).
+        const link = parseTaskLink(takeEntryLink('game-studio') ?? window.location.hash);
+        if (link) { await store.startTask(link.task, link); return; }
+        const id = await storage.lastProjectId(); if (id) await store.openProject(id);
+      }
       catch (e) { store.say(e instanceof Error ? e.message : String(e)); }
       finally { setBooting(false); if (!store.project) setDialog('projects'); }
     })();
     return () => store.stop();
   }, [store]);
+
+  // A "Try it" link followed while Game Studio is already open.
+  useEffect(() => {
+    const onEntry = (e: Event) => {
+      const d = (e as CustomEvent<{ key: string; search: string }>).detail;
+      if (d.key !== 'game-studio') return;
+      takeEntryLink('game-studio');
+      const link = parseTaskLink(d.search);
+      if (link) void store.leaveProject().then((ok) => { if (ok) void store.startTask(link.task, link); });
+    };
+    window.addEventListener('entry-link', onEntry);
+    return () => window.removeEventListener('entry-link', onEntry);
+  }, [store]);
+
+  // Finishing a task from a lesson ticks the lesson's checkpoint (the app's progress), and "Back to the lesson" returns there.
+  const progress = useProgress() as { markCheckpoint?: (lesson: string, checkpoint: string) => void } | null;
+  const navigate = useNavigate();
+  useEffect(() => { store.onTaskDone = (_task, link) => { if (link?.lesson && link.checkpoint) progress?.markCheckpoint?.(link.lesson, link.checkpoint); }; }, [store, progress]);
 
   // Warn before losing unsaved work.
   useEffect(() => {
@@ -89,7 +118,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
   const run = (which: 'project' | 'scene') => { if (gameBox.current) void store.run(which, gameBox.current); };
   const del = () => { if (s && sel && sel.id !== s.root.id) store.act((d) => d.deleteNode(s.id, sel.id)); };
   const dup = () => { if (s && sel && sel.id !== s.root.id) { const c = store.act((d) => d.duplicate(s.id, sel.id)); if (c) store.select([c.id]); } };
-  const closeProject = () => { if (!store.dirty || confirm('Close without saving?')) { store.close(); setDialog('projects'); } };
+  const closeProject = async () => { if (await store.leaveProject()) { store.close(); setDialog('projects'); } };
 
   // Keyboard shortcuts (the specification's §53). Keys typed into fields and the script editor are theirs.
   useEffect(() => {
@@ -142,6 +171,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
     ],
     Help: [
       ['API reference', () => store.showReference(), 'F1'],
+      ['Tutorials…', () => setDialog('tutorials')],
     ],
   };
 
@@ -211,7 +241,8 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
           <div style={{ position: 'absolute', inset: 0, visibility: !running && store.tab.kind === 'scene' ? 'visible' : 'hidden' }}>
             <Viewport store={store} onFrameRef={(f) => { frameFns.current = f; }} />
           </div>
-          {!running && store.tab.kind === 'scene' && <Guide store={store} />}
+          {!running && store.tab.kind === 'scene' && !store.task && <Guide store={store} />}
+          {!running && <TaskPanel store={store} onBack={(route) => navigate(route)} />}
           {!running && store.tab.kind === 'script' && <div style={{ position: 'absolute', inset: 0 }}><ScriptEditor key={store.tab.path} store={store} path={store.tab.path} /></div>}
           <div ref={gameBox} data-testid="game-box" style={{ position: 'absolute', inset: 0, display: running ? 'block' : 'none', background: '#000' }} />
         </div>
@@ -239,6 +270,8 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
 
       {dialog === 'projects' && <ProjectsDialog store={store} onClose={store.project ? () => setDialog(null) : undefined} onDone={() => setDialog(null)} />}
       {dialog === 'settings' && <SettingsDialog store={store} onClose={() => setDialog(null)} />}
+      {dialog === 'tutorials' && <TutorialsDialog store={store} onClose={() => setDialog(null)} />}
+      <QuestionDialog store={store} />
     </div>
   );
 }

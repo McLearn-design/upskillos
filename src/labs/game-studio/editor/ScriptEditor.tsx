@@ -9,6 +9,15 @@ import { C, useStore } from './kit';
 import { ENGINE_DTS } from './engineTypes';
 
 type MonacoEditor = Parameters<OnMount>[0];
+
+// When an editor closes, Monaco cancels its own pending work (hover, highlights, diagnostics) and
+// reports each cancellation as an error nobody handles: an Error named and saying "Canceled". It is
+// expected, not a fault (VS Code ignores these too), so only that exact error is silenced here.
+const isCancel = (r: unknown) => r instanceof Error && r.name === 'Canceled' && r.message === 'Canceled';
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (e) => { if (isCancel(e.reason)) e.preventDefault(); });
+  window.addEventListener('error', (e) => { if (isCancel(e.error)) e.preventDefault(); });
+}
 let typesAdded = false;
 
 export function ScriptEditor({ store, path }: { store: Store; path: string }) {

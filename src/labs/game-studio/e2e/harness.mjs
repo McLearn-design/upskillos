@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
-export async function withGameStudio(port, body) {
+/** opts.hash: where to open (a task link, say); opts.ready: the test id to wait for first. */
+export async function withGameStudio(port, body, opts = {}) {
+  const hash = opts.hash ?? '#/lab/game-studio', ready = opts.ready ?? 'projects-dialog';
   const results = [];
   const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? '✓' : '✗'} ${name}${detail ? `  (${detail})` : ''}`); };
   const server = spawn('npx', ['vite', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true });
@@ -26,14 +28,18 @@ export async function withGameStudio(port, body) {
     page = await context.newPage();
     const pageErrors = [];
     page.on('pageerror', (e) => pageErrors.push(e.message));
-    page.on('dialog', (d) => d.accept());
-    await page.goto(`http://localhost:${port}/#/lab/game-studio`);
-    await page.getByTestId('projects-dialog').waitFor({ timeout: 60000 });
+    // Game Studio asks its own questions (store.ask); a browser confirm() box would be a mistake, so any
+    // is answered "no", as a browser that blocks dialogs would, rather than accepted.
+    page.on('dialog', (d) => d.dismiss());
+    await page.goto(`http://localhost:${port}/${hash}`);
+    await page.getByTestId(ready).waitFor({ timeout: 60000 });
     const max = page.locator('button[title="Maximize"]');
     if (await max.count()) await max.first().click();
     const skip = page.getByRole('button', { name: 'Skip' });
     if (await skip.count()) await skip.first().click().catch(() => {});
-    await body({ page, t: (id) => page.getByTestId(id), check });
+    /** Answer the editor's own question (store.ask), if one is showing. */
+    const answer = async (value) => { const b = page.getByTestId(`answer-${value}`); if (await b.count()) await b.click(); };
+    await body({ page, t: (id) => page.getByTestId(id), check, answer });
     check('No page errors', pageErrors.length === 0, pageErrors.join(' | '));
   } catch (e) {
     // A picture of the page as it stood, in the temp folder (never the repository).

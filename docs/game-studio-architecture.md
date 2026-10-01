@@ -407,3 +407,8 @@ Recorded during Phase 1 (2026-09-30). None of them change a boundary.
    connection style work together.
 19. **What lasts between scenes lives in a script module.** Godot uses autoloaded nodes for this. A script module
    is loaded once per game, so its exports already outlast `scene.change()`; no new node kind was needed.
+20. **Tasks check by running the learner's game, in a worker.** A task's checks can play the learner's own game on the
+   real engine, so a check says what a teacher would ("Hero moves 100 px a second at any frame rate"), not how the
+   code must look. Those runs happen in a worker, because the game's script globals (`Node`, `scene`, `input`)
+   must not touch the editor's page. Every task is tested to fail on its start and pass on its solution, so a task
+   cannot quietly become impossible or trivial.

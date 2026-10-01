@@ -577,10 +577,98 @@ below the first override only their picture. Its tests pass unchanged.
 - `e2e/phase7.acceptance.mjs` (9/9).
 - `npm run game:acceptance`: all eight browser tests pass (15, 6, 9, 12, 10, 10, 13 and 9 checks).
 
+## Fixed: switching projects could silently do nothing (2026-10-01)
+
+The user found that creating a project, opening another, or starting a tutorial left the current project open.
+There were two causes.
+- **A running game kept playing over the new project.** Switching never stopped it, and the editor shows the
+  running game instead of the viewport. Every switch now stops the game, and drops the old project's task and
+  panel state.
+- **The "unsaved changes" question used the browser's `confirm()`.** A browser can be told to stop showing such
+  boxes, and then `confirm()` answers "no" without asking, so nothing happened. The editor now asks its own
+  question (`store.ask`, `QuestionDialog`): **Save, then continue**, **Continue without saving**, or **Cancel**.
+  Every other `confirm()` (stop a task, Show me, delete a project) is replaced too.
+
+**Tested:** `e2e/switching.acceptance.mjs` (6/6), starting with an example open, unsaved, and its game running:
+- creating a project asks, inside the editor;
+- Cancel keeps everything, still running;
+- "Continue without saving" switches and stops the game;
+- "Save, then continue" saves first (the project appears in the saved list);
+- starting a tutorial while a game runs works.
+
+The browser tests used to accept every browser dialog automatically, which hid this. They now answer "no", as a
+browser that blocks dialogs does, so any `confirm()` left anywhere would show up as a failure.
+
+## Done: 18 tutorials in Help › Tutorials, and the home page search (2026-10-01)
+
+The user found the in-editor tutorials good and asked for many more, ahead of the course lessons. **Help ›
+Tutorials** now has five chains, 18 tasks, following the course outline:
+
+| Tutorial | Tasks |
+|---|---|
+| First steps | a character on the screen; run your game; make Hero move (100 px/s on any screen); steer with the keyboard |
+| Physics | walls that stop you; gravity and jumping; coins (areas); a bouncing ball; collision layers |
+| Camera and HUD | a camera that follows (and smoothing); camera limits; a HUD that stays put |
+| Animation | a walking AnimatedSprite2D; a door sliding open by keyframes; a switch that opens it from a script |
+| Tilemaps | a tileset and a floor; solid walls on their own layer; Kenney's map from Tiled |
+
+- **Checks:** play checks can now arrange the game first (`setup`: put the player on a coin), press keys later
+  (`keysAt`: after landing), and watch every frame (`watch`, with the camera's view: the top of a jump, how far
+  the camera lags).
+- **Tested** as every task is: each start is not already done, and each solution passes every step (21 task
+  tests).
+- **The browser test** does two tutorials through the real editor, as their steps say: Physics' first three
+  steps, including New script giving a CharacterBody2D arrow-key movement, and the Tiled task with the real
+  Starter art Import button.
+
+**Fixed:**
+- **Typing "game studio" in the home page search did not find Game Studio** (typing "studio" did). The search
+  treats "game" as "show only games", and Game Studio is a builder, so it was filtered out before its own name
+  was looked at. A query found in an item's own text now always matches; category words narrow only other
+  searches. Tested in `src/pages/matchItem.test.js`.
+- **Long dialogs ran off the screen** (the Tutorials list): the overlay centred them with a grid, so their height
+  limit did nothing. Centred with flexbox, they fit and scroll.
+
+## Done: "Try it", tasks for the course and for Help › Tutorials (2026-10-01)
+
+A **task** is one thing to try (`tasks/`): a starting project (Scene API code), steps with checks and hints, and a
+solution. There are three kinds of check:
+- **project**, which looks at the project ("a Sprite2D called Hero");
+- **play**, which runs the learner's own game, headless, on the real engine, with keys held ("holding → moves Hero
+  right", "100 px a second at 30 and at 144 frames a second");
+- **editor**, which looks at what the learner did ("the game has been run").
+
+- **Opening a task:** a lesson's link (`gameStudioLink(task, { from, lesson, checkpoint })`) or Help ›
+  Tutorials… The task starts as a new project.
+- **The task panel** sits beside the viewport. Steps tick off as Game Studio sees them done. The step you are on
+  says what is not right yet, and has a hint. "Show me" applies the solution as one undo step.
+- **Finishing** marks the lesson's checkpoint in the app's progress. "Back to the lesson" returns to it; in a
+  tutorial, "Next task" goes on.
+- **Play checks run in a worker,** away from the editor's page, and read scripts as typed (saved or not).
+- **Chapter 1's four tasks:** put a character on the screen, run your game, make Hero move (at 100 px/s on any
+  screen), and steer Hero with the keyboard (diagonals no faster).
+
+**Tested:**
+- `tasks/tasks.test.ts`: every task's start is sound and not already done, and its solution passes every step;
+  links open their task, and an unknown task fails there.
+- `e2e/tasks.acceptance.mjs` (7/7):
+  - a lesson-style link opens the task;
+  - every step ticks as it is done in the editor;
+  - the checkpoint is marked, and Back returns to the lesson;
+  - a script typed but not saved passes the play checks;
+  - "Next task" and "Show me".
+
+**Fixed on the way:** Monaco reports its own cancelled work as an unhandled "Canceled" error when an editor
+closes; it came and went in Phase 3's browser test. Only that exact error is now silenced, as VS Code does.
+
 ## Next
 
-1. **Phase 8, export:** the project as a zip, and the game exported to run on its own (Pages-safe).
-2. **Phase 9, machine learning (the user asked for it at the end of the plan).** A Gymnasium-style environment
+1. **The course, "Making Games with Game Studio"** (the user asked for it, 2026-10-01): lessons that send the
+   learner into Game Studio to try each idea and back for the next. **"Try it" is done,** with 18 tutorials
+   (below). Next: more tutorials (Scenes, then Game logic and the projects), then lessons 1.1–1.4 as a trial. The plan is in
+   [game-studio-course-plan.md](game-studio-course-plan.md).
+2. **Phase 8, export:** the project as a zip, and the game exported to run on its own (Pages-safe).
+3. **Phase 9, machine learning (the user asked for it at the end of the plan).** A Gymnasium-style environment
    around any Game Studio game:
    - `reset()` and `step(action)`, returning what the agent sees, its reward, and whether the game has ended;
    - the game runs headless, faster than real time, as the example tests already do;
@@ -589,7 +677,7 @@ below the first override only their picture. Its tests pass unchanged.
    The same environment would be usable from Python in the ML Lab (Pyodide, beside Lab 37 on reinforcement
    learning), with a way to watch a trained agent play in the editor. It learns from game state, not screen
    pixels: learning from pixels is too slow in a browser. About 2–3 sessions.
-3. **After Game Studio is finished: bring Tile Mapper up to Game Studio's standard (the user asked for this,
+4. **After Game Studio is finished: bring Tile Mapper up to Game Studio's standard (the user asked for this,
    2026-09-30).** `src/labs/tile-mapper` should get the same treatment:
    - a real architecture with an architecture doc;
    - commands with undo, and GUI → code;
