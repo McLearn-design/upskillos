@@ -18,6 +18,7 @@ export function newProject(name = 'My Game'): Project {
     ],
     scenes: [],
     scripts: [],
+    tilesets: [],
     assets: [],
   };
 }

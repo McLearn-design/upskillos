@@ -62,6 +62,15 @@ export function Files({ store }: { store: Store }) {
           ))}
           {namer('script')}
         </Group>
+        {(p.tilesets ?? []).length > 0 && (
+          <Group title="tilesets/">
+            {(p.tilesets ?? []).map((t) => (
+              <div key={t.path} data-testid={`file-${t.path}`} title={`${t.image}, tiles ${t.tileWidth} × ${t.tileHeight}, ${t.solid.length} solid. Edit it in the TileMap panel with a TileMapLayer that uses it selected.`} style={item(false)}>
+                <span style={{ color: C.accent, fontSize: 10 }}>▦</span><span>{t.path.replace(/^tilesets\//, '')}</span>
+              </div>
+            ))}
+          </Group>
+        )}
         <Group title="assets/" action={<Btn small testid="import-image" onClick={() => file.current?.click()} title="Import images (PNG, JPEG, WebP, GIF)">Import…</Btn>}>
           <input ref={file} data-testid="import-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple style={{ display: 'none' }}
             onChange={async (e) => { for (const f of Array.from(e.target.files ?? [])) await store.importImage(f); e.target.value = ''; }} />

@@ -14,7 +14,8 @@ import { Vec2 } from './vec2';
 import { IDENTITY, local, multiply, apply, type Mat2D } from '../core/math2d';
 import type { Game } from './game';
 import type { WorldShape } from './physics';
-import type { AnimationClip } from '../core/types';
+import type { AnimationClip, TilesetData } from '../core/types';
+import { cellList, cellMap, solidRects } from '../core/tiles';
 import { blendOf, clipTime, sampleTrack } from '../core/animation';
 import { propDef } from '../core/registry';
 
@@ -135,6 +136,75 @@ export class Sprite2D extends Node2D {
   flipX = false;
   flipY = false;
   opacity = 1;
+}
+
+/** A tileset as the engine uses it: its data, and how many tiles across and in all its image makes. */
+export interface TilesetInfo { data: TilesetData; columns: number; count: number }
+
+/**
+ * A grid of tiles from a tileset. Its solid tiles stop bodies: they are merged into rectangles
+ * (core/tiles.ts, solidRects) so a body sliding along many tiles cannot catch on their seams.
+ * Cells are in cell coordinates from the layer's origin; tile −1 means none.
+ */
+export class TileMapLayer extends Node2D {
+  name = 'TileMapLayer';
+  tileset: string | null = null;
+  collisionLayer = 1;
+  _map = new Map<string, number>();
+  /** Bumped by every change, so the renderer knows to redraw and the collision rectangles to be rebuilt. */
+  _version = 0;
+  private _rects: { version: number; tileset: string | null; rects: { x: number; y: number; w: number; h: number }[] } | null = null;
+
+  /** Every painted cell as [x, y, tile, x, y, tile, …] (the saved form). Setting it replaces them all. */
+  get cells(): number[] { return cellList(this._map); }
+  set cells(v: number[]) { this._map = cellMap(v); this._version++; }
+
+  _info(): TilesetInfo | null { return this.tileset ? this._game?._tileset(this.tileset) ?? null : null; }
+
+  /** The size of one cell in pixels (from the tileset; 16 × 16 without one). */
+  get tileSize(): Vec2 { const t = this._info(); return new Vec2(t?.data.tileWidth ?? 16, t?.data.tileHeight ?? 16); }
+
+  /** The tile at a cell, or −1 for none. */
+  getCell(x: number, y: number): number { return this._map.get(`${Math.floor(x)},${Math.floor(y)}`) ?? -1; }
+
+  /** Put a tile in a cell (−1 erases it). */
+  setCell(x: number, y: number, tile: number): void {
+    const k = `${Math.floor(x)},${Math.floor(y)}`;
+    if (!Number.isInteger(tile)) throw new Error(`setCell needs a whole tile number (or −1 to erase), not ${tile}`);
+    const t = this._info();
+    if (t && tile >= t.count) throw new Error(`"${this.path}": its tileset has ${t.count} tiles (0 to ${t.count - 1}), so there is no tile ${tile}`);
+    if (tile < 0) this._map.delete(k); else this._map.set(k, tile);
+    this._version++;
+  }
+
+  eraseCell(x: number, y: number): void { this.setCell(x, y, -1); }
+
+  /** Every painted cell, as cell coordinates. */
+  getUsedCells(): Vec2[] { return [...this._map.keys()].map((k) => { const [x, y] = k.split(',').map(Number); return new Vec2(x, y); }); }
+
+  /** The cell a point in the layer's own coordinates falls in. */
+  localToMap(p: { x: number; y: number }): Vec2 { const s = this.tileSize; return new Vec2(Math.floor(p.x / s.x), Math.floor(p.y / s.y)); }
+
+  /** The centre of a cell, in the layer's own coordinates. */
+  mapToLocal(cell: { x: number; y: number }): Vec2 { const s = this.tileSize; return new Vec2((Math.floor(cell.x) + 0.5) * s.x, (Math.floor(cell.y) + 0.5) * s.y); }
+
+  /** Whether the tile in a cell is one its tileset marks solid. */
+  isCellSolid(x: number, y: number): boolean { const t = this.getCell(x, y), info = this._info(); return t >= 0 && !!info && info.data.solid.includes(t); }
+
+  /** The solid tiles as world rectangles (axis-aligned, like every shape in Phase 4). */
+  shapes(): WorldShape[] {
+    const info = this._info();
+    if (!info || !info.data.solid.length) return [];
+    if (!this._rects || this._rects.version !== this._version || this._rects.tileset !== this.tileset) {
+      this._rects = { version: this._version, tileset: this.tileset, rects: solidRects(this.cells, new Set(info.data.solid)) };
+    }
+    const m = this.worldTransform, sx = Math.hypot(m[0], m[1]), det = m[0] * m[3] - m[1] * m[2], sy = sx === 0 ? 0 : Math.abs(det / sx);
+    const tw = info.data.tileWidth, th = info.data.tileHeight;
+    return this._rects.rects.map((r) => {
+      const c = apply(m, { x: (r.x + r.w / 2) * tw, y: (r.y + r.h / 2) * th });
+      return { kind: 'rectangle' as const, x: c.x, y: c.y, hw: (r.w * tw * sx) / 2, hh: (r.h * th * sy) / 2 };
+    });
+  }
 }
 
 /** Changes other nodes' properties over time, from keyframes (core/animation.ts does the sampling). */
@@ -325,7 +395,10 @@ export class StaticBody2D extends PhysicsBody2D {
   name = 'StaticBody2D';
 }
 
-export interface SlideCollision { body: PhysicsBody2D; normal: Vec2 }
+/** What bodies collide with: other bodies, and tile layers' solid tiles. */
+export type Collider = PhysicsBody2D | TileMapLayer;
+
+export interface SlideCollision { body: Collider; normal: Vec2 }
 
 export class CharacterBody2D extends PhysicsBody2D {
   name = 'CharacterBody2D';
@@ -377,27 +450,27 @@ export class RigidBody2D extends PhysicsBody2D {
   get velocity(): Vec2 { return this._velocity; }
   set velocity(v: { x: number; y: number }) { this._velocity = new Vec2(v.x, v.y); }
   /** Override in a script: called when it hits a body, with the surface's normal. */
-  onCollision(_body: PhysicsBody2D, _normal: Vec2): void {}
+  onCollision(_body: Collider, _normal: Vec2): void {}
 }
 
 /** Notices bodies coming in and going out, without stopping them. */
 export class Area2D extends Node2D {
   name = 'Area2D';
   collisionMask = 1;
-  _inside = new Set<PhysicsBody2D>();
+  _inside = new Set<Collider>();
   shapes(): WorldShape[] {
     return this._children.filter((c): c is CollisionShape2D => c instanceof CollisionShape2D && !c._freed).map((c) => c.worldShape());
   }
   /** The bodies inside it now. */
-  getOverlappingBodies(): PhysicsBody2D[] { return [...this._inside]; }
+  getOverlappingBodies(): Collider[] { return [...this._inside]; }
   /** Override in a script: called when a body comes in. */
-  bodyEntered(_body: PhysicsBody2D): void {}
+  bodyEntered(_body: Collider): void {}
   /** Override in a script: called when a body goes out (or is removed). */
-  bodyExited(_body: PhysicsBody2D): void {}
+  bodyExited(_body: Collider): void {}
 }
 
 /** The built-in classes, by registry type name. */
-export const NODE_CLASSES: Record<string, typeof Node> = { Node, Node2D, Sprite2D, AnimatedSprite2D, AnimationPlayer, Camera2D, Label, CanvasLayer, CollisionShape2D, StaticBody2D, CharacterBody2D, RigidBody2D, Area2D };
+export const NODE_CLASSES: Record<string, typeof Node> = { Node, Node2D, Sprite2D, AnimatedSprite2D, AnimationPlayer, TileMapLayer, Camera2D, Label, CanvasLayer, CollisionShape2D, StaticBody2D, CharacterBody2D, RigidBody2D, Area2D };
 
 /** The registered type a runtime node is: its class, or the nearest built-in class it extends. */
 export function nodeTypeOf(n: Node): string {

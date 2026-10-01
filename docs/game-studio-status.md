@@ -364,11 +364,96 @@ message from 8 to 40 pixels.
   - turns on autoplay and runs, and reads both the frame and the position changing in the running game.
 - `npm run game:acceptance`: 15/15, 9/9, 8/8, 10/10 and 10/10.
 
+## Done: Phase 6, tilemaps (2026-09-30)
+
+The milestone was "the user can build a tile-based level". The Phase 6 browser test does exactly that, in the
+editor.
+
+**Tilesets** are project files, like scripts (`tilesets/….tileset`). Each one is:
+- an image cut into tiles of a given size, with margin and spacing;
+- numbered across, then down;
+- with a list of solid tiles: the collision metadata, shared by every layer that uses the tileset.
+
+The project format is now 2. Older projects are migrated on load: the first real use of the migration path,
+and it is tested. Scene API: `project.createTileset(path, {...})`, and fields set with
+`project.tileset(path).solid = [...]`.
+
+**TileMapLayer** is a node, as in Godot 4.3.
+- **Layers** are separate TileMapLayer nodes: a floor, walls in front, coins on top.
+- **Properties:** `tileset`, `cells` (stored compactly as `[x, y, tile, …]` in a fixed order), and
+  `collisionLayer`.
+- **Scripts** have `getCell`, `setCell`, `eraseCell`, `getUsedCells`, `localToMap`, `mapToLocal`,
+  `isCellSolid` and `tileSize`.
+- **The Scene API** adds `paint([[x, y, tile], …])`, `fill(x, y, w, h, tile)`, `setCell` and
+  `fromText(rows, legend)`, which reads a map written as text.
+- **The game** draws it with Phaser's real Tilemap and TilemapLayer, rebuilt only when its cells change.
+
+**Collision:** solid tiles are merged into as few rectangles as a greedy pass finds (`solidRects`). A body
+sliding along a floor of many tiles therefore meets one flat edge and cannot catch on the seams between tiles.
+- Bodies stop at them, and `getSlideCollisions` and `onCollision` name the layer.
+- Areas notice them too, as Godot's do.
+- Erasing a tile opens the way at once.
+
+**The TileMap panel** is a bottom-panel tab, opened by selecting a TileMapLayer:
+- the layer's tileset, and a form to make a tileset from any project image;
+- the tools: Paint, Erase, Rectangle, Bucket fill and Pick (Alt-click picks with any tool);
+- the palette: the tileset enlarged, where a click chooses the tile;
+- "Solid tiles" mode, where clicking palette tiles marks them solid.
+
+In the viewport, while the panel is open:
+- the selected layer shows its cell grid and the cell under the pointer;
+- a drag paints every cell it crosses (Bresenham's line), previewed live;
+- each stroke is one command, logged as `paint([...])`;
+- solid tiles are drawn as collision outlines, like body shapes.
+
+Tilesets are listed in Files.
+
+**The fourth example, Maze Chase** (Tiny Dungeon art). Eat every coin before two ghosts catch you. It has:
+- three tile layers, with the map written as text and read with `fromText`;
+- movement from cell centre to cell centre that asks the map where it can go;
+- coins that are tiles, so eating one is `eraseCell`;
+- ghosts that find the player with a breadth-first search, in `scripts/grid.js`, a module both ghosts import.
+
+Tested headlessly:
+- every cell is reachable;
+- walking a row eats exactly its five coins and stops at the centre of the last open cell;
+- a ghost's route is the shortest one;
+- a ghost catches a standing player, which costs a life and sends everyone home;
+- the last coin wins;
+- erasing a wall opens a passage the player uses.
+
+**Potion Hunt now uses tiles.** Its 240 floor and wall sprites, and the StaticBody2D with four shapes, are two
+TileMapLayers. Its wall tests pass unchanged, which shows the tile collision has the same geometry.
+
+**Problems found and fixed:**
+- **The script editor could not resolve imports between scripts.** Monaco only knew the script that was open,
+  so `import … from './grid.js'` would have been underlined as missing. Every project script is now a Monaco
+  model, kept in step with its saved or unsaved text.
+- **`node.children` and `node.parent` were typed as plain Node,** so `child.restart()` (a method from the
+  child's own script) was underlined. They are typed like `get()` now.
+- **Two infinite loops** in the first draft of Maze Chase's scripts: a "next cell" equal to the current cell.
+  The headless tests hung, and showed it before it reached the browser.
+- **The example tests imported every image as 16 × 16.** That was harmless until a tileset's tile count
+  depended on its image's size; they now read each PNG's real size.
+- **The bottom panel was a fixed 190 px,** too short for a tile palette. It now resizes by dragging its top
+  edge, and remembers its height in this browser.
+
+**Not done yet:** importing maps from Tiled (`.tmj` files). The spec's §40 list does not need it, but the
+phase table names it.
+
+**Tested:**
+- `npx vitest run src/labs/game-studio`: 129 tests in 10 files. New: tile maths, tilesets and layers in the
+  model (including the migration), the engine's tiles (the API; landing; a 40-tile slide checked every frame
+  for snags; landing on a seam; walls; erasing; rigid bounces; areas), "no fake controls" for the three new
+  properties, and Maze Chase.
+- `e2e/phase6.acceptance.mjs` (11/11).
+- `npm run game:acceptance`: 15/15, 9/9, 10/10, 10/10, 10/10 and 11/11.
+
 ## Next
 
 1. **Phase 3, the script editor:** a browser test for a run-time script error and click-to-source.
-2. **Phase 6, tilemaps:** Coin Run and Potion Hunt lay hundreds of Sprite2Ds; a TileMap will replace them.
-   Then a maze chase. The user's Tile Mapper lab is to be integrated here.
+2. **Tiled import** (`.tmj`), to finish the Phase 6 row; and Coin Run's ground could move onto a TileMapLayer
+   too, as Potion Hunt's has.
 3. **Phase 7, scene instancing, groups and signals**, then **Phase 8, export**.
 4. **Phase 9, machine learning (the user asked for it at the end of the plan).** A Gymnasium-style environment
    around any Game Studio game:
@@ -379,6 +464,15 @@ message from 8 to 40 pixels.
    The same environment would be usable from Python in the ML Lab (Pyodide, beside Lab 37 on reinforcement
    learning), with a way to watch a trained agent play in the editor. It learns from game state, not screen
    pixels: learning from pixels is too slow in a browser. About 2–3 sessions.
+5. **After Game Studio is finished: bring Tile Mapper up to Game Studio's standard (the user asked for this,
+   2026-09-30).** `src/labs/tile-mapper` should get the same treatment:
+   - a real architecture with an architecture doc;
+   - commands with undo, and GUI → code;
+   - "no fake controls" tests and browser acceptance tests;
+   - examples built only from real features;
+   - the same look, and an API reference if it has scripting.
+   It should also work with Game Studio's tilemaps (Phase 6). Sprite Lab (`src/labs/sprite-forge`) is to be
+   integrated the same way.
 
 ## Phases
 
@@ -390,10 +484,11 @@ message from 8 to 40 pixels.
 | 3 | Script editor completeness, Output with click-to-source, TypeScript later | Script error test | Mostly done: API reference, hover docs, underlined mistakes; the run-time error test is left |
 | 4 | Physics: bodies, shapes, layers and masks, gravity | Platformer, Breakout (physics part) | Done: Potion Hunt, Coin Run and Breakout all pass |
 | 5 | Animation: sprite frames, property tracks, timeline | Platformer animation | Done: AnimatedSprite2D, AnimationPlayer and the Animation panel; Coin Run uses both |
-| 6 | Tilemaps: tilesets, painting, tile collision, Tiled import | Maze chase | |
+| 6 | Tilemaps: tilesets, painting, tile collision, Tiled import | Maze chase | Done, except Tiled import: tilesets, TileMapLayer, the TileMap panel, Maze Chase |
 | 7 | Scene instancing, groups, signals, resources | Breakout, puzzle, shooter | |
 | 8 | Project zip, game export, Pages-safe output | Export test: open the exported game on its own | |
 | 9 | Machine learning: a Gymnasium-style environment for any game, used from the ML Lab | Train an agent to play Breakout from game state | |
+| After | Tile Mapper (and Sprite Lab) brought up to Game Studio's standard | Their own acceptance tests, and use from Game Studio | |
 
 ## Size
 

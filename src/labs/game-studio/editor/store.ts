@@ -5,8 +5,9 @@
 
 import { Doc } from '../core/doc';
 import { newProject, pathOf, sceneAt, findNode } from '../core/project';
-import type { AnimationClip, NodeData, Project, PropValue, SceneData } from '../core/types';
+import type { AnimationClip, NodeData, Project, PropValue, SceneData, TilesetData } from '../core/types';
 import { applyClip, setKey, trackPath } from '../core/animation';
+import { applyEdits, tilesetGrid, type CellEdit } from '../core/tiles';
 import { isA, propValue } from '../core/registry';
 import type { FromRuntime } from '../runtime/protocol';
 import { runGame, type RunningGame } from './runner';
@@ -230,13 +231,46 @@ export class Store {
     return this.animClips.find((c) => c.name === this.anim.clip) ?? null;
   }
 
-  /** The scene as the viewport shows it: with the panel's animation applied at the playhead. */
+  /** The scene as the viewport shows it: with the panel's animation applied at the playhead, and a brush stroke in progress. */
   get viewScene(): SceneData | null {
     const s = this.scene, c = this.animClip;
-    if (!s || !c || !this.anim.playerId) return s;
-    const v = applyClip(s, this.anim.playerId, c, this.anim.time);
+    if (!s || ((!c || !this.anim.playerId) && !this.tileStroke)) return s;
+    let v = c && this.anim.playerId ? applyClip(s, this.anim.playerId, c, this.anim.time) : JSON.parse(JSON.stringify(s)) as SceneData;
     if (this.animDrag) { const n = findNode(v, this.animDrag.id); if (n) n.props[this.animDrag.prop] = this.animDrag.value; }
+    if (this.tileStroke) { const n = findNode(v, this.tileStroke.layerId); if (n) n.props.cells = applyEdits(propValue(n.type, n.props, 'cells') as number[], this.tileStroke.edits); }
     return v;
+  }
+
+  // ── the TileMap panel ──────────────────────────────────────────────────
+  // While it is open and a TileMapLayer is selected, the viewport paints that layer with the
+  // tool and tile chosen here, instead of selecting and moving nodes.
+
+  tile: { open: boolean; tool: 'paint' | 'erase' | 'rect' | 'bucket' | 'pick'; tileId: number; collision: boolean } = { open: false, tool: 'paint', tileId: 0, collision: false };
+  /** A brush stroke being made: shown in the viewport, committed as one command when the button comes up. */
+  tileStroke: { layerId: string; edits: CellEdit[] } | null = null;
+
+  /** The layer being painted, when the panel is open and the game is not running. */
+  get tileLayer(): NodeData | null {
+    const n = this.selected;
+    return this.tile.open && !this.running && n?.type === 'TileMapLayer' ? n : null;
+  }
+
+  /** A tileset and the grid its image makes, or null when there is no such tileset. */
+  tilesetInfo(path: string | null): { data: TilesetData; columns: number; rows: number; count: number } | null {
+    const p = this.project, ts = path ? p?.tilesets?.find((t) => t.path === path) : undefined;
+    if (!p || !ts) return null;
+    const a = p.assets.find((x) => x.path === ts.image);
+    return { data: ts, ...(a ? tilesetGrid(ts, a.width, a.height) : { columns: 0, rows: 0, count: 0 }) };
+  }
+
+  /** End a brush stroke: its edits (the last for each cell wins) as one command. */
+  commitStroke(label = 'Paint tiles'): void {
+    const st = this.tileStroke, s = this.scene;
+    this.tileStroke = null;
+    if (!st || !s || !st.edits.length) { this.changed(); return; }
+    const last = new Map<string, CellEdit>();
+    for (const e of st.edits) last.set(`${e[0]},${e[1]}`, e);
+    this.act((d) => d.paintCells(s.id, st.layerId, [...last.values()], label));
   }
 
   /** Whether the panel's animation has a track for this node's property. */

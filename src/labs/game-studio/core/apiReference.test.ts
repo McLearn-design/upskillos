@@ -5,7 +5,7 @@
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { API_REFERENCE, FIRST_SCRIPT, SCENE_API, ancestors, apiEntry, engineDts } from './apiReference';
-import { nodeTypes } from './registry';
+import { nodeTypes, propsOf } from './registry';
 import { newProject } from './project';
 import { projectApi } from './api';
 import { Doc } from './doc';
@@ -20,6 +20,7 @@ const INTERNAL: Record<string, string[]> = {
   CollisionShape2D: ['worldShape'],
   PhysicsBody2D: ['shapes'],
   Area2D: ['shapes'],
+  TileMapLayer: ['shapes'],
   Vec2: ['toString', 'toJSON'],
   input: ['key', 'endFrame', 'endPhysicsStep', 'releaseAll', 'inPhysics', 'held', 'down', 'up', 'physicsDown', 'physicsUp', 'actions', 'keys'],
 };
@@ -84,6 +85,12 @@ describe('the API reference', () => {
     expect(SCENE_API.find((e) => e.name === 'SceneHandle')!.members.map((x) => x.name).sort()).toEqual(names(scene));
     // A node handle also has every Inspector property of its type; a plain Node has none.
     expect(SCENE_API.find((e) => e.name === 'NodeHandle')!.members.map((x) => x.name).sort()).toEqual(names(node));
+    // A TileMapLayer's handle adds its paint methods; a tileset handle has its fields.
+    p.assets.push({ id: 'a99', path: 'assets/t.png', kind: 'image', mime: 'image/png', width: 32, height: 32 });
+    const layer = scene.add('TileMapLayer', { name: 'L' });
+    const extra = Object.getOwnPropertyNames(layer).filter((k) => !names(node).includes(k) && !propsOf('TileMapLayer').some((d) => d.name === k)).sort();
+    expect(SCENE_API.find((e) => e.name === 'TileMapLayer handle')!.members.map((x) => x.name).sort()).toEqual(extra);
+    expect(SCENE_API.find((e) => e.name === 'TilesetHandle')!.members.map((x) => x.name).sort()).toEqual(names(project.createTileset('tilesets/t.tileset', { image: 'assets/t.png', tileWidth: 16, tileHeight: 16 })));
   });
 });
 
@@ -93,12 +100,14 @@ describe('the declarations the script editor uses', () => {
   /** Type-check JavaScript files against the declarations, with the script editor's libraries (no DOM). */
   function check(files: Record<string, string>): string[] {
     const all: Record<string, string> = { '/engine.d.ts': dts, ...files };
-    const options: ts.CompilerOptions = { allowJs: true, checkJs: true, noEmit: true, strict: false, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, lib: ['lib.es2020.d.ts'], types: [] };
+    const options: ts.CompilerOptions = { allowJs: true, checkJs: true, noEmit: true, strict: false, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, lib: ['lib.es2020.d.ts'], types: [] };
     const host = ts.createCompilerHost(options);
     const read = host.getSourceFile.bind(host);
     host.getSourceFile = (name, lang) => (name in all ? ts.createSourceFile(name, all[name], lang) : read(name, lang));
     host.fileExists = (name) => name in all || ts.sys.fileExists(name);
     host.readFile = (name) => all[name] ?? ts.sys.readFile(name);
+    host.directoryExists = (dir) => Object.keys(all).some((f) => f.startsWith(`${dir.replace(/\/$/, '')}/`)) || ts.sys.directoryExists(dir);
+    host.realpath = (f) => f;
     const program = ts.createProgram(Object.keys(all), options, host);
     return ts.getPreEmitDiagnostics(program).map((d) => {
       const where = d.file ? `${d.file.fileName}:${d.file.getLineAndCharacterOfPosition(d.start ?? 0).line + 1}` : '';
@@ -117,6 +126,7 @@ describe('the declarations the script editor uses', () => {
   it('every example game’s scripts type-check against them', () => {
     for (const ex of EXAMPLES) {
       const d = new Doc(newProject());
+      for (const path of ex.images) d.importAsset(path, { mime: 'image/png', width: 192, height: 176 });
       d.runCode('Build', ex.code);
       const files = Object.fromEntries(d.project.scripts.map((s) => [`/${ex.id}/${s.path}`, s.source]));
       expect(check(files), ex.title).toEqual([]);

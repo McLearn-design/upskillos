@@ -3,12 +3,13 @@
 //
 // Built only with the real Scene API (the same calls the GUI → code panel shows) and
 // the engine's real nodes and scripts: nothing here is special-cased for the example.
-// The walls are a StaticBody2D, the hero a CharacterBody2D, and the potions and the bat
-// Area2Ds that notice the hero coming in.
+// The floor and walls are TileMapLayers (the walls' tiles are solid), the hero a
+// CharacterBody2D, and the potions and the bat Area2Ds that notice the hero coming in.
 
 import type { GameExample } from './types';
 
 const T = 'assets/tiny-dungeon/tiles';
+const SHEET = 'assets/tiny-dungeon/tilemap/tilemap_packed.png';   // the same tiles, as one sheet: 12 × 11 tiles of 16 px
 const tile = (n: number) => `${T}/tile_${String(n).padStart(4, '0')}.png`;
 const FLOOR = [48, 49, 51], WALL = 40, HERO = 85, BAT = 120, POTIONS = [113, 114, 115, 116];
 
@@ -84,23 +85,20 @@ const code = `// Potion Hunt: a dungeon 20 × 12 tiles of 16 pixels, built by co
 scene = project.createScene('scenes/dungeon.scene', 'Node2D', 'Dungeon')
 project.setSettings({ background: '#1b1720', pixelArt: true, gravity: 0 })   // top-down: nothing falls
 
-// The floor, and the walls round it. A loop places 240 tiles; a few floor tiles vary.
-const floor = [${FLOOR.map((n) => `'${tile(n)}'`).join(', ')}]
-scene.add('Node2D', { name: 'Floor' })
-scene.add('StaticBody2D', { name: 'Walls' })
-for (let row = 0; row < 12; row++) {
-  for (let col = 0; col < 20; col++) {
-    const position = { x: 8 + 16 * col, y: 8 + 16 * row }
-    const edge = row === 0 || row === 11 || col === 0 || col === 19
-    if (edge) scene.add('Sprite2D', { name: 'Wall', parent: 'Walls', position, texture: '${tile(WALL)}' })
-    else scene.add('Sprite2D', { name: 'Tile', parent: 'Floor', position, texture: floor[(row * 7 + col * 3) % 5 === 0 ? 1 + (col % 2) : 0] })
-  }
-}
-// What makes the walls solid: four long rectangles, one along each side.
-scene.add('CollisionShape2D', { name: 'Top', parent: 'Walls', position: { x: 160, y: 8 }, size: { x: 320, y: 16 } })
-scene.add('CollisionShape2D', { name: 'Bottom', parent: 'Walls', position: { x: 160, y: 184 }, size: { x: 320, y: 16 } })
-scene.add('CollisionShape2D', { name: 'Left', parent: 'Walls', position: { x: 8, y: 96 }, size: { x: 16, y: 192 } })
-scene.add('CollisionShape2D', { name: 'Right', parent: 'Walls', position: { x: 312, y: 96 }, size: { x: 16, y: 192 } })
+// A tileset: the Tiny Dungeon sheet cut into 16 × 16 tiles. The wall tile (${WALL}) is solid.
+project.createTileset('tilesets/dungeon.tileset', { image: '${SHEET}', tileWidth: 16, tileHeight: 16, solid: [${WALL}] })
+
+// The floor: a TileMapLayer filled with one tile, then a few cells changed for variety.
+const floor = scene.add('TileMapLayer', { name: 'Floor', tileset: 'tilesets/dungeon.tileset' })
+floor.fill(1, 1, 18, 10, ${FLOOR[0]})
+for (let row = 1; row < 11; row++) for (let col = 1; col < 19; col++) if ((row * 7 + col * 3) % 5 === 0) floor.setCell(col, row, col % 2 ? ${FLOOR[1]} : ${FLOOR[2]})
+
+// The walls: a second layer, a ring of wall tiles round the edge. Being solid, they stop the hero.
+const walls = scene.add('TileMapLayer', { name: 'Walls', tileset: 'tilesets/dungeon.tileset' })
+walls.fill(0, 0, 20, 1, ${WALL})
+walls.fill(0, 11, 20, 1, ${WALL})
+walls.fill(0, 1, 1, 10, ${WALL})
+walls.fill(19, 1, 1, 10, ${WALL})
 
 // Eight potions: each an Area2D with a picture and a shape, all sharing one script.
 scene.add('Node2D', { name: 'Potions', zIndex: 1 })
@@ -139,12 +137,12 @@ export const potionHunt: GameExample = {
   title: 'Potion Hunt',
   blurb: 'A top-down dungeon: walk the hero round, collect eight potions, dodge the bat. Scripts, input, walls that stop you, pickups, a following camera and a HUD.',
   art: 'Kenney Tiny Dungeon (CC0)',
-  images: [...FLOOR, WALL, HERO, BAT, ...POTIONS].map(tile),
+  images: [SHEET, ...[HERO, BAT, ...POTIONS].map(tile)],
   code,
   guide: [
     'Press ▶ Run (F5). Arrow keys or WASD move the hero. Collect all eight potions; keep away from the bat.',
-    'GUI → code (below) shows the code that built this whole project: a loop lays 240 floor and wall tiles, then the walls\u2019 shapes, the potions, the hero, the bat and the HUD. It is the same Scene API every editor action writes.',
-    'The teal rectangles in the viewport are collision shapes: Walls (a StaticBody2D) has four, the hero has one. That is why the hero stops at the walls and slides along them: moveAndSlide() in scripts/player.js.',
+    'GUI → code (below) shows the code that built this whole project: a tileset, a Floor layer filled with fill() and varied with setCell(), a Walls layer round the edge, then the potions, the hero, the bat and the HUD. It is the same Scene API every editor action writes.',
+    'The teal rectangles in the viewport are what bodies collide with: the Walls layer\u2019s solid tiles (merged into four long rectangles) and the hero\u2019s shape. That is why the hero stops at the walls and slides along them: moveAndSlide() in scripts/player.js. Select Walls to paint more walls in the TileMap panel.',
     'Each potion is an Area2D (green outline) with the same script, scripts/potion.js: when a body comes in, bodyEntered runs. It tells the player, and removes itself with queueFree().',
     'Select Player › Camera in the tree. zoom 4 shows the dungeon 4 times bigger; the limits stop the camera at the walls. Change zoom to 2, or smoothing to 0, and run again: the Inspector changes the real game.',
     'Try it yourself: select Potions › Potion1 and press Ctrl+D to duplicate it, then drag the copy somewhere else in the viewport. It works at once, and the count becomes 9: the script counts the potions when the game starts.',

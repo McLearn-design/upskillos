@@ -1,22 +1,32 @@
 // Every example builds with the real Scene API, and plays on the real engine with its
 // real scripts (loaded as ES modules), with no special cases (ADR 12).
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { Doc } from '../core/doc';
 import { newProject } from '../core/project';
 import { runSceneCode } from '../core/api';
 import { problems, serialize } from '../core/serialize';
 import { Game, MATH, scriptGlobals, type DrawItem } from '../engine/game';
-import { NODE_CLASSES, Node, type AnimatedSprite2D, type CharacterBody2D, type Node2D, type RigidBody2D } from '../engine/nodes';
+import { NODE_CLASSES, Node, type TileMapLayer, type AnimatedSprite2D, type CharacterBody2D, type Node2D, type RigidBody2D } from '../engine/nodes';
 import { Vec2 } from '../engine/vec2';
 import { EXAMPLES } from './index';
+import { importOrder, rewriteImports } from '../runtime/scripts';
 import { potionHunt } from './potionHunt';
 import { platformer } from './platformer';
 import { breakout } from './breakout';
+import { MAZE, mazeChase } from './mazeChase';
 import type { GameExample } from './types';
+
+/** A starter image's real size, from its PNG header (width and height are bytes 16–23), as the editor reads it. */
+function pngSize(path: string): { width: number; height: number } {
+  const b = readFileSync(fileURLToPath(new URL(`../starter/${path.replace(/^assets\//, '')}`, import.meta.url)));
+  return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
+}
 
 function build(ex: GameExample): Doc {
   const d = new Doc(newProject(ex.title));
-  for (const path of ex.images) d.importAsset(path, { mime: 'image/png', width: 16, height: 16 });
+  for (const path of ex.images) d.importAsset(path, { mime: 'image/png', ...pngSize(path) });
   d.runCode(`Build ${ex.title}`, ex.code);
   return d;
 }
@@ -24,10 +34,13 @@ function build(ex: GameExample): Doc {
 /** Load the project's scripts as ES modules (as the game's iframe does) and start the game. */
 async function play(d: Doc) {
   Object.assign(globalThis, NODE_CLASSES, { Vec2, math: MATH });
-  const classes = new Map<string, typeof Node>();
-  for (const s of d.project.scripts) {
-    const mod = await import(/* @vite-ignore */ `data:text/javascript;base64,${Buffer.from(s.source).toString('base64')}`);
-    classes.set(s.path, mod.default);
+  // As the game's iframe loads them (runtime/scripts.ts): in import order, each import rewritten to its module's URL.
+  const classes = new Map<string, typeof Node>(), urls = new Map<string, string>();
+  const { order, imports } = importOrder(d.project.scripts);
+  for (const path of order) {
+    const src = rewriteImports(d.project.scripts.find((x) => x.path === path)!.source, new Map([...imports.get(path)!].map(([spec, target]) => [spec, urls.get(target)!])));
+    urls.set(path, `data:text/javascript;base64,${Buffer.from(src).toString('base64')}`);
+    classes.set(path, (await import(/* @vite-ignore */ urls.get(path)!)).default);
   }
   const frames: DrawItem[][] = [];
   const scene = d.project.scenes.find((s) => s.path === d.project.settings.mainScene)!;
@@ -360,5 +373,78 @@ describe('Breakout plays', () => {
     expect(texts()).toEqual(['Score: 480', 'Balls: 3', 'You cleared the wall!']);
     expect(ball.launched).toBe(false);
     expect(errors).toEqual([]);
+  });
+});
+
+describe('Maze Chase plays', () => {
+  const DT = 1 / 60;
+  const steps = (game: Game, n: number) => { for (let i = 0; i < n; i++) game.step(DT); };
+  type Mover = Node2D & { cell: { x: number; y: number }; target: { x: number; y: number }; score: number; lives: number; over: boolean };
+  async function start() {
+    const r = await play(build(mazeChase));
+    return { ...r, player: r.game.root.get<Mover>('Player'), coins: r.game.root.get<TileMapLayer>('Coins'), walls: r.game.root.get<TileMapLayer>('Walls'), ghosts: r.game.root.get('Ghosts').children as Mover[] };
+  }
+
+  it('every open cell of the maze can be reached from the player\u2019s start', () => {
+    const open = (x: number, y: number) => MAZE[y]?.[x] !== undefined && MAZE[y][x] !== '#';
+    const startY = MAZE.findIndex((r) => r.includes('P')), seen = new Set([`${MAZE[startY].indexOf('P')},${startY}`]), todo = [[MAZE[startY].indexOf('P'), startY]];
+    while (todo.length) { const [x, y] = todo.pop()!; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (open(x + dx, y + dy) && !seen.has(`${x + dx},${y + dy}`)) { seen.add(`${x + dx},${y + dy}`); todo.push([x + dx, y + dy]); } }
+    expect(seen.size).toBe(MAZE.join('').split('').filter((c) => c !== '#').length);
+  });
+
+  it('starts with every coin, three lives, and walls the map says are solid', async () => {
+    const { texts, errors, coins, walls } = await start();
+    const total = MAZE.join('').split('.').length - 1;
+    expect(coins.getUsedCells()).toHaveLength(total);
+    expect(texts()).toEqual([`Score: 0   Coins left: ${total}`, 'Lives: 3']);
+    expect(walls.isCellSolid(0, 0)).toBe(true);
+    expect(walls.isCellSolid(1, 1)).toBe(false);
+    expect(errors).toEqual([]);
+  });
+
+  it('holding → walks the row from the start, eating coins, and stops at the wall: at the centre of the last open cell', async () => {
+    const { game, player, coins } = await start();
+    const total = coins.getUsedCells().length;
+    game.input.key('ArrowRight', true);
+    steps(game, 180);
+    // Row 9: "#...#.....P.....#...#" — from P (column 10), open up to column 15, wall at 16.
+    expect([player.position.x, player.position.y]).toEqual([15 * 16 + 8, 9 * 16 + 8]);
+    expect(player.score).toBe(50);                       // columns 11 to 15
+    expect(coins.getUsedCells()).toHaveLength(total - 5);
+  });
+
+  it('the ghosts\u2019 search takes a shortest path: from (10, 5), straight down the middle to the player at (10, 9)', async () => {
+    const { game, ghosts } = await start();
+    const g = ghosts[0];
+    expect(g.cell).toEqual({ x: 10, y: 5 });
+    const route: string[] = [];
+    for (let i = 0; i < 60 * 3; i++) { game.step(DT); const at = `${g.cell.x},${g.cell.y}`; if (route.at(-1) !== at) route.push(at); }
+    // Up and round would be longer; down is 4 steps: (10, 6), (10, 7), (10, 8), (10, 9).
+    expect(route.slice(0, 4)).toEqual(['10,5', '10,6', '10,7', '10,8']);
+  });
+
+  it('a ghost reaches a player who stands still, and that costs a life and sends everyone home', async () => {
+    const { game, player, ghosts, texts } = await start();
+    for (let i = 0; i < 60 * 15 && player.lives === 3; i++) game.step(DT);
+    expect(player.lives).toBe(2);
+    expect(texts()[1]).toBe('Lives: 2');
+    expect([player.position.x, player.position.y]).toEqual([10 * 16 + 8, 9 * 16 + 8]);
+    expect(ghosts.map((g) => g.cell)).toEqual([{ x: 10, y: 5 }, { x: 10, y: 7 }]);
+  });
+
+  it('eating the last coin clears the maze', async () => {
+    const { game, coins, texts } = await start();
+    coins.cells = [11, 9, 101];                          // one coin left, just right of the start
+    game.input.key('ArrowRight', true);
+    steps(game, 30);
+    expect(texts().at(-1)).toBe('You cleared the maze!');
+  });
+
+  it('erasing a wall tile opens a passage the player uses at once', async () => {
+    const { game, player, walls } = await start();
+    walls.eraseCell(16, 9);                              // the wall that stopped the walk along row 9
+    game.input.key('ArrowRight', true);
+    steps(game, 240);
+    expect(player.position.x).toBe(19 * 16 + 8);         // on to the far end of the row
   });
 });

@@ -16,6 +16,7 @@ import { placeNodes, spriteLook, type PlacedNode } from '../core/sceneView';
 import { apply, invert, multiply, type Mat2D } from '../core/math2d';
 import { propValue } from '../core/registry';
 import type { Vec2 } from '../core/types';
+import { bucketEdits, rectEdits, solidRects, tileRect, usedRect, type CellEdit } from '../core/tiles';
 
 interface Camera { x: number; y: number; zoom: number }
 export const ASSET_DRAG = 'application/x-game-studio-asset';
@@ -32,6 +33,13 @@ function localBox(store: Store, p: PlacedNode): { x: number; y: number; w: numbe
     const img = store.imageFor(look.texture);
     const w = img ? img.naturalWidth : 32, h = img ? img.naturalHeight : 32;
     return { x: -w / 2, y: -h / 2, w, h };
+  }
+  if (p.node.type === 'TileMapLayer') {
+    // The painted cells' rectangle, so a click on the tiles selects the layer and Frame all includes them.
+    const info = store.tilesetInfo(propValue('TileMapLayer', p.node.props, 'tileset') as string | null), r = usedRect(propValue('TileMapLayer', p.node.props, 'cells') as number[]);
+    if (!info || !r) return null;
+    const tw = info.data.tileWidth, th = info.data.tileHeight;
+    return { x: r.x0 * tw, y: r.y0 * th, w: (r.x1 - r.x0 + 1) * tw, h: (r.y1 - r.y0 + 1) * th };
   }
   if (p.node.type === 'CollisionShape2D') {
     const sz = propValue('CollisionShape2D', p.node.props, 'size') as Vec2;
@@ -53,6 +61,9 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
   const cam = useRef<Camera>({ x: 480, y: 270, zoom: 1 });
   const [mouse, setMouse] = useState<Vec2 | null>(null);
   const space = useRef(false);
+  /** Painting: the cell under the pointer, and the stroke being made (where it started, and the last cell, so a fast drag leaves no gaps). */
+  const hoverCell = useRef<{ x: number; y: number } | null>(null);
+  const tileDrag = useRef<{ start: { x: number; y: number }; last: { x: number; y: number } } | null>(null);
   const drag = useRef<{ kind: 'pan' | 'move'; sx: number; sy: number; cx: number; cy: number; id?: string; grab?: Vec2; start?: Vec2; parentInv?: Mat2D; moved?: boolean; origin?: Vec2; startRot?: number; startScale?: Vec2 } | null>(null);
 
   /** Screen (CSS pixels in the canvas) ↔ world. */
@@ -88,6 +99,21 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
     const placed = placeNodes(s), sel = new Set(store.selection);
     // Sprites, in the engine's drawing order.
     for (const pn of [...placed].sort((a, b) => a.depth - b.depth)) {
+      if (pn.node.type === 'TileMapLayer') {
+        // Each cell's tile, cut from the tileset's image, at its place in the layer.
+        const info = store.tilesetInfo(propValue('TileMapLayer', pn.node.props, 'tileset') as string | null);
+        const cells = propValue('TileMapLayer', pn.node.props, 'cells') as number[];
+        if (!pn.visible || !info || !cells.length) continue;
+        const img = store.imageFor(info.data.image), tw = info.data.tileWidth, th = info.data.tileHeight;
+        set(pn.world);
+        g.imageSmoothingEnabled = p.settings.pixelArt === false;
+        for (let i = 0; i < cells.length; i += 3) {
+          const r = tileRect(info.data, info.columns, cells[i + 2]);
+          if (img && cells[i + 2] < info.count) g.drawImage(img, r.x, r.y, r.w, r.h, cells[i] * tw, cells[i + 1] * th, tw, th);
+          else { g.strokeStyle = C.bad; g.lineWidth = 1 / z; g.strokeRect(cells[i] * tw, cells[i + 1] * th, tw, th); }
+        }
+        continue;
+      }
       const look = pn.visible ? spriteLook(pn.node) : null;
       if (!look) continue;
       const img = store.imageFor(look.texture), box = localBox(store, pn)!;
@@ -102,6 +128,18 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
     const parents = new Map<string, string>();
     for (const pn of placed) for (const c of pn.node.children) parents.set(c.id, pn.node.type);
     for (const pn of placed) {
+      // A tile layer's solid tiles, as the rectangles bodies collide with.
+      if (pn.node.type === 'TileMapLayer' && pn.visible) {
+        const info = store.tilesetInfo(propValue('TileMapLayer', pn.node.props, 'tileset') as string | null);
+        if (!info || !info.data.solid.length) continue;
+        set(pn.world);
+        g.fillStyle = 'rgba(56,189,248,0.12)'; g.strokeStyle = 'rgba(56,189,248,0.8)'; g.lineWidth = 1.5 / z;
+        for (const r of solidRects(propValue('TileMapLayer', pn.node.props, 'cells') as number[], new Set(info.data.solid))) {
+          g.fillRect(r.x * info.data.tileWidth, r.y * info.data.tileHeight, r.w * info.data.tileWidth, r.h * info.data.tileHeight);
+          g.strokeRect(r.x * info.data.tileWidth, r.y * info.data.tileHeight, r.w * info.data.tileWidth, r.h * info.data.tileHeight);
+        }
+        continue;
+      }
       if (pn.node.type !== 'CollisionShape2D' || !pn.visible) continue;
       const box = localBox(store, pn)!, area = parents.get(pn.node.id) === 'Area2D';
       const circle = propValue('CollisionShape2D', pn.node.props, 'shape') === 'circle';
@@ -165,6 +203,24 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
         }
       }
     }
+    // Painting a tile layer: its cell grid over the view, and the cell under the pointer.
+    const layer = store.tileLayer, lp = layer && placed.find((x) => x.node.id === layer.id);
+    const info = layer && store.tilesetInfo(propValue('TileMapLayer', layer.props, 'tileset') as string | null);
+    if (lp && info) {
+      const tw = info.data.tileWidth, th = info.data.tileHeight, inv = invert(lp.world);
+      const corners = [toWorld(0, 0), toWorld(W, 0), toWorld(0, H), toWorld(W, H)].map((q) => apply(inv, q));
+      const x0 = Math.floor(Math.min(...corners.map((q) => q.x)) / tw), x1 = Math.ceil(Math.max(...corners.map((q) => q.x)) / tw);
+      const y0 = Math.floor(Math.min(...corners.map((q) => q.y)) / th), y1 = Math.ceil(Math.max(...corners.map((q) => q.y)) / th);
+      set(lp.world);
+      if (tw * z >= 4 && (x1 - x0) * (y1 - y0) < 200000) {
+        g.beginPath();
+        for (let x = x0; x <= x1; x++) { g.moveTo(x * tw, y0 * th); g.lineTo(x * tw, y1 * th); }
+        for (let y = y0; y <= y1; y++) { g.moveTo(x0 * tw, y * th); g.lineTo(x1 * tw, y * th); }
+        g.strokeStyle = 'rgba(255,159,28,0.18)'; g.lineWidth = 1 / z; g.stroke();
+      }
+      const h = hoverCell.current;
+      if (h) { g.strokeStyle = store.tile.tool === 'erase' ? C.bad : C.warm; g.lineWidth = 2 / z; g.strokeRect(h.x * tw, h.y * th, tw, th); }
+    }
   }, [store, view, toWorld]);
 
   // Redraw on every change, and when images finish loading.
@@ -227,10 +283,64 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
     return null;
   };
 
+  // ── painting a tile layer ──────────────────────────────────────────────
+  /** The cell of the layer being painted under a point on the canvas. */
+  const cellAt = (sx: number, sy: number): { x: number; y: number } | null => {
+    const layer = store.tileLayer, s = store.scene;
+    const info = layer && store.tilesetInfo(propValue('TileMapLayer', layer.props, 'tileset') as string | null);
+    if (!layer || !s || !info) return null;
+    const pn = placeNodes(s).find((x) => x.node.id === layer.id)!;
+    const q = apply(invert(pn.world), toWorld(sx, sy));
+    return { x: Math.floor(q.x / info.data.tileWidth), y: Math.floor(q.y / info.data.tileHeight) };
+  };
+  /** The cells on a line from a to b (Bresenham's line), so a quick drag paints every cell it crosses. */
+  const line = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+    const out: { x: number; y: number }[] = [];
+    let x = a.x, y = a.y, err = Math.abs(b.x - a.x) - Math.abs(b.y - a.y);
+    const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y), sxn = Math.sign(b.x - a.x), syn = Math.sign(b.y - a.y);
+    for (;;) { out.push({ x, y }); if (x === b.x && y === b.y) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x += sxn; } if (e2 < dx) { err += dx; y += syn; } }
+    return out;
+  };
+  const tileDown = (sx: number, sy: number, pick: boolean) => {
+    const layer = store.tileLayer!, c = cellAt(sx, sy);
+    if (!c) { store.say('Choose a tileset for this layer in the TileMap panel first'); return; }
+    const cells = propValue('TileMapLayer', layer.props, 'cells') as number[];
+    const tool = pick ? 'pick' : store.tile.tool;
+    if (tool === 'pick') {
+      // Pick the tile under the pointer, and go back to painting with it.
+      const at = cells.findIndex((_, i) => i % 3 === 0 && cells[i] === c.x && cells[i + 1] === c.y);
+      if (at >= 0) { store.tile = { ...store.tile, tileId: cells[at + 2], tool: 'paint' }; store.changed(); }
+      return;
+    }
+    if (tool === 'bucket') {
+      // Fill the joined area; an open area stops at the painted area or the game area, whichever is bigger, plus a margin.
+      const info = store.tilesetInfo(propValue('TileMapLayer', layer.props, 'tileset') as string)!, p = store.project!;
+      const u = usedRect(cells), gw = Math.ceil(p.settings.width / info.data.tileWidth), gh = Math.ceil(p.settings.height / info.data.tileHeight);
+      const b = { x0: Math.min(u?.x0 ?? 0, 0) - 2, y0: Math.min(u?.y0 ?? 0, 0) - 2, x1: Math.max(u?.x1 ?? 0, gw) + 2, y1: Math.max(u?.y1 ?? 0, gh) + 2 };
+      store.tileStroke = { layerId: layer.id, edits: bucketEdits(cells, c.x, c.y, store.tile.tileId, b) };
+      store.commitStroke('Bucket fill');
+      return;
+    }
+    tileDrag.current = { start: c, last: c };
+    store.tileStroke = { layerId: layer.id, edits: tool === 'rect' ? rectEdits(c.x, c.y, c.x, c.y, store.tile.tileId) : [[c.x, c.y, tool === 'erase' ? -1 : store.tile.tileId]] };
+    store.changed();
+  };
+  const tileMove = (sx: number, sy: number) => {
+    const c = cellAt(sx, sy), t = tileDrag.current, st = store.tileStroke;
+    hoverCell.current = c;
+    if (!c || !t || !st) { draw(); return; }
+    if (c.x === t.last.x && c.y === t.last.y) return;
+    if (store.tile.tool === 'rect') st.edits = rectEdits(t.start.x, t.start.y, c.x, c.y, store.tile.tileId);
+    else { const tile = store.tile.tool === 'erase' ? -1 : store.tile.tileId; st.edits = [...st.edits, ...line(t.last, c).map((q): CellEdit => [q.x, q.y, tile])]; }
+    t.last = c;
+    store.changed();
+  };
+
   const onDown = (e: React.PointerEvent) => {
     const r = canvas.current!.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
     (e.target as Element).setPointerCapture(e.pointerId);
     if (e.button === 1 || e.button === 2 || space.current) { drag.current = { kind: 'pan', sx, sy, cx: cam.current.x, cy: cam.current.y }; return; }
+    if (store.tileLayer) { tileDown(sx, sy, e.altKey); return; }   // Alt-click picks the tile under the pointer
     const s = store.scene;
     let id = hit(sx, sy);
     // Rotate and scale work on the selection wherever you press (not on another node), so a small node need not be grabbed exactly.
@@ -248,6 +358,7 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
   const onMove = (e: React.PointerEvent) => {
     const r = canvas.current!.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
     setMouse(toWorld(sx, sy));
+    if (store.tileLayer && !drag.current) { tileMove(sx, sy); return; }
     const d = drag.current; if (!d) return;
     if (d.kind === 'pan') { cam.current = { ...cam.current, x: d.cx - (sx - d.sx) / cam.current.zoom, y: d.cy - (sy - d.sy) / cam.current.zoom }; draw(); return; }
     // A click that wobbles a pixel is still a click: moving starts after 3 pixels.
@@ -277,6 +388,7 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
   };
 
   const onUp = () => {
+    if (tileDrag.current) { tileDrag.current = null; store.commitStroke(store.tile.tool === 'erase' ? 'Erase tiles' : store.tile.tool === 'rect' ? 'Fill a rectangle' : 'Paint tiles'); return; }
     const d = drag.current; drag.current = null;
     if (d?.kind === 'move' && store.doc && store.sceneId) {
       const n = store.doc.node(store.sceneId, d.id!);

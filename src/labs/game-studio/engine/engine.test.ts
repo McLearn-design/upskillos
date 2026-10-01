@@ -13,6 +13,9 @@ function scene(build: (d: Doc, sceneId: string) => void) {
   const s = d.createScene('scenes/main.scene');
   d.importAsset('assets/a.png', { mime: 'image/png', width: 8, height: 8 });
   d.importAsset('assets/b.png', { mime: 'image/png', width: 8, height: 8 });
+  // Tilesets: a.png as one solid 8 × 8 tile; b.png as four 4 × 4 tiles, none solid.
+  d.createTileset('tilesets/t.tileset', { image: 'assets/a.png', tileWidth: 8, tileHeight: 8, solid: [0] });
+  d.createTileset('tilesets/u.tileset', { image: 'assets/b.png', tileWidth: 4, tileHeight: 4 });
   build(d, s.id);
   return { project: d.project, scene: d.scene(s.id) };
 }
@@ -291,6 +294,7 @@ describe('no fake controls', () => {
     : def.type === 'texture' ? 'assets/a.png' : def.type === 'color' ? '#123456' : def.type === 'layers' ? 2
     : def.type === 'enum' ? def.options!.find((o) => o !== def.default)!
     : def.type === 'spriteFrames' ? [{ name: 'default', fps: 5, loop: true, frames: ['assets/b.png'] }]
+    : def.type === 'tileset' ? 'tilesets/u.tileset' : def.type === 'cells' ? [0, 0, 0]
     : def.type === 'animations' ? [{ name: 'default', length: 1, loop: true, tracks: [{ path: 'N/Drawn', property: 'opacity', keys: [{ time: 0, value: 0.5 }] }] }]
     : def.type === 'number' ? (def.default === 1 ? 0.5 : Math.min(def.max ?? Infinity, (def.default as number) + 2)) : 'x';
 
@@ -298,12 +302,14 @@ describe('no fake controls', () => {
   // A Sprite2D is given a texture so there is something to see, except when the texture itself is the property tested.
   // An AnimatedSprite2D is given two pictures at 30 fps, so one frame of 1/30 s moves it on.
   const ANIMATED = { frames: [{ name: 'default', fps: 30, loop: true, frames: ['assets/a.png', 'assets/b.png'] }] };
+  // A TileMapLayer is given two cells of the solid tileset.
+  const TILES = { tileset: 'tilesets/t.tileset', cells: [0, 0, 0, 1, 0, 0] };
   // An AnimationPlayer is given an autoplaying animation that slides its drawn child 100 px in a second.
   const PLAYER = { autoplay: 'default', animations: [{ name: 'default', length: 1, loop: true, tracks: [{ path: 'N/Drawn', property: 'position', keys: [{ time: 0, value: { x: 0, y: 0 } }, { time: 1, value: { x: 100, y: 0 } }] }] }] };
   const draw = (type: string, props: Record<string, PropValue>, autoTexture = true) => {
     const { project, scene: s } = scene((d, id) => {
       d.addNode(id, 'Node2D', undefined, { name: 'Before', props: { zIndex: 1 } });   // something to be in front of or behind
-      const auto: Record<string, PropValue> = !autoTexture ? {} : type === 'Sprite2D' ? { texture: 'assets/a.png' } : type === 'AnimatedSprite2D' ? ANIMATED : type === 'AnimationPlayer' ? PLAYER : {};
+      const auto: Record<string, PropValue> = !autoTexture ? {} : type === 'Sprite2D' ? { texture: 'assets/a.png' } : type === 'AnimatedSprite2D' ? ANIMATED : type === 'AnimationPlayer' ? PLAYER : type === 'TileMapLayer' ? TILES : {};
       const n = d.addNode(id, type, undefined, { name: 'N', props: { ...auto, ...props } });
       if (type !== 'Sprite2D' && type !== 'AnimatedSprite2D') d.addNode(id, 'Sprite2D', n.id, { name: 'Drawn', props: { texture: 'assets/a.png' } });
     });
@@ -365,6 +371,8 @@ describe('no fake controls', () => {
       const b = d.addNode(id, 'RigidBody2D', undefined, { name: 'N', props: { position: { x: 0, y: 12 }, gravityScale: 0, ...(v === undefined ? {} : { bounce: v }) } });
       box(d, id, b.id); d.setScript(id, b.id, 'scripts/thrown.js'); wall(d, id, 'StaticBody2D', 'W');
     }),
+    // A column of solid tiles (8 px, x 100 to 108, y 0 to 32) stops the probe, unless it is on a layer the probe does not scan.
+    'TileMapLayer.collisionLayer': (v) => outcome((d, id) => { probe(d, id); d.addNode(id, 'TileMapLayer', undefined, { name: 'N', props: { position: { x: 100, y: 0 }, tileset: 'tilesets/t.tileset', cells: [0, 0, 0, 0, 1, 0, 0, 2, 0, 0, 3, 0], ...(v === undefined ? {} : { collisionLayer: v }) } }); }),
     // An area on the probe's path notices it only if its mask scans the probe's layer.
     'Area2D.collisionMask': (v) => outcome((d, id) => { probe(d, id); wall(d, id, 'Area2D', 'N', v === undefined ? {} : { collisionMask: v }); }),
   };

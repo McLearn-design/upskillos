@@ -1,22 +1,30 @@
 // The bottom panel: Output (the game's console and errors; click an error to open its
 // script at that line), GUI → code (every editor action as the Scene API call that
-// does the same thing, ADR 8), and Animation (the selected AnimationPlayer's timeline).
+// does the same thing, ADR 8), Animation (the selected AnimationPlayer's timeline) and TileMap
+// (the selected TileMapLayer's tileset, tools and palette).
 
 import React, { useEffect, useRef, useState } from 'react';
 import type { Store } from './store';
 import { Btn, C, useStore } from './kit';
 import { Timeline } from './Timeline';
+import { TilePanel } from './TilePanel';
 
 const COLOR = { log: C.text, info: C.accent, warn: C.warn, error: C.bad, system: C.faint } as const;
 
 export function BottomPanel({ store }: { store: Store }) {
   useStore(store);
-  const [tab, setTabState] = useState<'output' | 'code' | 'animation'>('output');
-  // The Animation panel previews only while it is showing.
-  const setTab = (t: 'output' | 'code' | 'animation') => { setTabState(t); store.anim = { ...store.anim, open: t === 'animation', playing: false }; store.changed(); };
-  // Selecting an AnimationPlayer opens its timeline, as in Godot.
-  const player = store.selected?.type === 'AnimationPlayer' ? store.selected.id : null;
-  useEffect(() => { if (player) setTab('animation'); }, [player]);   // eslint-disable-line react-hooks/exhaustive-deps
+  type Tab = 'output' | 'code' | 'animation' | 'tilemap';
+  const [tab, setTabState] = useState<Tab>('output');
+  // The Animation panel previews, and the TileMap panel paints, only while showing.
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    store.anim = { ...store.anim, open: t === 'animation', playing: false };
+    store.tile = { ...store.tile, open: t === 'tilemap' };
+    store.changed();
+  };
+  // Selecting an AnimationPlayer opens its timeline, and a TileMapLayer its tiles, as in Godot.
+  const sel = store.selected, opens = sel?.type === 'AnimationPlayer' ? 'animation' : sel?.type === 'TileMapLayer' ? 'tilemap' : null;
+  useEffect(() => { if (opens) setTab(opens); }, [sel?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
   const end = useRef<HTMLDivElement>(null);
   const log = store.doc?.log ?? [];
   const count = tab === 'output' ? store.output.length : log.length;
@@ -26,9 +34,9 @@ export function BottomPanel({ store }: { store: Store }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '0 6px', background: C.panel2, borderBottom: `1px solid ${C.border}` }}>
-        {(['output', 'code', 'animation'] as const).map((t) => (
+        {(['output', 'code', 'animation', 'tilemap'] as const).map((t) => (
           <button key={t} type="button" data-testid={`tab-${t}`} onClick={() => setTab(t)} style={{ background: 'none', border: 'none', borderBottom: `2px solid ${tab === t ? C.accent : 'transparent'}`, color: tab === t ? C.text : C.dim, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}>
-            {t === 'output' ? `Output${errors ? ` (${errors} error${errors === 1 ? '' : 's'})` : ''}` : t === 'code' ? `GUI → code (${log.length})` : 'Animation'}
+            {t === 'output' ? `Output${errors ? ` (${errors} error${errors === 1 ? '' : 's'})` : ''}` : t === 'code' ? `GUI → code (${log.length})` : t === 'animation' ? 'Animation' : 'TileMap'}
           </button>
         ))}
         <span style={{ flex: 1 }} />
@@ -36,7 +44,8 @@ export function BottomPanel({ store }: { store: Store }) {
         {tab === 'code' && <Btn small onClick={() => void navigator.clipboard?.writeText(log.map((l) => l.code).join('\n'))} title="Copy the whole log as a script">Copy</Btn>}
       </div>
       {tab === 'animation' && <div data-testid="panel-animation" style={{ flex: 1, minHeight: 0, padding: '4px 8px' }}><Timeline store={store} /></div>}
-      {tab !== 'animation' && <div data-testid={`panel-${tab}`} style={{ flex: 1, overflowY: 'auto', fontFamily: C.mono, fontSize: 12, padding: '4px 8px' }}>
+      {tab === 'tilemap' && <div data-testid="panel-tilemap" style={{ flex: 1, minHeight: 0, padding: '4px 8px' }}><TilePanel store={store} /></div>}
+      {(tab === 'output' || tab === 'code') && <div data-testid={`panel-${tab}`} style={{ flex: 1, overflowY: 'auto', fontFamily: C.mono, fontSize: 12, padding: '4px 8px' }}>
         {tab === 'output' && (store.output.length ? store.output.map((o, i) => (
           <div key={i} onClick={() => o.file && store.openScript(o.file, { line: o.line ?? 1, column: o.column ?? 1 })}
             style={{ color: COLOR[o.level], cursor: o.file ? 'pointer' : 'default', whiteSpace: 'pre-wrap', padding: '1px 0' }}>

@@ -51,6 +51,7 @@ const GODOT_PROPS: Record<string, string> = {
   'AnimatedSprite2D.frames': 'sprite_frames (a SpriteFrames resource)', 'AnimatedSprite2D.animation': 'animation', 'AnimatedSprite2D.playing': 'autoplay, is_playing()',
   'AnimatedSprite2D.speedScale': 'speed_scale', 'AnimatedSprite2D.frame': 'frame', 'AnimatedSprite2D.flipX': 'flip_h', 'AnimatedSprite2D.flipY': 'flip_v', 'AnimatedSprite2D.opacity': 'modulate.a',
   'AnimationPlayer.animations': 'the AnimationLibrary of Animation resources', 'AnimationPlayer.autoplay': 'autoplay', 'AnimationPlayer.speedScale': 'speed_scale',
+  'TileMapLayer.tileset': 'tile_set (a TileSet resource)', 'TileMapLayer.cells': 'the tile_map_data (set_cell(), get_used_cells())', 'TileMapLayer.collisionLayer': "the TileSet's physics layer collision_layer",
   'Camera2D.current': 'enabled, make_current()', 'Camera2D.zoom': 'zoom (a Vector2 in Godot; one number here)', 'Camera2D.smoothing': 'position_smoothing_enabled and position_smoothing_speed',
   'Camera2D.limitTopLeft': 'limit_left, limit_top', 'Camera2D.limitBottomRight': 'limit_right, limit_bottom',
   'Label.text': 'text', 'Label.fontSize': 'theme_override_font_sizes/font_size', 'Label.color': 'theme_override_colors/font_color',
@@ -76,8 +77,8 @@ const ENTRIES: ApiEntry[] = [
 }`,
     members: [
       p('name', 'string', 'Its name in the tree. Names under one parent are unique.', 'name'),
-      p('parent', 'Node | null', 'The node above it; null for the scene root.', 'get_parent()', { readonly: true }),
-      p('children', 'Node[]', 'The nodes directly under it, in order (a copy: adding to it changes nothing).', 'get_children()', { readonly: true }),
+      p('parent', 'AnyNode | null', 'The node above it; null for the scene root.', 'get_parent()', { readonly: true }),
+      p('children', 'AnyNode[]', 'The nodes directly under it, in order (a copy: adding to it changes nothing). Each can be used as its own type: child.restart() calls its script\u2019s method.', 'get_children()', { readonly: true }),
       p('path', 'string', 'Its path from the scene root, like "Player/Sprite". The root is ".".', 'get_path() (from the scene root here)', { readonly: true }),
       m('get', '<T extends Node = AnyNode>(path: string): T', 'The node at a path relative to this one: "Sprite", "../Enemy", "HUD/Score". Throws, naming the path, if there is none.', 'get_node(), $Path'),
       m('find', '<T extends Node = AnyNode>(path: string): T | null', 'Like get, but null when there is no such node.', 'get_node_or_null()'),
@@ -157,6 +158,35 @@ const ENTRIES: ApiEntry[] = [
     ],
   },
   {
+    name: 'TileMapLayer', kind: 'class', extends: 'Node2D', godot: 'TileMapLayer',
+    doc: 'A grid of tiles from a tileset: floors, walls, platforms. Cells are counted in tiles from the layer\u2019s origin; tile numbers count across the tileset image, then down, from 0; −1 means none. Tiles the tileset marks solid stop bodies (a body hit by one is told this layer). Paint it in the viewport with the TileMap panel; change it from a script with setCell.',
+    example: `export default class Digger extends CharacterBody2D {
+  ready() {
+    this.map = scene.get('Walls');      // a TileMapLayer
+  }
+
+  physicsUpdate(dt) {
+    this.velocity = input.vector('move_left', 'move_right', 'move_up', 'move_down').scale(80);
+    this.moveAndSlide();
+    // Dig: remove the tile just ahead of us when Space is pressed.
+    if (input.isJustPressed('jump')) {
+      const ahead = this.map.localToMap(this.position.add(this.velocity.normalized().scale(16)));
+      if (this.map.isCellSolid(ahead.x, ahead.y)) this.map.eraseCell(ahead.x, ahead.y);
+    }
+  }
+}`,
+    members: [
+      p('tileSize', 'Vec2', 'The size of one cell in pixels, from the tileset.', 'tile_set.tile_size', { readonly: true }),
+      m('getCell', '(x: number, y: number): number', 'The tile in a cell, or −1 for none.', 'get_cell_atlas_coords(), get_cell_source_id()'),
+      m('setCell', '(x: number, y: number, tile: number): void', 'Put a tile in a cell (−1 erases). Collision follows at once.', 'set_cell()'),
+      m('eraseCell', '(x: number, y: number): void', 'Empty a cell.', 'erase_cell()'),
+      m('getUsedCells', '(): Vec2[]', 'Every painted cell, as cell coordinates.', 'get_used_cells()'),
+      m('localToMap', `(point: ${XY}): Vec2`, 'The cell a point (in the layer\u2019s own coordinates) is in. For a world point, the layer must be at the origin, or subtract its position first.', 'local_to_map()'),
+      m('mapToLocal', `(cell: ${XY}): Vec2`, 'The centre of a cell, in the layer\u2019s own coordinates.', 'map_to_local()'),
+      m('isCellSolid', '(x: number, y: number): boolean', 'Whether the tile in a cell is one the tileset marks solid: the test for "can I walk there?" in grid games.', 'get_cell_tile_data() and its collision polygons'),
+    ],
+  },
+  {
     name: 'Camera2D', kind: 'class', extends: 'Node2D', godot: 'Camera2D',
     doc: 'What the player sees, centred on the camera. Put it under the player and it follows. The first current camera in the tree is the one used.',
     example: `export default class Shake extends Camera2D {
@@ -219,7 +249,7 @@ const ENTRIES: ApiEntry[] = [
       m('isOnFloor', '(): boolean', 'Whether the last moveAndSlide() stopped it on a surface facing up. The usual test before a jump.', 'is_on_floor()'),
       m('isOnWall', '(): boolean', 'Whether the last moveAndSlide() stopped it against a surface facing sideways.', 'is_on_wall()'),
       m('isOnCeiling', '(): boolean', 'Whether the last moveAndSlide() stopped it on a surface facing down.', 'is_on_ceiling()'),
-      m('getSlideCollisions', '(): { body: PhysicsBody2D; normal: Vec2 }[]', 'What the last moveAndSlide() touched, and each surface’s normal (pointing away from it).', 'get_slide_collision(i), get_slide_collision_count()'),
+      m('getSlideCollisions', '(): { body: AnyNode; normal: Vec2 }[]', 'What the last moveAndSlide() touched, and each surface’s normal (pointing away from it).', 'get_slide_collision(i), get_slide_collision_count()'),
     ],
   },
   {
@@ -351,7 +381,7 @@ const ENTRIES: ApiEntry[] = [
 
 const PROP_TYPE: Record<PropDef['type'], (d: PropDef) => string> = {
   vec2: () => 'Vec2', number: () => 'number', angle: () => 'number', bool: () => 'boolean', string: () => 'string', color: () => 'string',
-  texture: () => 'string | null', animations: () => '{ name: string; length: number; loop: boolean; tracks: { path: string; property: string; keys: { time: number; value: any }[] }[] }[]', spriteFrames: () => '{ name: string; fps: number; loop: boolean; frames: string[] }[]', enum: (d) => (d.options ?? []).map((o) => `'${o}'`).join(' | '), layers: () => 'number',
+  texture: () => 'string | null', tileset: () => 'string | null', cells: () => 'number[]', animations: () => '{ name: string; length: number; loop: boolean; tracks: { path: string; property: string; keys: { time: number; value: any }[] }[] }[]', spriteFrames: () => '{ name: string; fps: number; loop: boolean; frames: string[] }[]', enum: (d) => (d.options ?? []).map((o) => `'${o}'`).join(' | '), layers: () => 'number',
 };
 
 /** The Inspector properties a class adds: its registry properties not already declared by a class it extends. */
@@ -446,6 +476,21 @@ export const SCENE_API: SceneApiEntry[] = [
       { name: 'setActionKeys', type: '(name: string, keys: string[]): void', doc: 'Change an action’s keys.' },
       { name: 'removeAction', type: '(name: string): void', doc: 'Remove an action.' },
       { name: 'importAsset', type: '(path: string, info: { mime, width, height }): string', doc: 'Record an imported image. The editor does this when you import or drag in art; the bytes are stored separately.' },
+      { name: 'createTileset', type: '(path: string, { image, tileWidth, tileHeight, margin?, spacing?, solid? }): TilesetHandle', doc: 'A new tileset file in tilesets/: an image (already in the project) cut into tiles of this size. solid lists the tile numbers bodies stop against.' },
+      { name: 'tileset', type: '(path: string): TilesetHandle', doc: 'An existing tileset.' },
+    ],
+  },
+  {
+    name: 'TilesetHandle',
+    doc: 'A tileset, from project.createTileset or project.tileset. Set a field to change it: project.tileset("tilesets/a.tileset").solid = [0, 1, 5].',
+    members: [
+      { name: 'path', type: 'string', doc: 'Its file path.' },
+      { name: 'image', type: 'string', doc: 'The image it cuts into tiles.' },
+      { name: 'tileWidth', type: 'number', doc: 'Tile width in pixels.' },
+      { name: 'tileHeight', type: 'number', doc: 'Tile height in pixels.' },
+      { name: 'margin', type: 'number', doc: 'Pixels round the whole image before the first tile.' },
+      { name: 'spacing', type: 'number', doc: 'Pixels between tiles.' },
+      { name: 'solid', type: 'number[]', doc: 'The tile numbers with collision: whole-tile squares bodies stop against.' },
     ],
   },
   {
@@ -472,6 +517,17 @@ export const SCENE_API: SceneApiEntry[] = [
       { name: 'reparent', type: '(parentPath: string, index?: number): void', doc: 'Move it under another node. The GUI keeps it where it is on screen by also setting its position.' },
       { name: 'delete', type: '(): void', doc: 'Delete it and everything under it.' },
       { name: 'duplicate', type: '(): NodeHandle', doc: 'A copy next to it, with a new name.' },
+    ],
+  },
+  {
+    name: 'TileMapLayer handle',
+    doc: 'A TileMapLayer\u2019s node handle has these as well. The editor\u2019s brush strokes are logged as paint calls.',
+    members: [
+      { name: 'getCell', type: '(x: number, y: number): number', doc: 'The tile in a cell, or −1.' },
+      { name: 'setCell', type: '(x: number, y: number, tile: number): void', doc: 'One cell (−1 erases).' },
+      { name: 'paint', type: '(cells: [x, y, tile][]): void', doc: 'Several cells at once: one brush stroke.' },
+      { name: 'fill', type: '(x: number, y: number, width: number, height: number, tile: number): void', doc: 'A rectangle of cells, from its top-left cell.' },
+      { name: 'fromText', type: '(rows: string[], legend: { [character]: tile }, at?: { x, y }): void', doc: 'A map drawn as text: each character a cell, the legend saying which tile it is. A character not in the legend (a space) leaves its cell alone.' },
     ],
   },
 ];

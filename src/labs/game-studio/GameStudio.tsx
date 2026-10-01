@@ -61,6 +61,9 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
   const [dialog, setDialog] = useState<'projects' | 'settings' | null>(null);
   const [booting, setBooting] = useState(true);
   const [left, setLeft] = useState<'files' | 'art'>('files');
+  // The bottom panel's height: drag its top edge. Remembered in this browser (a convenience only).
+  const [bottomH, setBottomH] = useState(() => { try { return Math.min(600, Math.max(120, Number(localStorage.getItem('game-studio-bottom')) || 190)); } catch { return 190; } });
+  const resizing = useRef<{ y: number; h: number } | null>(null);
 
   // A handle for debugging and browser tests, in development only.
   useEffect(() => { if (import.meta.env?.DEV) (window as unknown as { __gameStudio?: unknown }).__gameStudio = { store }; }, [store]);
@@ -144,7 +147,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
 
   const tabs = store.tabs;
   return (
-    <div style={{ position: 'relative', display: 'grid', gridTemplateRows: '28px 34px 1fr 190px 22px', gridTemplateColumns: '240px 1fr 300px', height: '100%', width: '100%', background: C.bg, color: C.text, fontFamily: 'system-ui, -apple-system, Segoe UI, sans-serif', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', display: 'grid', gridTemplateRows: `28px 34px 1fr ${bottomH}px 22px`, gridTemplateColumns: '240px 1fr 300px', height: '100%', width: '100%', background: C.bg, color: C.text, fontFamily: 'system-ui, -apple-system, Segoe UI, sans-serif', overflow: 'hidden' }}>
       <div style={{ gridColumn: '1 / 4' }}><MenuBar menus={menus} /></div>
 
       {/* Toolbar */}
@@ -220,7 +223,13 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
       <div style={{ gridColumn: 3, gridRow: 3, borderLeft: `1px solid ${C.border}`, background: C.panel, overflowY: 'auto', minHeight: 0 }}><Inspector store={store} /></div>
 
       {/* Bottom */}
-      <div style={{ gridColumn: '1 / 4', gridRow: 4, borderTop: `1px solid ${C.border}`, background: C.panel, minHeight: 0 }}><BottomPanel store={store} /></div>
+      <div style={{ gridColumn: '1 / 4', gridRow: 4, borderTop: `1px solid ${C.border}`, background: C.panel, minHeight: 0, position: 'relative' }}>
+        <div data-testid="bottom-resize" title="Drag to resize the panel" style={{ position: 'absolute', left: 0, right: 0, top: -4, height: 8, cursor: 'row-resize', zIndex: 10 }}
+          onPointerDown={(e) => { (e.target as Element).setPointerCapture(e.pointerId); resizing.current = { y: e.clientY, h: bottomH }; }}
+          onPointerMove={(e) => { const r = resizing.current; if (r) setBottomH(Math.min(600, Math.max(120, r.h + r.y - e.clientY))); }}
+          onPointerUp={() => { resizing.current = null; try { localStorage.setItem('game-studio-bottom', String(bottomH)); } catch { /* storage may be blocked */ } }} />
+        <BottomPanel store={store} />
+      </div>
 
       {/* Status */}
       <div data-testid="status" style={{ gridColumn: '1 / 4', gridRow: 5, display: 'flex', alignItems: 'center', gap: 12, padding: '0 10px', fontSize: 11, color: C.dim, background: C.panel, borderTop: `1px solid ${C.border}` }}>

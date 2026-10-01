@@ -386,3 +386,13 @@ Recorded during Phase 1 (2026-09-30). None of them change a boundary.
    property that animation already animates sets its key at the playhead, not the node's own value. Godot
    writes previewed values into the scene; here the scene is never changed by scrubbing, so nothing is left
    half-animated when the panel closes.
+14. **Tilesets are project files, and the format is now 2 (ADR 10).** A tileset (image, tile size, margin, spacing,
+   solid tiles) is shared by every TileMapLayer that uses it, as a Godot TileSet resource is, so it lives in
+   `project.tilesets` beside scripts rather than inside a node. Adding that list was the first change to the saved
+   format; migration 1 → 2 adds an empty list, keeping the key order so a migrated project saves the same.
+15. **Tile layers collide without being bodies (ADR 6).** TileMapLayer extends Node2D, as in Godot. The engine
+   collects what bodies collide with as bodies plus tile layers (`Collider`), and a layer's shapes are its solid
+   tiles merged into rectangles. Merging is what keeps bodies from catching on the seams between tiles.
+16. **A brush stroke is one command, logged as `paint(...)` (ADR 8).** Logging the whole `cells` list after each
+   stroke would make GUI → code unreadable, so tile edits are their own commands: `paint`, and in written code
+   `fill`, `setCell` and `fromText`, which reads a map drawn as text.

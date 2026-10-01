@@ -9,9 +9,10 @@ import type { PropValue } from './types';
 /**
  * 'enum' is one of `options`; 'layers' is a set of collision layers 1–16, stored as bits (layer n is bit n − 1);
  * 'spriteFrames' is a list of named animations, each a list of pictures (SpriteAnimation[]);
- * 'animations' is a list of AnimationPlayer animations, each tracks of keyframes (AnimationClip[]).
+ * 'animations' is a list of AnimationPlayer animations, each tracks of keyframes (AnimationClip[]);
+ * 'tileset' is a tileset's project path, or null; 'cells' is a TileMapLayer's painted cells (core/tiles.ts).
  */
-export type PropType = 'number' | 'angle' | 'vec2' | 'bool' | 'string' | 'color' | 'texture' | 'enum' | 'layers' | 'spriteFrames' | 'animations';
+export type PropType = 'number' | 'angle' | 'vec2' | 'bool' | 'string' | 'color' | 'texture' | 'enum' | 'layers' | 'spriteFrames' | 'animations' | 'tileset' | 'cells';
 
 export interface PropDef {
   name: string;
@@ -86,6 +87,15 @@ const TYPES: NodeTypeDef[] = [
       { name: 'animations', type: 'animations', default: [], help: 'The animations: each has a length in seconds, whether it loops, and tracks. A track is one property of one node (a path from this player\u2019s parent) with keyframes. Edit them in the Animation panel.' },
       { name: 'autoplay', type: 'string', default: '', help: 'The animation to play when the game starts, by name. Empty: none, until a script calls play().' },
       { name: 'speedScale', type: 'number', default: 1, min: 0, max: 10, step: 0.1, help: 'How fast it plays: 2 is twice as fast, 0.5 half.' },
+    ],
+  },
+  {
+    type: 'TileMapLayer', base: 'Node2D', icon: '▦', addable: true,
+    help: 'A grid of tiles from a tileset: floors, walls, platforms. Paint it in the viewport. Tiles the tileset marks solid stop bodies. Use several layers for things in front of or behind each other.',
+    props: [
+      { name: 'tileset', type: 'tileset', default: null, help: 'The tileset its tiles come from (a file in tilesets/).' },
+      { name: 'cells', type: 'cells', default: [], help: 'The painted cells: for each, its x and y in cells and its tile number. Paint them in the viewport with the TileMap panel.' },
+      { name: 'collisionLayer', type: 'layers', default: 1, help: 'The layers its solid tiles are on. Bodies stop at them if their mask includes one of these layers.' },
     ],
   },
   {
@@ -222,6 +232,20 @@ export function checkProp(def: PropDef, v: unknown): string | null {
       return typeof v === 'string' && def.options!.includes(v) ? null : `${def.name} must be one of ${def.options!.map((o) => `"${o}"`).join(', ')}`;
     case 'layers':
       return Number.isInteger(v) && (v as number) >= 0 && (v as number) < 2 ** 16 ? null : `${def.name} must be a set of layers 1–16 (a whole number of bits, 0 to 65535)`;
+    case 'tileset':
+      return v === null || (typeof v === 'string' && /^tilesets\/.+\.tileset$/.test(v)) ? null : `${def.name} must be a tileset path (tilesets/….tileset), or null`;
+    case 'cells': {
+      if (!Array.isArray(v) || v.length % 3 !== 0 || v.some((x) => !Number.isInteger(x))) return `${def.name} must be a list of whole numbers, three per cell: x, y, tile`;
+      const seen = new Set<string>();
+      for (let i = 0; i < v.length; i += 3) {
+        if (v[i + 2] < 0) return `${def.name}: tile numbers start at 0 (cell ${v[i]}, ${v[i + 1]} has ${v[i + 2]})`;
+        if (Math.abs(v[i]) > 100000 || Math.abs(v[i + 1]) > 100000) return `${def.name}: cell ${v[i]}, ${v[i + 1]} is too far out (at most 100000 cells)`;
+        const k = `${v[i]},${v[i + 1]}`;
+        if (seen.has(k)) return `${def.name}: cell ${k} is painted twice`;
+        seen.add(k);
+      }
+      return null;
+    }
     case 'animations': {
       const shape = 'a list of { name, length, loop, tracks: [{ path, property, keys: [{ time, value }] }] }';
       if (!Array.isArray(v)) return `${def.name} must be ${shape}`;

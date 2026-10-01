@@ -5,10 +5,11 @@
 // reported ("scenes/main.scene: Player has no property 'speed'") instead of
 // breaking the editor later.
 
-import { FORMAT_VERSION, type AnimationClip, type NodeData, type Project, type SceneData, type SpriteAnimation } from './types';
+import { FORMAT_VERSION, type AnimationClip, type NodeData, type Project, type SceneData, type SpriteAnimation, type TilesetData } from './types';
 import { trackTarget } from './animation';
 import { checkProp, isNodeType, propDef, propValue } from './registry';
 import { walk } from './project';
+import { tilesetGrid, tilesetProblem } from './tiles';
 
 /** Deterministic: the same project always gives the same text (keys in the model's own order). */
 export function serialize(p: Project): string {
@@ -17,7 +18,11 @@ export function serialize(p: Project): string {
 
 /** Each entry turns a project of version n into version n + 1. */
 const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, unknown>> = {
-  // 1: (p) => ({ ...p, formatVersion: 2, … }),
+  // Format 2 adds tilesets (Phase 6). Older projects have none.
+  1: (p) => {
+    const { assets, ...rest } = p;
+    return { ...rest, formatVersion: 2, tilesets: [], assets };
+  },
 };
 
 export function migrate(raw: Record<string, unknown>): Record<string, unknown> {
@@ -41,6 +46,16 @@ export function problems(p: Project): string[] {
   const scripts = new Set(p.scripts.map((s) => s.path));
   const assets = new Set(p.assets.map((a) => a.path));
   if (p.settings.mainScene && !p.scenes.some((s) => s.path === p.settings.mainScene)) out.push(`The main scene "${p.settings.mainScene}" does not exist`);
+  const tilesets = new Map<string, TilesetData>();
+  for (const ts of p.tilesets ?? []) {
+    const bad = tilesetProblem(ts);
+    if (bad) { out.push(bad); continue; }
+    if (tilesets.has(ts.path)) out.push(`There are two tilesets at "${ts.path}"`);
+    tilesets.set(ts.path, ts);
+    if (!assets.has(ts.image)) out.push(`${ts.path}: missing image "${ts.image}"`);
+  }
+  /** How many tiles a tileset has, when its image is known. */
+  const tileCount = (path: string) => { const ts = tilesets.get(path), a = ts && p.assets.find((x) => x.path === ts.image); return ts && a ? tilesetGrid(ts, a.width, a.height).count : null; };
   for (const s of p.scenes) {
     for (const n of walk(s.root)) {
       const at = `${s.path}: ${n.name}`;
@@ -53,6 +68,12 @@ export function problems(p: Project): string[] {
         const bad = checkProp(def, v);
         if (bad) out.push(`${at}: ${bad}`);
         if (def.type === 'texture' && typeof v === 'string' && !assets.has(v)) out.push(`${at}: missing image "${v}"`);
+        if (def.type === 'tileset' && typeof v === 'string' && !tilesets.has(v)) out.push(`${at}: missing tileset "${v}"`);
+        if (def.type === 'cells' && !bad) {
+          const count = tileCount(propValue(n.type, n.props, 'tileset') as string);
+          const cells = v as number[];
+          if (count !== null) for (let i = 2; i < cells.length; i += 3) if (cells[i] >= count) { out.push(`${at}: cell ${cells[i - 2]}, ${cells[i - 1]} uses tile ${cells[i]}, but the tileset has ${count} tiles (0 to ${count - 1})`); break; }
+        }
         if (def.type === 'animations' && !bad) out.push(...clipProblems(s, n, v as AnimationClip[]).map((m) => `${at}: ${m}`));
         if (def.type === 'spriteFrames' && !bad) for (const a of v as SpriteAnimation[]) for (const f of a.frames) if (!assets.has(f)) out.push(`${at}: animation "${a.name}" uses a missing image "${f}"`);
       }
@@ -72,7 +93,7 @@ export function deserialize(text: string): Project {
   let raw: Record<string, unknown>;
   try { raw = JSON.parse(text); } catch { throw new Error('The project file is not valid JSON'); }
   const p = migrate(raw) as unknown as Project;
-  for (const key of ['name', 'settings', 'input', 'scenes', 'scripts', 'assets'] as const) if (p[key] === undefined) throw new Error(`The project has no "${key}"`);
+  for (const key of ['name', 'settings', 'input', 'scenes', 'scripts', 'tilesets', 'assets'] as const) if (p[key] === undefined) throw new Error(`The project has no "${key}"`);
   const bad = problems(p);
   if (bad.length) throw new Error(`The project has problems:\n${bad.join('\n')}`);
   return p;

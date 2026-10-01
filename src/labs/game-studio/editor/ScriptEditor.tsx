@@ -25,6 +25,22 @@ export function ScriptEditor({ store, path }: { store: Store; path: string }) {
     store.reveal = null;
   }, [reveal, path, store]);
 
+  // Every project script is a Monaco model, not only the one open, so an import of another
+  // script ("./grid.js") resolves, and completion knows what that script exports.
+  const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
+  const syncModels = () => {
+    const monaco = monacoRef.current;
+    if (!monaco || !store.project) return;
+    for (const sc of store.project.scripts) {
+      if (sc.path === path) continue;   // the open one belongs to the editor
+      const uri = monaco.Uri.parse(`file:///${sc.path}`), text = store.scriptText(sc.path);
+      const model = monaco.editor.getModel(uri);
+      if (!model) monaco.editor.createModel(text, 'javascript', uri);
+      else if (model.getValue() !== text) model.setValue(text);
+    }
+  };
+  useEffect(syncModels);
+
   const onMount: OnMount = (editor, monaco) => {
     ed.current = editor;
     // For browser tests, in development only (like window.__gameStudio).
@@ -38,8 +54,10 @@ export function ScriptEditor({ store, path }: { store: Store; path: string }) {
       // Monaco checks only syntax in JavaScript unless told otherwise. The "could be typed" hints are
       // noise in plain JavaScript, so they are off.
       monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({ noSemanticValidation: false, noSyntaxValidation: false, noSuggestionDiagnostics: true });
-      monaco.languages.typescript.javascriptDefaults.setCompilerOptions({ target: monaco.languages.typescript.ScriptTarget.ES2020, lib: ['es2020'], allowNonTsExtensions: true, checkJs: true, module: monaco.languages.typescript.ModuleKind.ESNext });
+      monaco.languages.typescript.javascriptDefaults.setCompilerOptions({ target: monaco.languages.typescript.ScriptTarget.ES2020, lib: ['es2020'], allowNonTsExtensions: true, allowJs: true, checkJs: true, module: monaco.languages.typescript.ModuleKind.ESNext, moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs });
     }
+    monacoRef.current = monaco;
+    syncModels();
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => { store.saveScript(path); });
     if (store.reveal?.path === path) {
       const r = store.reveal; store.reveal = null;

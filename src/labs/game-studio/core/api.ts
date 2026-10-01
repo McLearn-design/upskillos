@@ -10,7 +10,8 @@
 // checks its arguments; the editor's commands (core/doc.ts) call these same
 // functions, which is why replaying the log gives the same project.
 
-import type { AssetData, NodeData, Project, PropValue, SceneData, Vec2 } from './types';
+import type { AssetData, NodeData, Project, PropValue, SceneData, TilesetData, Vec2 } from './types';
+import { applyEdits, cellMap, rectEdits, textEdits, tilesetProblem, type CellEdit } from './tiles';
 import { checkProp, isNodeType, nodeType, propDef, propsOf, propValue } from './registry';
 import { checkName, cloneWithNewIds, contains, findNode, newNode, nextId, nodeAt, parentOf, pathOf, sceneAt, uniqueName } from './project';
 
@@ -100,7 +101,7 @@ export interface NodeHandle {
   [prop: string]: unknown;
 }
 
-function nodeHandle(p: Project, scene: SceneData, id: string): NodeHandle {
+export function nodeHandle(p: Project, scene: SceneData, id: string): NodeHandle {
   const n = () => { const x = findNode(scene, id); if (!x) throw new Error(`That node was deleted`); return x; };
   const h: Record<string, unknown> = {};
   Object.defineProperties(h, {
@@ -115,6 +116,21 @@ function nodeHandle(p: Project, scene: SceneData, id: string): NodeHandle {
     delete: { value: () => deleteNode(scene, id) },
     duplicate: { value: () => nodeHandle(p, scene, duplicate(p, scene, id).id) },
   });
+  // A TileMapLayer can be painted cell by cell (the editor's brush strokes are logged as paint calls).
+  if (n().type === 'TileMapLayer') {
+    const cells = () => propValue('TileMapLayer', n().props, 'cells') as number[];
+    const edit = (edits: CellEdit[]) => {
+      for (const e of edits) if (!Array.isArray(e) || e.length !== 3 || !e.every(Number.isInteger)) throw new Error('Each cell is [x, y, tile], whole numbers (tile −1 erases)');
+      setProp(scene, id, 'cells', applyEdits(cells(), edits));
+    };
+    Object.defineProperties(h, {
+      getCell: { value: (x: number, y: number) => cellMap(cells()).get(`${x},${y}`) ?? -1 },
+      setCell: { value: (x: number, y: number, tile: number) => edit([[x, y, tile]]) },
+      paint: { value: (edits: CellEdit[]) => edit(edits) },
+      fill: { value: (x: number, y: number, w: number, hgt: number, tile: number) => { if (!(w > 0 && hgt > 0)) throw new Error('fill needs a width and height of at least 1'); edit(rectEdits(x, y, x + w - 1, y + hgt - 1, tile)); } },
+      fromText: { value: (rows: string[], legend: Record<string, number>, at?: { x: number; y: number }) => edit(textEdits(rows, legend, at)) },
+    });
+  }
   for (const def of propsOf(n().type)) {
     Object.defineProperty(h, def.name, {
       get: () => propValue(n().type, n().props, def.name),
@@ -167,6 +183,32 @@ export interface ProjectApi {
   removeAction(name: string): void;
   /** Records an imported file. Its bytes are stored separately, under the returned id. */
   importAsset(path: string, info: { kind?: 'image'; mime: string; width: number; height: number }): string;
+  /** A new tileset file: an image cut into tiles of this size. */
+  createTileset(path: string, opts: { image: string; tileWidth: number; tileHeight: number; margin?: number; spacing?: number; solid?: number[] }): TilesetHandle;
+  /** An existing tileset: set its fields, e.g. project.tileset('tilesets/a.tileset').solid = [1, 2]. */
+  tileset(path: string): TilesetHandle;
+}
+
+export interface TilesetHandle { readonly path: string; image: string; tileWidth: number; tileHeight: number; margin: number; spacing: number; solid: number[] }
+
+function tilesetHandle(p: Project, path: string): TilesetHandle {
+  const get = () => { const t = (p.tilesets ?? []).find((x) => x.path === path); if (!t) throw new Error(`No tileset at "${path}"`); return t; };
+  const h = {} as TilesetHandle;
+  Object.defineProperty(h, 'path', { get: () => path, enumerable: true });
+  for (const k of ['image', 'tileWidth', 'tileHeight', 'margin', 'spacing', 'solid'] as const) {
+    Object.defineProperty(h, k, {
+      enumerable: true,
+      get: () => { const v = get()[k]; return Array.isArray(v) ? [...v] : v; },
+      set: (v: unknown) => {
+        const t = get(), next = { ...t, [k]: Array.isArray(v) ? [...v].sort((a, b) => a - b) : v } as TilesetData;
+        const bad = tilesetProblem(next);
+        if (bad) throw new Error(bad);
+        if (k === 'image' && !p.assets.some((a) => a.path === v)) throw new Error(`There is no image "${String(v)}" in the project`);
+        Object.assign(t, next);
+      },
+    });
+  }
+  return h;
 }
 
 export function checkProjectPath(path: string, folder: string, ext: RegExp): string | null {
@@ -229,6 +271,17 @@ export function projectApi(p: Project): ProjectApi {
     removeAction(name) {
       p.input = p.input.filter((a) => a.name !== name);
     },
+    createTileset(path, opts) {
+      p.tilesets ??= [];
+      if (p.tilesets.some((t) => t.path === path)) throw new Error(`There is already a tileset at "${path}"`);
+      const ts: TilesetData = { path, image: opts.image, tileWidth: opts.tileWidth, tileHeight: opts.tileHeight, margin: opts.margin ?? 0, spacing: opts.spacing ?? 0, solid: [...(opts.solid ?? [])].sort((a, b) => a - b) };
+      const bad = tilesetProblem(ts);
+      if (bad) throw new Error(bad);
+      if (!p.assets.some((a) => a.path === ts.image)) throw new Error(`There is no image "${ts.image}" in the project: import it first`);
+      p.tilesets.push(ts);
+      return tilesetHandle(p, path);
+    },
+    tileset(path) { if (!(p.tilesets ?? []).some((t) => t.path === path)) throw new Error(`No tileset at "${path}"`); return tilesetHandle(p, path); },
     importAsset(path, info) {
       const bad = checkProjectPath(path, 'assets', /\.(png|jpe?g|webp|gif)$/i);
       if (bad) throw new Error(bad);

@@ -10,7 +10,7 @@
 // hundred kilobytes of JSON.
 
 import type { NodeData, Project, PropValue, SceneData } from './types';
-import { addNode, deleteNode, duplicate, projectApi, rename, reparent, runSceneCode, setProp, setScript } from './api';
+import { addNode, deleteNode, duplicate, nodeHandle as nodeHandleFor, projectApi, rename, reparent, runSceneCode, setProp, setScript } from './api';
 import { findNode, pathOf, sceneAt } from './project';
 import { isA, propDef, propValue } from './registry';
 import { placeNodes } from './sceneView';
@@ -229,6 +229,21 @@ export class Doc {
 
   writeScript(path: string, source: string, label = `Save ${path}`): void {
     this.run(label, null, `project.writeScript(${lit(path)}, ${lit(source)})`, () => projectApi(this.project).writeScript(path, source));
+  }
+
+  createTileset(path: string, opts: { image: string; tileWidth: number; tileHeight: number; margin?: number; spacing?: number; solid?: number[] }): void {
+    this.run(`New tileset ${path}`, null, `project.createTileset(${lit(path)}, ${lit(opts)})`, () => { projectApi(this.project).createTileset(path, opts); });
+  }
+
+  /** Change one field of a tileset: its image, tile size, margin, spacing, or which tiles are solid. */
+  setTileset(path: string, field: 'image' | 'tileWidth' | 'tileHeight' | 'margin' | 'spacing' | 'solid', value: unknown, label = `Edit ${path}`): void {
+    this.run(label, null, `project.tileset(${lit(path)}).${field} = ${lit(value)}`, () => { (projectApi(this.project).tileset(path) as unknown as Record<string, unknown>)[field] = value; });
+  }
+
+  /** Paint cells of a TileMapLayer (tile −1 erases): one brush stroke, one command. */
+  paintCells(sceneId: string, id: string, edits: [number, number, number][], label = 'Paint tiles'): void {
+    const scene = this.scene(sceneId);
+    this.run(label, scene.path, `scene.get(${lit(pathOf(scene, id))}).paint(${lit(edits)})`, () => { (nodeHandleFor(this.project, this.scene(sceneId), id) as unknown as { paint: (e: unknown) => void }).paint(edits); });
   }
 
   importAsset(path: string, info: { mime: string; width: number; height: number }): string {

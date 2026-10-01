@@ -3,7 +3,7 @@
 // This is the single source of truth (docs/game-studio-architecture.md, ADR 2).
 // The editor changes it only through commands; the runtime receives a copy.
 
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 2;
 
 export interface Vec2 { x: number; y: number }
 
@@ -19,7 +19,7 @@ export interface AnimationTrack { path: string; property: string; keys: Animatio
 export interface AnimationClip { name: string; length: number; loop: boolean; tracks: AnimationTrack[] }
 
 /** A value a node property can hold. Vectors are {x, y}; textures and scripts are project paths. */
-export type PropValue = number | string | boolean | Vec2 | SpriteAnimation[] | AnimationClip[] | null;
+export type PropValue = number | string | boolean | Vec2 | SpriteAnimation[] | AnimationClip[] | number[] | null;
 
 export interface NodeData {
   /** Stable, never shown, never reused within the project. */
@@ -46,6 +46,25 @@ export interface ScriptFile {
   /** Project path, e.g. "scripts/player.js". */
   path: string;
   source: string;
+}
+
+/**
+ * A tileset: an image cut into a grid of tiles (core/tiles.ts), and which tiles are solid. A
+ * project file, like a script, shared by every TileMapLayer that uses it.
+ */
+export interface TilesetData {
+  /** Project path, e.g. "tilesets/dungeon.tileset". */
+  path: string;
+  /** The image, a project asset path. */
+  image: string;
+  tileWidth: number;
+  tileHeight: number;
+  /** Pixels round the whole image before the first tile. */
+  margin: number;
+  /** Pixels between tiles. */
+  spacing: number;
+  /** Tile ids with collision: each is a whole-tile square that bodies stop against. */
+  solid: number[];
 }
 
 export type AssetKind = 'image';
@@ -84,5 +103,7 @@ export interface Project {
   input: InputAction[];
   scenes: SceneData[];
   scripts: ScriptFile[];
+  /** Added in format 2. */
+  tilesets: TilesetData[];
   assets: AssetData[];
 }

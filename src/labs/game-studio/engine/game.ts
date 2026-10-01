@@ -17,8 +17,9 @@ import type { NodeData, Project, PropValue, SceneData } from '../core/types';
 import { propsOf } from '../core/registry';
 import { decompose } from '../core/math2d';
 import { Input } from './input';
-import { NODE_CLASSES, AnimatedSprite2D, AnimationPlayer, Area2D, Camera2D, CanvasLayer, CharacterBody2D, Label, Node, Node2D, PhysicsBody2D, RigidBody2D, Sprite2D } from './nodes';
+import { NODE_CLASSES, AnimatedSprite2D, AnimationPlayer, TileMapLayer, type Collider, type TilesetInfo, Area2D, Camera2D, CanvasLayer, CharacterBody2D, Label, Node, Node2D, PhysicsBody2D, RigidBody2D, Sprite2D } from './nodes';
 import { scans, separate } from './physics';
+import { tilesetGrid } from '../core/tiles';
 import { Vec2 } from './vec2';
 
 export const PHYSICS_DT = 1 / 60;
@@ -35,7 +36,9 @@ interface DrawBase {
 /** One thing to draw: an image (centred on x, y) or text (top-left at x, y). */
 export type DrawItem =
   | (DrawBase & { kind: 'sprite'; texture: string; flipX: boolean; flipY: boolean })
-  | (DrawBase & { kind: 'text'; text: string; fontSize: number; color: string });
+  | (DrawBase & { kind: 'text'; text: string; fontSize: number; color: string })
+  /** A tile layer: its top-left at x, y; cells as [x, y, tile, …]; `version` changes when the cells do. */
+  | (DrawBase & { kind: 'tiles'; texture: string; tileWidth: number; tileHeight: number; margin: number; spacing: number; columns: number; cells: number[]; version: number });
 
 /** Where the camera looks: the world point at the centre of the screen, and how close. */
 export interface View { x: number; y: number; zoom: number }
@@ -74,11 +77,20 @@ export class Game {
     this.input = new Input(project.input);
     this.screenSize = { w: project.settings.width, h: project.settings.height };
     this.gravity = project.settings.gravity ?? 980;
+    for (const ts of project.tilesets ?? []) {
+      const a = project.assets.find((x) => x.path === ts.image);
+      const g = a ? tilesetGrid(ts, a.width, a.height) : { columns: 0, count: 0 };
+      this.tilesets.set(ts.path, { data: ts, columns: g.columns, count: g.count });
+    }
     // With no camera, the screen shows the world from (0, 0) to (width, height).
     this.view = { x: this.screenSize.w / 2, y: this.screenSize.h / 2, zoom: 1 };
     this.root = this.build(scene.root);
     this.root._game = this;
   }
+
+  private tilesets = new Map<string, TilesetInfo>();
+  /** A tileset by its path, for TileMapLayer. */
+  _tileset(path: string): TilesetInfo | null { return this.tilesets.get(path) ?? null; }
 
   /** Create the node for a saved one, its script class if it has one, and its children. */
   private build(data: NodeData): Node {
@@ -177,8 +189,15 @@ export class Game {
    * mask's layers. `hit` is told each body touched and the surface normal (pointing away
    * from that body, towards the mover).
    */
-  _moveBody(body: CharacterBody2D | RigidBody2D, hit: (other: PhysicsBody2D, normal: Vec2) => void): void {
-    const others = this.bodies().filter((o) => o !== body && scans(body.collisionMask, o.collisionLayer));
+  /** Everything a body can collide with: bodies, and tile layers (their solid tiles). */
+  private colliders(): Collider[] {
+    const out: Collider[] = [];
+    this.each((n) => { if (n instanceof PhysicsBody2D || n instanceof TileMapLayer) out.push(n); });
+    return out;
+  }
+
+  _moveBody(body: CharacterBody2D | RigidBody2D, hit: (other: Collider, normal: Vec2) => void): void {
+    const others = this.colliders().filter((o) => o !== body && scans(body.collisionMask, o.collisionLayer));
     const dist = body.velocity.length() * this.stepDelta;
     const steps = Math.max(1, Math.ceil(dist / 4));
     for (let i = 0; i < steps; i++) {
@@ -186,7 +205,7 @@ export class Game {
       // Push out of one overlap at a time, recomputing where the shapes are after each
       // push (pushing out of one body can push into another), up to eight times.
       for (let pass = 0; pass < 8; pass++) {
-        let found: { o: PhysicsBody2D; nx: number; ny: number; depth: number } | null = null;
+        let found: { o: Collider; nx: number; ny: number; depth: number } | null = null;
         search: for (const mine of body.shapes()) for (const o of others) for (const theirs of o.shapes()) {
           const p = separate(mine, theirs);
           if (p) { found = { o, ...p }; break search; }
@@ -203,7 +222,7 @@ export class Game {
     for (const b of this.bodies()) {
       if (!(b instanceof RigidBody2D) || b._broken) continue;
       b.velocity = { x: b.velocity.x, y: b.velocity.y + this.gravity * b.gravityScale * dt };
-      const touched = new Map<PhysicsBody2D, Vec2>();
+      const touched = new Map<Collider, Vec2>();
       this._moveBody(b, (other, n) => {
         const vn = b.velocity.dot(n);
         // Reflect the part of the velocity going into the surface, keeping `bounce` of it.
@@ -212,7 +231,7 @@ export class Game {
       });
       for (const [other, n] of touched) this.call(b, 'onCollision', other, n);
     }
-    const all = this.bodies();
+    const all = this.colliders();
     this.each((n) => {
       if (!(n instanceof Area2D)) return;
       const mine = n.shapes();
@@ -283,6 +302,14 @@ export class Game {
       let vis = visible, zz = z, scr = screen;
       if (n instanceof CanvasLayer) { scr = true; zz = 1e6 * n.layer; }
       if (n instanceof Node2D) { vis = visible && n.visible; zz = zz + n.zIndex; }
+      if (vis && n instanceof TileMapLayer) {
+        const info = n._info();
+        if (info && n._map.size) {
+          const t = decompose(n.worldTransform);
+          items.push({ id: idOf(n), x: t.position.x, y: t.position.y, rotation: t.rotation, scaleX: t.scale.x, scaleY: t.scale.y, depth: zz + (order++) * 1e-6, screen: scr, alpha: 1,
+            kind: 'tiles', texture: info.data.image, tileWidth: info.data.tileWidth, tileHeight: info.data.tileHeight, margin: info.data.margin, spacing: info.data.spacing, columns: info.columns, cells: n.cells, version: n._version });
+        }
+      }
       const picture = n instanceof Sprite2D ? n.texture : n instanceof AnimatedSprite2D ? n._texture() : null;
       if (vis && n instanceof Node2D && (picture || n instanceof Label)) {
         const t = decompose(n.worldTransform);
