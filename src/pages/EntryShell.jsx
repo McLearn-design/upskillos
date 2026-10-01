@@ -5,12 +5,13 @@ import { useDesktop } from '../components/desktop/DesktopProvider.jsx'
 import LoadingSpinner from '../components/ui/LoadingSpinner.jsx'
 
 // Thin route-trigger: loads the lab/game component, opens it as a desktop
-// floating window, then navigates back to the listing page.
+// floating window, then navigates back to the page the link was followed from (or the listing).
 export default function EntryShell({ paramKey, loader, notFoundEmoji, notFoundLabel, backTo, backLabel }) {
   const params = useParams()
   const key = params[paramKey]
   const navigate = useNavigate()
-  const { search } = useLocation()
+  const location = useLocation()
+  const { search } = location
   const { openWindow } = useDesktop()
   const [notFound, setNotFound] = useState(false)
 
@@ -31,7 +32,10 @@ export default function EntryShell({ paramKey, loader, notFoundEmoji, notFoundLa
         backTo,
         backLabel,
       })
-      navigate(backTo, { replace: true })
+      // Back to the page the link was followed from (the lab opens over it), or the listing for a link
+      // opened cold. location.key is 'default' only on the first page of the session.
+      if (location.key !== 'default') navigate(-1)
+      else navigate(backTo, { replace: true })
     }).catch(() => { if (!cancelled) setNotFound(true) })
     return () => { cancelled = true }
   }, [key, search])

@@ -7,7 +7,8 @@
 //   { id: 'GameStudioTask', props: { task: 'first-sprite', lesson: 'mg1-001', checkpoint: 'cp-mg1-001-4' } }
 
 import { useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
+import { useOpenLab } from '../../../components/desktop/useOpenLab.js'
 import { taskById } from '../../../labs/game-studio/tasks'
 import { gameStudioLink } from '../../../labs/game-studio/tasks/links'
 import { useProgress } from '../../../hooks/useProgress.js'
@@ -19,7 +20,7 @@ const COURSE = 'making-games'
 export default function GameStudioTask({ params = {} }) {
   const { task: taskId, lesson, checkpoint } = params
   const task = taskById(taskId)
-  const navigate = useNavigate()
+  const openLab = useOpenLab()
   const { pathname } = useLocation()
   const progress = useProgress()
   const [big, setBig] = useState(null)
@@ -28,7 +29,8 @@ export default function GameStudioTask({ params = {} }) {
   // Progress is kept per course and lesson id (pages/LessonPage.jsx).
   const key = lesson ? `${COURSE}::${lesson}` : undefined
   const done = !!(key && checkpoint && progress?.progress?.[key]?.completedCheckpoints?.includes(checkpoint))
-  const open = () => navigate(gameStudioLink(task.id, { from: pathname, lesson: key, checkpoint }))
+  // Game Studio opens as a window over the lesson; the lesson stays where it is underneath.
+  const open = () => openLab('game-studio', gameStudioLink(task.id, { from: pathname, lesson: key, checkpoint }).replace(/^[^?]*/, ''))
 
   return (
     <div data-testid={`try-it-${task.id}`} className="rounded-xl border border-sky-300/60 bg-sky-50/60 p-4 dark:border-sky-700/50 dark:bg-sky-950/30">

@@ -32,6 +32,7 @@ const ConceptPreviewPage = lazy(() => import("./pages/ConceptPreviewPage.jsx"));
 const RPGWorkoutPage = lazy(() => import("./features/rpg/RPGWorkoutPage.jsx"));
 const BrainPage = lazy(() => import("./features/brain/BrainPage.jsx"));
 const EntryShell = lazy(() => import("./pages/EntryShell.jsx"));
+const NotFoundPage = lazy(() => import("./pages/NotFoundPage.jsx"));
 const LinearAlgebraReferencePage = lazy(
   () => import("./pages/LinearAlgebraReferencePage.jsx"),
 );
@@ -157,8 +158,13 @@ export default function App() {
                               path="docs"
                               element={<Navigate to="/studio" replace />}
                             />
+                            {/* The labs and games are listed on the home page: these old listing addresses go there. */}
                             <Route
                               path="games"
+                              element={<Navigate to="/" replace />}
+                            />
+                            <Route
+                              path="labs"
                               element={<Navigate to="/" replace />}
                             />
                             <Route
@@ -357,6 +363,7 @@ export default function App() {
                               path="music-lab"
                               element={<Navigate to="/lab/music-lab" replace />}
                             />
+                            <Route path="*" element={<NotFoundPage />} />
                           </Routes>
                         </Suspense>
                       </AppShell>

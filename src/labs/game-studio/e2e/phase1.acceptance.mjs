@@ -92,9 +92,14 @@ const failed = await withGameStudio(5197, async ({ page, t, check }) => {
   check('Run in the sandboxed runtime', true, 'ready() logged to Output');
   await t('tree-Player').click();
   await frame.click();
-  await page.keyboard.down('ArrowRight'); await page.waitForTimeout(1200); await page.keyboard.up('ArrowRight');   // headless frames are uneven, so hold long enough to be sure
+  // Hold → until Player is past x = 300 (or 4 s). Headless frame rates vary with what the page behind the
+  // window draws, so a fixed hold time made this check depend on the machine, not on the keys working.
+  const liveText = () => t('inspector').locator('span[title^="The value in the running game"]').first().innerText();
+  await page.keyboard.down('ArrowRight');
+  for (let i = 0; i < 20 && Number((await liveText()).split(',')[0]) <= 300; i++) await page.waitForTimeout(200);
+  await page.keyboard.up('ArrowRight');
   await page.waitForTimeout(400);
-  const live = await t('inspector').locator('span[title^="The value in the running game"]').first().innerText();
+  const live = await liveText();
   const liveX = Number(live.split(',')[0]);
   check('Move the sprite with the keys', liveX > 300, `live position ${live}`);
 

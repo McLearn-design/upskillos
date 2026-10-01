@@ -577,6 +577,33 @@ below the first override only their picture. Its tests pass unchanged.
 - `e2e/phase7.acceptance.mjs` (9/9).
 - `npm run game:acceptance`: all eight browser tests pass (15, 6, 9, 12, 10, 10, 13 and 9 checks).
 
+## Fixed: links into labs, and windows losing their work (2026-10-01)
+
+The user found that a lesson's Try it button left the course for `#/labs`, a page that does not exist, though the
+lesson and Game Studio can both be open at once. Looking into it turned up four connected problems, all fixed:
+- **Opening a lab from inside the app left the page you were on.** The `/lab/<id>` route opens the window, then
+  always went to a listing page: `/labs`, which has no route. Now:
+  - the Try it card, Game Studio, Sprite Forge and Tile Mapper open each other's windows directly, with no route
+    change (`src/components/desktop/useOpenLab.js`), so the lesson stays where it was underneath;
+  - a `#/lab/<id>` link followed inside the app goes back to the page it came from;
+  - a link opened cold goes to `/labs`, which now redirects to the home page, as `/games` already did.
+- **Any address with no page was blank.** A catch-all route now shows "There is no page at …" with a link home
+  (`src/pages/NotFoundPage.jsx`).
+- **So it cannot happen again:** `src/routes.test.js` finds every in-app link in the source and checks that a
+  route exists for it: `navigate('/…')`, `to="/…"`, `backTo="/…"`, `href="#/…"`, plus each lab's own `routes`.
+  Switching off the `/labs` route makes it fail, naming `App.jsx:307 → /labs`.
+- **Maximizing, restoring or minimizing a window threw away the lab's work.** This affected every lab.
+  - `FloatingWindow` drew a maximized window and a normal one as two different element trees, so the lab inside
+    remounted on every switch.
+  - The desktop also unmounted minimized windows.
+  - Now there is one tree for every state, and a minimized window is only hidden.
+- **"Back to the lesson" now minimizes Game Studio** with its project intact, so the lesson shows. The task test
+  checks that the project survives.
+- **Two browser checks waited a fixed time** for a game to move or tick (Phase 1's arrow-key move, Phase 3's
+  ticks after an error). A cold link now lands on the home desktop behind the window rather than a blank page, so
+  headless frames are slower, and the checks failed. They now wait until the thing happens, with a limit.
+  All 16 browser tests pass again, each run on its own, and so does `npm run build`.
+
 ## Done: Phase 9, machine learning, in Game Studio (2026-10-01)
 
 **A game is now a Gymnasium-style environment** (`ml/env.ts`):

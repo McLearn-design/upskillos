@@ -19,6 +19,8 @@ import { parseTaskLink } from './tasks/links';
 import { solutionScripts } from './tasks/solutions';
 import { tetrisStepScripts } from './tasks/tetris';
 import { listenForArt } from '../../utils/artBridge.js';
+import { useOpenLab } from '../../components/desktop/useOpenLab.js';
+import { useDesktop } from '../../components/desktop/DesktopProvider.jsx';
 import { takeEntryLink } from '../../utils/entryLinks';
 import { useNavigate } from 'react-router-dom';
 import { useProgress } from '../../hooks/useProgress';
@@ -83,7 +85,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
   useEffect(() => {
     (async () => {
       try {
-        // EntryShell opens the lab and navigates back to the listing, so it hands the link's query over (src/utils/entryLinks.js).
+        // A link reaches here as an entry link (src/utils/entryLinks.js): the window may open without the address changing.
         const link = parseTaskLink(takeEntryLink('game-studio') ?? window.location.hash);
         if (link) { await store.startTask(link.task, link); return; }
         const id = await storage.lastProjectId(); if (id) await store.openProject(id);
@@ -113,7 +115,10 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
   // Finishing a task from a lesson ticks the lesson's checkpoint (the app's progress), and "Back to the lesson" returns there.
   const progress = useProgress() as { markCheckpoint?: (lesson: string, checkpoint: string) => void } | null;
   const navigate = useNavigate();
-  useEffect(() => { store.openLab = (lab) => navigate(`/lab/${lab}`); }, [store, navigate]);
+  const openLab = useOpenLab();
+  // Back to the lesson: the lesson is under this window, so this window steps aside (still in the taskbar).
+  const desktop = useDesktop() as { minimizeWindow?: (id: string) => void } | null;
+  useEffect(() => { store.openLab = (lab) => void openLab(lab); }, [store, openLab]);
   useEffect(() => { store.onTaskDone = (_task, link) => { if (link?.lesson && link.checkpoint) progress?.markCheckpoint?.(link.lesson, link.checkpoint); }; }, [store, progress]);
 
   // Warn before losing unsaved work.
@@ -257,7 +262,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
           </div>
           {!running && store.tab.kind === 'scene' && !store.task && <Guide store={store} />}
           {/* Shown while the game runs too, so a step like "run the game" ticks where you can see it. */}
-          <TaskPanel store={store} onBack={(route) => navigate(route)} />
+          <TaskPanel store={store} onBack={(route) => { navigate(route); desktop?.minimizeWindow?.('game-studio'); }} />
           {!running && store.tab.kind === 'script' && <div style={{ position: 'absolute', inset: 0 }}><ScriptEditor key={store.tab.path} store={store} path={store.tab.path} /></div>}
           <div ref={gameBox} data-testid="game-box" style={{ position: 'absolute', inset: 0, display: running ? 'block' : 'none', background: '#000' }} />
         </div>

@@ -8,7 +8,7 @@ import ImportTilesetDialog from './ImportTilesetDialog.jsx'
 import { MAX_DIM, MIN_DIM, createDoc, normalizeDoc } from './tilemapDoc.js'
 import { useAutosave, useTilemapDoc } from './useTilemapDoc.js'
 import { getPref, loadMap, saveMap, setPref } from './db.js'
-import { useNavigate } from 'react-router-dom'
+import { useOpenLab } from '../../components/desktop/useOpenLab.js'
 import { listenForArt, sendArt } from '../../utils/artBridge.js'
 import { docFromMap, mapMessage } from './gameStudio.js'
 import { MAP_API_NAMES, cmd, runMapCode } from './mapApi.js'
@@ -99,7 +99,7 @@ export default function TileMapper({ onBack }) {
   // Game Studio asks for a new map, or sends one of its maps to edit (src/utils/artBridge.js); after a
   // send it says where the map went, so the next send repaints those layers. Taken only once the
   // restore above has settled.
-  const navigate = useNavigate()
+  const openLab = useOpenLab()
   const [bridgeNote, setBridgeNote] = useState('')
   useEffect(() => {
     if (!ready) return undefined
@@ -128,7 +128,7 @@ export default function TileMapper({ onBack }) {
       await saveMap(doc)
       sendArt('game-studio', message)
       setBridgeNote(`Sent to Game Studio${doc.link?.projectName ? ` (${doc.link.projectName})` : ''}`)
-      navigate('/lab/game-studio')
+      await openLab('game-studio')
     } catch (e) {
       setBridgeNote(e instanceof Error ? e.message : String(e))
     }

@@ -17,7 +17,7 @@ import {
 } from './pixelDoc.js'
 import { useAutosave, useSpriteDoc } from './useSpriteDoc.js'
 import { getPref, loadSprite, saveSprite, setPref } from './db.js'
-import { useNavigate } from 'react-router-dom'
+import { useOpenLab } from '../../components/desktop/useOpenLab.js'
 import { listenForArt, sendArt } from '../../utils/artBridge.js'
 import { docFromBlob, spriteMessage } from './gameStudio.js'
 import { SPRITE_API_NAMES, cmd, runSpriteCode } from './spriteApi.js'
@@ -86,7 +86,7 @@ export default function SpriteForge({ onBack }) {
 
   // Game Studio asks for a new sprite, or sends one of its pictures to edit (src/utils/artBridge.js).
   // Taken only once the restore above has settled, so the restored sprite cannot replace it.
-  const navigate = useNavigate()
+  const openLab = useOpenLab()
   const [bridgeNote, setBridgeNote] = useState('')
   useEffect(() => {
     if (!ready) return undefined
@@ -113,7 +113,7 @@ export default function SpriteForge({ onBack }) {
       await saveSprite(doc) // so Edit in Sprite Forge can open this document again later
       sendArt('game-studio', await spriteMessage(doc))
       setBridgeNote(`Sent to Game Studio${doc.link?.projectName ? ` (${doc.link.projectName})` : ''}`)
-      navigate('/lab/game-studio')
+      await openLab('game-studio')
     } catch (e) {
       setBridgeNote(e instanceof Error ? e.message : String(e))
     }

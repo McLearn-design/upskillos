@@ -44,6 +44,8 @@ const failed = await withGameStudio(5186, async ({ page, t, check, answer }) => 
   check('"Back to the lesson" returns to the lesson’s route', await page.evaluate(() => window.location.hash) === '#/');
 
   // Help › Tutorials: the script task, done by typing a script (play checks run it in a worker).
+  // Game Studio stepped aside (minimized), keeping its work: minimizing never remounts a window.
+  check('Game Studio steps aside for the lesson, and keeps its project', await page.evaluate(() => window.__gameStudio.store.project?.name === 'Put a character on the screen'));
   await page.goto(page.url().replace(/#.*$/, '#/lab/game-studio'));
   await t('menu-Help').waitFor({ timeout: 60000 });
   if (await t('dialog-close').count()) await t('dialog-close').click();

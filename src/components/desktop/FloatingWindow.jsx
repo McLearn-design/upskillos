@@ -139,42 +139,12 @@ export default function FloatingWindow({ win, zIndex, onClose, onMinimize, onMax
     // is cheap.
   }, [pos, size, snapPreview, onDockChange])
 
-  if (isMax) {
-    return (
-      <div
-        data-desktop-window={win.id}
-        className="fixed inset-0 flex flex-col"
-        style={{ zIndex, pointerEvents: 'auto' }}
-        onMouseDown={onFocus}
-      >
-        {/* A real row (not absolute-over-content) — reserves actual height so
-            every lab's own top-left UI (back buttons, headers, ...) gets
-            pushed below the dots instead of colliding with them. Absolute
-            positioning here used to overlap whatever a lab drew in that same
-            corner, on every lab, every time — fixed once here rather than
-            padding each lab individually. Solid background, not translucent —
-            this bar sits at z-1800 above the app's own top bar (z-100), and a
-            translucent fill let that page chrome show through underneath it. */}
-        <div className="flex-shrink-0 h-7 flex items-center px-3 bg-[#e8e8e8] dark:bg-[#2c2c2e]">
-          <MacDots onClose={onClose} onMinimize={undefined} onMaximize={onMaximize} isMaximized />
-        </div>
-        <div className="flex-1 overflow-hidden" style={{ transform: 'translate(0,0)' }}>
-          <LabErrorBoundary label={win.label} backTo={win.backTo}>
-            {/* Games/labs were written against two different close-prop conventions
-                (onBack vs onClose) with no single source of truth — pass both so
-                either works, instead of each one silently no-oping when wired the
-                "wrong" way (this is how golf's close button and fullscreen-detection
-                broke when opened through the window manager). */}
-            <Component onBack={onClose} onClose={onClose} />
-          </LabErrorBoundary>
-        </div>
-      </div>
-    )
-  }
-
+  // One element tree for every state, so the lab inside keeps its place in it: maximizing, restoring or
+  // minimizing a window must never remount the lab (that threw away its work: an open project, a game).
+  // Only classes, styles and the title bar's contents change with the state.
   return (
     <>
-      {snapPreview && (
+      {snapPreview && !isMax && (
         <div
           className="fixed pointer-events-none bg-blue-400/20 border-2 border-blue-400/60 rounded-lg"
           style={{
@@ -192,34 +162,50 @@ export default function FloatingWindow({ win, zIndex, onClose, onMinimize, onMax
       )}
       <div
         data-desktop-window={win.id}
-        className="fixed flex flex-col rounded-xl overflow-hidden shadow-2xl border border-black/15 dark:border-white/[0.08]"
-        style={{ left: pos.x, top: pos.y, width: size.w, height: size.h, zIndex, pointerEvents: 'auto' }}
+        className={isMax ? 'fixed inset-0 flex flex-col' : 'fixed flex flex-col rounded-xl overflow-hidden shadow-2xl border border-black/15 dark:border-white/[0.08]'}
+        style={isMax ? { zIndex, pointerEvents: 'auto' } : { left: pos.x, top: pos.y, width: size.w, height: size.h, zIndex, pointerEvents: 'auto' }}
         onMouseDown={onFocus}
       >
+        {/* Maximized: a real row (not absolute-over-content) — reserves actual height so
+            every lab's own top-left UI (back buttons, headers, ...) gets
+            pushed below the dots instead of colliding with them. Solid background,
+            not translucent — this bar sits at z-1800 above the app's own top bar
+            (z-100), and a translucent fill let that page chrome show through. */}
         <div
-          className="flex-shrink-0 h-8 flex items-center gap-3 px-3 select-none cursor-grab active:cursor-grabbing bg-[#e8e8e8] dark:bg-[#2c2c2e] border-b border-black/10 dark:border-white/[0.08]"
-          onMouseDown={startDrag}
+          className={isMax
+            ? 'flex-shrink-0 h-7 flex items-center px-3 bg-[#e8e8e8] dark:bg-[#2c2c2e]'
+            : 'flex-shrink-0 h-8 flex items-center gap-3 px-3 select-none cursor-grab active:cursor-grabbing bg-[#e8e8e8] dark:bg-[#2c2c2e] border-b border-black/10 dark:border-white/[0.08]'}
+          onMouseDown={isMax ? undefined : startDrag}
         >
-          <MacDots onClose={onClose} onMinimize={onMinimize} onMaximize={onMaximize} isMaximized={false} />
-          <span className="flex-1 text-center text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate pr-14">
-            {win.emoji ? `${win.emoji} ` : ''}{win.label}
-          </span>
+          <MacDots onClose={onClose} onMinimize={isMax ? undefined : onMinimize} onMaximize={onMaximize} isMaximized={isMax} />
+          {!isMax && (
+            <span className="flex-1 text-center text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate pr-14">
+              {win.emoji ? `${win.emoji} ` : ''}{win.label}
+            </span>
+          )}
         </div>
         {/* transform creates a containing block so fixed-position lab canvases clip to this window */}
         <div className="flex-1 overflow-hidden relative" style={{ transform: 'translate(0,0)' }}>
           <LabErrorBoundary label={win.label} backTo={win.backTo}>
+            {/* Games/labs were written against two different close-prop conventions
+                (onBack vs onClose) with no single source of truth — pass both so
+                either works, instead of each one silently no-oping when wired the
+                "wrong" way (this is how golf's close button and fullscreen-detection
+                broke when opened through the window manager). */}
             <Component onBack={onClose} onClose={onClose} />
           </LabErrorBoundary>
         </div>
-        <div
-          onMouseDown={startResize}
-          title="Resize"
-          className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-10 group"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" className="absolute bottom-0.5 right-0.5 pointer-events-none text-slate-400 dark:text-slate-500 opacity-60 group-hover:opacity-100 transition-opacity">
-            <path d="M12 2L2 12M12 7L7 12M12 12L12 12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-          </svg>
-        </div>
+        {!isMax && (
+          <div
+            onMouseDown={startResize}
+            title="Resize"
+            className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-10 group"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" className="absolute bottom-0.5 right-0.5 pointer-events-none text-slate-400 dark:text-slate-500 opacity-60 group-hover:opacity-100 transition-opacity">
+              <path d="M12 2L2 12M12 7L7 12M12 12L12 12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+            </svg>
+          </div>
+        )}
       </div>
     </>
   )

@@ -88,8 +88,9 @@ export default function DesktopProvider({ children }) {
     <DesktopContext.Provider value={value}>
       {children}
       <AnimatePresence>
+        {/* A minimized window stays mounted, only hidden: minimizing must not throw away its work (an
+            unsaved project, a running game), as closing does. */}
         {windows
-          .filter(w => w.state !== 'minimized')
           .map(w => {
             const exit = !reduceMotion && pageEffect === 'fire' ? {
               opacity: 0,
@@ -112,7 +113,8 @@ export default function DesktopProvider({ children }) {
                   position: 'fixed',
                   inset: 0,
                   pointerEvents: 'none',
-                  zIndex: zOf(w)
+                  zIndex: zOf(w),
+                  display: w.state === 'minimized' ? 'none' : undefined,
                 }}
               >
                 <FloatingWindow

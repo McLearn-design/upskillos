@@ -60,7 +60,8 @@ const failed = await withGameStudio(5188, async ({ page, t, check }) => {
   await page.locator('iframe[title="Running game"]').waitFor({ timeout: 20000 });
   await page.waitForFunction(() => window.__gameStudio.store.output.some((o) => o.level === 'error'), null, { timeout: 20000 });
   const ticksAtError = await store(() => window.__gameStudio.store.output.filter((o) => o.text.startsWith('tick')).length);
-  await page.waitForTimeout(1500);
+  // Wait for two more ticks (up to 8 s): headless frame rates vary with what is drawn behind the window.
+  await page.waitForFunction((n) => window.__gameStudio.store.output.filter((o) => o.text.startsWith('tick')).length >= n + 2, ticksAtError, { timeout: 8000 }).catch(() => {});
   const out = await store(() => window.__gameStudio.store.output.map((o) => ({ level: o.level, text: o.text, file: o.file, line: o.line, node: o.node })));
   const errors = out.filter((o) => o.level === 'error');
   const ticksLater = out.filter((o) => o.text.startsWith('tick')).length;
