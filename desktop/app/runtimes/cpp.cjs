@@ -31,10 +31,9 @@
 const { promises: fs } = require('node:fs')
 const path = require('node:path')
 const { spawn, execFile } = require('node:child_process')
-const { promisify } = require('node:util')
 const { pathExists, downloadFile, extractZip, findFile, errorDetail } = require('./_shared.cjs')
+const { systemCpp } = require('./_toolchains.cjs')
 
-const execFileAsync = promisify(execFile)
 
 // Pinned to a specific dated release for the same reason Python is pinned:
 // predictable, tested internal layout. Bump deliberately.
@@ -53,9 +52,26 @@ async function gppPath(app) {
   return findFile(runtimeDir(app), 'x86_64-w64-mingw32-g++.exe')
 }
 
-async function getStatus(app) {
+// The learner's own compiler wins when it passes the probe (see
+// _toolchains.cjs); the app-managed llvm-mingw is the fallback.
+async function resolveCompiler(app) {
+  const system = await systemCpp()
+  if (system?.found) return { source: 'system', exe: system.found.exe, version: system.found.version }
   const gpp = await gppPath(app)
-  return { installed: !!gpp }
+  if (gpp) return { source: 'app', exe: gpp, version: `llvm-mingw ${LLVM_MINGW_RELEASE}` }
+  return null
+}
+
+async function getStatus(app) {
+  const compiler = await resolveCompiler(app)
+  const system = await systemCpp()
+  return {
+    installed: !!compiler,
+    source: compiler?.source ?? null,
+    version: compiler?.version ?? null,
+    path: compiler?.exe ?? null,
+    rejected: system?.rejected ?? [],
+  }
 }
 
 async function install(app, onProgress) {
@@ -90,8 +106,9 @@ const runningProcs = new Map()
 
 async function runCode(app, code, onOutput) {
   try {
-    const gpp = await gppPath(app)
-    if (!gpp) return { ok: false, reason: 'C++ toolchain is not installed' }
+    const compiler = await resolveCompiler(app)
+    if (!compiler) return { ok: false, reason: 'No C++ compiler found and the app toolchain is not installed' }
+    const gpp = compiler.exe
 
     await fs.mkdir(scratchDir(app), { recursive: true })
     const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -99,43 +116,69 @@ async function runCode(app, code, onOutput) {
     const exePath = path.join(scratchDir(app), `${runId}.exe`)
     await fs.writeFile(srcPath, code, 'utf8')
 
-    let compileResult
-    try {
-      compileResult = await execFileAsync(gpp, ['-std=c++17', '-O2', '-static', srcPath, '-o', exePath], {
-        windowsHide: true, timeout: 30000, maxBuffer: 10 * 1024 * 1024,
-      })
-    } catch (compileErr) {
-      onOutput?.({ runId, stream: 'stderr', text: compileErr.stderr || compileErr.message })
-      onOutput?.({ runId, stream: 'exit', code: 1 })
-      await fs.rm(srcPath, { force: true }).catch(() => {})
-      return { ok: true, runId } // launched (the compile step), just failed — reported via output events
-    }
-    if (compileResult.stderr) onOutput?.({ runId, stream: 'stderr', text: compileResult.stderr })
-
-    const child = spawn(exePath, [], {
-      cwd: scratchDir(app),
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    runningProcs.set(runId, child)
-
-    child.stdout.on('data', (chunk) => onOutput?.({ runId, stream: 'stdout', text: chunk.toString() }))
-    child.stderr.on('data', (chunk) => onOutput?.({ runId, stream: 'stderr', text: chunk.toString() }))
-    child.on('close', (exitCode) => {
-      runningProcs.delete(runId)
-      onOutput?.({ runId, stream: 'exit', code: exitCode })
+    const cleanup = () => {
       fs.rm(srcPath, { force: true }).catch(() => {})
       fs.rm(exePath, { force: true }).catch(() => {})
-    })
-    child.on('error', (err) => {
+    }
+    // Diagnostics name the scratch file by its full temp path; the learner
+    // only ever sees one file, so call it main.cpp.
+    const tidy = (text) => text.split(srcPath).join('main.cpp')
+
+    // Compiled in the background so the caller has runId before any output
+    // event arrives. Callers match events by runId; when a compile error was
+    // sent before runCode returned, CppNotebook dropped it, along with the
+    // exit event, and the cell stayed "running".
+    const compile = execFile(gpp, ['-std=c++17', '-O2', '-static', srcPath, '-o', exePath], {
+      windowsHide: true, timeout: 30000, maxBuffer: 10 * 1024 * 1024,
+    }, (compileErr, _stdout, compileStderr) => {
+      if (runningProcs.get(runId) !== compile) { // stopped during the compile (killRun)
+        onOutput?.({ runId, stream: 'exit', code: null })
+        cleanup()
+        return
+      }
       runningProcs.delete(runId)
-      onOutput?.({ runId, stream: 'stderr', text: `Failed to launch program: ${err.message}` })
+      if (compileErr) {
+        onOutput?.({ runId, stream: 'stderr', text: tidy(compileStderr || compileErr.message) })
+        onOutput?.({ runId, stream: 'exit', code: 1 })
+        cleanup()
+        return
+      }
+      if (compileStderr) onOutput?.({ runId, stream: 'stderr', text: tidy(compileStderr) })
+
+      const child = spawn(exePath, [], {
+        cwd: scratchDir(app),
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      runningProcs.set(runId, child)
+
+      child.stdout.on('data', (chunk) => onOutput?.({ runId, stream: 'stdout', text: chunk.toString() }))
+      child.stderr.on('data', (chunk) => onOutput?.({ runId, stream: 'stderr', text: chunk.toString() }))
+      child.on('close', (exitCode) => {
+        runningProcs.delete(runId)
+        onOutput?.({ runId, stream: 'exit', code: exitCode })
+        cleanup()
+      })
+      child.on('error', (err) => {
+        runningProcs.delete(runId)
+        onOutput?.({ runId, stream: 'stderr', text: `Failed to launch program: ${err.message}` })
+        onOutput?.({ runId, stream: 'exit', code: 1 })
+        cleanup()
+      })
     })
+    runningProcs.set(runId, compile)
 
     return { ok: true, runId }
   } catch (e) {
     return { ok: false, reason: String(e?.message ?? e) }
   }
+}
+
+function killRun(runId) {
+  const child = runningProcs.get(runId)
+  if (!child) return false
+  try { child.kill() } catch {}
+  return true
 }
 
 function killAllScripts() {
@@ -145,4 +188,4 @@ function killAllScripts() {
   runningProcs.clear()
 }
 
-module.exports = { getStatus, install, runCode, killAllScripts }
+module.exports = { getStatus, install, runCode, killRun, killAllScripts }

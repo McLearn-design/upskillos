@@ -265,6 +265,15 @@ ipcMain.handle('desktop:run-code', async (_event, runtime, code) => {
   return mod.runCode(app, code, emit)
 })
 
+// Stops one run by id (used for run timeouts, e.g. an infinite loop in a
+// lesson challenge). Run ids are unique across runtimes.
+ipcMain.handle('desktop:stop-run', async (_event, runId) => {
+  for (const mod of Object.values(RUNTIMES)) {
+    if (mod.killRun?.(runId)) return { ok: true }
+  }
+  return { ok: false }
+})
+
 // ── End desktop-only language runtimes ──────────────────────────────────────
 
 // ── Project filesystem (the Project Studio lab) ─────────────────────────────

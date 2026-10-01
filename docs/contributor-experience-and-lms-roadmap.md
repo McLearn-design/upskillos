@@ -57,6 +57,16 @@ These 14 are the only findings left; the `la8-001` collision and the Guttag Pyth
 
 **Dependency:** complete this work before learning paths rely on lesson ids as durable step references.
 
+### P1 — Content rendering defects found during the Help review (2026-10-01)
+
+Each was confirmed against the renderer; none is fixed yet.
+
+- [ ] **Visualization id collisions.** `VizFrame` keys course visualizations by file name, so when two courses have a file with the same name only one is used everywhere. 32 names are duplicated; 12 have *different* implementations (`UnitCircle` ×3, `SecantToTangent`, `ScienceNotebook` ×6, and several calculus/physics pairs), so some courses show another course's version. Decide per name which version is canonical, or rename, and add an inventory check that fails on differing duplicates.
+- [ ] **Blank "Recovering From" cards.** `MicroCycleLesson.jsx` renders `spiral.recoveryPoints` items as `{ label, note }`, but 219 of the 360 lessons with recovery points list bare lesson ids, which render as empty cards. Either resolve ids to the lesson's title and link in the renderer, or convert the data.
+- [ ] **Chemistry 1-0's notebook cells are never shown.** `LESSON_CHEM_1_0.cells` exists only in a named export; the page renders the default export, whose only visualization is a link card. Other lessons with named-export cells appeared to render through wrapper visualizations or `JSNotebook` props, but were not each verified.
+- [ ] **Two prerequisite field names.** The Lesson Builder edits `prerequisites`; the concept explorer graph reads `prereqs`. Pick one and migrate.
+- [x] **Printed figures showed raw JSON.** `print(fig.show())` (11 lesson files, and the Help guide's own advice) printed the figure data. `PythonNotebook` now draws a printed figure as well as a returned one.
+
 ### P1 — Finish the contributor system
 
 - [ ] Implement the unified course/lab/game authoring system described in [the Authoring System Plan](authoring-system-plan.md), starting with safe course editing and a native Machine Learning Lab adapter.

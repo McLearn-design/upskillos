@@ -60,7 +60,7 @@ export function SectionAnatomy() {
             badge: "text-violet-600 dark:text-violet-400",
             points: [
               "Embed a registered visualization by its id (case-sensitive)",
-              "Props configure it: { id: 'RiemannSum', props: { defaultN: 10 } }",
+              "Props configure it where supported: { id: 'ContinuityViz', props: { variant: 'Jump' } }",
               "PythonNotebook and JSNotebook are visualizations too",
               "Available ids are listed under 'Using Vizs'",
             ],

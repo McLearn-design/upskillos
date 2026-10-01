@@ -10,6 +10,7 @@ import CssSpecificityPanel from './CssSpecificityPanel'
 import RunExample from './RunExample'
 import ChallengeStep from './ChallengeStep'
 import DeltaTutor from './DeltaTutor'
+import { RAN_ON_EVENT } from './executor'
 import { CodeBlockPre, CodeBlockCode } from '../../components/math/CodeBlock.jsx'
 import { getFontFamily, getFontSize, getLineHeight } from '../../context/ThemeContext.jsx'
 import styles from './LessonEngine.module.css'
@@ -38,9 +39,18 @@ export default function LessonView({ lesson, executor, ui, onBack, onBackToSerie
   const [output, setOutput] = useState<{ text: string; kind: string }[] | null>(null)
   const [testResults, setTestResults] = useState<TestResult[] | null>(null)
   const [challengesPassed, setChallengesPassed] = useState<Set<number>>(new Set())
+  // Where the last C++/C# run happened, e.g. "your .NET SDK 10.0.301, on this computer"
+  const [ranOn, setRanOn] = useState<string | null>(null)
+
+  useEffect(() => {
+    const onRan = (e: Event) => setRanOn((e as CustomEvent<{ ranOn: string }>).detail.ranOn)
+    window.addEventListener(RAN_ON_EVENT, onRan)
+    return () => window.removeEventListener(RAN_ON_EVENT, onRan)
+  }, [])
 
   // Reset all state when a new lesson is loaded
   useEffect(() => {
+    setRanOn(null)
     setStepIdx(0)
     setEvents([])
     setTraceCode('')
@@ -60,6 +70,7 @@ export default function LessonView({ lesson, executor, ui, onBack, onBackToSerie
 
   function navigate(idx: number) {
     setStepIdx(idx)
+    setRanOn(null)
     setEvents([])
     setTraceCode('')
     setTraceStep(0)
@@ -375,6 +386,7 @@ export default function LessonView({ lesson, executor, ui, onBack, onBackToSerie
                     <span className={`text-xs font-semibold ${allPassed ? 'text-green-400' : 'text-red-400'}`}>
                       {allPassed ? `✓ All ${totalTests} tests passed` : `${passed} / ${totalTests} passed`}
                     </span>
+                    {ranOn && <span className={`text-[11px] ${ui.txt2} ml-3`}>Ran on {ranOn}</span>}
                   </div>
                   <div className={`divide-y ${ui.border}`}>
                     {testResults!.map((r, i) => (
@@ -403,6 +415,7 @@ export default function LessonView({ lesson, executor, ui, onBack, onBackToSerie
                         : ui.txt1
                       }`}>{line.text}</div>
                     ))}
+                    {ranOn && <p className={`text-[11px] ${ui.txt2} mt-3`}>Ran on {ranOn}</p>}
                     {hasTrace && (visibleOutput?.filter(l => l.kind !== 'preview').length ?? 0) === 0 && (
                       <p className={`text-xs ${ui.txt2} mt-2`}>Step through the code — output appears as print statements execute.</p>
                     )}

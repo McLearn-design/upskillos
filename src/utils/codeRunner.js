@@ -448,7 +448,7 @@ function wrapCpp(code) {
   return `${includes ? includes + '\n\n' : ''}${declarations ? declarations + '\n\n' : ''}${memberBlock ? memberBlock + '\n\n' : ''}int main() {\n${remainder.replace(/^/gm, '    ')}\n    return 0;\n}`
 }
 
-function autoWrap(lang, code) {
+export function autoWrap(lang, code) {
   if (lang === 'java') return wrapJava(code)
   if (lang === 'csharp') return wrapCSharp(code)
   if (lang === 'kotlin') return wrapKotlin(code)
