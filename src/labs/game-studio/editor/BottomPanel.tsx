@@ -47,7 +47,7 @@ export function BottomPanel({ store }: { store: Store }) {
       {tab === 'tilemap' && <div data-testid="panel-tilemap" style={{ flex: 1, minHeight: 0, padding: '4px 8px' }}><TilePanel store={store} /></div>}
       {(tab === 'output' || tab === 'code') && <div data-testid={`panel-${tab}`} style={{ flex: 1, overflowY: 'auto', fontFamily: C.mono, fontSize: 12, padding: '4px 8px' }}>
         {tab === 'output' && (store.output.length ? store.output.map((o, i) => (
-          <div key={i} onClick={() => o.file && store.openScript(o.file, { line: o.line ?? 1, column: o.column ?? 1 })}
+          <div key={i} data-testid={`output-${i}`} onClick={() => o.file && store.openScript(o.file, { line: o.line ?? 1, column: o.column ?? 1 })}
             style={{ color: COLOR[o.level], cursor: o.file ? 'pointer' : 'default', whiteSpace: 'pre-wrap', padding: '1px 0' }}>
             {o.level === 'error' ? '✖ ' : o.level === 'warn' ? '▲ ' : ''}
             {o.file && <span style={{ textDecoration: 'underline' }}>{o.file}{o.line ? `:${o.line}:${o.column ?? 1}` : ''}</span>}

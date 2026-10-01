@@ -16,6 +16,7 @@ import { potionHunt } from './potionHunt';
 import { platformer } from './platformer';
 import { breakout } from './breakout';
 import { MAZE, mazeChase } from './mazeChase';
+import { zombieArena } from './zombieArena';
 import type { GameExample } from './types';
 
 /** A starter image's real size, from its PNG header (width and height are bytes 16–23), as the editor reads it. */
@@ -446,5 +447,64 @@ describe('Maze Chase plays', () => {
     game.input.key('ArrowRight', true);
     steps(game, 240);
     expect(player.position.x).toBe(19 * 16 + 8);         // on to the far end of the row
+  });
+});
+
+describe('Zombie Arena plays', () => {
+  const DT = 1 / 60;
+  const steps = (game: Game, n: number) => { for (let i = 0; i < n; i++) game.step(DT); };
+  type Body = Node2D & { health: number; hit: () => void; hurt: () => void; safe: number };
+  async function arena() {
+    const r = await play(build(zombieArena));
+    expect(r.game.sceneApi.path).toBe('scenes/title.scene');
+    r.game.input.key('Space', true); r.game.step(DT); r.game.input.key('Space', false); r.game.step(DT);
+    return r;
+  }
+
+  it('starts on the title screen; Space changes to the arena, with the player and two zombies', async () => {
+    const { game, texts, errors } = await arena();
+    expect(game.sceneApi.path).toBe('scenes/arena.scene');
+    expect(game.sceneApi.getNodesInGroup('zombies').map((z) => z.name)).toEqual(['Zombie', 'Zombie2']);
+    expect(texts()).toEqual(['Score: 0', 'Health: ♥♥♥']);
+    expect(errors).toEqual([]);
+  });
+
+  it('holding Space shoots a bullet every quarter of a second, each a new instance of bullet.scene', async () => {
+    const { game } = await arena();
+    game.input.key('Space', true);
+    steps(game, 30);
+    const bullets = game.root.children.filter((c) => c.name.startsWith('Bullet'));
+    expect(bullets.length).toBe(2);                                  // at 0 s and 0.25 s
+  });
+
+  it('two hits kill a zombie: its died signal (connected in code) scores 10', async () => {
+    const { game, texts } = await arena();
+    const player = game.root.get<Body>('Player'), zombie = game.root.get<Body>('Zombie');
+    zombie.position = player.position.add({ x: 120, y: 0 });         // straight ahead (the player faces right)
+    game.input.key('Space', true);
+    for (let i = 0; i < 90 && zombie.parent; i++) game.step(DT);
+    expect(zombie.parent).toBe(null);                                // freed
+    expect(texts()[0]).toBe('Score: 10');
+  });
+
+  it('new zombies keep coming, from zombie.scene', async () => {
+    const { game } = await arena();
+    steps(game, 60 * 4);
+    expect(game.sceneApi.getNodesInGroup('zombies').length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('a zombie\u2019s touch costs health, shown by the HUD through the connection saved in the scene; at none, game over, and the title shows the best', async () => {
+    const { game, texts } = await arena();
+    const player = game.root.get<Body>('Player');
+    player.hurt();
+    expect(texts()[1]).toBe('Health: ♥♥♥');                         // drawn next frame
+    game.step(DT);
+    expect(texts()[1]).toBe('Health: ♥♥');
+    player.safe = 0; player.hurt(); player.safe = 0; player.hurt();
+    game.step(DT);
+    expect(game.sceneApi.path).toBe('scenes/gameover.scene');
+    expect(texts()).toContain('Score: 0   Best: 0');
+    game.input.key('Space', true); game.step(DT); game.step(DT);
+    expect(game.sceneApi.path).toBe('scenes/title.scene');
   });
 });

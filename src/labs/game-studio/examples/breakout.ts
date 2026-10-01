@@ -4,7 +4,8 @@
 // Built only with the real Scene API and the engine's real nodes and scripts, like every
 // example. What it adds: a RigidBody2D that moves by itself (bounce 1, gravityScale 0),
 // onCollision to break bricks and steer the ball off the paddle, collision layers so the
-// ball never pushes the paddle, and a screen with no camera.
+// ball never pushes the paddle, a screen with no camera, and (Phase 7) bricks that are 48
+// instances of one brick scene, in a group.
 
 import type { GameExample } from './types';
 
@@ -68,7 +69,7 @@ const ball = `export default class Ball extends RigidBody2D {
       // the ends up to 60° to the side. That is how the player aims.
       const offset = math.clamp((this.position.x - this.paddle.position.x) / 52, -1, 1);
       this.go(60 * offset);
-    } else if (body.parent.name === 'Bricks' && !body.hit) {
+    } else if (body.isInGroup('bricks') && !body.hit) {
       body.hit = true;          // count each brick once, even if touched twice before it goes
       body.queueFree();
       this.left -= 1;
@@ -111,15 +112,22 @@ scene.add('CollisionShape2D', { name: 'Left', parent: 'Walls', position: { x: -1
 scene.add('CollisionShape2D', { name: 'Right', parent: 'Walls', position: { x: 970, y: 270 }, size: { x: 20, y: 600 } })
 scene.add('CollisionShape2D', { name: 'Top', parent: 'Walls', position: { x: 480, y: -10 }, size: { x: 1000, y: 20 } })
 
-// 48 bricks, 12 across and 4 rows deep. Each is a StaticBody2D, so the ball bounces off it and
-// can tell which brick it hit. The pictures are 208 × 108; scale 0.3 makes them 62.4 × 32.4.
+// One brick is its own scene: a StaticBody2D (so the ball bounces off it) in the group "bricks",
+// with a picture (208 × 108, shown at 0.3: 62.4 × 32.4) and a shape. The wall is 48 instances of it.
 const colours = [${BRICKS.map((b) => `'${b}'`).join(', ')}]
+scene = project.createScene('scenes/brick.scene', 'StaticBody2D', 'Brick')
+scene.root.groups = ['bricks']
+scene.add('Sprite2D', { name: 'Sprite', texture: colours[0], scale: { x: 0.3, y: 0.3 } })
+scene.add('CollisionShape2D', { name: 'Shape', size: { x: 62, y: 32 } })
+
+// Back to the game: 12 across and 4 rows deep. Each row but the first changes its bricks' picture:
+// an override on those instances; the brick scene itself stays red.
+scene = project.scene('scenes/breakout.scene')
 scene.add('Node2D', { name: 'Bricks' })
 for (let row = 0; row < 4; row++) {
   for (let col = 0; col < 12; col++) {
-    const b = scene.add('StaticBody2D', { name: 'Brick', parent: 'Bricks', position: { x: 84 + 72 * col, y: 70 + 36 * row } })
-    scene.add('Sprite2D', { name: 'Sprite', parent: b.path, texture: colours[row], scale: { x: 0.3, y: 0.3 } })
-    scene.add('CollisionShape2D', { name: 'Shape', parent: b.path, size: { x: 62, y: 32 } })
+    const b = scene.instance('scenes/brick.scene', { parent: 'Bricks', position: { x: 84 + 72 * col, y: 70 + 36 * row } })
+    if (row > 0) scene.get(\`Bricks/\${b.name}/Sprite\`).texture = colours[row]
   }
 }
 
@@ -159,6 +167,7 @@ export const breakout: GameExample = {
     'Open scripts/ball.js. onCollision(body, normal) runs when the ball hits something. A brick is removed with queueFree(); the paddle sets a new direction from where it was hit. The API reference link above the script explains every method it uses.',
     'Collision layers: select Ball and look at collisionLayer (2) and collisionMask (1). The paddle’s mask is 1 only, so it never notices the ball on layer 2, and the ball cannot push it. Turn off layer 1 in the Ball’s collisionMask and run: now it notices nothing, and flies through the paddle, the bricks and the walls.',
     'There is no Camera2D, so the view is the screen: (0, 0) is the top-left corner and (960, 540) the bottom-right. The walls are just off the screen’s edges, and there is none at the bottom.',
-    'Try it yourself: select Bricks › Brick and press Ctrl+D, then drag the copy into the gap under the wall. It is a real brick straight away: the script counts the bricks when the game starts.',
+    'Every brick is an instance of brick.scene (⧉ in the tree). Open brick.scene and change its Shape or its Sprite\u2019s scale: all 48 bricks change. The rows below the first override only their Sprite\u2019s texture (select one: the texture is marked, with ↺ to go back to red).',
+    'Try it yourself: select Bricks › Brick and press Ctrl+D, then drag the copy into the gap under the wall. It is a real brick straight away: it is in the group "bricks", which the ball checks with body.isInGroup(\u2019bricks\u2019).',
   ],
 };

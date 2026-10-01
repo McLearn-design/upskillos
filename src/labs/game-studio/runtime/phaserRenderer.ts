@@ -12,6 +12,7 @@
 
 import * as Phaser from 'phaser';
 import type { DrawItem, Renderer, View } from '../engine/game';
+import { tileFlags, tileId, tileTransform } from '../core/tiles';
 
 type Obj = Phaser.GameObjects.Image | Phaser.GameObjects.Text | Phaser.Tilemaps.TilemapLayer;
 interface Rec { obj: Obj; kind: DrawItem['kind']; screen: boolean; map?: Phaser.Tilemaps.Tilemap; version?: string; offset?: { x: number; y: number } }
@@ -92,7 +93,12 @@ export class PhaserRenderer implements Renderer {
     const key = this.scene.textures.exists(it.texture) ? it.texture : '__MISSING';
     const set = map.addTilesetImage(key, key, it.tileWidth, it.tileHeight, it.margin, it.spacing, 0)!;
     const layer = map.createBlankLayer('tiles', set, 0, 0)!;
-    for (let i = 0; i < it.cells.length; i += 3) layer.putTileAt(it.cells[i + 2], it.cells[i] - x0, it.cells[i + 1] - y0);
+    for (let i = 0; i < it.cells.length; i += 3) {
+      const tile = layer.putTileAt(tileId(it.cells[i + 2]), it.cells[i] - x0, it.cells[i + 1] - y0);
+      // A tile flipped or turned in Tiled.
+      const flags = tileFlags(it.cells[i + 2]);
+      if (flags && tile) { const tf = tileTransform(flags); tile.rotation = tf.rotation; tile.flipX = tf.flipX; }
+    }
     return { obj: layer, kind: 'tiles', screen: it.screen, map, version, offset: { x: x0 * it.tileWidth, y: y0 * it.tileHeight } };
   }
 }

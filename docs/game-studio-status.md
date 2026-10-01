@@ -449,13 +449,138 @@ phase table names it.
 - `e2e/phase6.acceptance.mjs` (11/11).
 - `npm run game:acceptance`: 15/15, 9/9, 10/10, 10/10, 10/10 and 11/11.
 
+## Done: Phase 3's error test, and Tiled import (2026-10-01)
+
+**Phase 3 is complete.** `e2e/phase3.acceptance.mjs` (6/6), through the editor:
+- A script that throws on its 30th frame is reported once in Output, with its file, line and node:
+  `scripts/broken.js:6 this.notThere is not a function (node Broken)`.
+- Another script keeps logging, because the error stopped only its own node.
+- Clicking the error opens the script at line 6.
+- Typing a syntax error and pressing Run refuses to start ("Not running: 1 script has a syntax error"),
+  pointing at `scripts/broken.js:3:20`.
+- Clicking that error puts the cursor at line 3, column 20.
+
+**Tiled import** finishes the Phase 6 row. Tiled (mapeditor.org) is the free map editor most 2D art is made
+for, and Kenney's packs include Tiled maps.
+- **Formats:** maps in Tiled's XML (`.tmx`) or JSON (`.tmj`), with tilesets inside the map or in their own
+  files (`.tsx`, `.tsj`).
+- **Layer data:** CSV, arrays or uncompressed base64; finite maps and infinite maps (chunks); group layers;
+  layer offsets; hidden layers.
+- **Solid tiles:** taken from a tile's collision shapes, or a `solid` / `collides` property.
+- **Flipped and turned tiles:** Tiled's three flip flags are kept in the cell. The editor and Phaser draw them
+  the same way, using the mapping Phaser's own Tiled loader uses. Kenney's sample map depends on this for its
+  walls.
+- **An import is Scene API code run as one command**, so it is one undo step and GUI → code shows it: a tileset
+  for each Tiled tileset, a TileMapLayer for each tile layer (one per tileset when a layer uses several),
+  painted with `paint([...])`.
+- **Images** are matched by the end of their path: `../Tilemap/tilemap.png` finds
+  `assets/tiny-dungeon/tilemap/tilemap.png`.
+- **What it cannot take, it says how to fix in Tiled:** compressed layers ("set Tile Layer Format to CSV"),
+  a tileset file not chosen with the map, an image not in the project, or an isometric map. Object and image
+  layers are left out, and named in the message.
+
+**In the editor:**
+- Files › Import… also takes `.tmx` and `.tmj`, with their `.tsx` and `.tsj` chosen alongside.
+- Starter art › Tiny Dungeon has "Tiled map: sample-map.tmx › Import". It is Kenney's own sample, now in
+  `starter/tiny-dungeon/tiled/`; it adds the sheet it needs and imports the map.
+
+**Tested:**
+- `core/xml.ts`: a small XML reader, so the model still runs in Node.
+- `core/tiled.test.ts` (8 tests), on Kenney's real files:
+  - 32 × 20 cells and three layers;
+  - gid 51 with its flags becomes tile 50 with the same flags;
+  - the import builds a project with no problems;
+- and on JSON maps covering every other form and every error message.
+- The Phase 6 browser test (13/13) imports the sample both ways, and the game draws it.
+
+## Done: Phase 7, scene composition (2026-10-01)
+
+The milestone was "the user can build a multi-scene game". Zombie Arena is one, and the Phase 7 browser test
+works with it in the editor.
+
+**Scenes inside scenes (§41).** A node can be an instance of another scene (`instance: "scenes/coin.scene"`).
+- Its type, properties, script, groups, connections and children come from that scene, so editing the source
+  changes every instance.
+- Saved on the instance is only what differs: its own properties, and `overrides` (changed properties of
+  nodes inside it, by path: `{ "Sprite": { "scale": … } }`). That is the spec's "source scene, instance,
+  instance overrides".
+- `expandScene` builds the full tree for the engine and the editor. Nodes from an instance get stable ids
+  (`<instance>:<id in its scene>`).
+- They can be changed (as overrides) but not renamed, moved or deleted, which belongs in their own scene.
+- A scene cannot contain itself, directly or through others; the problem report names any loop.
+- **In the editor:**
+  - Files › ⧉ puts a scene into the one being edited.
+  - The tree shows an instance's contents greyed and marks instances with ⧉ (click to open the source).
+  - The Inspector says where a node comes from, marks overridden properties, and ↺ puts the source's value
+    back.
+  - GUI → code logs `scene.instance(...)`, and overrides as `scene.get("Zombie2/Sprite").scale = …`.
+
+**Groups (§42).** Nodes have groups, set in Inspector › Groups. Scripts use:
+- `isInGroup`, `addToGroup`, `removeFromGroup`;
+- `scene.getNodesInGroup`, `scene.callGroup`.
+
+**Signals (§43).** Any node can `emit(name, ...args)`, and `connect(name, target, method)` or a function
+connects to it.
+- The engine's own events (`bodyEntered`, `bodyExited`, `animationFinished`, `onCollision`) are emitted as
+  signals too, so an area with no script can still be wired to something.
+- Connections can be saved in the scene, from Inspector › Signals, and are wired when the game starts. They
+  keep their target by id, so renaming or moving it does not break them, and deleting it removes them.
+- A connected method that does not exist is reported against the node it should belong to.
+
+**Scenes while the game runs:**
+- `scene.instantiate(path)` makes a copy of a scene, with its scripts, for bullets and enemies.
+- `scene.change(path)` switches scenes at the end of the frame: old nodes get `destroyed()`, new ones
+  `ready()`.
+- Values that must last from scene to scene live in a script module: modules are loaded once per game.
+  Zombie Arena's `state.js` keeps the score and the best.
+
+**Resources.** In Godot, resources are shared data files. Here the shared files are tilesets (Phase 6) and
+scenes used as instances. A general data file type is not needed yet, and has not been invented.
+
+**Format 3:** instances, overrides, groups and connections on nodes. Format 2 projects migrate unchanged.
+
+**The fifth example, Zombie Arena** (Top-down Shooter art):
+- a title screen, an arena and game over, switched with `scene.change`;
+- the player is an instance of `player.scene`;
+- zombies and bullets come from `zombie.scene` and `bullet.scene`, made while running;
+- bullets hit `isInGroup('zombies')`;
+- each zombie's `died` signal is connected in code;
+- the player's `healthChanged` is connected to the HUD in the scene, with no code wiring;
+- the score and best are kept in `state.js`.
+
+**Breakout now uses instances:** its 48 bricks are instances of `brick.scene`, in the group `bricks`. The rows
+below the first override only their picture. Its tests pass unchanged.
+
+**Problems found and fixed:**
+- **Renaming, deleting or duplicating a node inside an instance failed with "No node n9:n5".** The commands
+  worked out the node's path for the log before anything else; they now find it through the expanded scene,
+  so the clear message ("rename it in its own scene") comes through.
+- **After changing a node inside an instance, the selection was cleared.** The store kept only selected nodes
+  it could find in the saved scene; it now looks in the expanded scene.
+- **`node.children`, `node.parent` and `scene.root` were typed as plain Node** in the script editor, so calling
+  a method from that node's own script (`scene.root.gameOver()`) was underlined. They are typed like `get()`.
+- **The Files panel grew wider than its column** when a long image name did not fit, which hid the ★ and ⧉
+  buttons. Names now shorten with "…".
+- **Closing a script tab could make Monaco report "Canceled" as a page error,** once every script was kept
+  as a model. Models are now kept when a tab closes, set to the project's text when opened, and removed when
+  their script is deleted.
+
+**Tested:**
+- `npx vitest run src/labs/game-studio`: 159 tests in 13 files. New:
+  - `core/instances.test.ts`: expansion, the source changing every instance, overrides (logged, replayed and
+    removed again), loops, refused edits, groups and connections as commands, connections surviving a rename,
+    the problem report, format 3;
+  - `engine/scenes.test.ts`: instances running their scripts, groups, `connect` and `emit`, a connection saved
+    in the scene, a missing method reported once, `callGroup`, `instantiate`, `change`;
+  - Zombie Arena played through: title → arena, shooting, a kill scoring through the signal, zombies coming,
+    the HUD through the saved connection, game over, back to the title.
+- `e2e/phase7.acceptance.mjs` (9/9).
+- `npm run game:acceptance`: all eight browser tests pass (15, 6, 9, 12, 10, 10, 13 and 9 checks).
+
 ## Next
 
-1. **Phase 3, the script editor:** a browser test for a run-time script error and click-to-source.
-2. **Tiled import** (`.tmj`), to finish the Phase 6 row; and Coin Run's ground could move onto a TileMapLayer
-   too, as Potion Hunt's has.
-3. **Phase 7, scene instancing, groups and signals**, then **Phase 8, export**.
-4. **Phase 9, machine learning (the user asked for it at the end of the plan).** A Gymnasium-style environment
+1. **Phase 8, export:** the project as a zip, and the game exported to run on its own (Pages-safe).
+2. **Phase 9, machine learning (the user asked for it at the end of the plan).** A Gymnasium-style environment
    around any Game Studio game:
    - `reset()` and `step(action)`, returning what the agent sees, its reward, and whether the game has ended;
    - the game runs headless, faster than real time, as the example tests already do;
@@ -464,7 +589,7 @@ phase table names it.
    The same environment would be usable from Python in the ML Lab (Pyodide, beside Lab 37 on reinforcement
    learning), with a way to watch a trained agent play in the editor. It learns from game state, not screen
    pixels: learning from pixels is too slow in a browser. About 2–3 sessions.
-5. **After Game Studio is finished: bring Tile Mapper up to Game Studio's standard (the user asked for this,
+3. **After Game Studio is finished: bring Tile Mapper up to Game Studio's standard (the user asked for this,
    2026-09-30).** `src/labs/tile-mapper` should get the same treatment:
    - a real architecture with an architecture doc;
    - commands with undo, and GUI → code;
@@ -481,11 +606,11 @@ phase table names it.
 | 0 | Architecture decisions, licence check | This record | Done |
 | 1 | Model, editor shell, commands, undo, code log, image assets, Sprite/Node2D/CharacterBody2D (no collision), scripts, input, iframe runtime, IndexedDB, the Kenney starter set | The Phase 1 acceptance test | Done |
 | 2 | Camera, more node types, asset browser, drag-and-drop, project settings | Phase 2 browser test | Done |
-| 3 | Script editor completeness, Output with click-to-source, TypeScript later | Script error test | Mostly done: API reference, hover docs, underlined mistakes; the run-time error test is left |
+| 3 | Script editor completeness, Output with click-to-source, TypeScript later | Script error test | Done: API reference, hover docs, underlined mistakes, run-time and syntax errors with click-to-source (phase 3 test) |
 | 4 | Physics: bodies, shapes, layers and masks, gravity | Platformer, Breakout (physics part) | Done: Potion Hunt, Coin Run and Breakout all pass |
 | 5 | Animation: sprite frames, property tracks, timeline | Platformer animation | Done: AnimatedSprite2D, AnimationPlayer and the Animation panel; Coin Run uses both |
-| 6 | Tilemaps: tilesets, painting, tile collision, Tiled import | Maze chase | Done, except Tiled import: tilesets, TileMapLayer, the TileMap panel, Maze Chase |
-| 7 | Scene instancing, groups, signals, resources | Breakout, puzzle, shooter | |
+| 6 | Tilemaps: tilesets, painting, tile collision, Tiled import | Maze chase | Done: tilesets, TileMapLayer, the TileMap panel, Tiled import, Maze Chase |
+| 7 | Scene instancing, groups, signals, resources | Breakout, puzzle, shooter | Done: instances with overrides, groups, signals, instantiate and change; Breakout (instanced bricks) and Zombie Arena |
 | 8 | Project zip, game export, Pages-safe output | Export test: open the exported game on its own | |
 | 9 | Machine learning: a Gymnasium-style environment for any game, used from the ML Lab | Train an agent to play Breakout from game state | |
 | After | Tile Mapper (and Sprite Lab) brought up to Game Studio's standard | Their own acceptance tests, and use from Game Studio | |

@@ -13,10 +13,11 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { Store } from './store';
 import { C, useStore } from './kit';
 import { placeNodes, spriteLook, type PlacedNode } from '../core/sceneView';
+import { findNode } from '../core/project';
 import { apply, invert, multiply, type Mat2D } from '../core/math2d';
 import { propValue } from '../core/registry';
 import type { Vec2 } from '../core/types';
-import { bucketEdits, rectEdits, solidRects, tileRect, usedRect, type CellEdit } from '../core/tiles';
+import { bucketEdits, rectEdits, solidRects, tileFlags, tileId, tileRect, tileTransform, usedRect, type CellEdit } from '../core/tiles';
 
 interface Camera { x: number; y: number; zoom: number }
 export const ASSET_DRAG = 'application/x-game-studio-asset';
@@ -108,8 +109,15 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
         set(pn.world);
         g.imageSmoothingEnabled = p.settings.pixelArt === false;
         for (let i = 0; i < cells.length; i += 3) {
-          const r = tileRect(info.data, info.columns, cells[i + 2]);
-          if (img && cells[i + 2] < info.count) g.drawImage(img, r.x, r.y, r.w, r.h, cells[i] * tw, cells[i + 1] * th, tw, th);
+          const id = tileId(cells[i + 2]), flags = tileFlags(cells[i + 2]), r = tileRect(info.data, info.columns, id);
+          if (img && id < info.count && !flags) g.drawImage(img, r.x, r.y, r.w, r.h, cells[i] * tw, cells[i + 1] * th, tw, th);
+          else if (img && id < info.count) {
+            // Flipped or turned (from Tiled): about the cell's centre, as the game does.
+            const tf = tileTransform(flags), cx = cells[i] * tw + tw / 2, cy = cells[i + 1] * th + th / 2;
+            set(multiply(pn.world, multiply([Math.cos(tf.rotation), Math.sin(tf.rotation), -Math.sin(tf.rotation), Math.cos(tf.rotation), cx, cy], [tf.flipX ? -1 : 1, 0, 0, 1, 0, 0])));
+            g.drawImage(img, r.x, r.y, r.w, r.h, -tw / 2, -th / 2, tw, th);
+            set(pn.world);
+          }
           else { g.strokeStyle = C.bad; g.lineWidth = 1 / z; g.strokeRect(cells[i] * tw, cells[i + 1] * th, tw, th); }
         }
         continue;
@@ -240,7 +248,7 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
   const frameGameArea = useCallback(() => { const p = store.project; if (p) frameRect(0, 0, p.settings.width, p.settings.height); }, [store, frameRect]);
   /** Fit everything drawn in the world (not the HUD); with nothing yet, the game area. */
   const frameAll = useCallback(() => {
-    const s = store.scene; if (!s) return frameGameArea();
+    const s = store.expanded; if (!s) return frameGameArea();
     const pts: Vec2[] = [];
     for (const pn of placeNodes(s)) {
       if (pn.screen || !pn.visible) continue;
@@ -251,7 +259,7 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
     frameRect(Math.min(...pts.map((q) => q.x)), Math.min(...pts.map((q) => q.y)), Math.max(...pts.map((q) => q.x)), Math.max(...pts.map((q) => q.y)));
   }, [store, frameRect, frameGameArea]);
   const frameSelected = useCallback(() => {
-    const s = store.scene; if (!s || !store.selection.length) return frameAll();
+    const s = store.expanded; if (!s || !store.selection.length) return frameAll();
     const pts: Vec2[] = [];
     for (const pn of placeNodes(s)) if (store.selection.includes(pn.node.id)) {
       const box = localBox(store, pn) ?? { x: -32, y: -32, w: 64, h: 64 };
@@ -286,7 +294,7 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
   // ── painting a tile layer ──────────────────────────────────────────────
   /** The cell of the layer being painted under a point on the canvas. */
   const cellAt = (sx: number, sy: number): { x: number; y: number } | null => {
-    const layer = store.tileLayer, s = store.scene;
+    const layer = store.tileLayer, s = store.expanded;
     const info = layer && store.tilesetInfo(propValue('TileMapLayer', layer.props, 'tileset') as string | null);
     if (!layer || !s || !info) return null;
     const pn = placeNodes(s).find((x) => x.node.id === layer.id)!;
@@ -341,7 +349,7 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
     (e.target as Element).setPointerCapture(e.pointerId);
     if (e.button === 1 || e.button === 2 || space.current) { drag.current = { kind: 'pan', sx, sy, cx: cam.current.x, cy: cam.current.y }; return; }
     if (store.tileLayer) { tileDown(sx, sy, e.altKey); return; }   // Alt-click picks the tile under the pointer
-    const s = store.scene;
+    const s = store.expanded;
     let id = hit(sx, sy);
     // Rotate and scale work on the selection wherever you press (not on another node), so a small node need not be grabbed exactly.
     if (!id && store.tool !== 'move' && store.selected && s && store.selected.id !== s.root.id) id = store.selected.id;
@@ -391,7 +399,7 @@ export function Viewport({ store, onFrameRef }: { store: Store; onFrameRef?: (fn
     if (tileDrag.current) { tileDrag.current = null; store.commitStroke(store.tile.tool === 'erase' ? 'Erase tiles' : store.tile.tool === 'rect' ? 'Fill a rectangle' : 'Paint tiles'); return; }
     const d = drag.current; drag.current = null;
     if (d?.kind === 'move' && store.doc && store.sceneId) {
-      const n = store.doc.node(store.sceneId, d.id!);
+      const n = store.expanded && findNode(store.expanded, d.id!);   // a node inside an instance too
       const [verb, prop] = store.tool === 'rotate' ? ['Rotate', 'rotation'] : store.tool === 'scale' ? ['Scale', 'scale'] : ['Move', 'position'];
       store.endLiveEdit(`${verb} ${n?.name}`, d.id!, prop);
     }

@@ -21,8 +21,10 @@ export function AddNodeMenu({ store, onDone }: { store: Store; onDone?: () => vo
 }
 
 export function SceneTree({ store }: { store: Store }) {
+  /** The scene a node inside an instance comes from: its instance's source. */
+  const findSource = (n: NodeData): string => { const owner = n.inherited && store.scene && findNode(store.scene, n.inherited.instance); return owner?.instance ?? ''; };
   useStore(store);
-  const s = store.scene;
+  const s = store.scene, view = store.expanded;   // the tree shows instances' contents (greyed: they belong to their own scene)
   const [renaming, setRenaming] = useState<string | null>(null);
   const [over, setOver] = useState<{ id: string; where: 'into' | 'before' } | null>(null);
   /** Which branches are open. A branch with more than 20 children (a floor of tiles) starts closed. */
@@ -44,9 +46,11 @@ export function SceneTree({ store }: { store: Store }) {
     }
   };
 
+  const openSource = (path: string) => { const src = store.project!.scenes.find((x) => x.path === path); if (src) store.openScene(src.id); };
   const row = (n: NodeData, depth: number): React.ReactNode => {
-    const isRoot = n.id === s!.root.id, active = sel.has(n.id);
-    const isOpen = openState[n.id] ?? n.children.length <= 20;
+    const isRoot = n.id === s!.root.id, active = sel.has(n.id), inherited = !!n.inherited;
+    // An instance starts closed: its contents are its scene's, not this one's.
+    const isOpen = openState[n.id] ?? (!n.instance && n.children.length <= 20);
     return (
       <div key={n.id}>
         {!isRoot && (
@@ -55,17 +59,17 @@ export function SceneTree({ store }: { store: Store }) {
         )}
         <div
           data-testid={`tree-${n.name}`}
-          draggable={!isRoot && renaming !== n.id}
+          draggable={!isRoot && !inherited && renaming !== n.id}
           onDragStart={(e) => { e.dataTransfer.setData(DRAG, n.id); e.dataTransfer.effectAllowed = 'move'; }}
           onDragOver={(e) => { if (e.dataTransfer.types.includes(DRAG)) { e.preventDefault(); setOver({ id: n.id, where: 'into' }); } }}
           onDragLeave={() => setOver(null)}
           onDrop={(e) => drop(n, 'into', e)}
           onClick={(e) => store.select(e.shiftKey ? [...store.selection.filter((x) => x !== n.id), n.id] : [n.id])}
-          onDoubleClick={() => setRenaming(n.id)}
-          title={nodeType(n.type).help}
+          onDoubleClick={() => { if (inherited) store.say('That node is part of an instance: rename it in its own scene'); else setRenaming(n.id); }}
+          title={inherited ? `From ${findSource(n)}: change it there for every instance, or change its properties here for this one` : n.instance ? `An instance of ${n.instance}` : nodeType(n.type).help}
           style={{
             display: 'flex', alignItems: 'center', gap: 5, padding: `2px 6px 2px ${8 + depth * 14}px`, cursor: 'default', fontSize: 12,
-            background: active ? '#2b4a6e' : over?.id === n.id && over.where === 'into' ? '#26384f' : 'transparent', color: active ? '#fff' : C.text, whiteSpace: 'nowrap',
+            background: active ? '#2b4a6e' : over?.id === n.id && over.where === 'into' ? '#26384f' : 'transparent', color: active ? '#fff' : inherited ? C.dim : C.text, whiteSpace: 'nowrap', fontStyle: inherited ? 'italic' : 'normal',
           }}>
           <span data-testid={`toggle-${n.name}`} onClick={(e) => { e.stopPropagation(); if (n.children.length) setOpenState((o) => ({ ...o, [n.id]: !isOpen })); }}
             style={{ width: 10, color: C.faint, fontSize: 9, cursor: n.children.length ? 'pointer' : 'default' }}>{n.children.length ? (isOpen ? '▾' : '▸') : ''}</span>
@@ -78,6 +82,7 @@ export function SceneTree({ store }: { store: Store }) {
           ) : <span>{n.name}</span>}
           {!isOpen && n.children.length > 0 && <span style={{ color: C.faint, fontSize: 11 }}>({n.children.length})</span>}
           <span style={{ flex: 1 }} />
+          {n.instance && <span data-testid={`tree-instance-${n.name}`} title={`An instance of ${n.instance}: click to open that scene`} onClick={(e) => { e.stopPropagation(); openSource(n.instance!); }} style={{ color: C.accent, cursor: 'pointer', fontSize: 11 }}>⧉</span>}
           {n.script && <span title={`Script: ${n.script}`} onClick={(e) => { e.stopPropagation(); store.openScript(n.script!); }} style={{ color: C.warn, cursor: 'pointer', fontSize: 11 }}>{'</>'}</span>}
         </div>
         {isOpen && n.children.map((c) => row(c, depth + 1))}
@@ -90,9 +95,14 @@ export function SceneTree({ store }: { store: Store }) {
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
       <PanelTitle right={s && <AddNodeMenu store={store} />}>SCENE{s ? ` · ${s.path.replace(/^scenes\//, '')}` : ''}</PanelTitle>
       <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 6 }} onClick={(e) => { if (e.target === e.currentTarget) store.select([]); }}>
-        {s ? row(s.root, 0) : <div style={{ padding: 10, color: C.faint, fontSize: 12 }}>No scene open.</div>}
+        {s && view ? row(view.root, 0) : <div style={{ padding: 10, color: C.faint, fontSize: 12 }}>No scene open.</div>}
       </div>
-      {s && selected && selected.id !== s.root.id && (
+      {s && selected?.inherited && (
+        <div style={{ padding: 6, borderTop: `1px solid ${C.border}`, fontSize: 11, color: C.dim }}>
+          Part of an instance of {findSource(selected)}. <span style={{ color: C.accent, cursor: 'pointer' }} onClick={() => openSource(findSource(selected))}>Open it</span>
+        </div>
+      )}
+      {s && selected && !selected.inherited && selected.id !== s.root.id && (
         <div style={{ display: 'flex', gap: 4, padding: 6, borderTop: `1px solid ${C.border}` }}>
           <Btn small onClick={() => setRenaming(selected.id)} title="Rename (double-click)">Rename</Btn>
           <Btn small onClick={() => { const c = store.act((d) => d.duplicate(s.id, selected.id)); if (c) store.select([c.id]); }} title="Duplicate (Ctrl+D)">Duplicate</Btn>

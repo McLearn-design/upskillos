@@ -176,7 +176,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
       </div>
 
       {/* Left: scene tree over files */}
-      <div style={{ gridColumn: 1, gridRow: 3, display: 'grid', gridTemplateRows: '1fr 1fr', borderRight: `1px solid ${C.border}`, background: C.panel, minHeight: 0 }}>
+      <div style={{ gridColumn: 1, gridRow: 3, display: 'grid', gridTemplateRows: '1fr 1fr', gridTemplateColumns: 'minmax(0, 1fr)', borderRight: `1px solid ${C.border}`, background: C.panel, minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
         <div style={{ minHeight: 0, borderBottom: `1px solid ${C.border}` }}><SceneTree store={store} /></div>
         <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', background: C.panel2, borderBottom: `1px solid ${C.border}` }}>

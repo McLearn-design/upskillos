@@ -38,6 +38,9 @@ export function ScriptEditor({ store, path }: { store: Store; path: string }) {
       if (!model) monaco.editor.createModel(text, 'javascript', uri);
       else if (model.getValue() !== text) model.setValue(text);
     }
+    // A script that was deleted (or belongs to another project) is no longer importable.
+    const paths = new Set(store.project.scripts.map((x) => `/${x.path}`));
+    for (const m of monaco.editor.getModels()) if (m.uri.path.startsWith('/scripts/') && !paths.has(m.uri.path) && m.uri.path !== `/${path}`) m.dispose();
   };
   useEffect(syncModels);
 
@@ -57,6 +60,9 @@ export function ScriptEditor({ store, path }: { store: Store; path: string }) {
       monaco.languages.typescript.javascriptDefaults.setCompilerOptions({ target: monaco.languages.typescript.ScriptTarget.ES2020, lib: ['es2020'], allowNonTsExtensions: true, allowJs: true, checkJs: true, module: monaco.languages.typescript.ModuleKind.ESNext, moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs });
     }
     monacoRef.current = monaco;
+    // A kept model may hold text from before (another project with the same script path): show this project's.
+    const own = editor.getModel();
+    if (own && own.getValue() !== text) own.setValue(text);
     syncModels();
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => { store.saveScript(path); });
     if (store.reveal?.path === path) {
@@ -74,6 +80,7 @@ export function ScriptEditor({ store, path }: { store: Store; path: string }) {
       <div style={{ flex: 1, minHeight: 0 }}>
         <Editor
           path={`file:///${path}`}
+          keepCurrentModel   // every script stays a model (see syncModels), so closing a tab does not dispose one
           language="javascript"
           theme="vs-dark"
           value={text}

@@ -8,10 +8,40 @@
 // [x, y, tile, x, y, tile, …], kept in order (by y, then x) so the same map always saves the same.
 // x and y are cell coordinates: cell (2, 3) covers pixels 2·w to 3·w across and 3·h to 4·h down,
 // from the layer's origin. A tile of −1 in an edit means "erase".
+//
+// A stored tile may also carry Tiled's flip flags in its top three bits, as Tiled stores them:
+// 2³¹ mirrors it left to right, 2³⁰ top to bottom, 2²⁹ along its diagonal (which, with the
+// others, makes the quarter turns). tileId() strips them; tileTransform() says how to draw them.
 
 import type { TilesetData } from './types';
 
 export type CellEdit = [x: number, y: number, tile: number];
+
+const FLAG = 2 ** 29;
+/** The tile number without flip flags. */
+export const tileId = (stored: number): number => stored % FLAG;
+/** The flip flags: 4 is horizontal, 2 vertical, 1 diagonal. */
+export const tileFlags = (stored: number): number => Math.floor(stored / FLAG);
+/** A tile number with flip flags. */
+export const withFlags = (id: number, flags: number): number => id + flags * FLAG;
+
+/**
+ * How to draw a flipped tile: turn it by `rotation` (radians, clockwise on screen) about its centre,
+ * then mirror it left to right if `flipX`. The same mapping Phaser uses for Tiled's flags.
+ */
+export function tileTransform(flags: number): { rotation: number; flipX: boolean } {
+  const h = (flags & 4) !== 0, v = (flags & 2) !== 0, d = (flags & 1) !== 0;
+  if (d) {
+    if (h && v) return { rotation: Math.PI / 2, flipX: true };
+    if (h) return { rotation: Math.PI / 2, flipX: false };
+    if (v) return { rotation: (3 * Math.PI) / 2, flipX: false };
+    return { rotation: Math.PI / 2, flipX: true };
+  }
+  if (h && v) return { rotation: Math.PI, flipX: false };
+  if (h) return { rotation: 0, flipX: true };
+  if (v) return { rotation: Math.PI, flipX: true };
+  return { rotation: 0, flipX: false };
+}
 
 /** How many tiles across and down an image of this size makes. */
 export function tilesetGrid(ts: Pick<TilesetData, 'tileWidth' | 'tileHeight' | 'margin' | 'spacing'>, imageWidth: number, imageHeight: number): { columns: number; rows: number; count: number } {
@@ -92,7 +122,7 @@ export function usedRect(cells: number[]): { x0: number; y0: number; x1: number;
  */
 export function solidRects(cells: number[], solid: Set<number>): { x: number; y: number; w: number; h: number }[] {
   const rows = new Map<number, number[]>();
-  for (let i = 0; i + 2 < cells.length; i += 3) if (solid.has(cells[i + 2])) { const r = rows.get(cells[i + 1]) ?? []; r.push(cells[i]); rows.set(cells[i + 1], r); }
+  for (let i = 0; i + 2 < cells.length; i += 3) if (solid.has(tileId(cells[i + 2]))) { const r = rows.get(cells[i + 1]) ?? []; r.push(cells[i]); rows.set(cells[i + 1], r); }
   // Runs per row.
   const runs: { x: number; y: number; w: number }[] = [];
   for (const [y, xs] of [...rows].sort((a, b) => a[0] - b[0])) {

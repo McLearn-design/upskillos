@@ -396,3 +396,14 @@ Recorded during Phase 1 (2026-09-30). None of them change a boundary.
 16. **A brush stroke is one command, logged as `paint(...)` (ADR 8).** Logging the whole `cells` list after each
    stroke would make GUI → code unreadable, so tile edits are their own commands: `paint`, and in written code
    `fill`, `setCell` and `fromText`, which reads a map drawn as text.
+17. **Instances are expanded, not copied (ADR 6, ADR 10).** An instance saves only its source scene's path and what
+   it changes: its own properties, and overrides by path inside it. `expandScene` builds the full tree whenever it
+   is needed, for the engine and the editor alike, so a change to the source reaches every instance with no
+   copying to keep in step. Nodes from an instance get ids derived from the instance's and their own, so they are
+   stable across expansions and can be selected and inspected. Format 3.
+18. **Signal connections keep their target by id (ADR 8).** Paths change when nodes are renamed or moved; ids do
+   not. A connection is logged by path (`connect("bodyEntered", "Player", "collect")`), as every log line is, and
+   stored by id. The engine's callbacks are emitted as signals of the same name, so the script-method style and the
+   connection style work together.
+19. **What lasts between scenes lives in a script module.** Godot uses autoloaded nodes for this. A script module
+   is loaded once per game, so its exports already outlast `scene.change()`; no new node kind was needed.

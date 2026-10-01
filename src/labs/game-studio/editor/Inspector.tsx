@@ -8,10 +8,11 @@ import React, { useEffect } from 'react';
 import type { Store } from './store';
 import { Btn, C, NumberField, Row, Section, TextField, selectStyle, useStore } from './kit';
 import { lineage, nodeType, propValue, type PropDef } from '../core/registry';
-import { findNode, pathOf, parentOf } from '../core/project';
+import { findNode, pathOf, parentOf, walk } from '../core/project';
+import { expandSceneRoot } from '../core/instances';
 import { trackPath } from '../core/animation';
 import { lit } from '../core/doc';
-import type { PropValue, SpriteAnimation, Vec2 } from '../core/types';
+import type { NodeData, PropValue, SpriteAnimation, Vec2 } from '../core/types';
 import { SpriteFramesEditor } from './SpriteFramesEditor';
 
 const DEG = 180 / Math.PI;
@@ -131,11 +132,45 @@ export function Inspector({ store }: { store: Store }) {
     }
   };
 
+  // ── instances: which scene this comes from, and what is changed here ──
+  const model = findNode(s, n.id);                                   // undefined for a node inside an instance
+  const owner = n.inherited ? findNode(s, n.inherited.instance) : model?.instance ? model : undefined;
+  const source = owner?.instance ?? null;
+  /** The properties this scene changes on the node (an instance's own, or overrides inside one). */
+  const changedHere = n.inherited ? owner?.overrides?.[n.inherited.path] ?? {} : model?.instance ? model.props : null;
+  /** The value from the source scene, which ↺ puts back. */
+  const sourceValue = (name: string): PropValue | undefined => {
+    if (!source || !p) return undefined;
+    let src = expandSceneRoot(p, source);
+    if (n.inherited) for (const part of n.inherited.path.split('/')) src = src.children.find((c) => c.name === part) ?? src;
+    return propValue(src.type, src.props, name);
+  };
+  const openSource = () => { const sc = source && p.scenes.find((x) => x.path === source); if (sc) store.openScene(sc.id); };
+  const marked = (def: PropDef, row: React.ReactNode) => {
+    if (!changedHere || !(def.name in changedHere)) return row;
+    return (
+      <div key={def.name} data-testid={`override-${def.name}`} style={{ display: 'flex', alignItems: 'center', borderLeft: `2px solid ${C.warm}` }}>
+        <div style={{ flex: 1, minWidth: 0 }}>{row}</div>
+        <button type="button" data-testid={`reset-${def.name}`} title={`Changed for this instance. Click to use ${source}'s value again.`} onClick={() => set(def.name, sourceValue(def.name) as PropValue)}
+          style={{ background: 'none', border: 'none', color: C.warm, cursor: 'pointer', fontSize: 12, padding: '0 4px' }}>↺</button>
+      </div>
+    );
+  };
+
   const isRoot = n.id === s.root.id;
-  const parentPath = isRoot ? null : pathOf(s, parentOf(s, n.id)!.id);
-  const code = isRoot
-    ? `scene = project.createScene(${lit(s.path)}, ${lit(n.type)}, ${lit(n.name)})`
-    : `scene.add(${lit(n.type)}, ${lit({ name: n.name, ...(parentPath !== '.' ? { parent: parentPath } : {}), ...n.props, ...(n.script ? { script: n.script } : {}) })})`;
+  let code: string;
+  if (n.inherited) {
+    const at = pathOf(store.expanded!, n.id);
+    const lines = Object.entries(changedHere ?? {}).map(([k, v]) => `scene.get(${lit(at)}).${k} = ${lit(v)}`);
+    code = `// Part of ${owner?.name}, an instance of ${source}.\n${lines.length ? lines.join('\n') : '// Nothing changed here for this instance.'}`;
+  } else if (isRoot) code = `scene = project.createScene(${lit(s.path)}, ${lit(n.type)}, ${lit(n.name)})`;
+  else {
+    const parentPath = pathOf(s, parentOf(s, n.id)!.id);
+    const where = { name: n.name, ...(parentPath !== '.' ? { parent: parentPath } : {}) };
+    code = model?.instance
+      ? `scene.instance(${lit(model.instance)}, ${lit({ ...where, ...model.props })})`
+      : `scene.add(${lit(n.type)}, ${lit({ ...where, ...n.props, ...(n.script ? { script: n.script } : {}) })})`;
+  }
 
   return (
     <div data-testid="inspector" style={{ fontSize: 12 }}>
@@ -153,12 +188,28 @@ export function Inspector({ store }: { store: Store }) {
         <span style={{ flex: 1 }} />
         <button type="button" onClick={() => store.showReference(n.type)} title="What a script can do with this node: the API reference" style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 9, color: C.dim, cursor: 'pointer', fontSize: 11, padding: '0 6px' }}>?</button>
       </div>
+      {source && (
+        <div data-testid="instance-note" style={{ margin: '0 8px 6px', padding: '4px 6px', border: `1px solid ${C.border}`, borderRadius: 3, color: C.dim, fontSize: 11, lineHeight: 1.45 }}>
+          {n.inherited ? <>Part of <b>{owner?.name}</b>, an instance of </> : <>⧉ An instance of </>}
+          <span role="link" onClick={openSource} style={{ color: C.accent, cursor: 'pointer', fontFamily: C.mono }}>{source}</span>.{' '}
+          Changes here are for this instance only (marked <span style={{ color: C.warm }}>▌</span>, ↺ puts back the scene&apos;s value); change the scene itself to change every instance.
+        </div>
+      )}
       {running && <div style={{ margin: '0 8px 6px', color: C.live, fontSize: 11 }}>Purple values are the running game&apos;s. They are not saved: stopping the game puts the editor&apos;s values back in charge.</div>}
       {lineage(n.type).filter((t) => t.props.length).map((t) => (
-        <Section key={t.type} title={SECTION[t.type] ?? t.type}>{t.props.map((def) => keyed(def, control(def)))}</Section>
+        <Section key={t.type} title={SECTION[t.type] ?? t.type}>{t.props.map((def) => keyed(def, marked(def, control(def))))}</Section>
       ))}
+      <Section title="Groups">
+        <Groups store={store} node={n} editable={!n.inherited} />
+      </Section>
+      <Section title="Signals">
+        <Signals store={store} node={n} editable={!n.inherited} />
+      </Section>
       <Section title="Script">
-        {n.script ? (
+        {n.inherited ? (
+          n.script ? <Row label="file"><span role="link" onClick={() => store.openScript(n.script!)} style={{ fontFamily: C.mono, color: C.warn, cursor: 'pointer' }}>{n.script}</span></Row>
+            : <span style={{ color: C.faint }}>None. Scripts of nodes inside an instance are set in {source}.</span>
+        ) : n.script ? (
           <>
             <Row label="file"><span style={{ fontFamily: C.mono, color: C.warn }}>{n.script}</span></Row>
             <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
@@ -182,6 +233,65 @@ export function Inspector({ store }: { store: Store }) {
         <div style={{ color: C.faint, marginBottom: 4 }}>The Scene API call that makes this node as it is now:</div>
         <pre data-testid="node-code" style={{ margin: 0, padding: 6, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, fontFamily: C.mono, fontSize: 11, color: C.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{code}</pre>
       </Section>
+    </div>
+  );
+}
+
+/** The groups a node is in: names scripts use to find nodes (scene.getNodesInGroup("enemies")). */
+function Groups({ store, node, editable }: { store: Store; node: NodeData; editable: boolean }) {
+  const s = store.scene!, groups = node.groups ?? [];
+  const [text, setText] = React.useState('');
+  const set = (next: string[]) => store.act((d) => d.setGroups(s.id, node.id, next));
+  return (
+    <div data-testid="groups" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+      {groups.map((g) => (
+        <span key={g} style={{ fontFamily: C.mono, fontSize: 11, background: C.raised, border: `1px solid ${C.border}`, borderRadius: 3, padding: '0 5px' }}>
+          {g}{editable && <span data-testid={`group-remove-${g}`} onClick={() => set(groups.filter((x) => x !== g))} title="Take it out of this group" style={{ marginLeft: 4, color: C.faint, cursor: 'pointer' }}>×</span>}
+        </span>
+      ))}
+      {groups.length === 0 && <span style={{ color: C.faint }}>None.</span>}
+      {editable && <input data-testid="group-add" value={text} placeholder="add a group…" spellCheck={false} onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter' && text.trim()) { set([...groups, text.trim()]); setText(''); } }}
+        style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 3, fontSize: 11, padding: '1px 4px', width: 110 }} />}
+    </div>
+  );
+}
+
+/** The engine's own signals for a node type (its callbacks, also emitted as signals). */
+const BUILTIN_SIGNALS: Record<string, string[]> = { Area2D: ['bodyEntered', 'bodyExited'], RigidBody2D: ['onCollision'], AnimatedSprite2D: ['animationFinished'], AnimationPlayer: ['animationFinished'] };
+
+/** Signal connections: when this node emits a signal, a method of another node runs. Saved in the scene. */
+function Signals({ store, node, editable }: { store: Store; node: NodeData; editable: boolean }) {
+  const s = store.scene!, view = store.expanded!;
+  const [signal, setSignal] = React.useState(BUILTIN_SIGNALS[node.type]?.[0] ?? '');
+  const [target, setTarget] = React.useState('');
+  const [method, setMethod] = React.useState('');
+  const nodes = [...walk(view.root)].filter((x) => x.id !== node.id);
+  const nameOf = (id: string) => { const t = findNode(view, id); return t ? pathOf(view, t.id) : '(gone)'; };
+  const list = node.connections ?? [];
+  return (
+    <div data-testid="signals" style={{ display: 'grid', gap: 4 }}>
+      {list.map((c, i) => (
+        <div key={i} data-testid={`connection-${i}`} style={{ fontFamily: C.mono, fontSize: 11, display: 'flex', gap: 4, alignItems: 'center' }}>
+          <span style={{ color: C.warm }}>{c.signal}</span><span style={{ color: C.faint }}>→</span><span style={{ flex: 1 }}>{nameOf(c.target)}.{c.method}()</span>
+          {editable && <span onClick={() => store.act((d) => d.disconnect(s.id, node.id, c.signal, c.target, c.method))} title="Disconnect" style={{ color: C.faint, cursor: 'pointer' }}>×</span>}
+        </div>
+      ))}
+      {list.length === 0 && <span style={{ color: C.faint }}>No connections.{editable ? ' Connect a signal to another node\u2019s method:' : ''}</span>}
+      {editable && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+          <input data-testid="signal-name" list="gs-signals" value={signal} onChange={(e) => setSignal(e.target.value)} placeholder="signal" spellCheck={false} onKeyDown={(e) => e.stopPropagation()}
+            title="The engine's signals for this node are suggested; a script can emit any name with this.emit(name)" style={{ ...selectStyle, width: 100 }} />
+          <datalist id="gs-signals">{(BUILTIN_SIGNALS[node.type] ?? []).map((x) => <option key={x} value={x} />)}</datalist>
+          <span style={{ color: C.faint }}>→</span>
+          <select data-testid="signal-target" value={target} onChange={(e) => setTarget(e.target.value)} style={{ ...selectStyle, maxWidth: 110 }}>
+            <option value="">node…</option>
+            {nodes.map((x) => <option key={x.id} value={x.id}>{pathOf(view, x.id)}</option>)}
+          </select>
+          <input data-testid="signal-method" value={method} onChange={(e) => setMethod(e.target.value)} placeholder="method" spellCheck={false} onKeyDown={(e) => e.stopPropagation()} style={{ ...selectStyle, width: 80 }} />
+          <Btn small testid="signal-connect" disabled={!signal || !target || !method} onClick={() => { store.act((d) => d.connect(s.id, node.id, signal, target, method)); setMethod(''); }}>Connect</Btn>
+        </div>
+      )}
     </div>
   );
 }

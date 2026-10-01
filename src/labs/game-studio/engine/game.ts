@@ -13,13 +13,14 @@
 // A lifecycle method that throws is reported once, and that node is skipped from
 // then on; the rest of the game keeps running.
 
-import type { NodeData, Project, PropValue, SceneData } from '../core/types';
+import type { Connection, NodeData, Project, PropValue, SceneData } from '../core/types';
 import { propsOf } from '../core/registry';
 import { decompose } from '../core/math2d';
 import { Input } from './input';
 import { NODE_CLASSES, AnimatedSprite2D, AnimationPlayer, TileMapLayer, type Collider, type TilesetInfo, Area2D, Camera2D, CanvasLayer, CharacterBody2D, Label, Node, Node2D, PhysicsBody2D, RigidBody2D, Sprite2D } from './nodes';
 import { scans, separate } from './physics';
 import { tilesetGrid } from '../core/tiles';
+import { expandScene, expandSceneRoot } from '../core/instances';
 import { Vec2 } from './vec2';
 
 export const PHYSICS_DT = 1 / 60;
@@ -58,7 +59,7 @@ export interface GameOptions {
 
 export class Game {
   readonly input: Input;
-  readonly root: Node;
+  root: Node;   // replaced when scene.change() switches scenes
   readonly time = { now: 0, frame: 0 };
   /** The time step now running: 1/60 in physicsUpdate, the frame time in update. */
   stepDelta = 0;
@@ -84,7 +85,9 @@ export class Game {
     }
     // With no camera, the screen shows the world from (0, 0) to (width, height).
     this.view = { x: this.screenSize.w / 2, y: this.screenSize.h / 2, zoom: 1 };
-    this.root = this.build(scene.root);
+    this.project = project;
+    this.scenePath = scene.path;
+    this.root = this.buildTree(expandScene(project, scene).root);
     this.root._game = this;
   }
 
@@ -93,7 +96,18 @@ export class Game {
   _tileset(path: string): TilesetInfo | null { return this.tilesets.get(path) ?? null; }
 
   /** Create the node for a saved one, its script class if it has one, and its children. */
-  private build(data: NodeData): Node {
+  /** Build a tree from saved (expanded) data, and wire the signal connections saved in it. */
+  private buildTree(data: NodeData): Node {
+    const byId = new Map<string, Node>(), wiring: [Node, Connection][] = [];
+    const root = this.build(data, byId, wiring);
+    for (const [from, c] of wiring) {
+      const to = byId.get(c.target);
+      if (to) from.connect(c.signal, to, c.method);
+    }
+    return root;
+  }
+
+  private build(data: NodeData, byId: Map<string, Node> = new Map(), wiring: [Node, Connection][] = []): Node {
     const builtin = NODE_CLASSES[data.type];
     if (!builtin) throw new Error(`The engine has no node type "${data.type}"`);
     let Cls: typeof Node = builtin;
@@ -110,8 +124,29 @@ export class Game {
     node._script = data.script;
     node._game = this;
     applyProps(node, data.type, data.props);
-    for (const c of data.children) { const child = this.build(c); child._parent = node; node._children.push(child); }
+    for (const g of data.groups ?? []) node._groups.add(g);
+    byId.set(data.id, node);
+    for (const c of data.connections ?? []) wiring.push([node, c]);
+    for (const c of data.children) { const child = this.build(c, byId, wiring); child._parent = node; node._children.push(child); }
     return node;
+  }
+
+  private project: Project;
+  /** The running scene's file. */
+  scenePath: string;
+  private nextScene: string | null = null;
+
+  /** Replace the running scene: the old one's nodes get destroyed(), the new one's ready(). */
+  private switchScene(path: string): void {
+    this.nextScene = null;
+    const gone = (n: Node) => { for (const c of n._children) gone(c); n._freed = true; this.call(n, 'destroyed'); };
+    gone(this.root);
+    this.ids = new WeakMap();
+    this.scenePath = path;
+    this.root = this.buildTree(expandSceneRoot(this.project, path));
+    this.root._game = this;
+    this.started = false;
+    this.start();
   }
 
   /** Run ready() everywhere, children first. Call once before the first step. */
@@ -147,6 +182,7 @@ export class Game {
     this.each((n) => { if (n instanceof AnimatedSprite2D && this.guard(n, 'animation', () => n._advance(dt))) this.call(n, 'animationFinished', n.animation); });
     this.each((n) => this.call(n, 'update', dt));
     this.flushFree();
+    if (this.nextScene) this.switchScene(this.nextScene);
     this.updateCamera(dt);
     this.draw();
     this.input.endFrame();
@@ -160,7 +196,12 @@ export class Game {
 
   private call(n: Node, phase: string, ...args: unknown[]): void {
     this.guard(n, phase, () => ((n as unknown as Record<string, (...a: unknown[]) => void>)[phase]).apply(n, args));
+    // The engine's events are signals too, so they can be connected without a script on the node.
+    if (SIGNALS.has(phase) && !n._freed) n.emit(phase, ...args);
   }
+
+  /** Run a connected method for a signal: a mistake is reported against the node the method belongs to. */
+  _deliver(owner: Node, phase: string, fn: () => void): void { this.guard(owner, phase, fn); }
 
   /** Run fn for a node; if it throws, report it once and stop that node (its children carry on). */
   private guard<T>(n: Node, phase: string, fn: () => T): T | undefined {
@@ -325,7 +366,25 @@ export class Game {
 
   /** Scripts' `scene` global: the tree from its root. */
   get sceneApi() {
-    return { root: this.root, get: <T extends Node = Node>(path: string) => this.root.get<T>(path), find: <T extends Node = Node>(path: string) => this.root.find<T>(path) };
+    const game = this;
+    return {
+      get root() { return game.root; },
+      /** The running scene's file. */
+      get path() { return game.scenePath; },
+      get: <T extends Node = Node>(path: string) => this.root.get<T>(path),
+      find: <T extends Node = Node>(path: string) => this.root.find<T>(path),
+      /** Every node in a group, in tree order. */
+      getNodesInGroup: (group: string) => { const out: Node[] = []; this.each((n) => { if (n._groups.has(group)) out.push(n); }); return out; },
+      /** Call a method on every node in a group that has it. */
+      callGroup: (group: string, method: string, ...args: unknown[]) => {
+        const out: Node[] = []; this.each((n) => { if (n._groups.has(group)) out.push(n); });
+        for (const n of out) { const fn = (n as unknown as Record<string, unknown>)[method]; if (typeof fn === 'function') this.guard(n, `callGroup ${method}`, () => (fn as (...a: unknown[]) => void).apply(n, args)); }
+      },
+      /** A new copy of a scene's nodes, not yet in the game: add it with addChild. */
+      instantiate: (path: string) => this.buildTree(expandSceneRoot(this.project, path)),
+      /** Switch to another scene at the end of this frame. */
+      change: (path: string) => { if (!this.project.scenes.some((s) => s.path === path)) throw new Error(`There is no scene "${path}"`); this.nextScene = path; },
+    };
   }
 }
 
@@ -343,6 +402,9 @@ export function applyProps(node: Node, type: string, props: Record<string, PropV
 export function scriptGlobals(game: Game): Record<string, unknown> {
   return { input: game.input, scene: game.sceneApi, time: game.time, math: MATH, physics: { gravity: game.gravity }, Vec2, PhysicsBody2D, ...NODE_CLASSES };
 }
+
+/** Engine callbacks that are also emitted as signals of the same name. */
+const SIGNALS = new Set(['bodyEntered', 'bodyExited', 'animationFinished', 'onCollision']);
 
 /** Small maths helpers scripts use all the time. */
 export const MATH = {

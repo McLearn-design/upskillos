@@ -3,7 +3,7 @@
 // This is the single source of truth (docs/game-studio-architecture.md, ADR 2).
 // The editor changes it only through commands; the runtime receives a copy.
 
-export const FORMAT_VERSION = 2;
+export const FORMAT_VERSION = 3;
 
 export interface Vec2 { x: number; y: number }
 
@@ -33,7 +33,20 @@ export interface NodeData {
   /** Project path of the attached script, if any. */
   script: string | null;
   children: NodeData[];
+  /** An instance of this scene (core/instances.ts): its contents come from there. Added in format 3. */
+  instance?: string;
+  /** Changed properties of nodes inside the instance, by their path from it ("Sprite", "Body/Shape"). */
+  overrides?: Record<string, Record<string, PropValue>>;
+  /** Groups it is in (names), for scripts to find nodes by group. */
+  groups?: string[];
+  /** Signals connected to other nodes' methods: when this node emits `signal`, `target`'s `method` runs. */
+  connections?: Connection[];
+  /** Only in an expanded scene, never saved: this node comes from an instance (which, and its path in it). */
+  inherited?: { instance: string; path: string };
 }
+
+/** A signal connection. `target` is the id of a node in the same scene. */
+export interface Connection { signal: string; target: string; method: string }
 
 export interface SceneData {
   id: string;

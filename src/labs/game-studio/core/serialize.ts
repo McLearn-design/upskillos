@@ -7,9 +7,10 @@
 
 import { FORMAT_VERSION, type AnimationClip, type NodeData, type Project, type SceneData, type SpriteAnimation, type TilesetData } from './types';
 import { trackTarget } from './animation';
+import { expandScene, expandSceneRoot } from './instances';
 import { checkProp, isNodeType, propDef, propValue } from './registry';
 import { walk } from './project';
-import { tilesetGrid, tilesetProblem } from './tiles';
+import { tileId, tilesetGrid, tilesetProblem } from './tiles';
 
 /** Deterministic: the same project always gives the same text (keys in the model's own order). */
 export function serialize(p: Project): string {
@@ -23,6 +24,9 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
     const { assets, ...rest } = p;
     return { ...rest, formatVersion: 2, tilesets: [], assets };
   },
+  // Format 3 adds instances, overrides, groups and connections on nodes (Phase 7): all optional, so
+  // nothing changes, but an older Game Studio would show instances as empty nodes.
+  2: (p) => ({ ...p, formatVersion: 3 }),
 };
 
 export function migrate(raw: Record<string, unknown>): Record<string, unknown> {
@@ -56,9 +60,36 @@ export function problems(p: Project): string[] {
   }
   /** How many tiles a tileset has, when its image is known. */
   const tileCount = (path: string) => { const ts = tilesets.get(path), a = ts && p.assets.find((x) => x.path === ts.image); return ts && a ? tilesetGrid(ts, a.width, a.height).count : null; };
+  const scenePaths = new Set(p.scenes.map((x) => x.path));
   for (const s of p.scenes) {
+    // Instances: the expanded scene must exist (no loops), and is what connections point into.
+    let view: SceneData | null = null;
+    try { view = expandScene(p, s); } catch (e) { out.push(`${s.path}: ${e instanceof Error ? e.message : String(e)}`); }
+    const viewIds = new Set<string>();
+    if (view) for (const n of walk(view.root)) viewIds.add(n.id);
     for (const n of walk(s.root)) {
       const at = `${s.path}: ${n.name}`;
+      if (n.instance !== undefined) {
+        if (!scenePaths.has(n.instance)) out.push(`${at}: it is an instance of "${n.instance}", which does not exist`);
+        else {
+          const src = expandSceneRootSafe(p, n.instance);
+          if (src && src.type !== n.type) out.push(`${at}: it is an instance of ${n.instance}, whose root is now a ${src.type}, not a ${n.type}`);
+          for (const [path, props] of Object.entries(n.overrides ?? {})) {
+            const target = src && nodeBelow(src, path);
+            if (!target) { out.push(`${at}: it changes "${path}", which ${n.instance} no longer has`); continue; }
+            for (const [k, v] of Object.entries(props)) {
+              const def = propDef(target.type, k);
+              const bad = def ? checkProp(def, v) : `${target.type} has no property "${k}"`;
+              if (bad) out.push(`${at}: ${path}: ${bad}`);
+            }
+          }
+        }
+      } else if (n.overrides) out.push(`${at}: it has overrides but is not an instance`);
+      for (const g of n.groups ?? []) if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(g)) out.push(`${at}: "${g}" cannot be a group name`);
+      for (const c of n.connections ?? []) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(c.signal) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(c.method)) out.push(`${at}: the connection ${c.signal} → ${c.method} has a name that is not allowed`);
+        else if (view && !viewIds.has(c.target)) out.push(`${at}: its ${c.signal} signal is connected to a node that is gone`);
+      }
       if (ids.has(n.id)) out.push(`${at}: id ${n.id} is used twice`);
       ids.add(n.id);
       if (!isNodeType(n.type)) { out.push(`${at}: unknown node type "${n.type}"`); continue; }
@@ -72,7 +103,7 @@ export function problems(p: Project): string[] {
         if (def.type === 'cells' && !bad) {
           const count = tileCount(propValue(n.type, n.props, 'tileset') as string);
           const cells = v as number[];
-          if (count !== null) for (let i = 2; i < cells.length; i += 3) if (cells[i] >= count) { out.push(`${at}: cell ${cells[i - 2]}, ${cells[i - 1]} uses tile ${cells[i]}, but the tileset has ${count} tiles (0 to ${count - 1})`); break; }
+          if (count !== null) for (let i = 2; i < cells.length; i += 3) if (tileId(cells[i]) >= count) { out.push(`${at}: cell ${cells[i - 2]}, ${cells[i - 1]} uses tile ${tileId(cells[i])}, but the tileset has ${count} tiles (0 to ${count - 1})`); break; }
         }
         if (def.type === 'animations' && !bad) out.push(...clipProblems(s, n, v as AnimationClip[]).map((m) => `${at}: ${m}`));
         if (def.type === 'spriteFrames' && !bad) for (const a of v as SpriteAnimation[]) for (const f of a.frames) if (!assets.has(f)) out.push(`${at}: animation "${a.name}" uses a missing image "${f}"`);
@@ -116,4 +147,14 @@ function clipProblems(scene: SceneData, player: NodeData, clips: AnimationClip[]
   const auto = propValue(player.type, player.props, 'autoplay') as string;
   if (auto && !clips.some((c) => c.name === auto)) out.push(`autoplay names "${auto}", but there is no animation by that name`);
   return out;
+}
+
+function expandSceneRootSafe(p: Project, path: string): NodeData | null {
+  try { return expandSceneRoot(p, path); } catch { return null; }
+}
+
+function nodeBelow(root: NodeData, path: string): NodeData | undefined {
+  let cur: NodeData | undefined = root;
+  for (const name of path.split('/').filter(Boolean)) { cur = cur?.children.find((c) => c.name === name); if (!cur) return undefined; }
+  return cur;
 }

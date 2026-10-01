@@ -17,7 +17,8 @@ function Group({ title, action, children }: { title: string; action?: React.Reac
   );
 }
 
-const item = (active: boolean): React.CSSProperties => ({ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 8px 2px 14px', fontSize: 12, cursor: 'pointer', background: active ? '#2b4a6e' : 'transparent', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' });
+// Long names shorten with "…" so the buttons at the end of a row (★, ⧉) stay in view.
+const item = (active: boolean): React.CSSProperties => ({ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 8px 2px 14px', fontSize: 12, cursor: 'pointer', background: active ? '#2b4a6e' : 'transparent', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 });
 
 export function Files({ store }: { store: Store }) {
   useStore(store);
@@ -46,10 +47,14 @@ export function Files({ store }: { store: Store }) {
         <Group title="scenes/" action={<Btn small testid="new-scene" onClick={() => setNaming('scene')} title="New scene">+</Btn>}>
           {p.scenes.map((s) => (
             <div key={s.id} data-testid={`file-${s.path}`} onClick={() => store.openScene(s.id)} style={item(store.sceneId === s.id && store.tab.kind === 'scene')}>
-              <span>🎬</span><span style={{ flex: 1 }}>{s.path.replace(/^scenes\//, '')}</span>
+              <span>🎬</span><span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.path.replace(/^scenes\//, '')}</span>
               {p.settings.mainScene === s.path
                 ? <span title="The main scene: Run Project starts here" style={{ color: C.warn }}>★</span>
                 : <span title="Make this the main scene" onClick={(e) => { e.stopPropagation(); store.act((d) => d.setMainScene(s.path)); }} style={{ color: C.faint }}>☆</span>}
+              {store.sceneId && store.sceneId !== s.id && (
+                <span data-testid={`instance-${s.path}`} title={`Put an instance of ${s.path} into the scene you are editing (under the selected node). Changing ${s.path} later changes every instance.`}
+                  onClick={(e) => { e.stopPropagation(); store.addInstance(s.path); }} style={{ color: C.accent, cursor: 'pointer', marginLeft: 4 }}>⧉</span>
+              )}
             </div>
           ))}
           {namer('scene')}
@@ -71,16 +76,16 @@ export function Files({ store }: { store: Store }) {
             ))}
           </Group>
         )}
-        <Group title="assets/" action={<Btn small testid="import-image" onClick={() => file.current?.click()} title="Import images (PNG, JPEG, WebP, GIF)">Import…</Btn>}>
-          <input ref={file} data-testid="import-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple style={{ display: 'none' }}
-            onChange={async (e) => { for (const f of Array.from(e.target.files ?? [])) await store.importImage(f); e.target.value = ''; }} />
+        <Group title="assets/" action={<Btn small testid="import-image" onClick={() => file.current?.click()} title="Import images (PNG, JPEG, WebP, GIF), or a Tiled map (.tmx or .tmj) with its tileset files (.tsx, .tsj): choose them together">Import…</Btn>}>
+          <input ref={file} data-testid="import-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,.tmx,.tmj,.tsx,.tsj" multiple style={{ display: 'none' }}
+            onChange={async (e) => { await store.importFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
           {p.assets.map((a) => {
             const img = store.images.get(a.id);
             return (
               <div key={a.id} data-testid={`asset-${a.path}`} draggable onDragStart={(e) => { e.dataTransfer.setData(ASSET_DRAG, a.path); e.dataTransfer.effectAllowed = 'copy'; }}
                 title={`${a.path} · ${a.width} × ${a.height}. Drag into the viewport to make a Sprite2D.`} style={item(false)}>
                 {img ? <img src={img.src} alt="" style={{ width: 18, height: 18, objectFit: 'contain', imageRendering: 'pixelated' }} /> : <span>🖼</span>}
-                <span>{a.path.replace(/^assets\//, '')}</span>
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.path.replace(/^assets\//, '')}</span>
               </div>
             );
           })}

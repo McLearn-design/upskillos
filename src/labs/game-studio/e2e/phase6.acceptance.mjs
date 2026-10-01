@@ -91,6 +91,29 @@ const failed = await withGameStudio(5190, async ({ page, t, check }) => {
   check('Solid tiles mode marks a tile solid in the tileset', (await store(() => window.__gameStudio.store.project.tilesets[0].solid)).includes(40));
   if (OUT) await page.screenshot({ path: `${OUT}/phase6-editor.png` });
 
+  // Tiled: Kenney's sample map, from the Starter Art button, into a new scene.
+  await store(() => window.__gameStudio.store.createScene('scenes/tiled.scene'));
+  await t('left-art').click();
+  await t('starter-pack').selectOption('tiny-dungeon');
+  await t('starter-map-sample-map.tmx').click();
+  await page.waitForFunction(() => window.__gameStudio.store.scene.root.children.filter((c) => c.type === 'TileMapLayer').length === 3, null, { timeout: 10000 });
+  const imported = await store(() => { const s = window.__gameStudio.store; return { layers: s.scene.root.children.map((c) => c.name), tileset: s.project.tilesets.find((t) => t.path === 'tilesets/tileset.tileset'), log: s.doc.log.at(-1).label }; });
+  check('The Tiled sample map imports as three tile layers on the pack\u2019s sheet, in one step', imported.layers.length === 3 && imported.tileset?.image === 'assets/tiny-dungeon/tilemap/tilemap.png' && imported.tileset.spacing === 1 && imported.log === 'Import sample-map.tmx', imported.layers.join(', '));
+
+  // And through Import…, choosing the map and its tileset file together (into another scene).
+  await store(() => window.__gameStudio.store.createScene('scenes/tiled2.scene'));
+  await t('left-files').click();
+  const fs = await import('node:fs');
+  const dir = new URL('../starter/tiny-dungeon/tiled/', import.meta.url);
+  await t('import-file').setInputFiles([
+    { name: 'sample-map.tmx', mimeType: 'application/xml', buffer: fs.readFileSync(new URL('sample-map.tmx', dir)) },
+    { name: 'sampleSheet.tsx', mimeType: 'application/xml', buffer: fs.readFileSync(new URL('sampleSheet.tsx.xml', dir)) },
+  ]);
+  await page.waitForFunction(() => window.__gameStudio.store.scene.root.children.filter((c) => c.type === 'TileMapLayer').length === 3, null, { timeout: 10000 });
+  const second = await store(() => window.__gameStudio.store.project.tilesets.map((t) => t.path));
+  check('Import… takes a Tiled map with its tileset file; a second import gets its own tileset name', second.includes('tilesets/tileset2.tileset'), second.join(', '));
+  await store(() => window.__gameStudio.store.act((d) => d.setMainScene('scenes/tiled.scene')));   // run the first imported map
+
   // Run: the level is drawn by Phaser's tilemap, with no errors.
   await t('run-project').click();
   await page.locator('iframe[title="Running game"]').waitFor({ timeout: 20000 });

@@ -5,6 +5,7 @@ import { Doc } from './doc';
 import { newProject } from './project';
 import { runSceneCode } from './api';
 import { deserialize, problems, serialize } from './serialize';
+import { FORMAT_VERSION } from './types';
 
 describe('tile maths', () => {
   it('a tileset grid counts tiles with margin and spacing: (size − 2·margin + spacing) / (tile + spacing)', () => {
@@ -87,11 +88,11 @@ describe('tilesets and tile layers in the project', () => {
     expect(() => d.createTileset('tilesets/x.tileset', { image: 'assets/none.png', tileWidth: 16, tileHeight: 16 })).toThrow(/no image "assets\/none.png"/);
   });
 
-  it('a format 1 project (before tilesets) loads, upgraded to format 2 with no tilesets', () => {
+  it('a format 1 project (before tilesets) loads, upgraded to the current format with no tilesets', () => {
     const p = JSON.parse(serialize(newProject('Old')));
     delete p.tilesets; p.formatVersion = 1;
     const loaded = deserialize(JSON.stringify(p));
-    expect(loaded.formatVersion).toBe(2);
+    expect(loaded.formatVersion).toBe(FORMAT_VERSION);
     expect(loaded.tilesets).toEqual([]);
     expect(Object.keys(loaded)).toEqual(Object.keys(newProject('Old')));   // the same key order, so it saves the same
   });

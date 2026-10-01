@@ -13,13 +13,20 @@
 import type { AssetData, NodeData, Project, PropValue, SceneData, TilesetData, Vec2 } from './types';
 import { applyEdits, cellMap, rectEdits, textEdits, tilesetProblem, type CellEdit } from './tiles';
 import { checkProp, isNodeType, nodeType, propDef, propsOf, propValue } from './registry';
+import { expandScene, expandSceneRoot, wouldLoop } from './instances';
 import { checkName, cloneWithNewIds, contains, findNode, newNode, nextId, nodeAt, parentOf, pathOf, sceneAt, uniqueName } from './project';
 
 const same = (a: PropValue, b: PropValue) => JSON.stringify(a) === JSON.stringify(b);
 
 // ── changes, by id (what commands use) ───────────────────────────────────
 
-export function setProp(scene: SceneData, id: string, name: string, value: PropValue): void {
+/**
+ * Set a property. With the project, it also works for a node inside an instance (its id has a ":"),
+ * by writing an override on the instance, and an instance's own property is stored only when it
+ * differs from the source scene's.
+ */
+export function setProp(scene: SceneData, id: string, name: string, value: PropValue, p?: Project): void {
+  if (id.includes(':')) { if (!p) throw new Error('Changing a node inside an instance needs the project'); setOverride(p, scene, id, name, value); return; }
   const n = findNode(scene, id);
   if (!n) throw new Error(`No node ${id}`);
   const def = propDef(n.type, name);
@@ -27,10 +34,97 @@ export function setProp(scene: SceneData, id: string, name: string, value: PropV
   const bad = checkProp(def, value);
   if (bad) throw new Error(bad);
   const v = value && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) as PropValue : value;   // a copy the caller cannot change later
-  if (same(v, def.default)) delete n.props[name]; else n.props[name] = v;
+  // An instance's baseline is its source scene's root; anything else's is the type's default.
+  const base = n.instance && p && sceneAt(p, n.instance) ? propValue(n.type, expandSceneRoot(p, n.instance).props, name) : def.default;
+  if (same(v, base)) delete n.props[name]; else n.props[name] = v;
+}
+
+/** Change a property of a node inside an instance: an override saved on the instance, by the node's path in it. */
+export function setOverride(p: Project, scene: SceneData, id: string, name: string, value: PropValue): void {
+  const view = findIn(expandScene(p, scene).root, id);
+  if (!view?.inherited) throw new Error(`No node ${id}`);
+  const def = propDef(view.type, name);
+  if (!def) throw new Error(`${view.type} has no property "${name}"`);
+  const bad = checkProp(def, value);
+  if (bad) throw new Error(bad);
+  const owner = findNode(scene, view.inherited.instance)!, path = view.inherited.path;
+  // The value without this scene's override: the source scene's.
+  const src = nodeAtPath(expandSceneRoot(p, owner.instance!), path)!;
+  const base = propValue(src.type, src.props, name);
+  const o = { ...(owner.overrides ?? {}) }, mine = { ...(o[path] ?? {}) };
+  if (same(value, base)) delete mine[name]; else mine[name] = JSON.parse(JSON.stringify(value)) as PropValue;
+  if (Object.keys(mine).length) o[path] = mine; else delete o[path];
+  if (Object.keys(o).length) owner.overrides = o; else delete owner.overrides;
+}
+
+/** A node by id anywhere under `root`. */
+function findIn(root: NodeData, id: string): NodeData | undefined {
+  if (root.id === id) return root;
+  for (const c of root.children) { const f = findIn(c, id); if (f) return f; }
+  return undefined;
+}
+
+/** A node by a path of names below `root` ("" is root itself). */
+function nodeAtPath(root: NodeData, path: string): NodeData | undefined {
+  let cur: NodeData | undefined = root;
+  for (const name of path.split('/').filter(Boolean)) { cur = cur?.children.find((c) => c.name === name); if (!cur) return undefined; }
+  return cur;
+}
+
+/** Nodes from an instance belong to their scene: renaming, moving or deleting them happens there. */
+function notInherited(id: string, what: string): void {
+  if (id.includes(':')) throw new Error(`That node is part of an instance; ${what} it in its own scene (or change it there for every instance)`);
+}
+
+/** Put an instance of another scene into this one. */
+export function addInstance(p: Project, scene: SceneData, source: string, opts: { name?: string; parent?: string; index?: number; props?: Record<string, PropValue> } = {}): NodeData {
+  const src = sceneAt(p, source);
+  if (!src) throw new Error(`There is no scene "${source}"`);
+  if (wouldLoop(p, scene.path, source)) throw new Error(`${source} cannot go inside ${scene.path}: ${source === scene.path ? 'a scene cannot contain itself' : `it already contains ${scene.path}, so they would contain each other`}`);
+  const parent = opts.parent === undefined ? scene.root : findNode(scene, opts.parent);
+  if (!parent) throw new Error('No such parent');
+  notInherited(parent.id, 'add to');
+  const n = newNode(p, src.root.type, uniqueName(parent.children, opts.name ?? src.root.name));
+  n.instance = source;
+  parent.children.splice(opts.index ?? parent.children.length, 0, n);
+  for (const [k, v] of Object.entries(opts.props ?? {})) setProp(scene, n.id, k, v, p);
+  return n;
+}
+
+const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** Set the groups a node is in. */
+export function setGroups(scene: SceneData, id: string, groups: string[]): void {
+  notInherited(id, 'change the groups of');
+  const n = findNode(scene, id);
+  if (!n) throw new Error(`No node ${id}`);
+  for (const g of groups) if (!IDENT.test(g)) throw new Error(`"${g}" cannot be a group name: use letters, digits and _, not starting with a digit`);
+  const list = [...new Set(groups)];
+  if (list.length) n.groups = list; else delete n.groups;
+}
+
+/** Connect a node's signal to a method of another node in the scene. */
+export function connect(p: Project, scene: SceneData, id: string, signal: string, targetId: string, method: string): void {
+  notInherited(id, 'connect the signals of');
+  const n = findNode(scene, id);
+  if (!n) throw new Error(`No node ${id}`);
+  if (!IDENT.test(signal)) throw new Error(`"${signal}" cannot be a signal name: use letters, digits and _`);
+  if (!IDENT.test(method)) throw new Error(`"${method}" cannot be a method name: use letters, digits and _`);
+  if (!findIn(expandScene(p, scene).root, targetId)) throw new Error('There is no such target node in this scene');
+  const list = n.connections ?? [];
+  if (list.some((c) => c.signal === signal && c.target === targetId && c.method === method)) throw new Error(`${signal} is already connected to that method`);
+  n.connections = [...list, { signal, target: targetId, method }];
+}
+
+export function disconnect(scene: SceneData, id: string, signal: string, targetId: string, method: string): void {
+  const n = findNode(scene, id);
+  if (!n?.connections) return;
+  n.connections = n.connections.filter((c) => !(c.signal === signal && c.target === targetId && c.method === method));
+  if (!n.connections.length) delete n.connections;
 }
 
 export function rename(scene: SceneData, id: string, wanted: string): string {
+  notInherited(id, 'rename');
   const bad = checkName(wanted);
   if (bad) throw new Error(bad);
   const n = findNode(scene, id)!, parent = parentOf(scene, id);
@@ -52,12 +146,22 @@ export function addNode(p: Project, scene: SceneData, type: string, opts: { name
 }
 
 export function deleteNode(scene: SceneData, id: string): void {
+  notInherited(id, 'delete');
   if (id === scene.root.id) throw new Error('The root of a scene cannot be deleted');
   const parent = parentOf(scene, id)!;
+  const gone = parent.children.find((c) => c.id === id)!;
   parent.children = parent.children.filter((c) => c.id !== id);
+  // Connections to anything deleted go with it.
+  const ids = new Set<string>();
+  const collect = (n: NodeData) => { ids.add(n.id); n.children.forEach(collect); };
+  collect(gone);
+  const isGone = (target: string) => ids.has(target) || ids.has(target.split(':')[0]);
+  const prune = (n: NodeData) => { if (n.connections) { n.connections = n.connections.filter((c) => !isGone(c.target)); if (!n.connections.length) delete n.connections; } n.children.forEach(prune); };
+  prune(scene.root);
 }
 
 export function reparent(scene: SceneData, id: string, newParentId: string, index?: number): void {
+  notInherited(id, 'move'); notInherited(newParentId, 'add to');
   if (id === scene.root.id) throw new Error('The root of a scene cannot be moved');
   const n = findNode(scene, id)!, to = findNode(scene, newParentId);
   if (!to) throw new Error('No such parent');
@@ -72,6 +176,7 @@ export function reparent(scene: SceneData, id: string, newParentId: string, inde
 }
 
 export function duplicate(p: Project, scene: SceneData, id: string): NodeData {
+  notInherited(id, 'duplicate');
   if (id === scene.root.id) throw new Error('The root of a scene cannot be duplicated');
   const n = findNode(scene, id)!, parent = parentOf(scene, id)!;
   const copy = cloneWithNewIds(p, n);
@@ -98,30 +203,48 @@ export interface NodeHandle {
   reparent(parentPath: string, index?: number): void;
   delete(): void;
   duplicate(): NodeHandle;
+  /** The scene it is an instance of, or null. */
+  readonly instance: string | null;
+  groups: string[];
+  connect(signal: string, targetPath: string, method: string): void;
+  disconnect(signal: string, targetPath: string, method: string): void;
   [prop: string]: unknown;
 }
 
 export function nodeHandle(p: Project, scene: SceneData, id: string): NodeHandle {
   const n = () => { const x = findNode(scene, id); if (!x) throw new Error(`That node was deleted`); return x; };
+  /** The node as the game sees it: for an instance, or a node inside one, from the expanded scene. */
+  const view = () => {
+    const x = findNode(scene, id);
+    if (x && !x.instance) return x;
+    const e = findIn(expandScene(p, scene).root, id);
+    if (!e) throw new Error(`That node was deleted`);
+    return e;
+  };
+  const viewPath = () => (findNode(scene, id) ? pathOf(scene, id) : pathOf(expandScene(p, scene), id));
   const h: Record<string, unknown> = {};
   Object.defineProperties(h, {
     id: { get: () => id, enumerable: true },
-    type: { get: () => n().type, enumerable: true },
-    path: { get: () => pathOf(scene, id), enumerable: true },
-    name: { get: () => n().name, set: (v: string) => { rename(scene, id, String(v)); }, enumerable: true },
-    script: { get: () => n().script, set: (v: string | null) => setScript(p, scene, id, v), enumerable: true },
-    children: { get: () => n().children.map((c) => nodeHandle(p, scene, c.id)) },
-    get: { value: (path: string) => sceneHandle(p, scene).get(pathOf(scene, id) === '.' ? path : `${pathOf(scene, id)}/${path}`) },
+    type: { get: () => view().type, enumerable: true },
+    path: { get: () => viewPath(), enumerable: true },
+    name: { get: () => view().name, set: (v: string) => { rename(scene, id, String(v)); }, enumerable: true },
+    script: { get: () => view().script, set: (v: string | null) => setScript(p, scene, id, v), enumerable: true },
+    children: { get: () => view().children.map((c) => nodeHandle(p, scene, c.id)) },
+    get: { value: (path: string) => sceneHandle(p, scene).get(viewPath() === '.' ? path : `${viewPath()}/${path}`) },
     reparent: { value: (parentPath: string, index?: number) => { const to = nodeAt(scene, parentPath); if (!to) throw new Error(`No node at "${parentPath}"`); reparent(scene, id, to.id, index); } },
     delete: { value: () => deleteNode(scene, id) },
     duplicate: { value: () => nodeHandle(p, scene, duplicate(p, scene, id).id) },
+    instance: { get: () => findNode(scene, id)?.instance ?? null, enumerable: true },
+    groups: { get: () => [...(view().groups ?? [])], set: (v: string[]) => setGroups(scene, id, v), enumerable: true },
+    connect: { value: (signal: string, targetPath: string, method: string) => { const t = sceneHandle(p, scene).get(targetPath); connect(p, scene, id, signal, t.id, method); } },
+    disconnect: { value: (signal: string, targetPath: string, method: string) => { const t = sceneHandle(p, scene).get(targetPath); disconnect(scene, id, signal, t.id, method); } },
   });
   // A TileMapLayer can be painted cell by cell (the editor's brush strokes are logged as paint calls).
-  if (n().type === 'TileMapLayer') {
-    const cells = () => propValue('TileMapLayer', n().props, 'cells') as number[];
+  if (view().type === 'TileMapLayer') {
+    const cells = () => propValue('TileMapLayer', view().props, 'cells') as number[];
     const edit = (edits: CellEdit[]) => {
       for (const e of edits) if (!Array.isArray(e) || e.length !== 3 || !e.every(Number.isInteger)) throw new Error('Each cell is [x, y, tile], whole numbers (tile −1 erases)');
-      setProp(scene, id, 'cells', applyEdits(cells(), edits));
+      setProp(scene, id, 'cells', applyEdits(cells(), edits), p);
     };
     Object.defineProperties(h, {
       getCell: { value: (x: number, y: number) => cellMap(cells()).get(`${x},${y}`) ?? -1 },
@@ -131,10 +254,10 @@ export function nodeHandle(p: Project, scene: SceneData, id: string): NodeHandle
       fromText: { value: (rows: string[], legend: Record<string, number>, at?: { x: number; y: number }) => edit(textEdits(rows, legend, at)) },
     });
   }
-  for (const def of propsOf(n().type)) {
+  for (const def of propsOf(view().type)) {
     Object.defineProperty(h, def.name, {
-      get: () => propValue(n().type, n().props, def.name),
-      set: (v: PropValue) => setProp(scene, id, def.name, v),
+      get: () => { const v = view(); return propValue(v.type, v.props, def.name); },
+      set: (v: PropValue) => setProp(scene, id, def.name, v, p),
       enumerable: true,
     });
   }
@@ -146,6 +269,8 @@ export interface SceneHandle {
   readonly root: NodeHandle;
   get(path: string): NodeHandle;
   add(type: string, opts?: Record<string, unknown>): NodeHandle;
+  /** Put an instance of another scene here: instance('scenes/coin.scene', { name, parent, position }). */
+  instance(source: string, opts?: Record<string, unknown>): NodeHandle;
 }
 
 function sceneHandle(p: Project, scene: SceneData): SceneHandle {
@@ -153,9 +278,16 @@ function sceneHandle(p: Project, scene: SceneData): SceneHandle {
     get path() { return scene.path; },
     get root() { return nodeHandle(p, scene, scene.root.id); },
     get(path: string) {
-      const n = nodeAt(scene, path);
+      // A path into an instance ("Coin1/Sprite") is found in the expanded scene.
+      const n = nodeAt(scene, path) ?? nodeAt(expandScene(p, scene), path);
       if (!n) throw new Error(`No node at "${path}" in ${scene.path}`);
       return nodeHandle(p, scene, n.id);
+    },
+    instance(source: string, opts: Record<string, unknown> = {}) {
+      const { name, parent, index, ...props } = opts;
+      const parentNode = parent === undefined || parent === '.' ? scene.root : nodeAt(scene, String(parent));
+      if (!parentNode) throw new Error(`No node at "${parent}"`);
+      return nodeHandle(p, scene, addInstance(p, scene, source, { name: name as string | undefined, parent: parentNode.id, index: index as number | undefined, props: props as Record<string, PropValue> }).id);
     },
     /** add(type, { name, parent: 'Path/To/Parent', index, script, ...properties }) */
     add(type: string, opts: Record<string, unknown> = {}) {

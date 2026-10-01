@@ -5,7 +5,7 @@
 import React, { useMemo, useState } from 'react';
 import type { Store } from './store';
 import { Btn, C, selectStyle, useStore } from './kit';
-import { starterPacks } from './starterLibrary';
+import { starterMaps, starterPacks } from './starterLibrary';
 import { STARTER_DRAG } from './Viewport';
 
 export function StarterArt({ store }: { store: Store }) {
@@ -37,6 +37,13 @@ export function StarterArt({ store }: { store: Store }) {
         </select>
       </div>
       <div style={{ padding: '0 8px 4px', color: C.faint, fontSize: 11, lineHeight: 1.4 }}>{pack.about} Drag one into the scene, or click to pick several. Kenney, CC0.</div>
+      {starterMaps(pack.id).map((m) => (
+        <div key={m.name} style={{ padding: '0 8px 4px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.dim }}>
+          <span style={{ flex: 1 }} title="A map made in Tiled, the free map editor, that comes with this pack">Tiled map: {m.name}</span>
+          <Btn small testid={`starter-map-${m.name}`} disabled={busy || !store.project} title="Add its tile sheet and import the map into the scene you are editing (one undo step)"
+            onClick={() => { setBusy(true); void store.importStarterMap(m).finally(() => setBusy(false)); }}>Import</Btn>
+        </div>
+      ))}
       <div style={{ flex: 1, overflowY: 'auto', padding: '2px 6px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(36px, 1fr))', gap: 3, alignContent: 'start' }}>
         {folder.images.map((img) => {
           const on = picked.has(img.path), have = inProject.has(img.path);

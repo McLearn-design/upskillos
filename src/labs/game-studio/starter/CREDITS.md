@@ -11,7 +11,7 @@ Kenney's own projects. Each pack's own licence file is kept beside it, as the pa
 | Folder | Pack | From | What is included |
 |---|---|---|---|
 | `pixel-platformer/` | Pixel Platformer 1.2 | kenney.nl/assets/pixel-platformer | All 18 × 18 tiles, characters and backgrounds; the packed tilemaps |
-| `tiny-dungeon/` | Tiny Dungeon | kenney.nl/assets/tiny-dungeon | All 16 × 16 tiles and the packed tilemap |
+| `tiny-dungeon/` | Tiny Dungeon | kenney.nl/assets/tiny-dungeon | All 16 × 16 tiles and the packed tilemap; the pack's Tiled sample map (`tiled/sample-map.tmx`, renamed from `sampleMap.tmx`) and its tileset (`tiled/sampleSheet.tsx.xml`, with `.xml` added so TypeScript does not read it as code) |
 | `top-down-shooter/` | Top-down Shooter | kenney.nl/assets/top-down-shooter | Four characters (soldier, zombie, robot, survivor), weapons, the tile sheets |
 | `puzzle-pack/` | Puzzle Pack 2 | kenney.nl/assets/puzzle-pack-2 | Paddles, balls, white particles, and tiles (bricks) in blue, green, red and yellow |
 | `ui-pack/` | UI Pack | kenney.nl/assets/ui-pack | The blue and grey default-size buttons, panels and icons |

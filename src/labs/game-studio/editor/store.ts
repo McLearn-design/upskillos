@@ -8,12 +8,14 @@ import { newProject, pathOf, sceneAt, findNode } from '../core/project';
 import type { AnimationClip, NodeData, Project, PropValue, SceneData, TilesetData } from '../core/types';
 import { applyClip, setKey, trackPath } from '../core/animation';
 import { applyEdits, tilesetGrid, type CellEdit } from '../core/tiles';
+import { expandScene } from '../core/instances';
+import { matchImage, planImport, readMap } from '../core/tiled';
 import { isA, propValue } from '../core/registry';
 import type { FromRuntime } from '../runtime/protocol';
 import { runGame, type RunningGame } from './runner';
 import { checkSyntax } from '../runtime/scripts';
 import * as storage from './storage';
-import { starterImage } from './starterLibrary';
+import { starterImage, type StarterMap } from './starterLibrary';
 import type { GameExample } from '../examples/types';
 
 export interface OutputLine { level: 'log' | 'info' | 'warn' | 'error' | 'system'; text: string; file?: string | null; line?: number | null; column?: number | null; node?: string | null }
@@ -87,8 +89,23 @@ export class Store {
     if (!this.doc || !this.sceneId) return null;
     return this.doc.project.scenes.find((s) => s.id === this.sceneId) ?? null;
   }
-  get selected(): NodeData | null {
+  /** The scene with its instances expanded (core/instances.ts): what the tree, Inspector and viewport show. */
+  get expanded(): SceneData | null {
     const s = this.scene;
+    if (!s || !this.doc) return null;
+    const key = `${this.version}|${s.id}`;
+    if (this.expandedCache.key !== key) {
+      let v: SceneData;
+      try { v = expandScene(this.doc.project, s); } catch { v = s; }   // a loop: the problem report says so
+      this.expandedCache = { key, value: v };
+    }
+    return this.expandedCache.value;
+  }
+  private expandedCache: { key: string; value: SceneData | null } = { key: '', value: null };
+
+  /** The selected node as shown (a node inside an instance has an id with a ":"). */
+  get selected(): NodeData | null {
+    const s = this.expanded;
     return s && this.selection.length ? findNode(s, this.selection[this.selection.length - 1]) ?? null : null;
   }
   get dirty(): boolean { return !!this.doc?.dirty || [...this.buffers.keys()].some((p) => this.isScriptDirty(p)); }
@@ -106,7 +123,10 @@ export class Store {
       const scenes = doc.project.scenes;
       if (!scenes.some((s) => s.id === this.sceneId)) this.sceneId = scenes[0]?.id ?? null;
       const s = this.scene;
-      this.selection = s ? this.selection.filter((id) => findNode(s, id)) : [];
+      // A node inside an instance (its id has a ":") is found in the expanded scene.
+      let view: SceneData | null = null;
+      const shown = (id: string) => { if (!id.includes(':')) return !!findNode(s!, id); try { view ??= expandScene(doc.project, s!); } catch { return false; } return !!findNode(view, id); };
+      this.selection = s ? this.selection.filter(shown) : [];
       this.tabs = this.tabs.filter((t) => t.kind === 'scene' || doc.project.scripts.some((x) => x.path === t.path));
       if (this.tab.kind === 'script' && !this.tabs.some((t) => t.kind === 'script' && t.path === (this.tab as { path: string }).path)) this.tab = { kind: 'scene' };
       this.scheduleRecovery();
@@ -220,7 +240,7 @@ export class Store {
   animDrag: { id: string; prop: string; value: PropValue } | null = null;
 
   get animPlayer(): NodeData | null {
-    const s = this.scene;
+    const s = this.expanded;
     const n = s && this.anim.playerId ? findNode(s, this.anim.playerId) : undefined;
     return n?.type === 'AnimationPlayer' ? n : null;
   }
@@ -233,8 +253,8 @@ export class Store {
 
   /** The scene as the viewport shows it: with the panel's animation applied at the playhead, and a brush stroke in progress. */
   get viewScene(): SceneData | null {
-    const s = this.scene, c = this.animClip;
-    if (!s || ((!c || !this.anim.playerId) && !this.tileStroke)) return s;
+    const s = this.expanded, c = this.animClip;
+    if (!s || ((!c || !this.anim.playerId) && !this.tileStroke && !this.animDrag)) return s;
     let v = c && this.anim.playerId ? applyClip(s, this.anim.playerId, c, this.anim.time) : JSON.parse(JSON.stringify(s)) as SceneData;
     if (this.animDrag) { const n = findNode(v, this.animDrag.id); if (n) n.props[this.animDrag.prop] = this.animDrag.value; }
     if (this.tileStroke) { const n = findNode(v, this.tileStroke.layerId); if (n) n.props.cells = applyEdits(propValue(n.type, n.props, 'cells') as number[], this.tileStroke.edits); }
@@ -275,7 +295,7 @@ export class Store {
 
   /** Whether the panel's animation has a track for this node's property. */
   isAnimated(nodeId: string, prop: string): boolean {
-    const s = this.scene, c = this.animClip;
+    const s = this.expanded, c = this.animClip;
     if (!s || !c || !this.anim.playerId) return false;
     const path = trackPath(s, this.anim.playerId, nodeId);
     return path !== null && c.tracks.some((t) => t.path === path && t.property === prop);
@@ -285,7 +305,7 @@ export class Store {
   setKeyAt(nodeId: string, prop: string, value: PropValue, label?: string): void {
     const s = this.scene, player = this.animPlayer, c = this.animClip;
     if (!s || !player || !c) return;
-    const path = trackPath(s, player.id, nodeId);
+    const path = trackPath(this.expanded!, player.id, nodeId);
     if (path === null) { this.say('Only nodes under the AnimationPlayer\u2019s parent can be animated by it'); return; }
     const time = +this.anim.time.toFixed(4);
     const clips = setKey(this.animClips, c.name, path, prop, time, value as never);
@@ -314,6 +334,15 @@ export class Store {
     if (this.doc && this.sceneId) this.doc.endLive(label, this.sceneId, nodeId, [prop]);
   }
 
+  /** Put an instance of another scene under the selected node (or the root), and select it. */
+  addInstance(source: string): void {
+    const s = this.scene;
+    if (!s) return;
+    const sel = this.selected, parent = sel && !sel.inherited ? sel.id : s.root.id;
+    const n = this.act((d) => d.addInstance(s.id, source, parent));
+    if (n) { this.select([n.id]); this.say(`Added an instance of ${source}`); }
+  }
+
   /** Add a node under the selected one (or the root). */
   addNode(type: string, opts: { parentId?: string; name?: string; props?: Record<string, unknown> } = {}): NodeData | undefined {
     const s = this.scene;
@@ -333,6 +362,44 @@ export class Store {
     let path = `assets/${base}`, k = 2;
     while (this.doc.project.assets.some((a) => a.path === path)) path = `assets/${base.replace(/(\.[^.]+)$/, `-${k++}$1`)}`;
     return this.addImage(path, file);
+  }
+
+  /**
+   * Import files chosen together: images first, then Tiled maps (.tmx, .tmj), each using any
+   * tileset files (.tsx, .tsj) chosen with it. A map becomes one command in the scene being edited.
+   */
+  async importFiles(files: File[]): Promise<void> {
+    const isMap = (f: File) => /\.(tmx|tmj)$/i.test(f.name), isTileset = (f: File) => /\.(tsx|tsj)$/i.test(f.name);
+    for (const f of files) if (!isMap(f) && !isTileset(f)) await this.importImage(f);
+    const tilesets = new Map<string, string>();
+    for (const f of files.filter(isTileset)) tilesets.set(f.name, await f.text());
+    for (const f of files.filter(isMap)) this.importTiledMap(f.name, await f.text(), tilesets);
+  }
+
+  /** Import a Tiled map into the scene being edited (or a new scene named after it). Says what it made, or what to do. */
+  importTiledMap(name: string, text: string, tilesetFiles: Map<string, string>): boolean {
+    if (!this.doc) return false;
+    try {
+      const map = readMap(text);
+      if (!this.scene) this.createScene(`scenes/${name.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9_-]+/g, '_') || 'map'}.scene`);
+      const s = this.scene!, before = new Set(s.root.children.map((c) => c.id));
+      const p = this.doc.project;
+      const plan = planImport(map, name, { tilesetFiles, findImage: (img) => matchImage(img, p.assets.map((a) => a.path)), existing: new Set((p.tilesets ?? []).map((t) => t.path)), scenePath: s.path });
+      this.doc.runCode(`Import ${name}`, plan.code);
+      const added = this.scene!.root.children.filter((c) => !before.has(c.id)).map((c) => c.id);
+      if (added.length) this.select([added[0]]);
+      this.say(`Imported ${name}: ${plan.notes.join('; ')}`);
+      return true;
+    } catch (e) {
+      this.say(`Could not import ${name}: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
+    }
+  }
+
+  /** Open a Tiled sample map from the starter art: its images are added first, then the map is imported. */
+  async importStarterMap(map: StarterMap): Promise<boolean> {
+    for (const img of map.images) if (!(await this.importStarter(img.path, img.url))) return false;
+    return this.importTiledMap(map.name, map.text, map.tilesets);
   }
 
   /** Add an image from the starter art. If the project already has it, that is used. */
@@ -451,7 +518,7 @@ export class Store {
   }
 
   private inspectLive(): void {
-    const s = this.scene, n = this.selected;
+    const s = this.expanded, n = this.selected;   // the running game's tree has instances expanded too
     if (this.running && s && n) this.running.game.send({ type: 'inspect', path: pathOf(s, n.id) });
   }
   /** Ask the running game for the selected node's live values (the Inspector polls this). */

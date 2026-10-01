@@ -15,7 +15,7 @@ import { IDENTITY, local, multiply, apply, type Mat2D } from '../core/math2d';
 import type { Game } from './game';
 import type { WorldShape } from './physics';
 import type { AnimationClip, TilesetData } from '../core/types';
-import { cellList, cellMap, solidRects } from '../core/tiles';
+import { cellList, cellMap, solidRects, tileId } from '../core/tiles';
 import { blendOf, clipTime, sampleTrack } from '../core/animation';
 import { propDef } from '../core/registry';
 
@@ -69,6 +69,49 @@ export class Node {
 
   /** Remove this node (and its children) at the end of the frame. */
   queueFree(): void { this._game?._queueFree(this); }
+
+  // ── groups (the specification's §42) ──────────────────────────────────
+  _groups = new Set<string>();
+  /** The groups it is in. */
+  get groups(): string[] { return [...this._groups]; }
+  addToGroup(group: string): void { this._groups.add(group); }
+  removeFromGroup(group: string): void { this._groups.delete(group); }
+  isInGroup(group: string): boolean { return this._groups.has(group); }
+
+  // ── signals (§43) ──────────────────────────────────────────────────────
+  _signals = new Map<string, { target: Node | null; method: string | ((...args: unknown[]) => void) }[]>();
+
+  /**
+   * When this node emits `signal`, call `method` on `target` (or call a function). Connecting the
+   * same thing twice does nothing more.
+   */
+  connect(signal: string, target: Node | ((...args: unknown[]) => void), method?: string): void {
+    const list = this._signals.get(signal) ?? [];
+    const entry = typeof target === 'function' ? { target: null, method: target } : { target, method: method ?? '' };
+    if (typeof target !== 'function' && !method) throw new Error(`connect("${signal}", node, method) needs the name of the method to call`);
+    if (!list.some((e) => e.target === entry.target && e.method === entry.method)) list.push(entry);
+    this._signals.set(signal, list);
+  }
+
+  disconnect(signal: string, target: Node | ((...args: unknown[]) => void), method?: string): void {
+    const list = this._signals.get(signal);
+    if (!list) return;
+    this._signals.set(signal, list.filter((e) => !(typeof target === 'function' ? e.method === target : e.target === target && e.method === method)));
+  }
+
+  /** Call everything connected to `signal`, with these arguments. A mistake in one is reported against the node it belongs to; the rest still run. */
+  emit(signal: string, ...args: unknown[]): void {
+    for (const e of [...(this._signals.get(signal) ?? [])]) {
+      if (e.target?._freed) continue;
+      const run = () => {
+        if (typeof e.method === 'function') { e.method(...args); return; }
+        const fn = (e.target as unknown as Record<string, unknown>)[e.method];
+        if (typeof fn !== 'function') throw new Error(`"${e.target!.path}" has no method "${e.method}" for the ${signal} signal of "${this.path}"`);
+        (fn as (...a: unknown[]) => void).apply(e.target, args);
+      };
+      if (this._game) this._game._deliver(e.target ?? this, `signal ${signal}`, run); else run();
+    }
+  }
 
   // Lifecycle (ADR 4). Override these in a script.
   ready(): void {}
@@ -164,8 +207,8 @@ export class TileMapLayer extends Node2D {
   /** The size of one cell in pixels (from the tileset; 16 × 16 without one). */
   get tileSize(): Vec2 { const t = this._info(); return new Vec2(t?.data.tileWidth ?? 16, t?.data.tileHeight ?? 16); }
 
-  /** The tile at a cell, or −1 for none. */
-  getCell(x: number, y: number): number { return this._map.get(`${Math.floor(x)},${Math.floor(y)}`) ?? -1; }
+  /** The tile at a cell, or −1 for none. (A tile flipped in Tiled is the same tile number.) */
+  getCell(x: number, y: number): number { const t = this._map.get(`${Math.floor(x)},${Math.floor(y)}`); return t === undefined ? -1 : tileId(t); }
 
   /** Put a tile in a cell (−1 erases it). */
   setCell(x: number, y: number, tile: number): void {

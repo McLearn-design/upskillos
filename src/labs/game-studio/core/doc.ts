@@ -10,7 +10,8 @@
 // hundred kilobytes of JSON.
 
 import type { NodeData, Project, PropValue, SceneData } from './types';
-import { addNode, deleteNode, duplicate, nodeHandle as nodeHandleFor, projectApi, rename, reparent, runSceneCode, setProp, setScript } from './api';
+import { addInstance, addNode, connect, deleteNode, disconnect, duplicate, nodeHandle as nodeHandleFor, projectApi, rename, reparent, runSceneCode, setGroups, setProp, setScript } from './api';
+import { expandScene } from './instances';
 import { findNode, pathOf, sceneAt } from './project';
 import { isA, propDef, propValue } from './registry';
 import { placeNodes } from './sceneView';
@@ -113,13 +114,13 @@ export class Doc {
   beginLive(): void { if (!this.live) this.live = { before: JSON.stringify(this.project) }; }
   /** Change a property without recording it (during a drag). Call endLive or cancelLive after. */
   liveProp(sceneId: string, id: string, name: string, value: PropValue): void {
-    setProp(this.scene(sceneId), id, name, value);
+    setProp(this.scene(sceneId), id, name, value, this.project);
     this.emit('change');
   }
   endLive(label: string, sceneId: string, id: string, props: string[]): void {
     if (!this.live) return;
-    const scene = this.scene(sceneId), n = findNode(scene, id)!;
-    const code = props.map((k) => `scene.get(${lit(pathOf(scene, id))}).${k} = ${lit(n.props[k] ?? propDef(n.type, k)!.default)}`).join('\n');
+    const scene = this.scene(sceneId), view = this.view(sceneId), n = findNode(view, id)!;
+    const code = props.map((k) => `scene.get(${lit(pathOf(view, id))}).${k} = ${lit(propValue(n.type, n.props, k))}`).join('\n');
     if (JSON.stringify(this.project) === this.live.before) { this.live = null; return; }
     this.run(label, scene.path, code, () => undefined);
   }
@@ -162,31 +163,64 @@ export class Doc {
     }, () => addNode(this.project, this.scene(sceneId), type, { parent: parentId, name: opts.name, props: opts.props }));
   }
 
+  /** A scene with its instances expanded: what the game runs and the editor shows (core/instances.ts). */
+  view(sceneId: string): SceneData { return expandScene(this.project, this.scene(sceneId)); }
+
+  /** A node's path, found in the expanded scene, so a node inside an instance has one ("Coin1/Sprite"). */
+  private pathIn(sceneId: string, id: string): string {
+    const scene = this.scene(sceneId);
+    return findNode(scene, id) ? pathOf(scene, id) : pathOf(this.view(sceneId), id);
+  }
+
   setProp(sceneId: string, id: string, name: string, value: PropValue, label?: string): void {
     const scene = this.scene(sceneId);
-    this.run(label ?? `Set ${name}`, scene.path, `scene.get(${lit(pathOf(scene, id))}).${name} = ${lit(value)}`, () => setProp(this.scene(sceneId), id, name, value));
+    this.run(label ?? `Set ${name}`, scene.path, `scene.get(${lit(this.pathIn(sceneId, id))}).${name} = ${lit(value)}`, () => setProp(this.scene(sceneId), id, name, value, this.project));
   }
 
   /** Several properties of one node as one command (one undo step), logged as one line each. */
   setProps(sceneId: string, id: string, values: Record<string, PropValue>, label = 'Set properties'): void {
-    const scene = this.scene(sceneId), at = `scene.get(${lit(pathOf(scene, id))})`;
+    const scene = this.scene(sceneId), at = `scene.get(${lit(this.pathIn(sceneId, id))})`;
     const code = Object.entries(values).map(([k, v]) => `${at}.${k} = ${lit(v)}`).join('\n');
-    this.run(label, scene.path, code, () => { for (const [k, v] of Object.entries(values)) setProp(this.scene(sceneId), id, k, v); });
+    this.run(label, scene.path, code, () => { for (const [k, v] of Object.entries(values)) setProp(this.scene(sceneId), id, k, v, this.project); });
+  }
+
+  /** Put an instance of another scene into this one. */
+  addInstance(sceneId: string, source: string, parentId?: string, opts: { name?: string; props?: Record<string, PropValue> } = {}): NodeData {
+    const scene = this.scene(sceneId);
+    const parentPath = parentId ? pathOf(scene, parentId) : '.';
+    return this.run(`Add an instance of ${source}`, scene.path, (n: NodeData) => `scene.instance(${lit(source)}, ${lit({ name: n.name, ...(parentPath !== '.' ? { parent: parentPath } : {}), ...n.props })})`,
+      () => addInstance(this.project, this.scene(sceneId), source, { parent: parentId, name: opts.name, props: opts.props }));
+  }
+
+  setGroups(sceneId: string, id: string, groups: string[]): void {
+    const scene = this.scene(sceneId);
+    this.run(`Groups of ${findNode(this.view(sceneId), id)?.name}`, scene.path, `scene.get(${lit(this.pathIn(sceneId, id))}).groups = ${lit(groups)}`, () => setGroups(this.scene(sceneId), id, groups));
+  }
+
+  /** Connect a node's signal to a method of another node (the target, by id; logged by path). */
+  connect(sceneId: string, id: string, signal: string, targetId: string, method: string): void {
+    const scene = this.scene(sceneId);
+    this.run(`Connect ${signal}`, scene.path, `scene.get(${lit(this.pathIn(sceneId, id))}).connect(${lit(signal)}, ${lit(this.pathIn(sceneId, targetId))}, ${lit(method)})`, () => connect(this.project, this.scene(sceneId), id, signal, targetId, method));
+  }
+
+  disconnect(sceneId: string, id: string, signal: string, targetId: string, method: string): void {
+    const scene = this.scene(sceneId);
+    this.run(`Disconnect ${signal}`, scene.path, `scene.get(${lit(this.pathIn(sceneId, id))}).disconnect(${lit(signal)}, ${lit(this.pathIn(sceneId, targetId))}, ${lit(method)})`, () => disconnect(this.scene(sceneId), id, signal, targetId, method));
   }
 
   rename(sceneId: string, id: string, name: string): string {
     const scene = this.scene(sceneId);
-    return this.run(`Rename to ${name}`, scene.path, `scene.get(${lit(pathOf(scene, id))}).name = ${lit(name)}`, () => rename(this.scene(sceneId), id, name));
+    return this.run(`Rename to ${name}`, scene.path, `scene.get(${lit(this.pathIn(sceneId, id))}).name = ${lit(name)}`, () => rename(this.scene(sceneId), id, name));
   }
 
   deleteNode(sceneId: string, id: string): void {
     const scene = this.scene(sceneId);
-    this.run(`Delete ${findNode(scene, id)?.name}`, scene.path, `scene.get(${lit(pathOf(scene, id))}).delete()`, () => deleteNode(this.scene(sceneId), id));
+    this.run(`Delete ${findNode(this.view(sceneId), id)?.name}`, scene.path, `scene.get(${lit(this.pathIn(sceneId, id))}).delete()`, () => deleteNode(this.scene(sceneId), id));
   }
 
   duplicate(sceneId: string, id: string): NodeData {
     const scene = this.scene(sceneId);
-    return this.run(`Duplicate ${findNode(scene, id)?.name}`, scene.path, `scene.get(${lit(pathOf(scene, id))}).duplicate()`, () => duplicate(this.project, this.scene(sceneId), id));
+    return this.run(`Duplicate ${findNode(this.view(sceneId), id)?.name}`, scene.path, `scene.get(${lit(this.pathIn(sceneId, id))}).duplicate()`, () => duplicate(this.project, this.scene(sceneId), id));
   }
 
   /**
@@ -197,7 +231,7 @@ export class Doc {
   reparent(sceneId: string, id: string, newParentId: string, index?: number): void {
     const scene = this.scene(sceneId);
     const args = [pathOf(scene, newParentId), ...(index !== undefined ? [index] : [])].map(lit).join(', ');
-    const oldPath = pathOf(scene, id);
+    const oldPath = this.pathIn(sceneId, id);
     const worldBefore = placeNodes(scene).find((p) => p.node.id === id)!.world;
     this.run(`Move ${findNode(scene, id)?.name}`, scene.path, () => {
       const s = this.scene(sceneId), n = findNode(s, id)!, path = pathOf(s, id);
@@ -224,7 +258,7 @@ export class Doc {
 
   setScript(sceneId: string, id: string, path: string | null): void {
     const scene = this.scene(sceneId);
-    this.run(path ? `Attach ${path}` : 'Detach script', scene.path, `scene.get(${lit(pathOf(scene, id))}).script = ${lit(path)}`, () => setScript(this.project, this.scene(sceneId), id, path));
+    this.run(path ? `Attach ${path}` : 'Detach script', scene.path, `scene.get(${lit(this.pathIn(sceneId, id))}).script = ${lit(path)}`, () => setScript(this.project, this.scene(sceneId), id, path));
   }
 
   writeScript(path: string, source: string, label = `Save ${path}`): void {
@@ -243,7 +277,7 @@ export class Doc {
   /** Paint cells of a TileMapLayer (tile −1 erases): one brush stroke, one command. */
   paintCells(sceneId: string, id: string, edits: [number, number, number][], label = 'Paint tiles'): void {
     const scene = this.scene(sceneId);
-    this.run(label, scene.path, `scene.get(${lit(pathOf(scene, id))}).paint(${lit(edits)})`, () => { (nodeHandleFor(this.project, this.scene(sceneId), id) as unknown as { paint: (e: unknown) => void }).paint(edits); });
+    this.run(label, scene.path, `scene.get(${lit(this.pathIn(sceneId, id))}).paint(${lit(edits)})`, () => { (nodeHandleFor(this.project, this.scene(sceneId), id) as unknown as { paint: (e: unknown) => void }).paint(edits); });
   }
 
   importAsset(path: string, info: { mime: string; width: number; height: number }): string {

@@ -238,7 +238,7 @@ export function checkProp(def: PropDef, v: unknown): string | null {
       if (!Array.isArray(v) || v.length % 3 !== 0 || v.some((x) => !Number.isInteger(x))) return `${def.name} must be a list of whole numbers, three per cell: x, y, tile`;
       const seen = new Set<string>();
       for (let i = 0; i < v.length; i += 3) {
-        if (v[i + 2] < 0) return `${def.name}: tile numbers start at 0 (cell ${v[i]}, ${v[i + 1]} has ${v[i + 2]})`;
+        if (v[i + 2] < 0 || v[i + 2] >= 2 ** 32) return `${def.name}: tile numbers start at 0 (cell ${v[i]}, ${v[i + 1]} has ${v[i + 2]}); flip flags are the top three of 32 bits`;
         if (Math.abs(v[i]) > 100000 || Math.abs(v[i + 1]) > 100000) return `${def.name}: cell ${v[i]}, ${v[i + 1]} is too far out (at most 100000 cells)`;
         const k = `${v[i]},${v[i + 1]}`;
         if (seen.has(k)) return `${def.name}: cell ${k} is painted twice`;
