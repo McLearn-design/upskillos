@@ -394,3 +394,30 @@ describe('sum, prod and mean along a dimension', () => {
     expect(() => executeScript('s = sum([1 2; 3 4], 3)')).toThrow(/dimension must be 1 \(down columns\) or 2 \(across rows\)/)
   })
 })
+
+// ── MATLAB compatibility: A(:) and ans ───────────────────────────────────────
+
+describe('executeScript — A(:) and ans', () => {
+  const value = (src: string, name: string) => {
+    const v = executeScript(src).workspace.find((w: any) => w.name === name)?.value as any
+    return v?.toArray ? v.toArray() : v
+  }
+
+  it('A(:) lists every element column by column', () => {
+    expect(value('A = [1 2; 3 4]; v = A(:);', 'v')).toEqual([1, 3, 2, 4])
+    expect(value('A = [1 2; 3 4]; s = sum(A(:));', 's')).toBe(10)
+    expect(value('v = [5 6 7]; w = v(:);', 'w')).toEqual([5, 6, 7])
+  })
+
+  it('A(:) = v sets every element, in column order, keeping the shape', () => {
+    expect(value('A = [1 2; 3 4]; A(:) = 0;', 'A')).toEqual([[0, 0], [0, 0]])
+    expect(value('A = [1 2; 3 4]; A(:) = [9 8 7 6];', 'A')).toEqual([[9, 7], [8, 6]])
+    expect(() => executeScript('A = [1 2; 3 4]; A(:) = [1 2];')).toThrow(/needs v to have 4 elements/)
+  })
+
+  it('ans holds the value of the last expression and appears in the workspace', () => {
+    expect(value('3 + 4', 'ans')).toBe(7)
+    expect(value('x = [1 2 3];\nmean(x)', 'ans')).toBe(2)
+    expect(value('3 + 4;\ny = ans * 2;', 'y')).toBe(14)
+  })
+})

@@ -515,8 +515,15 @@ function replaceIndexing(line: string, variables: Set<string>, functionNames = n
   if (variables.size === 0) return line
   const strings: string[] = []
   const masked = line.replace(/'(?:[^']|'')*'/g, m => { strings.push(m); return `\x00S${strings.length - 1}\x00` })
+  // A(:) is every element of A, column by column: a helper, because the
+  // generic A[:] below only works for a vector.
+  // On the left of an assignment (A(:) = 0) it stays an index, handled by the engine.
+  let result = masked.replace(/\b([A-Za-z_]\w*)\s*\(\s*:\s*\)/g, (match, name, offset, whole) => {
+    const isTarget = !whole.slice(0, offset).trim() && /^\s*=(?!=)/.test(whole.slice(offset + match.length))
+    return variables.has(name) && !functionNames.has(name) && !isTarget ? `colonall(${name})` : match
+  })
   // MATLAB () indexing for known variables: var(i) → var[i]
-  let result = masked.replace(/\b([A-Za-z_]\w*)\s*\(([^()]+)\)/g, (match, name, inner) => {
+  result = result.replace(/\b([A-Za-z_]\w*)\s*\(([^()]+)\)/g, (match, name, inner) => {
     if (!variables.has(name) || functionNames.has(name)) return match
     const expandedInner = inner.replace(/\bend\b/g, `length(${name})`)
     return `${name}[${expandedInner}]`
