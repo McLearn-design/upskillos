@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { BLOG_MANIFEST } from '../posts/manifest.ts'
 import { useLocalStorage } from '../hooks/useLocalStorage.js'
 import {ChevronDown, ChevronRight} from 'lucide-react'
+import { useContributorMode } from '../hooks/useContributorMode.js'
 
 
 // Metadata for all posts comes from the build-time manifest (see
@@ -75,6 +76,8 @@ function SeriesFolder({ folderName, posts, readSet, navigate }) {
 
 export default function BlogListPage() {
   const navigate = useNavigate()
+  const { isElectron, devFsAvailable } = useContributorMode()
+  const canAuthor = isElectron || devFsAvailable
   const [query, setQuery] = useState('')
   const [readSlugs] = useLocalStorage('oc-blog-read', [])
   const readSet = useMemo(() => new Set(readSlugs), [readSlugs])
@@ -119,12 +122,12 @@ export default function BlogListPage() {
             Deep-dives on computer science, math, and programming — with runnable code.
           </p>
         </div>
-        <button
+        {canAuthor && <button
           onClick={() => navigate('/blog/new')}
           className="shrink-0 mt-1 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors shadow-sm"
         >
           + New Post
-        </button>
+        </button>}
       </div>
 
       {/* Search */}
@@ -182,8 +185,8 @@ export default function BlogListPage() {
         </div>
       )}
 
-      {/* Drop-in hint */}
-      <div className="mt-12 p-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-center">
+      {/* Drop-in hint: for authors only (desktop app or local development). */}
+      {canAuthor && <div className="mt-12 p-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-center">
         <p className="text-sm text-slate-400 dark:text-slate-500">
           Drop a{' '}
           <code className="text-slate-600 dark:text-slate-300 text-xs bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded">.md</code>{' '}
@@ -191,7 +194,7 @@ export default function BlogListPage() {
           <code className="text-slate-600 dark:text-slate-300 text-xs bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded">src/posts/</code>{' '}
           or a subfolder for a series — it appears here automatically.
         </p>
-      </div>
+      </div>}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-# Episoded 2
+# Episode 2
 
 ## Building a feature with state, logic, and flow
 

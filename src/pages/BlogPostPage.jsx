@@ -33,6 +33,16 @@ const SLUG_TO_LOADER = Object.fromEntries(
 
 const ALL_POSTS_META = BLOG_MANIFEST
 
+// Series folders that were renamed (to fix spelling). Old links keep working.
+const RENAMED_SERIES = {
+  'dynaic-programming/': 'dynamic-programming/',
+  'machine-learning-fundementals/': 'machine-learning-fundamentals/',
+}
+function currentSlug(slug) {
+  for (const [from, to] of Object.entries(RENAMED_SERIES)) if (slug?.startsWith(from)) return to + slug.slice(from.length)
+  return slug
+}
+
 function SeriesNav({ currentSlug, navigate, readSlugs }) {
   const folderSlug = currentSlug.includes('/') ? currentSlug.split('/')[0] : null
   if (!folderSlug) return null
@@ -113,6 +123,8 @@ export default function BlogPostPage() {
   const [readSlugs, setReadSlugs] = useLocalStorage('oc-blog-read', [])
 
   useEffect(() => {
+    const renamed = currentSlug(slug)
+    if (renamed !== slug) { navigate('/blog/' + renamed, { replace: true }); return }
     const loader = SLUG_TO_LOADER[slug]
     if (!loader) {
       setContent(null)

@@ -40,6 +40,22 @@ function pathToSlug(relPath) {
     .join('/')
 }
 
+// Excerpts are shown as plain text, so remove Markdown and LaTeX syntax:
+// "**Who this is for:** a `for` loop" → "Who this is for: a for loop".
+function plainText(md) {
+  return md
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')            // images
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')         // links → their text
+    .replace(/\\\(|\\\)|\\\[|\\\]/g, '')       // \( \) \[ \] math delimiters
+    .replace(/\$+/g, '')                                   // $ math delimiters
+    .replace(/(?<![A-Za-z0-9])(__?)(\S(?:.*?\S)?)\1(?![A-Za-z0-9])/g, '$2') // _emphasis_, not snake_case
+    .replace(/(\*\*|\*|~~|`)/g, '')                     // other emphasis and code marks
+    .replace(/^\s*(?:[-*+]|\d+\.|>)\s+/, '')            // a leading list marker or quote
+    .replace(/<[^>]+>/g, '')                                // inline HTML tags
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function extractMeta(raw, relPath) {
   const slug = pathToSlug(relPath)
   const parts = relPath.replace(/\.md$/, '').split('/')
@@ -53,7 +69,9 @@ function extractMeta(raw, relPath) {
   for (const line of lines) {
     const t = line.trim()
     if (!t || t.startsWith('#') || t.startsWith('---') || t.startsWith('```')) continue
-    excerpt = t.length > 220 ? t.slice(0, 220) + '…' : t
+    const text = plainText(t)
+    if (!text) continue
+    excerpt = text.length > 220 ? text.slice(0, 220) + '…' : text
     break
   }
 
