@@ -1,0 +1,45 @@
+/* Lesson prose is read next to code and figures, so it is set a little
+   smaller and tighter than the app's long-form lesson pages. */
+.wds-prose p,
+.wds-prose li {
+  font-size: 16.5px;
+  line-height: 1.7;
+}
+.wds-prose p { margin-bottom: 0.9rem; }
+.wds-prose ul,
+.wds-prose ol { margin-bottom: 0.9rem; }
+.wds-prose li + li { margin-top: 0.35rem; }
+.wds-prose h3 { font-size: 1.15rem; margin-top: 1.25rem; margin-bottom: 0.5rem; }
+.wds-prose .katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.25rem 0; }
+
+/* Shared look for tooltips that lesson code creates with class "wds-tip". */
+.wds-output { position: relative; }
+.wds-output .wds-tip {
+  position: absolute;
+  pointer-events: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font: 12px/1.4 system-ui, sans-serif;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  white-space: nowrap;
+  transform: translate(-50%, calc(-100% - 10px));
+}
+.wds-output canvas { display: block; }
+
+/* Layout responds to the lab's own width, not the viewport's: the lab often
+   runs inside a desktop window much narrower than the screen. */
+.wds-lab { container: wds / inline-size; }
+.wds-lab .wds-nav { display: none; }
+.wds-lab .wds-nav.is-open { display: flex; }
+.wds-split, .wds-controls { display: grid; gap: 0.75rem; }
+@container wds (min-width: 900px) {
+  .wds-lab .wds-nav { display: flex; position: static; box-shadow: none; }
+  .wds-menubar { display: none; }
+}
+@container wds (min-width: 1000px) {
+  .wds-controls { grid-template-columns: 1fr 1fr; column-gap: 1.5rem; }
+}
+@container wds (min-width: 1400px) {
+  .wds-split { grid-template-columns: 1fr 1fr; }
+}

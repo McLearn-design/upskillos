@@ -2,7 +2,7 @@
 
 # Project inventory
 
-44 courses · 225 chapters · 1268 lessons · 52 labs · 15 games
+44 courses · 225 chapters · 1269 lessons · 53 labs · 15 games
 
 ## How things are counted
 
@@ -47,7 +47,7 @@
 | Machine Learning | `machine-learning` | cs | 1 | 1 |
 | Building Games with Game Studio | `making-games` | cs | 8 | 33 |
 | Mesh Engine | `mesh-engine` | engineering | 4 | 18 |
-| 3D Modelling, Geometry & Graphics | `modelling-geometry` | creative | 1 | 4 |
+| 3D Modelling, Geometry & Graphics | `modelling-geometry` | creative | 1 | 5 |
 | Native Languages | `native-languages` | cs | 1 | 3 |
 | NoSQL | `nosql` | data | 1 | 4 |
 | Physics | `physics` | science | 9 | 80 |
@@ -117,6 +117,7 @@
 | Visual Code Studio | `visual-code` | builder | `/lab/visual-code` |
 | Viz Builder | `viz-builder` | builder | `/viz-builder` |
 | Vue Studio | `vue-studio` | lesson | `/lab/vue-studio` |
+| Data Science on the Web | `web-data-science` | lab | `/lab/web-data-science` |
 
 ## Games
 
