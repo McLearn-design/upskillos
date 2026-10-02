@@ -388,7 +388,7 @@ export function lessonToState(lesson, chapterId, lessonSlug, sourceText = '') {
     // to a plain string unless the user actually edits the hook.
     //
     // A third real shape (14 lessons in the corpus as of this writing, e.g.
-    // src/courses/geometry/3-geometry-3/005-midpoint-section.js): no `hook`
+    // src/courses/geometry/3-coordinates-and-transformations/005-midpoint-section.js): no `hook`
     // field at all. Without `_hadHook`, buildLessonObject would inject a
     // brand-new empty hook object on save even with zero edits.
     hook: typeof lesson.hook === 'string'

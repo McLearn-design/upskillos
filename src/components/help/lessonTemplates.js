@@ -209,7 +209,7 @@ export const TPL_PROOF = `// proof-lesson-template.js
 // PROOF LESSON TEMPLATE  —  UpSkillOS
 // ================================================================
 // Save as src/courses/<course>/<N>-<chapter>/<NNN>-<slug>.js
-// e.g.     src/courses/geometry/2-geometry-2/004-your-proof.js
+// e.g.     src/courses/geometry/2-reasoning-and-proof/004-your-proof.js
 // Nothing needs registering: the file's location puts it in the course.
 // ================================================================
 
