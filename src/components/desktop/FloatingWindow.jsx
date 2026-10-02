@@ -13,14 +13,16 @@ const TITLE_BAR_MIN_VISIBLE = 80 // px of title bar kept on-screen horizontally 
 function MacDots({ onClose, onMinimize, onMaximize, isMaximized }) {
   return (
     <div className="flex items-center gap-[6px]">
-      <button onClick={onClose} title="Close"
+      <button onClick={onClose} title="Close" aria-label="Close window"
         className="w-3 h-3 rounded-full bg-[#ff5f57] hover:brightness-75 active:brightness-50 transition-all focus:outline-none" />
       <button
         onClick={isMaximized ? undefined : onMinimize}
         title={isMaximized ? undefined : 'Minimize'}
+        aria-label="Minimize window"
+        disabled={isMaximized}
         className={`w-3 h-3 rounded-full bg-[#ffbd2e] transition-all focus:outline-none ${isMaximized ? 'opacity-30 cursor-default' : 'hover:brightness-75 active:brightness-50'}`}
       />
-      <button onClick={onMaximize} title={isMaximized ? 'Restore' : 'Maximize'}
+      <button onClick={onMaximize} title={isMaximized ? 'Restore' : 'Maximize'} aria-label={isMaximized ? 'Restore window' : 'Maximize window'}
         className="w-3 h-3 rounded-full bg-[#28c840] hover:brightness-75 active:brightness-50 transition-all focus:outline-none" />
     </div>
   )
@@ -126,11 +128,15 @@ export default function FloatingWindow({ win, zIndex, onClose, onMinimize, onMax
       resizing.current = false
       setSnapPreview(null)
     }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    // Pointer events cover mouse, touch and pen; the handles set
+    // touch-action: none so a touch drag moves the window, not the page.
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
     return () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
     }
     // pos/size/snapPreview/onDockChange are read (not just set) inside `up`,
     // so — unlike the original zero-dependency version of this effect —
@@ -164,7 +170,7 @@ export default function FloatingWindow({ win, zIndex, onClose, onMinimize, onMax
         data-desktop-window={win.id}
         className={isMax ? 'fixed inset-0 flex flex-col' : 'fixed flex flex-col rounded-xl overflow-hidden shadow-2xl border border-black/15 dark:border-white/[0.08]'}
         style={isMax ? { zIndex, pointerEvents: 'auto' } : { left: pos.x, top: pos.y, width: size.w, height: size.h, zIndex, pointerEvents: 'auto' }}
-        onMouseDown={onFocus}
+        onPointerDown={onFocus}
       >
         {/* Maximized: a real row (not absolute-over-content) — reserves actual height so
             every lab's own top-left UI (back buttons, headers, ...) gets
@@ -174,8 +180,8 @@ export default function FloatingWindow({ win, zIndex, onClose, onMinimize, onMax
         <div
           className={isMax
             ? 'flex-shrink-0 h-7 flex items-center px-3 bg-[#e8e8e8] dark:bg-[#2c2c2e]'
-            : 'flex-shrink-0 h-8 flex items-center gap-3 px-3 select-none cursor-grab active:cursor-grabbing bg-[#e8e8e8] dark:bg-[#2c2c2e] border-b border-black/10 dark:border-white/[0.08]'}
-          onMouseDown={isMax ? undefined : startDrag}
+            : 'flex-shrink-0 h-8 flex items-center gap-3 px-3 select-none touch-none cursor-grab active:cursor-grabbing bg-[#e8e8e8] dark:bg-[#2c2c2e] border-b border-black/10 dark:border-white/[0.08]'}
+          onPointerDown={isMax ? undefined : startDrag}
         >
           <MacDots onClose={onClose} onMinimize={isMax ? undefined : onMinimize} onMaximize={onMaximize} isMaximized={isMax} />
           {!isMax && (
@@ -197,9 +203,9 @@ export default function FloatingWindow({ win, zIndex, onClose, onMinimize, onMax
         </div>
         {!isMax && (
           <div
-            onMouseDown={startResize}
+            onPointerDown={startResize}
             title="Resize"
-            className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-10 group"
+            className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize touch-none z-10 group"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" className="absolute bottom-0.5 right-0.5 pointer-events-none text-slate-400 dark:text-slate-500 opacity-60 group-hover:opacity-100 transition-opacity">
               <path d="M12 2L2 12M12 7L7 12M12 12L12 12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
