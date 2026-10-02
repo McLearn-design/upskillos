@@ -12,14 +12,14 @@ let configured = null
 loader.init = function init() {
   configured ??= import('./configureMonaco.js')
   let canceled = false
-  const promise = configured
-    .then(() => originalInit.call(loader))
-    .then((monaco) => {
-      // Same shape as the loader's own cancelation, which the editors ignore.
-      if (canceled) throw { type: 'cancelation', msg: 'operation is manually canceled' }
-      return monaco
-    })
-  // The editors call cancel() when they unmount before Monaco is ready.
+  // Callers cancel when they unmount before Monaco is ready. A canceled load
+  // never settles, rather than rejecting: the library's useMonaco() hook
+  // calls init() without a catch, so a rejection there is an uncaught error.
+  const promise = new Promise((resolve, reject) => {
+    configured
+      .then(() => originalInit.call(loader))
+      .then((monaco) => { if (!canceled) resolve(monaco) }, (error) => { if (!canceled) reject(error) })
+  })
   promise.cancel = () => { canceled = true }
   return promise
 }
