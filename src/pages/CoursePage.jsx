@@ -50,8 +50,11 @@ export default function CoursePage() {
           {/* Decorative background blur/circle */}
           <div className="absolute top-0 right-0 -mt-24 -mr-24 w-96 h-96 bg-white/20 rounded-full blur-3xl pointer-events-none"></div>
           <div className="absolute bottom-0 left-0 -mb-16 -ml-16 w-64 h-64 bg-black/10 rounded-full blur-2xl pointer-events-none"></div>
-          
-          <div className="relative z-10 flex items-center gap-6">
+          {/* Several course colours have a light middle stop (teal-400, amber-400,
+              cyan-400…) that white text is hard to read on; this keeps it legible. */}
+          <div className="absolute inset-0 bg-black/25 pointer-events-none"></div>
+
+          <div className="relative z-10 flex items-center gap-6 [text-shadow:0_1px_3px_rgb(0_0_0/0.25)]">
             <div className="hidden md:flex items-center justify-center w-24 h-24 bg-white/10 rounded-2xl backdrop-blur-sm border border-white/20 shadow-inner text-5xl">
               {meta.icon || '📚'}
             </div>
