@@ -40,6 +40,14 @@ function PreRenderer({ children }: any) {
   return <InPreContext.Provider value={true}>{children}</InPreContext.Provider>;
 }
 
+// The lesson Markdown ends with a "## Definition of Done" task list, and the
+// panel shows the same items as interactive checkboxes below it. Rendering both
+// listed every item twice, the first time as disabled checkboxes. Drop the
+// Markdown copy, up to the next rule or heading.
+function withoutChecklistSection(markdown: string): string {
+  return markdown.replace(/^## Definition of Done[ \t]*\n[\s\S]*?(?=^---|^#{1,2} |(?![\s\S]))/m, '')
+}
+
 export default function LessonPanel({
   title,
   content,
@@ -79,7 +87,7 @@ export default function LessonPanel({
           rehypePlugins={PROSE_REHYPE_PLUGINS}
           components={{ ...proseComponents, code: CodeRenderer, pre: PreRenderer }}
         >
-          {content}
+          {withoutChecklistSection(content)}
         </ReactMarkdown>
 
         <div className="my-4">
