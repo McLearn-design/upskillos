@@ -335,7 +335,13 @@ export default function CNCLab({
   const _initialCode = params.initialCode ?? initialCode;
   const _initialDialect = params.dialect ?? initialDialect;
   const _lessonProgram = params.lessonProgram ?? lessonProgram;
-  // Theme awareness
+  // Theme awareness: follow the app's dark class, as CNCAxesExplorer does.
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
+  useEffect(() => {
+    const obs = new MutationObserver(() => setIsDark(document.documentElement.classList.contains("dark")));
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
 
   const C = useMemo(
     () =>
