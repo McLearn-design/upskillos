@@ -63,6 +63,8 @@ export default function MLLab({ onBack }) {
   const [labNumber,setLabNumber]=useState(()=>labForLesson(saved.lessonId)?.number ?? 1)
   const lab=labByNumber(labNumber), lessons=lab.lessons, plan=allLabs.find(l=>l.number===lab.number)
   const [lessonIndex,setLessonIndex]=useState(()=>Math.max(0,lessons.findIndex(l=>l.id===saved.lessonId)))
+  // Opening somewhere other than Lab 1 because of saved progress: say so, and offer the start.
+  const [resumedAt,setResumedAt]=useState(()=>labNumber>1?labNumber:null)
   const [storageError,setStorageError]=useState(''), [tab,setTab]=useState('learn'), [returnTo,setReturnTo]=useState(null)
   const [output,setOutput]=useState('Implement the functions, then run the checks.'), [busy,setBusy]=useState(false), [pythonStatus,setPythonStatus]=useState(''), [showSolution,setShowSolution]=useState(false)
   const worker=useRef(null), timer=useRef(null), playgroundRef=useRef(null), rootRef=useRef(null)
@@ -98,6 +100,7 @@ export default function MLLab({ onBack }) {
       <div className="ml-lab-switch"><button disabled={!prevLab} onClick={()=>openLab(prevLab.number)} aria-label="Previous lab">←</button><label><span className="ml-eyebrow">Lab</span><select aria-label="Choose lab" value={lab.number} onChange={e=>openLab(Number(e.target.value))}>{labs.map(l=><option key={l.number} value={l.number}>{String(l.number).padStart(2,'0')} · {allLabs.find(p=>p.number===l.number).title}</option>)}</select></label><button disabled={!nextLab} onClick={()=>openLab(nextLab.number)} aria-label="Next lab">→</button></div></header>
     <nav className="ml-tabs" aria-label="ML workspace">{[['learn','Learn & experiment'],['code','Implement in Python'],['path','Your learning path']].map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}<span>{lessons.filter(l=>progress[l.id]?.passed).length}/{lessons.length} checkpoints</span></nav>
     {storageError && <p className="ml-warning" role="alert">{storageError}</p>}
+    {resumedAt && resumedAt===lab.number && <p className="ml-return" role="note">Resumed where you left off: Lab {String(resumedAt).padStart(2,'0')}. <button onClick={()=>{setResumedAt(null);openLab(1);rootRef.current?.scrollTo?.({top:0})}}>Start from Lab 01</button> <button onClick={()=>setResumedAt(null)} aria-label="Dismiss">✕</button></p>}
     {returnTo && returnTo.number!==lab.number && <p className="ml-return" role="note">Reviewing a prerequisite. <button onClick={()=>{openLab(returnTo.number,returnTo.index);rootRef.current?.scrollTo?.({top:0})}}>← Back to Lab {String(returnTo.number).padStart(2,'0')}</button></p>}
     <PythonStatus lessons={lab.lessons} />
     {tab==='learn' && <div className="ml-layout">
