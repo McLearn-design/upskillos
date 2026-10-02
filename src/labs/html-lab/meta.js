@@ -13,4 +13,8 @@ export default {
     sub: "Elements · Box Model · CSS"
   },
   order: 7,
+  // Three panes (elements, canvas, properties) need more than the default
+  // 960×640 window; the desktop clamps this to the screen.
+  width: 1440,
+  height: 900,
 }
