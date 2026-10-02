@@ -133,7 +133,9 @@ export default function TopicTable({ group, query, matchItem }) {
       </legend>
 
       {filtered.length === 0 ? (
-        <p className="text-sm text-slate-500 dark:text-slate-400 italic mt-4">No matches for "{query}" in {group.label}.</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400 italic mt-4">
+          No matches for "{query}"{group.label.includes(`"${query}"`) ? '' : ` in ${group.label}`}. Try a shorter or different word.
+        </p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 relative z-10 mt-2">
           {filtered.map((r) => {

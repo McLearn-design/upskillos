@@ -264,7 +264,7 @@ class LinkedList {
   }
 }
 
-console.log('fib(10):', fibonacci(10))
+console.log('fib(5):', fibonacci(5))
 
 const list = new LinkedList()
 list.push(1)
