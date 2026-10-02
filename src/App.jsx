@@ -304,6 +304,7 @@ export default function App() {
                                 <EntryShell
                                   paramKey="labKey"
                                   loader={getLabEntry}
+                                  fallbackPath={(key) => LABS.find((lab) => lab.key === key && lab.routes)?.path}
                                   notFoundEmoji="🔬"
                                   notFoundLabel="Lab not found"
                                   backTo="/labs"

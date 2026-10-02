@@ -6,7 +6,9 @@ import LoadingSpinner from '../components/ui/LoadingSpinner.jsx'
 
 // Thin route-trigger: loads the lab/game component, opens it as a desktop
 // floating window, then navigates back to the page the link was followed from (or the listing).
-export default function EntryShell({ paramKey, loader, notFoundEmoji, notFoundLabel, backTo, backLabel }) {
+// fallbackPath(key): for an entry that is a full page rather than a window
+// (a lab with its own route and no index file), where to send #/lab/<key>.
+export default function EntryShell({ paramKey, loader, notFoundEmoji, notFoundLabel, backTo, backLabel, fallbackPath }) {
   const params = useParams()
   const key = params[paramKey]
   const navigate = useNavigate()
@@ -19,7 +21,12 @@ export default function EntryShell({ paramKey, loader, notFoundEmoji, notFoundLa
     let cancelled = false
     loader(key).then(entry => {
       if (cancelled) return
-      if (!entry?.component) { setNotFound(true); return }
+      if (!entry?.component) {
+        const page = fallbackPath?.(key)
+        if (page) navigate(page + search, { replace: true })
+        else setNotFound(true)
+        return
+      }
       // A deep link's query (?project=…) would be lost by the navigation below; hand it to the lab.
       if (search) setEntryLink(key, search)
       openWindow({
