@@ -7,6 +7,9 @@ import { GLASS_META } from '../styles/courseColors.js'
 import { motion } from 'framer-motion'
 import { CheckCircle2, Play, BookOpen } from 'lucide-react'
 
+// How many lesson titles each chapter card lists before "+ N more".
+const LESSON_PREVIEW = 4
+
 export default function CoursePage() {
   const { courseKey } = useParams()
   const { getLessonProgress } = useProgress()
@@ -135,7 +138,19 @@ export default function CoursePage() {
                   </div>
                   
                   <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2 group-hover:text-slate-800 dark:group-hover:text-white transition-colors">{chapter.title}</h2>
-                  
+
+                  {/* A preview of what the chapter covers, so it can be judged before opening it. */}
+                  {chLessons > 0 && (
+                    <ul className="mt-1 space-y-0.5 text-sm text-slate-500 dark:text-slate-400">
+                      {chapter.lessons.slice(0, LESSON_PREVIEW).map((l) => (
+                        <li key={l.slug} className="truncate">· {l.title}</li>
+                      ))}
+                      {chLessons > LESSON_PREVIEW && (
+                        <li className="text-slate-400 dark:text-slate-500">+ {chLessons - LESSON_PREVIEW} more</li>
+                      )}
+                    </ul>
+                  )}
+
                   {chLessons > 0 && (
                     <div className="mt-4 max-w-md">
                       <div className="flex items-center justify-between text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">
