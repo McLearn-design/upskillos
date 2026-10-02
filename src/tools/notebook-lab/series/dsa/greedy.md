@@ -185,7 +185,7 @@ Hint: Sort by `value / weight`, highest first. For each item take `min(weight, c
 :::
 
 ::: challenge Fewest arrows [medium]
-Balloons are stretched horizontally along a wall; balloon `(start, end)` covers that range of x positions, ends included. An arrow shot vertically at position x bursts every balloon with start ≤ x ≤ end. Write `fewest_arrows(balloons)` returning the minimum number of arrows that burst them all. Greedy: sort by **end**; shoot an arrow at the end of the first balloon not yet burst, which bursts every balloon starting at or before that point; repeat. (The exchange argument is the same as for meetings: moving any arrow right, to the end of the first balloon it bursts, can only burst more.)
+Balloons are stretched horizontally along a wall; balloon `(start, end)` covers that range of x positions, ends included. An arrow shot vertically at position x bursts every balloon with start ≤ x ≤ end. Write `fewest_arrows(balloons)` returning the minimum number of arrows that burst them all. Greedy: sort by **end**; shoot an arrow at the end of the first balloon not yet burst, which bursts every balloon starting at or before that point; repeat. (The exchange argument is the same as for meetings: moving any arrow right, to the smallest end among the balloons it bursts, can only burst more.)
 
 ```python starter
 def fewest_arrows(balloons):

@@ -104,7 +104,7 @@ There are 10 combinations but 128 ordered sequences for the same amount and coin
 
 ## Longest increasing subsequence
 
-A **subsequence** keeps some items of a list in their original order, not necessarily next to each other. The **longest increasing subsequence** (LIS) of a sequence of prices, heights or scores measures its longest upward trend. Let `length[i]` be the length of the longest increasing subsequence **ending at position i**. It is 1 plus the largest `length[j]` over earlier positions j with a smaller value (or just 1 if there are none). Filling the table left to right takes O(n²), and storing each position's best predecessor lets the subsequence itself be traced back. Predict before running: how long is the longest increasing run in these daily prices?
+A **subsequence** keeps some items of a list in their original order, not necessarily next to each other. The **longest increasing subsequence** (LIS) of a sequence of prices, heights or scores measures its longest upward trend. Let `length[i]` be the length of the longest increasing subsequence **ending at position i**. It is 1 plus the largest `length[j]` over earlier positions j with a smaller value (or just 1 if there are none). Filling the table left to right takes O(n²), and storing each position's best predecessor lets the subsequence itself be traced back. Predict before running: how long is the longest increasing subsequence of these daily prices (the days need not be consecutive)?
 
 ```python
 def longest_increasing(values):
@@ -163,6 +163,14 @@ for _ in range(200):
     _v = [_r.randint(0, 20) for _ in range(_r.randint(0, 10))]
     _want = max(sum(_v[i] for i in range(len(_v)) if _m[i]) for _m in _it.product((0, 1), repeat=len(_v)) if not any(_m[i] and _m[i + 1] for i in range(len(_v) - 1))) if _v else 0
     assert best_haul(_v) == _want, f"Wrong haul for {_v}: expected {_want}."
+def _names_in(_f):
+    _names, _codes = set(), [getattr(_f, "__wrapped__", _f).__code__]
+    while _codes:
+        _c = _codes.pop()
+        _names.update(_c.co_names)
+        _codes.extend(_k for _k in _c.co_consts if hasattr(_k, "co_names"))
+    return _names
+assert not hasattr(best_haul, "cache_info") and not ({"cache", "lru_cache"} & _names_in(best_haul)), "Use a loop here, not a cached recursion: the large input is far deeper than the browser's stack allows."
 _big = [_r.randint(0, 100) for _ in range(200_000)]
 _start = _time.perf_counter(); best_haul(_big); _el = _time.perf_counter() - _start
 assert _el < 1.5, f"200,000 houses took {_el:.1f} s: one pass with two running values."
@@ -207,7 +215,7 @@ assert score_ways(12, False) == 4 and score_ways(12, True) == 18, f"12 points: 4
 assert score_ways(0, False) == 1 and score_ways(0, True) == 1 and score_ways(1, False) == 0, "0 points: one way (no plays); 1 point: none."
 for _t in range(0, 16):
     _combos = sum(1 for a in range(_t // 2 + 1) for b in range(_t // 3 + 1) for c in range(_t // 7 + 1) if 2 * a + 3 * b + 7 * c == _t)
-    _seqs = sum(1 for k in range(_t + 1) for s in _it.product((2, 3, 7), repeat=k) if sum(s) == _t) if _t <= 14 else None
+    _seqs = sum(1 for k in range(_t // 2 + 1) for s in _it.product((2, 3, 7), repeat=k) if sum(s) == _t) if _t <= 14 else None
     assert score_ways(_t, False) == _combos, f"{_t} points should have {_combos} combinations."
     if _seqs is not None:
         assert score_ways(_t, True) == _seqs, f"{_t} points should have {_seqs} sequences."
@@ -257,6 +265,9 @@ for _ in range(300):
     _want = max(sum(_xs[i:j]) for i in range(len(_xs)) for j in range(i + 1, len(_xs) + 1))
     assert _s == _want, f"Wrong best sum for {_xs}: expected {_want}."
     assert 0 <= _a <= _b < len(_xs) and sum(_xs[_a:_b + 1]) == _s, f"For {_xs}, positions {_a} to {_b} don't add up to {_s}."
+assert max_subarray([1, -1, 1]) == (1, 0, 0) and max_subarray([0, 3, -3, 3]) == (3, 1, 1), "Ties: the stretch that ends earliest, and among those the shortest."
+_start = _time.perf_counter(); max_subarray([_r.randint(-100, 100) for _ in range(500)]); _el = _time.perf_counter() - _start
+assert _el < 0.3, f"500 values took {_el:.1f} s: one pass, keeping the best stretch ending at each position."
 _big = [_r.randint(-100, 100) for _ in range(5_000)]
 _start = _time.perf_counter(); max_subarray(_big); _el = _time.perf_counter() - _start
 assert _el < 0.3, f"5,000 values took {_el:.1f} s: one pass, keeping the best stretch ending at each position."

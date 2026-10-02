@@ -146,7 +146,7 @@ for digits in [16, 64, 256]:
 
 `divmod(x, B)` splits x into its high part (the quotient) and its low part (the remainder). Each call measures its numbers' length with `len(str(...))`, because a + b can have one more digit than a; the recursion stops when both numbers are single digits.
 
-Both give the correct product (checked against Python's own multiplication). With four products the count is about n² (4,048 for 64 digits); Karatsuba needs far fewer (1,375), and the gap widens with n, as the exponent 1.585 promises. Python itself switches to Karatsuba for very large integers; cryptography, which multiplies numbers with thousands of digits, relies on even faster algorithms built on the same idea.
+Both give the correct product (checked against Python's own multiplication). With four products the count is about n² (4,048 for 64 digits); Karatsuba needs far fewer (1,375), and the gap widens with n, as the exponent 1.585 promises. Python itself switches to Karatsuba for very large integers; big-number libraries such as GMP use Karatsuba and its generalisation, Toom–Cook, switching to FFT-based methods only for enormous numbers.
 
 ## When it pays
 
@@ -196,8 +196,15 @@ for _ in range(300):
     _xs = [_r.randint(-9, 9) for _ in range(_r.randint(1, 14))]
     _want = max(sum(_xs[i:j]) for i in range(len(_xs)) for j in range(i + 1, len(_xs) + 1))
     assert max_subarray(_xs) == _want, f"Wrong answer for {_xs}: expected {_want}."
-_big = [_r.randint(-100, 100) for _ in range(20_000)]
-assert max_subarray(_big) == max_subarray(_big), "Large inputs should work (the recursion is only log n deep)."
+import time as _time
+_mid = [_r.randint(-100, 100) for _ in range(2_000)]
+_best = _here = _mid[0]
+for _x in _mid[1:]:
+    _here = max(_x, _here + _x)
+    _best = max(_best, _here)
+_start = _time.perf_counter(); _got = max_subarray(_mid); _el = _time.perf_counter() - _start
+assert _got == _best, f"Wrong answer for a 2,000-value list: expected {_best}."
+assert _el < 0.5, f"2,000 values took {_el:.1f} s: split in half, recurse, and combine with the best stretch crossing the middle, O(n log n)."
 "SUCCESS: Left, right, or crossing: the crossing case costs one linear scan each way, so T(n) = 2T(n/2) + O(n) = O(n log n). (A cleverer scan, Kadane's algorithm, does it in O(n); the dynamic programming lessons explain why.)"
 ```
 
@@ -284,6 +291,9 @@ for _ in range(200):
     _f = list("abcdefg")[:_r.randint(0, 7)]; _s = _f[:]; _r.shuffle(_s)
     _want = sum(1 for x, y in _it.combinations(_f, 2) if (_f.index(x) < _f.index(y)) != (_s.index(x) < _s.index(y)))
     assert ranking_distance(_f, _s) == _want, f"Wrong distance between {_f} and {_s}."
+_mid = list(range(5_000)); _mid2 = _mid[:]; _r.shuffle(_mid2)
+_start = _time.perf_counter(); ranking_distance(_mid, _mid2); _el = _time.perf_counter() - _start
+assert _el < 1, f"5,000 films took {_el:.1f} s: comparing every pair is 12.5 million comparisons; count inversions while merge sorting."
 _big = list(range(30_000)); _big2 = _big[:]; _r.shuffle(_big2)
 _start = _time.perf_counter(); ranking_distance(_big, _big2); _el = _time.perf_counter() - _start
 assert _el < 3, f"30,000 films took {_el:.1f} s: count inversions by divide and conquer, not every pair."

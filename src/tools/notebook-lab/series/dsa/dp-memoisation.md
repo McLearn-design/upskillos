@@ -158,18 +158,20 @@ assert [ways_to_climb(_n) for _n in range(7)] == [1, 1, 2, 4, 7, 13, 24], f"Expe
 for _n in range(1, 9):
     _count = sum(1 for _k in range(1, _n + 1) for _seq in _it.product((1, 2, 3), repeat=_k) if sum(_seq) == _n)
     assert ways_to_climb(_n) == _count, f"For {_n} steps there are {_count} sequences."
+_start = _time.perf_counter(); ways_to_climb(25); _el = _time.perf_counter() - _start
+assert _el < 0.5, f"ways_to_climb(25) took {_el:.1f} s: without memoisation it makes millions of calls. Store each answer the first time it is computed."
 _start = _time.perf_counter()
 _v = ways_to_climb(100)
 _el = _time.perf_counter() - _start
 assert _v == 180396380815100901214157639 and _el < 1, f"ways_to_climb(100) should be fast with memoisation (took {_el:.1f} s)."
-"SUCCESS: Three recursive calls per step would mean about 3^n calls; with memoisation, 101 states. ways_to_climb(100) has 27 digits."
+"SUCCESS: Without memoisation, ways_to_climb(100) would make about 10²⁶ calls; with it, 101 states. The answer has 27 digits."
 ```
 
 Hint: The ways to reach n are the ways to reach n − 1, n − 2 and n − 3, added (the last hop was 1, 2 or 3). Negative n has 0 ways; 0 has 1. Decorate with `@cache`.
 :::
 
 ::: challenge Decode a message [medium]
-A message of letters A to Z was encoded as numbers, A → 1, B → 2, …, Z → 26, and the numbers written together without spaces, so "12" could be "AB" (1, 2) or "L" (12). Write `decodings(digits)` returning the number of ways a string of digits can be decoded. A "0" cannot stand alone (only as part of 10 or 20), and a two-digit code must be between 10 and 26. Use memoisation on the **position** in the string: from position i, either read one digit (if it is not "0") or two digits (if they form 10 to 26). Assume the string has at most 150 digits.
+A message of letters A to Z was encoded as numbers, A → 1, B → 2, …, Z → 26, and the numbers written together without spaces, so "12" could be "AB" (1, 2) or "L" (12). Write `decodings(digits)` returning the number of ways a string of digits can be decoded. A "0" cannot stand alone (only as part of 10 or 20), and a two-digit code must be between 10 and 26. An empty string has 1 decoding (there is nothing left to decode). Use memoisation on the **position** in the string: from position i, either read one digit (if it is not "0") or two digits (if they form 10 to 26). Assume the string has at most 150 digits.
 
 ```python starter
 def decodings(digits):
@@ -215,6 +217,8 @@ _r = _random.Random(1)
 for _ in range(200):
     _s = "".join(_r.choice("0112226") for _ in range(_r.randint(0, 12)))
     assert decodings(_s) == _brute(_s), f"decodings({_s!r}) should be {_brute(_s)}."
+_start = _time.perf_counter(); decodings("1" * 30); _el = _time.perf_counter() - _start
+assert _el < 0.5, f"30 ones took {_el:.1f} s: without memoisation the calls grow like the Fibonacci numbers. Memoise on the position."
 assert decodings("1" * 120) == 8670007398507948658051921, "120 ones: the count is a Fibonacci number, found instantly with memoisation."
 "SUCCESS: The state is just the position: what remains to decode. 120 ones have about 8.7 × 10²⁴ decodings, counted with 121 states."
 ```
@@ -257,6 +261,9 @@ for _ in range(100):
     _tri = [[_r.randint(-9, 9) for _ in range(_row + 1)] for _row in range(_n)]
     _want = min(sum(_tri[_row][sum(_moves[:_row])] for _row in range(_n)) for _moves in _it.product((0, 1), repeat=_n - 1))
     assert cheapest_descent(_tri) == _want, f"Wrong total for {_tri}: expected {_want}."
+_mid = [[(_row * 7 + _j * 13) % 10 for _j in range(_row + 1)] for _row in range(22)]
+_start = _time.perf_counter(); cheapest_descent(_mid); _el = _time.perf_counter() - _start
+assert _el < 0.5, f"22 rows took {_el:.1f} s: there are 2^21 paths, but only 253 positions. Memoise on (row, position)."
 _big = [[(_row * 7 + _j * 13) % 10 for _j in range(_row + 1)] for _row in range(100)]
 _start = _time.perf_counter(); cheapest_descent(_big); _el = _time.perf_counter() - _start
 assert _el < 1, f"100 rows took {_el:.1f} s: memoise on (row, position); there are only 5,050 states, but 2^99 paths."
