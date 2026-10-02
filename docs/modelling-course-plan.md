@@ -79,18 +79,18 @@ Each row gives the lesson title, then the four strands:
 | 2 ✓ | Winding and normals | Cross product, right-hand rule, face normal, area | Newell's normal for n-gons | Back-face culling; Flip normals | Normals overlay, Mesh › Flip normals (traced); P: winding-and-normals, C: fix-the-normals |
 | 3 ✓ | Edges and neighbours | Edges from faces; manifold and boundary edges | Edge table as a hash map, O(F); neighbour lists | Drawing the wireframe (edge lines) | Wire overlay, status-bar counts (edges, open edges), Edit › Select non-manifold (traced edge table); P: edges-and-neighbours, C: remove-the-fin |
 | 4 ✓ | Connected pieces | Graphs, components | Breadth-first search on the face graph | Selection highlighting | Edit › Select linked (face select: traced BFS across shared edges); P: connected-pieces, C: remove-the-floaters |
-| 5 | Euler's formula | V − E + F = 2; genus | Counting from the edge table | Why holes change shading seams | P: curvature-gallery (torus χ = 0) |
-| 6 | Welding, cleaning and filling holes | Equality with a tolerance; boundary loops | Spatial hashing to merge close points; compacting indices; filling a hole with consistent winding | Cracks and double edges on screen | Merge at centre, F Fill; C: close-the-box |
-| 7 | Files: OBJ and glTF | Index bases (1 in OBJ); buffers | Parsing OBJ; writing glTF buffers | What glTF hands the GPU | File › Import / Export OBJ / GLB (link: Mesh Engine 1.4) |
+| 5 ✓ | Euler's formula | V − E + F = 2; genus | Counting from the edge table | Why holes change shading seams (built as: the genus sets how many seam loops an unwrap needs) | Inspector › MESH (Euler V − E + F); traced `mesh.topology()`; P: eulers-formula, link to curvature-gallery |
+| 6 ✓ | Welding, cleaning and filling holes | Equality with a tolerance; boundary loops | Spatial hashing to merge close points; compacting indices; filling a hole with consistent winding | Cracks and double edges on screen | Merge at centre, F Fill; C: close-the-box; built with Mesh › Merge by distance (traced spatial hash), traced Fill, P: welding-and-filling |
+| 7 ✓ | Files: OBJ and glTF | Index bases (1 in OBJ); buffers | Parsing OBJ; writing glTF buffers | What glTF hands the GPU | File › Import / Export OBJ / GLB (link: Mesh Engine 1.4); traced OBJ read (`scene.fromOBJ`, `scene.toOBJ` in scripts), P: obj-files |
 
 ### 2. Vectors, matrices and transforms (8)
 
 | # | Lesson | Maths | Algorithm | Graphics | MeshLab |
 |---|---|---|---|---|---|
-| 1 | Vectors, dot and cross | Length, angle, projection | — | Lighting uses dot products | Inspector numbers |
-| 2 | Translate, rotate, scale | 3×3 matrices, the 4×4 homogeneous form | Building T·R·S | The model matrix in the vertex shader | Move / Rotate / Scale, the matrix readout |
-| 3 | Order matters | Non-commuting matrices | Composing and decomposing TRS | Wrong order, visible distortion | Inspector › How it is built: T, R and S |
-| 4 | The determinant | Volume scaling; a negative determinant mirrors | 3×3 determinant | Mirroring flips winding, then faces go dark | Negative scale, the determinant readout |
+| 1 ✓ | Vectors, dot and cross | Length, angle, projection | — | Lighting uses dot products | Inspector numbers; Mesh › Measure angle (traced); P: vectors-dot-cross |
+| 2 ✓ | Translate, rotate, scale | 3×3 matrices, the 4×4 homogeneous form | Building T·R·S | The model matrix in the vertex shader | Move / Rotate / Scale, the matrix readout; Object › Trace the transform (T·R·S), traced; P: translate-rotate-scale |
+| 3 ✓ | Order matters | Non-commuting matrices | Composing and decomposing TRS | Wrong order, visible distortion | Inspector › How it is built: T, R and S; Object › Decompose the matrix (traced, finds shear); P: order-matters |
+| 4 ✓ | The determinant | Volume scaling; a negative determinant mirrors | 3×3 determinant | Mirroring flips winding, then faces go dark | Negative scale, the determinant readout; Object › Determinant of the matrix (traced); P: the-determinant |
 | 5 | Hierarchies | world = parent × local | Walking the parent chain | The scene graph | Outliner parenting, Clear parent; P: robot-arm |
 | 6 | Local and global axes | Change of basis | Gizmo axes from the matrix columns | Drawing the gizmo | Local axes toggle |
 | 7 | Euler angles and gimbal lock | Rotation order; singularity | Euler to matrix and back | Visible gimbal lock | Rotation mode; P: euler-vs-slerp |
@@ -227,6 +227,13 @@ place in a lesson.
 | Edit: Undo, Redo | 4.6 |
 | Edit: Duplicate, Delete, Select all | 5.5, 4.3 |
 | Edit: Select linked | 1.4 |
+| Edit: Select non-manifold; status-bar edge and open-edge counts | 1.3 |
+| Inspector: MESH section (counts, Euler V − E + F, pieces) | 1.3, 1.5 |
+| Mesh: Merge by distance | 1.6 |
+| Mesh: Measure angle | 2.1 |
+| Object: Trace the transform (T·R·S) | 2.2 |
+| Object: Decompose the matrix | 2.3 |
+| Object: Determinant of the matrix | 2.4 |
 | Add: primitives, Empty, Armature | 12.1, 2.5, 11.1 |
 | Mesh: Extrude, Inset (region), Inset individual | 5.1, 5.2 |
 | Mesh: Bevel edges | 5.4 |
@@ -314,6 +321,13 @@ courses and never change once published.
 | 1.2 Winding and normals | `src/courses/modelling-geometry/1-meshes-as-data/002-winding-and-normals.js` | Built; checked in the browser (cells, pictures, graded check, both MeshLab links). Notebook pictures use `notebookScene.js` (`withPicture`); notebook cell text does not render `$…$` maths, so cells use plain numbers |
 | 1.3 Edges and neighbours | `src/courses/modelling-geometry/1-meshes-as-data/003-edges-and-neighbours.js` | Built; checked in the browser. MeshLab gained a traced edge-table build (`EditMesh.edgeTable`, `mesh.edgeTable()` in scripts), Edit › Select non-manifold (Shift+Ctrl+Alt+M) and edge counts in the status bar. Notebook checks share `faceList.js` (`readFaces`, `edgeTable`) |
 | 1.4 Connected pieces | `src/courses/modelling-geometry/1-meshes-as-data/004-connected-pieces.js` | Built; checked in the browser. MeshLab gained `EditMesh.pieces` (traced breadth-first search; `mesh.pieces()` in scripts); Select linked in face select now follows shared edges (it used to follow shared vertices, as vertex and edge select still do). The notebook picture helper colours faces by piece (`groups`) |
+| 1.5 Euler's formula | `src/courses/modelling-geometry/1-meshes-as-data/005-eulers-formula.js` | Built; checked in the browser. MeshLab gained `EditMesh.topology` (V, E, F, χ, pieces, boundary loops, genus; traced, with Predict questions on χ and genus; `mesh.topology()` in scripts). Projects must not name an object "Cube" (the project test uses that name to check the default cube is gone) |
+| 1.6 Welding, cleaning and filling holes | `src/courses/modelling-geometry/1-meshes-as-data/006-welding-and-filling.js` | Built; checked in the browser. `EditMesh.weld(tol)` with tol > 0 is now a real spatial hash (own cell and the 26 round it, nearest within tol); it used to round to a grid and could miss points either side of a cell wall. tol 0 (used by import) is unchanged. Traced weld and fill; Mesh › Merge by distance (0.001, adjustable) |
+| 1.7 Files: OBJ and glTF | `src/courses/modelling-geometry/1-meshes-as-data/007-obj-and-gltf.js` | Built; checked in the browser. `parseOBJ` is traced. Also fixed two older bugs in Mesh Engine Lab's project loader (shared engine): `editor.tracing` (should be `traceEnabled`, so trace projects never turned tracing on) and `runPython` called with its arguments swapped. **Chapter 1 complete** |
+| 2.1 Vectors, dot and cross | `src/courses/modelling-geometry/2-vectors-and-transforms/001-vectors-dot-and-cross.js` | Built; checked in the browser. MeshLab gained Mesh › Measure angle (`EditMesh.measure`, traced, `mesh.measure(a, b, c)` in scripts). The notebook picture helper shades faces by computed values (`values`) |
+| 2.2 Translate, rotate, scale | `src/courses/modelling-geometry/2-vectors-and-transforms/002-translate-rotate-scale.js` | Built; checked in the browser. MeshLab gained Object › Trace the transform (`core/transformTrace.ts`, `object.traceTransform()` in scripts) |
+| 2.3 Order matters | `src/courses/modelling-geometry/2-vectors-and-transforms/003-order-matters.js` | Built; checked in the browser. MeshLab gained Object › Decompose the matrix (`traceDecompose` in `core/transformTrace.ts`, `object.decompose()` in scripts). The shear example is a child turned under an unevenly scaled parent |
+| 2.4 The determinant | `src/courses/modelling-geometry/2-vectors-and-transforms/004-the-determinant.js` | Built; checked in the browser. MeshLab gained Object › Determinant of the matrix (`traceDeterminant`, `object.determinant()` in scripts) |
 
 ## Size
 

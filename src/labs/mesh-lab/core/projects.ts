@@ -8,6 +8,7 @@
 import type { Editor } from '../../../engines/mesh/core/Editor';
 import { EditMesh, type Vec3 } from '../../../engines/mesh/core/EditMesh';
 import { runScript } from '../../../engines/mesh/core/api';
+import { traceDecompose } from '../../../engines/mesh/core/transformTrace';
 import { CHARACTER, EXAMPLES } from './examples';
 import { runPython, type PyodideLike } from '../../../engines/mesh/core/python';
 
@@ -358,6 +359,218 @@ for (const o of [cube, sphere, torus, box]) {
 // Count the torus with Record traces on: the trace asks for χ, then for the number of holes through it.
 const t = torus.mesh.topology()
 log('Torus:', t.boundaryLoops, 'boundary loops, genus', t.genus)`,
+  },
+  {
+    id: 'welding-and-filling',
+    title: 'Welding and filling',
+    icon: '🧵',
+    group: 'Learning',
+    desc: 'Two boxes with no lid, as a scanner or an STL file gives them: every face has its own copies of its corners, a fraction of a millimetre apart. The script merges one by distance with Record traces on; you merge and close the other.',
+    lang: 'js',
+    setup: { select: 'Scanned box', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Read the output: as scanned, 20 vertices and 20 open edges in 5 pieces. weld(0), which only merges exact copies, changes nothing; weld(0.001) leaves 8 vertices, 4 open edges and one piece.',
+      'In the Algorithm trace, press Play. Each copy looks in its own cell and the 26 around it. The question comes at the first copy whose match is across a cell wall.',
+      step('Merge Your box: select it, Tab for edit mode, then Mesh › Merge by distance. The Inspector\u2019s MESH section drops from 20 vertices to 8.', (e) => { const m = e.scene.get('Your box')?.mesh; return !!m && m.verts.length === 8 && m.faces.length === 5; }),
+      step('Close it: press 1 for vertex select, select the four corners round the top and press F (Mesh › Fill). The new face is wound from its neighbours, so it points out.', (e) => { const m = e.scene.get('Your box')?.mesh; return !!m && m.faces.length === 6 && m.stats().closed && m.volume() > 0; }),
+    ],
+    code: `// A box with no lid, as a scanner or an STL file gives it: every face has its own copies of its corners,
+// and the copies are a fraction of a millimetre apart.
+const SIDES = [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [0, 2, 3, 1], [4, 5, 7, 6]]   // the lid is missing
+const corner = (i) => [1.2 * (i % 2) - 0.6, 1.2 * (Math.floor(i / 2) % 2) - 0.6, 1.2 * Math.floor(i / 4) - 0.6]
+function scanned(name, x) {
+  const verts = [], faces = []
+  for (const s of SIDES) faces.push(s.map((i) => {
+    const c = verts.length, p = corner(i)
+    verts.push([p[0] + 0.0002 * (c % 3 - 1), p[1] + 0.0001 * (c % 5 - 2), p[2] + 0.00005 * (c % 7 - 3)])
+    return c
+  }))
+  return scene.add.mesh({ name, verts, faces, position: [x, 0.6, 0] })
+}
+const box = scanned('Scanned box', -1)
+scanned('Your box', 1)
+
+const s0 = box.mesh.stats()
+log('as scanned:', s0.verts, 'vertices,', s0.boundaryEdges, 'open edges,', s0.components, 'pieces')
+box.mesh.weld(0)       // exact copies only: none here
+log('weld(0):', box.mesh.stats().verts, 'vertices')
+box.mesh.weld(0.001)   // within 0.001, by spatial hash; with Record traces on, the trace shows every copy
+const s1 = box.mesh.stats()
+log('weld(0.001):', s1.verts, 'vertices,', s1.boundaryEdges, 'open edges,', s1.components, 'piece')`,
+  },
+  {
+    id: 'obj-files',
+    title: 'OBJ files',
+    icon: '📄',
+    group: 'Learning',
+    desc: 'The square pyramid as an OBJ file: plain text, vertices counted from 1. The script reads it with Record traces on, so you can predict how a face line is converted, then writes it back out the way File › Export OBJ does.',
+    lang: 'js',
+    setup: { select: 'Pyramid', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Read the output: the file\u2019s line f 1 2 3 4 became face [0, 1, 2, 3]. Every vertex number is one less, because OBJ counts from 1 and lists count from 0.',
+      'In the Algorithm trace, press Play: one step per line of the file. At the first face line it asks you to convert its corners.',
+      step('Change the model and see the file change: Tab for edit mode, press 3 for face select, click the base and use Mesh › Flip normals. Then run log(scene.toOBJ()) in the Script tab: the base\u2019s line now lists its corners the other way round.', (e) => { const m = e.scene.get('Pyramid')?.mesh; return !!m && [0, 1, 2, 3].some((k) => [3, 2, 1, 0].every((v, i) => m.faces[0][(i + k) % 4] === v)); }),
+      'File › Export OBJ saves this text as a file; Blender imports it as Wavefront (.obj) from its File menu, quads intact. File › Export GLB writes glTF, which stores triangles.',
+    ],
+    code: `// An OBJ file is plain text: a v line per vertex (x y z), an f line per face (its corners, counted from 1).
+const text = [
+  '# the square pyramid from lesson 1.2',
+  'o Pyramid',
+  'v -1 0 -1', 'v 1 0 -1', 'v 1 0 1', 'v -1 0 1', 'v 0 1.5 0',
+  'f 1 2 3 4', 'f 2 1 5', 'f 3 2 5', 'f 4 3 5', 'f 1 4 5',
+].join('\\n')
+
+// Read it with Record traces on: the trace shows every line, and asks you to convert a face.
+const [p] = scene.fromOBJ(text)
+log('read:', p.mesh.verts.length, 'vertices,', p.mesh.faces.length, 'faces:', JSON.stringify(p.mesh.faces.map((f) => f.verts)))
+
+// And back out, numbered from 1 again, as File › Export OBJ writes it.
+log(scene.toOBJ())`,
+  },
+  {
+    id: 'vectors-dot-cross',
+    title: 'Vectors, dot and cross',
+    icon: '📐',
+    group: 'Learning',
+    desc: 'The square pyramid, measured. The script takes the angle at a base corner with Record traces on: the two edge vectors, their lengths, the dot product, the angle and the cross product, with questions to predict. Then you measure corners yourself.',
+    lang: 'js',
+    setup: { select: 'Pyramid', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Select the Pyramid and look at Position in the Inspector: three numbers, a vector from the world\u2019s origin to the object\u2019s. Every vertex is a vector too, measured from the object\u2019s origin.',
+      'In the Algorithm trace, press Play. It builds the two edge vectors at vertex 0, then asks you for their dot product and for the angle between them.',
+      step('Measure the tip: Tab for edit mode, press 2 for edge select, click two edges that meet at the tip and use Mesh › Measure angle. The status line gives the angle and the dot product.', (e) => e.lastMeasure?.object === 'Pyramid' && e.lastMeasure.corner === 4),
+      'Now measure two base edges that meet at a corner: the dot product is 0, so the angle is exactly 90°.',
+    ],
+    code: `// The square pyramid from lesson 1.2.
+const pyramid = scene.add.mesh({
+  name: 'Pyramid',
+  verts: [[-1, 0, -1], [1, 0, -1], [1, 0, 1], [-1, 0, 1], [0, 1.5, 0]],
+  faces: [[0, 1, 2, 3], [1, 0, 4], [2, 1, 4], [3, 2, 4], [0, 3, 4]],
+})
+
+// The angle at vertex 0 between its edges to vertex 1 and to the tip (4). With Record traces on, the trace
+// shows each step and asks you to predict the dot product and the angle.
+const m = pyramid.mesh.measure(1, 0, 4)
+log('u =', m.u.join(', '), '   v =', m.v.join(', '))
+log('|u| =', m.lu, '  |v| =', +m.lv.toFixed(4), '  u · v =', m.dot, '  angle', +m.degrees.toFixed(2) + '°')
+log('u × v =', m.cross.join(', '), '  triangle area', +m.area.toFixed(4))`,
+  },
+  {
+    id: 'translate-rotate-scale',
+    title: 'Translate, rotate, scale',
+    icon: '🧮',
+    group: 'Learning',
+    desc: 'The pyramid stretched to twice its height, turned 30° and moved. The script traces how its matrix M = T·R·S carries each vertex: scale, then rotate, then move, with questions to predict. Then you change the rotation and trace it again.',
+    lang: 'js',
+    setup: { select: 'Pyramid', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Select the Pyramid. The Inspector shows Position, Rotation and Scale, its matrix, and, under "How it is built: T, R and S", the three matrices that multiply to make it.',
+      'In the Algorithm trace, press Play. It builds S, R and T, asks for the fourth column of M = T·R·S, then follows each vertex through scale, rotate and move, and asks where vertex 0 ends up.',
+      step('Set Rotation Y to 90 in the Inspector, then use Object › Trace the transform (T·R·S) and step through it again: the first column of R is now where the x axis points after a quarter turn.', (e) => { const o = e.scene.get('Pyramid'); return !!o && Math.abs(o.rotation[1] - Math.PI / 2) < 1e-6 && e.trace?.op === 'Trace the transform'; }),
+      'Press R (rotate) or S (scale) and drag: the matrix in the Inspector changes as you go. Its fourth column is always the Position.',
+    ],
+    code: `// The square pyramid from lesson 1.2, twice as tall, turned 30° about y, and moved.
+const pyramid = scene.add.mesh({
+  name: 'Pyramid',
+  verts: [[-1, 0, -1], [1, 0, -1], [1, 0, 1], [-1, 0, 1], [0, 1.5, 0]],
+  faces: [[0, 1, 2, 3], [1, 0, 4], [2, 1, 4], [3, 2, 4], [0, 3, 4]],
+  scale: [1, 2, 1], rotation: [0, Math.PI / 6, 0], position: [2, 0, -1],
+})
+
+// How the matrix moves each vertex. With Record traces on, the trace shows every step and asks you to predict.
+const t = pyramid.traceTransform()
+t.moved.forEach((p, i) => log('v' + i + ' is drawn at', p.map((x) => +x.toFixed(4)).join(', ')))`,
+  },
+  {
+    id: 'order-matters',
+    title: 'Order matters',
+    icon: '🔀',
+    group: 'Learning',
+    desc: 'Two boxes, each stretched to (2, 0.5, 0.5) and turned 45°: one stretched then turned, one turned then stretched by its parent. The script takes both matrices apart with Record traces on, and the second has a shear no position, rotation and scale can describe.',
+    lang: 'js',
+    setup: { select: 'Turn then stretch', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Look from above (View › Top). The first box is a long box turned 45°. The second is a slanted diamond: its corners are no longer square, though it was given the same stretch and the same turn.',
+      'In the Algorithm trace, press Play. It takes the second box\u2019s world matrix apart: position, then the column lengths (predict the first), then the angle between columns 1 and 3 (predict it). A rotation\u2019s columns meet at 90°; these do not.',
+      step('Fix it: select Stretcher and set its Scale to 1, 1, 1; select "Turn then stretch" and set its own Scale to 2, 0.5, 0.5. Then use Object › Decompose the matrix: the shear is gone.', (e) => { const b = e.scene.get('Turn then stretch'); return !!b && Math.abs(b.scale[0] - 2) < 1e-9 && e.trace?.op === 'Decompose the matrix' && traceDecompose(e.scene.worldMatrix(b).elements).shearDeg < 1e-6; }),
+      'Open "How it is built: T, R and S" in the Inspector for each box: an object\u2019s own matrix is always T·R·S. The slant came from a parent\u2019s stretch applied after the child\u2019s turn.',
+    ],
+    code: `// Two boxes, each stretched to (2, 0.5, 0.5) and turned 45° about y.
+const f = (x) => +x.toFixed(3)
+
+// The first is stretched, then turned: its own scale and rotation, so its matrix is T·R·S.
+const a = scene.add.cube({ name: 'Stretch then turn', size: 1, scale: [2, 0.5, 0.5], rotation: [0, Math.PI / 4, 0], position: [-2.5, 0.5, 0] })
+
+// The second is turned, then stretched: it is turned, and its parent (an empty) is stretched, so its world
+// matrix is the parent's scale times its own rotation.
+const stretcher = scene.add.empty({ name: 'Stretcher', scale: [2, 0.5, 0.5], position: [2, 0.5, 0] })
+const b = scene.add.cube({ name: 'Turn then stretch', size: 1, rotation: [0, Math.PI / 4, 0], parent: stretcher })
+
+const da = a.decompose()
+log('Stretch then turn: scale', da.scale.map(f).join(', '), '  shear', f(da.shearDeg) + '°')
+const db = b.decompose()   // with Record traces on, the trace takes this matrix apart
+log('Turn then stretch: scale', db.scale.map(f).join(', '), '  shear', f(db.shearDeg) + '°')`,
+  },
+  {
+    id: 'the-determinant',
+    title: 'The determinant',
+    icon: '🪞',
+    group: 'Learning',
+    desc: 'A stretched box, a mirrored box, and a pyramid whose mirror image was baked into its vertices. The script works out the mirrored box\u2019s determinant with Record traces on; you turn the baked pyramid right side out.',
+    lang: 'js',
+    setup: { select: 'Mirrored', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Select each object and look under World matrix in the Inspector: it gives the determinant. Stretched is scaled (2, 1, 0.5): twice as long, half as deep, so its volume is unchanged and det = 1. Mirrored is scaled (−1.5, 1, 1): det = −1.5.',
+      'In the Algorithm trace, press Play. It expands the determinant along the first row (predict it), checks it against the triple product of the columns, then asks what volume the box fills in the world.',
+      step('Baked mirror has its mirror in its vertices, so every face now winds the wrong way and its Inspector volume reads negative (inside out). Tab for edit mode, press A to select everything, then Mesh › Flip normals: the volume turns positive.', (e) => { const m = e.scene.get('Baked mirror')?.mesh; return !!m && m.faces.length === 5 && m.stats().closed && m.volume() > 0; }),
+      'Mirrored needs no fixing: its determinant is negative, and the renderer turns its faces round as it draws them. Baking a mirror into the vertices loses that, so the faces have to be flipped.',
+    ],
+    code: `const f = (x) => +x.toFixed(4)
+
+// Stretched two ways: longer along x, shallower along z. Volume unchanged.
+const box = scene.add.cube({ name: 'Stretched', size: 1, scale: [2, 1, 0.5], position: [-3, 0.5, 0] })
+// Mirrored left to right, and 1.5 times as wide.
+const mirrored = scene.add.cube({ name: 'Mirrored', size: 1, scale: [-1.5, 1, 1], position: [0, 0.5, 0] })
+// The pyramid with its mirror image baked into the vertices (x made negative), the face lists unchanged.
+const baked = scene.add.mesh({
+  name: 'Baked mirror',
+  verts: [[1, 0, -1], [-1, 0, -1], [-1, 0, 1], [1, 0, 1], [0, 1.5, 0]],
+  faces: [[0, 1, 2, 3], [1, 0, 4], [2, 1, 4], [3, 2, 4], [0, 3, 4]],
+  position: [3, 0, 0],
+})
+
+log('Stretched: det', f(box.determinant().det))
+log('Baked mirror: its mesh holds volume', f(baked.mesh.stats().volume), '(inside out)')
+// With Record traces on, the trace works this one out step by step.
+const d = mirrored.determinant()
+log('Mirrored: det', f(d.det), '  its unit-cube mesh fills', f(d.worldVolume), 'in the world')`,
+  },
+  {
+    id: 'hierarchies',
+    title: 'Hierarchies',
+    icon: '🌳',
+    group: 'Learning',
+    desc: 'A two-joint arm: shoulder, elbow, hand. Each part sits in its parent\u2019s frame. The script traces how the hand\u2019s world matrix is built down the chain, with questions to predict; then you turn the elbow and unparent the hand.',
+    lang: 'js',
+    setup: { select: 'Hand', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Select Hand. Its Position in the Inspector, (0, 1.5, 0), is measured in the Elbow\u2019s frame, not the world\u2019s. Its world matrix is Shoulder · Elbow · Hand, multiplied from the root down.',
+      'In the Algorithm trace, press Play. It walks up from the Hand to the root, then multiplies back down, and asks where the Elbow\u2019s origin lands, then the Hand\u2019s.',
+      step('Turn the Elbow: select it and set Rotation Z to 90; the Forearm and the Hand swing with it. Then select Hand and use Object › Trace the world matrix (parents) to step through the new chain.', (e) => { const el = e.scene.get('Elbow'); return !!el && Math.abs(el.rotation[2] - Math.PI / 2) < 1e-6 && e.trace?.op === 'Trace the world matrix' && e.activeObject?.name === 'Hand'; }),
+      step('Unparent the Hand with Object › Clear parent: it stays exactly where it is, because MeshLab turns its world transform into its new local one. Turn the Elbow again: the Hand no longer follows.', (e) => { const h = e.scene.get('Hand'); return !!h && h.parent === null; }),
+    ],
+    code: `const f = (x) => +x.toFixed(3)
+
+// A two-joint arm. The joints are empties; each bar is a child of its joint, so it turns with it.
+const shoulder = scene.add.empty({ name: 'Shoulder', position: [0, 1, 0], rotation: [0, 0, Math.PI / 6] })
+scene.add.cube({ name: 'Upper arm', size: 1, parent: shoulder, position: [0, 1, 0], scale: [0.2, 2, 0.2] })
+const elbow = scene.add.empty({ name: 'Elbow', parent: shoulder, position: [0, 2, 0], rotation: [0, 0, Math.PI / 4] })
+scene.add.cube({ name: 'Forearm', size: 1, parent: elbow, position: [0, 0.75, 0], scale: [0.15, 1.5, 0.15] })
+const hand = scene.add.cube({ name: 'Hand', size: 0.3, parent: elbow, position: [0, 1.5, 0] })
+
+// How the hand's world matrix is built. With Record traces on, the trace walks the chain and asks you to predict.
+const w = hand.traceWorld()
+w.chain.forEach((name, i) => log(name + "'s origin in the world:", w.origins[i].map(f).join(', ')))`,
   },
   {
     id: 'island',

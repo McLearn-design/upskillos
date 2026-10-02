@@ -224,3 +224,37 @@ describe('topology, traced', () => {
     expect(t.steps.filter((x) => x.quiz)).toHaveLength(1);   // χ only: two pieces have no one genus to ask for
   });
 });
+
+describe('weld by distance, traced', () => {
+  it('finds a match across a cell wall, which rounding to a grid would miss', () => {
+    // 0.0049 and 0.0051 are 0.0002 apart, but round to different cells of a 0.01 grid (0 and 1).
+    const m = new EditMesh([[0.0049, 0, 0], [0.0051, 0, 0], [1, 0, 0], [0, 1, 0]], [[0, 2, 3], [1, 3, 2]]);
+    expect(m.clone().weld(0).verts).toHaveLength(4);
+    const t = new Trace('Merge by distance');
+    m.weld(0.01, t);
+    expect(m.verts).toHaveLength(3);
+    expect(m.faces).toEqual([[0, 1, 2], [0, 2, 1]]);
+    expect(t.steps.map((x) => x.phase)).toEqual(['Keep', 'Merge', 'Keep', 'Keep', 'Repoint faces']);
+  });
+
+  it('joins only within the distance, and drops faces that collapse', () => {
+    const m = new EditMesh([[0, 0, 0], [0.02, 0, 0], [1, 0, 0], [0, 1, 0]], [[0, 1, 2], [0, 2, 3]]);
+    expect(m.clone().weld(0.01).verts).toHaveLength(4);
+    const w = m.clone().weld(0.03);
+    expect(w.verts).toHaveLength(3);
+    expect(w.faces).toEqual([[0, 1, 2]]);   // the first triangle lost a corner and is gone; the second is repointed
+  });
+});
+
+describe('fill, traced', () => {
+  it('each rim edge fixes a step; the loop; the new face points out, and asks for its normal', () => {
+    const V = Array.from({ length: 8 }, (_, i) => [i % 2, Math.floor(i / 2) % 2, Math.floor(i / 4)] as [number, number, number]);
+    const m = new EditMesh(V, [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [0, 2, 3, 1], [4, 5, 7, 6]]);
+    const t = new Trace('Fill');
+    const f = m.fill([2, 3, 6, 7], t);
+    expect(t.steps.map((x) => x.phase)).toEqual(['Rim edges', 'Rim edges', 'Rim edges', 'Rim edges', 'Loop', 'New face']);
+    expect(m.faceNormal(f).map((x) => x + 0)).toEqual([0, 1, 0]);
+    expect(checkQuiz(t.steps[5].quiz!, [0, 1, 0]).correct).toBe(true);
+    expect(m.stats().closed).toBe(true);
+  });
+});

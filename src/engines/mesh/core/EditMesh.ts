@@ -356,6 +356,31 @@ export class EditMesh {
     return { V, E, F, chi, pieces, boundaryLoops, genus };
   }
 
+  /**
+   * Measure the angle at corner b between the edges to a and to c: u = a − b, v = c − b, their lengths, u · v,
+   * the angle from cos θ = u · v / (|u| |v|), and u × v (at right angles to both; half its length is the area of
+   * the triangle a, b, c). The mesh is not changed. Traced, with Predict questions on u · v and on θ.
+   */
+  measure(a: number, b: number, c: number, trace?: Trace): { u: Vec3; v: Vec3; lu: number; lv: number; dot: number; degrees: number; cross: Vec3; area: number } {
+    const [A, B, C] = [a, b, c].map((i) => { const p = this.verts[i]; if (!p) throw new Error(`There is no vertex ${i}`); return p; });
+    const u = sub(A, B), v = sub(C, B), lu = len(u), lv = len(v);
+    if (lu < 1e-12 || lv < 1e-12) throw new Error('Measure: the two edges need length');
+    const d = dot(u, v), cosT = Math.max(-1, Math.min(1, d / (lu * lv))), degrees = Math.acos(cosT) * 180 / Math.PI;
+    const x = cross(u, v), area = len(x) / 2;
+    const r = (n: number) => +n.toFixed(4);
+    if (trace) {
+      const arrow = (to: Vec3, label: string, color: string) => ({ from: B, to, label, color });
+      trace.step({ phase: 'Vectors', label: `u = v${a} − v${b} = ${fmtV(u)}, v = v${c} − v${b} = ${fmtV(v)}`, detail: 'A vector from one point to another is the second point minus the first, coordinate by coordinate. Both start at the corner.', verts: [a, b, c], edges: [[a, b], [b, c]], arrows: [arrow(A, 'u', '#ffd166'), arrow(C, 'v', '#06d6a0')], values: [['u', fmtV(u)], ['v', fmtV(v)]] }, this);
+      trace.step({ phase: 'Lengths', label: `|u| = ${r(lu)}, |v| = ${r(lv)}`, detail: 'Length is Pythagoras in three dimensions: |u| = √(uₓ² + u_y² + u_z²).', verts: [a, b, c], values: [['|u|', String(r(lu))], ['|v|', String(r(lv))]] }, this);
+      trace.step({ phase: 'Dot product', label: `u · v = ${r(d)}`, detail: 'Multiply matching coordinates and add: uₓvₓ + u_yv_y + u_zv_z. It is |u| |v| cos θ, so its sign says whether the angle is under 90° (positive), 90° (zero) or over (negative).', verts: [a, b, c], values: [['u · v', String(r(d))]],
+        quiz: { prompt: `u = ${fmtV(u)} and v = ${fmtV(v)}. What is u · v?`, answer: [d], labels: ['u · v'], rule: 'u · v = uₓvₓ + u_yv_y + u_zv_z.' } }, this);
+      trace.step({ phase: 'Angle', label: `cos θ = ${r(d)} / (${r(lu)} × ${r(lv)}) = ${r(cosT)}, so θ = ${r(degrees)}°`, detail: 'Divide the dot product by both lengths to get cos θ, then take the inverse cosine.', verts: [a, b, c], values: [['cos θ', String(r(cosT))], ['θ', `${r(degrees)}°`]],
+        quiz: { prompt: `u · v = ${r(d)}, |u| = ${r(lu)}, |v| = ${r(lv)}. What is the angle θ between them, in degrees?`, answer: [degrees], labels: ['θ (degrees)'], rule: 'cos θ = u · v / (|u| |v|), then θ = arccos of that.', tolerance: 0.2 } }, this);
+      trace.step({ phase: 'Cross product', label: `u × v = ${fmtV(x)}: the triangle v${a}, v${b}, v${c} has area ${r(area)}`, detail: 'The cross product is at right angles to both edges (lesson 1.2), and its length is |u| |v| sin θ, the area of the parallelogram they span; the triangle is half.', verts: [a, b, c], arrows: [arrow([B[0] + x[0] / (len(x) || 1), B[1] + x[1] / (len(x) || 1), B[2] + x[2] / (len(x) || 1)], 'u × v', '#ef476f')], values: [['u × v', fmtV(x)], ['area', String(r(area))]] }, this);
+    }
+    return { u, v, lu, lv, dot: d, degrees, cross: x, area };
+  }
+
   /** How many separate pieces the mesh is in, by walking shared edges. */
   components(): number {
     const parent = new Array(this.faces.length).fill(0).map((_, i) => i);
@@ -474,27 +499,61 @@ export class EditMesh {
    *
    * `tol` of 0 compares exactly, which is enough for real files: duplicated
    * corners in an STL are bit-identical copies of one number, not separate
-   * measurements that nearly agree. A tolerance above zero snaps to a grid of
-   * that size, and is worth reaching for only when something has actually been
-   * through a format that re-rounded the coordinates.
+   * measurements that nearly agree. A tolerance above zero (Merge by distance)
+   * joins points within that distance, found with a spatial hash, and is worth
+   * reaching for when something has been through a format that re-rounded the
+   * coordinates, or when separate pieces were modelled to meet. Traced when a
+   * tolerance is given.
    */
-  weld(tol = 0): this {
-    const lookup = new Map<string, number>();
+  weld(tol = 0, trace?: Trace): this {
+    // Exact (tol 0): a point's key is its coordinates. Within a distance: a spatial hash. Each kept point is
+    // filed in a cube-shaped cell of side tol, and a new point looks in its own cell and the 26 around it, so a
+    // match just across a cell wall is not missed; it joins the nearest kept point within tol, or is kept.
+    const exact = new Map<string, number>(), cells = new Map<string, number[]>();
     const remap = new Array<number>(this.verts.length);
     const kept: Vec3[] = [];
+    const cellOf = (v: Vec3) => v.map((x) => Math.floor(x / tol)) as Vec3;
+    const ck = (c: Vec3) => `${c[0]},${c[1]},${c[2]}`;
+    let asked = false;
+    // Copies differ in the fourth decimal place or later, so the trace shows five decimals, not three.
+    const at = (p: Vec3) => `(${p.map((x) => +x.toFixed(5)).join(', ')})`;
     this.verts.forEach((v, i) => {
-      const key = tol === 0
-        ? `${v[0]},${v[1]},${v[2]}`
-        : `${Math.round(v[0] / tol)},${Math.round(v[1] / tol)},${Math.round(v[2] / tol)}`;
-      const hit = lookup.get(key);
-      if (hit === undefined) {
-        lookup.set(key, kept.length);
-        remap[i] = kept.length;
-        kept.push(v);
+      let hit = -1, hitD = Infinity, hitCell = '';
+      const near: number[] = [];
+      if (tol === 0) {
+        const k = `${v[0]},${v[1]},${v[2]}`, h = exact.get(k);
+        if (h === undefined) exact.set(k, kept.length); else { hit = h; hitD = 0; }
       } else {
-        remap[i] = hit;
+        const c = cellOf(v);
+        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+          const key = ck([c[0] + dx, c[1] + dy, c[2] + dz]);
+          for (const k of cells.get(key) ?? []) {
+            near.push(k);
+            const d = len(sub(kept[k], v));
+            if (d <= tol && d < hitD) { hit = k; hitD = d; hitCell = key; }
+          }
+        }
+        if (hit < 0) { const key = ck(c); if (!cells.has(key)) cells.set(key, []); cells.get(key)!.push(kept.length); }
       }
+      remap[i] = hit >= 0 ? hit : kept.length;
+      if (hit < 0) kept.push(v);
+      if (!trace || tol === 0) return;
+      const own = ck(cellOf(v)), across = hit >= 0 && hitCell !== own;
+      const quiz = across && !asked;
+      if (quiz) asked = true;
+      const show = (k: number) => `kept point ${k} at ${at(kept[k])}`;
+      trace.step({
+        phase: hit >= 0 ? 'Merge' : 'Keep',
+        label: `v${i} at ${at(v)}, cell (${own}): ${hit >= 0 ? `${+hitD.toFixed(5)} from kept point ${hit}${across ? ' in a neighbouring cell' : ''}, so it becomes ${hit}` : `nothing within ${tol} in the 27 cells round it, so it is kept as ${remap[i]}`}`,
+        detail: hit >= 0
+          ? (across ? 'The match is across a cell wall. Rounding each point to its own cell and comparing cells alone would have missed it; looking in the 26 neighbouring cells as well finds it.' : 'The match is in the same cell, within the distance.')
+          : 'A point is only compared with the kept points in its cell and the cells touching it, not with every point: that is what makes the hash fast.',
+        verts: [i], points: hit >= 0 ? [{ p: kept[hit], label: String(hit), color: '#06d6a0' }] : [],
+        values: [['cell', `(${own})`], ['kept points nearby', near.length ? near.join(', ') : 'none'], ['result', hit >= 0 ? `merged into ${hit}` : `kept as ${remap[i]}`]],
+        quiz: quiz ? { prompt: `v${i} is at ${at(v)}, in cell (${own}); the cells are ${tol} wide. The kept points in the 27 cells round it: ${near.map(show).join('; ')}. Which does it become, the nearest within ${tol}? (Answer −1 for none: it is kept.)`, answer: [hit], labels: ['kept point'], rule: 'Work out each distance and take the nearest within the merge distance. A point near a cell wall can match a point in the next cell, which is why the search looks at all 27.' } : undefined,
+      }, this);
     });
+    const before = this.verts.length, faceCount = this.faces.length;
     this.verts = kept;
     this.faces = this.faces
       .map((f) => {
@@ -504,6 +563,11 @@ export class EditMesh {
       })
       // A ring that has fallen below three corners is no longer a face.
       .filter((f) => f.length >= 3);
+    if (trace && tol > 0) trace.step({
+      phase: 'Repoint faces', label: `${before - kept.length} vertices merged: ${before} → ${kept.length}; faces repointed${faceCount - this.faces.length ? `, ${faceCount - this.faces.length} fell below 3 corners and were dropped` : ''}`,
+      detail: 'Every corner of every face is replaced by the number of the point it merged into, so faces that used separate copies of a corner now share one vertex, and the edges between them become shared edges.',
+      values: [['vertices', `${before} → ${kept.length}`], ['faces', `${faceCount} → ${this.faces.length}`]],
+    }, this);
     return this.touch();
   }
 
@@ -786,13 +850,36 @@ export class EditMesh {
     return loop.length === chosen.size ? loop : 'The selection is more than one hole: fill them one at a time';
   }
 
-  /** Close a hole with one face (Blender's F). Returns the new face's index. */
-  fill(verts: number[]): number {
+  /**
+   * Close a hole with one face (Blender's F). Returns the new face's index. Traced: each edge of the hole, the
+   * way its face walks it and so the way the new face must, the loop that gives, and the new face's normal.
+   */
+  fill(verts: number[], trace?: Trace): number {
     const plan = this.fillPlan(verts);
     if (typeof plan === 'string') throw new Error(plan);
+    if (trace) {
+      const chosen = new Set(plan);
+      for (const e of this.boundaryEdges()) {
+        if (!chosen.has(e.a) || !chosen.has(e.b)) continue;
+        const f = this.faces[e.faces[0]], i = f.indexOf(e.a);
+        const [a, b] = f[(i + 1) % f.length] === e.b ? [e.a, e.b] : [e.b, e.a];
+        trace.step({ phase: 'Rim edges', label: `Face ${e.faces[0]} walks v${a} → v${b}, so the new face must walk v${b} → v${a}`, detail: 'Two faces wound the same way round walk their shared edge in opposite directions (lesson 1.3), so each edge of the hole fixes one step of the new face.', faces: [e.faces[0]], edges: [[a, b]], verts: [a, b], values: [['neighbour walks', `v${a} → v${b}`], ['new face walks', `v${b} → v${a}`]] }, this);
+      }
+      trace.step({ phase: 'Loop', label: `Following the steps round the hole: ${plan.map((v) => `v${v}`).join(' → ')}`, detail: 'Each step ends where the next begins, so following them from any corner goes once round the hole and gives the corners in order.', verts: plan, values: [['corners', plan.join(', ')]] }, this);
+    }
     this.faces.push(plan);
     this.touch();
-    return this.faces.length - 1;
+    const fi = this.faces.length - 1;
+    if (trace) {
+      const n = this.faceNormal(fi), c = this.faceCenter(fi), l = 0.6 * Math.sqrt(Math.max(this.faceArea(fi), 1e-9));
+      trace.step({
+        phase: 'New face', label: `Face ${fi}: ${plan.map((v) => `v${v}`).join(' → ')}, normal ${fmtV(n)}`,
+        detail: 'Wound the opposite way to its neighbours along every shared edge, so it points the same way they do.',
+        faces: [fi], arrows: [{ from: c, to: [c[0] + n[0] * l, c[1] + n[1] * l, c[2] + n[2] * l], label: 'n', color: '#06d6a0' }], values: [['corners', plan.join(', ')], ['normal', fmtV(n)]],
+        quiz: { prompt: `The new face goes ${plan.map((v) => `v${v} ${fmtV(this.verts[v])}`).join(' → ')}. What is its unit normal (lesson 1.2)?`, answer: n, labels: ['x', 'y', 'z'], rule: 'Newell\'s method round the corners in this order, the right-hand rule. Because the order came from the neighbours, it points out of the solid, as they do.' },
+      }, this);
+    }
+    return fi;
   }
 
   /** Remove vertices and every face that uses any of them. */
