@@ -25,7 +25,7 @@ import {
 import { useVideoPlayer } from "../../hooks/useVideoPlayer.js";
 import { selectVideosByKeywords, VIDEO_MAP, VIDEO_LIBRARY } from "../../context/videoSelector.js";
 import { CURRICULUM, ALL_LESSONS } from "../../courses/index.js";
-import { getVideos } from "../../courses/courseLoader.js";
+import { getVideos, getCourseMeta } from "../../courses/courseLoader.js";
 import { CODING_MUSIC_PLAYLIST } from "../../data/codingMusicPlaylist.js";
 
 // lesson.chapterNumber is a composite key like "calculus-1" — pull the
@@ -37,21 +37,11 @@ function chapterNumOf(lesson) {
 
 import { useNavigate, useLocation } from "react-router-dom";
 
-const courseTitles = {
-  precalc: "Pre-Calculus",
-  calc: "Calculus",
-  discrete: "Discrete Math",
-  "physics-1": "Physics",
-  geometry: "Geometry",
-};
-
-const courseIcons = {
-  precalc: "📐",
-  calc: "∂",
-  discrete: "∴",
-  "physics-1": "🚀",
-  geometry: "📐",
-};
+// The player's lessonId is the lesson's route key, "<chapter>/<slug>" (what
+// LessonPage sets). Lesson ids are not unique across courses, so they can't
+// be used to find the lesson.
+const lessonByKey = (key) =>
+  ALL_LESSONS.find((l) => `${l.chapterNumber}/${l.slug}` === key);
 
 export default function FloatingVideoPlayer() {
   const navigate = useNavigate();
@@ -225,7 +215,7 @@ export default function FloatingVideoPlayer() {
     const categorized = {};
     if (custom.length > 0) categorized["Your Videos"] = custom;
 
-    const lesson = ALL_LESSONS.find((l) => `${l.chapterNumber}/${l.slug}` === id);
+    const lesson = lessonByKey(id);
     const coursePool = lesson?.course ? getVideos(lesson.course) : [];
 
     // Videos this exact chapter's source material was actually scraped
@@ -262,24 +252,17 @@ export default function FloatingVideoPlayer() {
     return ids
       .map((id) => ({
         id,
-        title: courseTitles[id] || id.charAt(0).toUpperCase() + id.slice(1),
-        icon: courseIcons[id] || "📚",
+        title: getCourseMeta(id)?.label ?? id,
+        icon: getCourseMeta(id)?.icon ?? "📚",
       }))
-      .filter((course) => {
-        // Only show courses that have at least one video in the registry
-        const courseChapters = CURRICULUM.filter(
-          (ch) => ch.course === course.id,
-        );
-        return courseChapters.some((ch) =>
-          ch.lessons.some((l) => (l.tags?.length ?? 0) > 0),
-        );
-      });
+      // Only show courses that have at least one video in the registry
+      .filter((course) => getVideos(course.id).length > 0);
   }, []);
 
   // Sync sidebar selection to whichever lesson is currently active
   useEffect(() => {
     if (!lessonId) return;
-    const lesson = ALL_LESSONS.find((l) => l.id === lessonId);
+    const lesson = lessonByKey(lessonId);
     const ch = CURRICULUM.find((c) => c.number === lesson?.chapterNumber);
     if (ch) {
       setSelectedCourse(ch.course);
@@ -354,7 +337,7 @@ export default function FloatingVideoPlayer() {
 
   const handleOpenYouTubeSearch = () => {
     if (!lessonId) return;
-    const lesson = ALL_LESSONS.find((l) => l.id === lessonId);
+    const lesson = lessonByKey(lessonId);
     if (!lesson) return;
 
     const tags = Array.isArray(lesson.tags) ? lesson.tags.join("+") : "";
@@ -467,7 +450,7 @@ export default function FloatingVideoPlayer() {
                     </span>
                     <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
                     <p className="text-[10px] text-slate-400 font-medium truncate uppercase tracking-tight">
-                      {ALL_LESSONS.find((l) => l.id === lessonId)?.title ||
+                      {lessonByKey(lessonId)?.title ||
                         "Curriculum"}
                     </p>
                   </div>
@@ -616,14 +599,14 @@ export default function FloatingVideoPlayer() {
                 )}
                 <button
                   onClick={() => {
-                    const l = ALL_LESSONS.find((l) => l.id === lessonId);
+                    const l = lessonByKey(lessonId);
                     if (l) navigate(`/chapter/${l.chapterNumber}/${l.slug}`);
                   }}
                   className="text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-brand-500 truncate flex-1 text-left transition-colors"
                 >
                   {currentView === "playlist" && lessonId
                     ? (() => {
-                        const l = ALL_LESSONS.find((l) => l.id === lessonId);
+                        const l = lessonByKey(lessonId);
                         return l ? l.title : "Playlist";
                       })()
                     : currentView === "courses"
@@ -902,7 +885,7 @@ export default function FloatingVideoPlayer() {
                         {selectedChapter?.lessons.map((l) => (
                           <button
                             onClick={() =>
-                              pushNav("playlist", { lessonId: l.id })
+                              pushNav("playlist", { lessonId: `${selectedChapter.number}/${l.slug}` })
                             }
                             key={l.id}
                             className="w-full text-left p-3 hover:bg-white dark:hover:bg-slate-800 rounded-xl flex items-center justify-between group"
