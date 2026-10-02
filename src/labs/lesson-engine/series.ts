@@ -142,11 +142,25 @@ export const SERIES: SeriesMeta[] = [
       // Module A — how a .NET application is put together
       { level: 0,  title: 'From Source Code to a Running .NET App', file: 'wpf-mastery/level-0.md' },
       { level: 1,  title: 'Namespaces, using and Assemblies',       file: 'wpf-mastery/level-1.md' },
+      { level: 2,  title: 'Reading Modern C#',                      file: 'wpf-mastery/level-2.md' },
+      { level: 3,  title: 'Project Files and NuGet Packages',       file: 'wpf-mastery/level-3.md' },
+      { level: 4,  title: 'Interfaces: How the Framework Calls Your Code', file: 'wpf-mastery/level-4.md' },
+      { level: 5,  title: 'Delegates, Events and Lambdas',          file: 'wpf-mastery/level-5.md' },
       // Module B — how WPF works inside
       { level: 6,  title: 'Windows, XAML & Click Events',           file: 'wpf-mastery/level-6.md' },
       { level: 7,  title: 'What XAML Compiles Into',                file: 'wpf-mastery/level-7.md' },
+      { level: 8,  title: 'Layout: Grid, DockPanel and the Layout Pass', file: 'wpf-mastery/level-8.md' },
+      { level: 13, title: 'The UI Thread, the Dispatcher and async', file: 'wpf-mastery/level-13.md' },
       // Module C — data binding in depth
       { level: 14, title: 'Data Binding, Commands & MVVM',          file: 'wpf-mastery/level-14.md' },
+      { level: 17, title: 'Lists: ObservableCollection and DataTemplates', file: 'wpf-mastery/level-17.md' },
+      // Module D — look and feel
+      { level: 20, title: 'Resources and Resource Lookup',          file: 'wpf-mastery/level-20.md' },
+      { level: 21, title: 'Styles',                                 file: 'wpf-mastery/level-21.md' },
+      // Module E — application architecture
+      { level: 26, title: 'MVVM Done Properly: CommunityToolkit.Mvvm', file: 'wpf-mastery/level-26.md' },
+      { level: 27, title: 'Async Commands: Busy, Cancel, Progress and Errors', file: 'wpf-mastery/level-27.md' },
+      { level: 28, title: 'The Generic Host: Dependency Injection, Configuration and Logging', file: 'wpf-mastery/level-28.md' },
     ],
   },
   {

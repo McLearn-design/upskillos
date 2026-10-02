@@ -45,6 +45,22 @@ const EXPECTED_ERRORS: Record<string, Record<string, string>> = {
 const lessons = fs.readdirSync(LESSON_DIR).filter(f => f.endsWith('.md'))
   .sort((a, b) => parseInt(a.replace(/\D/g, ''), 10) - parseInt(b.replace(/\D/g, ''), 10))
 
+// Runs everywhere (no SDK needed). All the project fences in one step form one project, so
+// two examples in one step would become one project with two MainWindow.xaml files, the
+// second silently replacing the first: each example needs its own `##` step.
+describe('WPF & .NET Mastery lesson structure', () => {
+  for (const file of lessons) {
+    it(`${file}: no step has two project files with the same path`, () => {
+      const lesson = parseLesson(fs.readFileSync(path.join(LESSON_DIR, file), 'utf8'))
+      const clashes = lesson.steps.flatMap(step => {
+        const paths = step.project?.files.map(f => f.path) ?? []
+        return paths.filter((p, i) => paths.indexOf(p) !== i).map(p => `"${step.title}": ${p}`)
+      })
+      expect(clashes).toEqual([])
+    })
+  }
+})
+
 describe.skipIf(!runtime)('WPF & .NET Mastery lessons on the real .NET SDK', () => {
   for (const file of lessons) {
     const lesson = parseLesson(fs.readFileSync(path.join(LESSON_DIR, file), 'utf8'))

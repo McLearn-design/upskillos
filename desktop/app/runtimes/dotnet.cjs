@@ -122,8 +122,12 @@ const runningProcs = new Map()
 // One launched app window at a time: launching again closes the previous one.
 let launchedRunId = null
 
+// Kept short: it names the run's folder, and WPF's markup compiler silently produces no
+// BAML (so the window fails to load: "Cannot locate resource 'mainwindow.xaml'") when a
+// project whose XAML uses its own classes sits in a deep folder. Measured: a 182-character
+// project folder fails, a 140-character one works.
 function newRunId() {
-  return `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  return `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 }
 
 // Build and run are separate steps on purpose: `dotnet run` prints compiler

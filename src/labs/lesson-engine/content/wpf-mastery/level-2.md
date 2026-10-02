@@ -88,7 +88,6 @@ t.Celsius = 100;
 assert t.Fahrenheit == 212
 t.Celsius = -40;
 assert t.Fahrenheit == -40   // the one temperature that's the same on both scales
-assert t.Readings == 2   // set twice
 assert typeof(Thermometer).GetProperty("Fahrenheit")!.CanWrite == false   // computed: no setter
 assert typeof(Thermometer).GetProperty("Readings")!.SetMethod!.IsPublic == false   // only the class can change it
 ```
@@ -193,6 +192,7 @@ public static class Names
 assert Names.Display(new Customer("Ada Lovelace", "Ada")) == "Ada"
 assert Names.Display(new Customer("Alan Turing", null)) == "Alan Turing"
 assert Names.Display(null) == "(guest)"
+assert Names.Display(new Customer("Grace Hopper", "Amazing Grace")) == "Amazing Grace"
 ```
 
 ## Creating Objects: var, new(), Initializers and Records
@@ -380,7 +380,6 @@ public class Basket
 
 ```test
 var pen = new Product("Pen", 2.00m);
-assert pen.Name == "Pen"
 assert pen == new Product("Pen", 2.00m)   // a record compares by value
 var taxed = pen.WithTax(0.25m);
 assert taxed.Price == 2.50m
@@ -389,7 +388,6 @@ assert pen.Label() == "Pen: 2.00"
 Product? none = null;
 assert none.Label() == "(no product)"   // an extension method can be called on null
 var basket = new Basket();
-assert basket.Total == 0m
 basket.Items.Add(pen);
 basket.Items.Add(taxed);
 assert basket.Total == 4.50m

@@ -859,7 +859,7 @@ doesn't understand).
 | `sql` | Grades the raw query **text**, not a result set — no database execution. `code` is bound to the learner's raw SQL string and the `assert` lines run as JS against it (e.g. `var q = code.trim().toLowerCase(); assert q.startsWith('select')`) | **Works** — see `runSqlTests` in `testRunner.ts` |
 | `cpp` / `c` | For challenges that define a function or class (most levels): `assert expr` lines, wrapped in try/catch and compiled+run for real — see `buildTestHarness`'s cpp branch. For pre-function challenges where the learner writes a whole `main()`, or any challenge whose contract is what it prints rather than what it returns (no callable unit to test directly): tag the fence `` ```challenge <lang>-program `` (e.g. `cpp-program`, `java-program`); the program is compiled+run for real, its stdout is captured into an `output` string, and the `test` fence grades that string with plain JS (`assert output.includes(...)`) — same "bind the artifact, grade with JS" trick as `sql`. | **Works** — see `buildCppHarness` / `runProgramOutputTest` in `testRunner.ts` |
 | `csharp` / `java` | `assert expr` lines, wrapped in try/catch, compiled+run for real via Wandbox. The challenge may define a standalone class (placed before the generated entry point) or a bare static method (nested inside it) — detected the same way `codeRunner.js`'s `autoWrap` already decides whether to wrap. | **Works** — see `buildCSharpHarness` / `buildJavaHarness` in `testRunner.ts` |
-| `wpf` | A **project** challenge (see Project Steps below). The learner's files are built into a real WPF app on the learner's .NET SDK; the `test` fence's lines run inside a generated `[STAThread] Main`, and `assert` lines are checked one by one. Tests drive the real window with the `Ui` helper: `var window = Ui.Open<MainWindow>();`, `Ui.Type(window, "NameBox", "Ada");`, `Ui.Click(window, "GreetButton");`, `Ui.Text(window, "GreetingText")`, `Ui.IsEnabled(...)`, `Ui.IsVisible(...)`, `Ui.ItemCount(...)`, `Ui.Select(window, name, index);`. Non-assert lines end with `;`. View models can also be tested directly (`new VolumeViewModel()`). Desktop app only. | **Works** — see `projects/wpf.ts` and `projectRunner.ts` |
+| `wpf` | A **project** challenge (see Project Steps below). The learner's files are built into a real WPF app on the learner's .NET SDK; the `test` fence's lines run inside a generated `[STAThread] Main`, and `assert` lines are checked one by one. Tests drive the real window with the `Ui` helper: `var window = Ui.Open<MainWindow>();`, `Ui.Type(window, "NameBox", "Ada");`, `Ui.Click(window, "GreetButton");`, `Ui.Text(window, "GreetingText")`, `Ui.IsEnabled(...)`, `Ui.IsVisible(...)`, `Ui.ItemCount(...)`, `Ui.Select(window, name, index);`, for layout `Ui.Bounds(window, name)` (a `Rect` relative to the window's content area) and `Ui.Resize(window, width, height);`, `Ui.Color(window, name, "Background")` (a solid brush's colour as `#AARRGGBB`), and for asynchronous work `Ui.WaitUntil(() => condition)` (keeps the UI thread running until the condition holds; returns `false` after 5 s). Non-assert lines end with `;`. View models can also be tested directly (`new VolumeViewModel()`). Desktop app only. | **Works** — see `projects/wpf.ts` and `projectRunner.ts` |
 | `bash` / `shell` | — | **Not implemented.** No harness exists. Git/shell lessons should use scenario-style JS-graded challenges (the challenge fence is JS describing the scenario, tagged `` ```challenge javascript `` — see Part 3) rather than a `test` fence graded as shell. |
 
 ## Project Steps (multi-file: WPF and console)
@@ -890,8 +890,25 @@ only.
 Conventions every WPF lesson follows: the window class is `LessonApp.MainWindow`
 (`x:Class="LessonApp.MainWindow"`, `namespace LessonApp;`), and the lesson supplies no
 `Main` or `App.xaml` — the engine generates the entry point for launching and for tests.
+The exception is a lesson *about* the entry point (starting the app through a generic
+host): if a `.cs` file in an example contains a `Main`, the engine adds no launcher.
 Tests find controls by `x:Name`, so the challenge prose must state every name the tests use.
 WPF lessons only run in the desktop app; on the hosted site the step says so.
+
+A project may include its own `LessonApp.csproj` (as a `file=LessonApp.csproj` fence),
+replacing the engine's template: to add NuGet `PackageReference`s (restored from nuget.org
+on the first build) or to copy files such as `appsettings.json` to the output. Write it for
+`net8.0` (or `net8.0-windows`); the runner sets `TargetFramework` to whatever the learner's
+SDK builds. Keep `AssemblyName` and `RootNamespace` as `LessonApp`, and `ImplicitUsings`
+enabled (the generated test program relies on them).
+
+C# shown in the prose but not meant to run goes in a ```` ```dotnet ```` fence, which is
+highlighted as C#: a ```` ```csharp ```` fence is extracted as a runnable single-file example.
+
+The `wpf-mastery` series is verified on the real SDK by
+`src/engine/lesson/wpfMastery.desktop.test.ts` (skipped without a .NET SDK): every example
+builds, console examples run, and each challenge's starter fails while its reference
+solution in `src/engine/lesson/__fixtures__/wpf-mastery-solutions.json` passes.
 
 Before publishing, build every example and run the challenge with a correct answer and
 with wrong answers that each break one requirement: each wrong answer should fail the

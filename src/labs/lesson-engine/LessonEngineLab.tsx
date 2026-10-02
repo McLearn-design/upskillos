@@ -191,9 +191,21 @@ import csharpLevel24 from './content/csharp-fundamentals/level-24.md?raw'
 import csharpLevel25 from './content/csharp-fundamentals/level-25.md?raw'
 import wpfLevel0 from './content/wpf-mastery/level-0.md?raw'
 import wpfLevel1 from './content/wpf-mastery/level-1.md?raw'
+import wpfLevel2 from './content/wpf-mastery/level-2.md?raw'
+import wpfLevel3 from './content/wpf-mastery/level-3.md?raw'
+import wpfLevel4 from './content/wpf-mastery/level-4.md?raw'
+import wpfLevel5 from './content/wpf-mastery/level-5.md?raw'
 import wpfLevel6 from './content/wpf-mastery/level-6.md?raw'
 import wpfLevel7 from './content/wpf-mastery/level-7.md?raw'
+import wpfLevel8 from './content/wpf-mastery/level-8.md?raw'
+import wpfLevel13 from './content/wpf-mastery/level-13.md?raw'
 import wpfLevel14 from './content/wpf-mastery/level-14.md?raw'
+import wpfLevel17 from './content/wpf-mastery/level-17.md?raw'
+import wpfLevel20 from './content/wpf-mastery/level-20.md?raw'
+import wpfLevel21 from './content/wpf-mastery/level-21.md?raw'
+import wpfLevel26 from './content/wpf-mastery/level-26.md?raw'
+import wpfLevel27 from './content/wpf-mastery/level-27.md?raw'
+import wpfLevel28 from './content/wpf-mastery/level-28.md?raw'
 
 import javaLevel0 from './content/java-fundamentals/level-0.md?raw'
 import javaLevel1 from './content/java-fundamentals/level-1.md?raw'
@@ -653,9 +665,21 @@ const LESSON_FILES: Record<string, string> = {
   'csharp-fundamentals/level-25.md': csharpLevel25,
   'wpf-mastery/level-0.md': wpfLevel0,
   'wpf-mastery/level-1.md': wpfLevel1,
+  'wpf-mastery/level-2.md': wpfLevel2,
+  'wpf-mastery/level-3.md': wpfLevel3,
+  'wpf-mastery/level-4.md': wpfLevel4,
+  'wpf-mastery/level-5.md': wpfLevel5,
   'wpf-mastery/level-6.md': wpfLevel6,
   'wpf-mastery/level-7.md': wpfLevel7,
+  'wpf-mastery/level-8.md': wpfLevel8,
+  'wpf-mastery/level-13.md': wpfLevel13,
   'wpf-mastery/level-14.md': wpfLevel14,
+  'wpf-mastery/level-17.md': wpfLevel17,
+  'wpf-mastery/level-20.md': wpfLevel20,
+  'wpf-mastery/level-21.md': wpfLevel21,
+  'wpf-mastery/level-26.md': wpfLevel26,
+  'wpf-mastery/level-27.md': wpfLevel27,
+  'wpf-mastery/level-28.md': wpfLevel28,
   'java-fundamentals/level-0.md': javaLevel0,
   'java-fundamentals/level-1.md': javaLevel1,
   'java-fundamentals/level-2.md': javaLevel2,

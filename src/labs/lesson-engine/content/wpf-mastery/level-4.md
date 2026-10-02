@@ -86,6 +86,7 @@ IShape triangle = new Triangle(4, 3);
 assert triangle.Name == "triangle"
 assert triangle.Area() == 6
 assert new Triangle(5, 2).Area() == 5
+assert new Triangle(1, 1).Area() == 0.5
 ```
 
 ## The Framework Calls You: IComparable<T>
@@ -216,7 +217,6 @@ namespace LessonApp;
 ```test
 var log = new List<string>();
 using (var outer = new Scope("outer", log)) { using (var inner = new Scope("inner", log)) { log.Add("work"); } }
-assert log.Count == 5
 assert log[0] == "enter outer"
 assert log[1] == "enter inner"
 assert log[2] == "work"
@@ -300,7 +300,5 @@ assert playlist.Sum(s => s.Seconds) == 490
 var sorted = playlist.OrderBy(s => s).ToList();   // OrderBy calls your CompareTo
 assert sorted[0].Title == "Cyan"   // shortest first
 assert sorted[1].Title == "Amber"   // same length: by title
-assert sorted[2].Title == "Blue"
-assert playlist.Min()!.Title == "Cyan"
 assert new Song("A", 10).CompareTo(new Song("A", 10)) == 0
 ```

@@ -21,6 +21,14 @@ function filesFor(project: LessonProject, files: Files): ProjectSpec['files'] {
   return project.files.map(f => ({ path: f.path, content: files[f.path] ?? f.code }))
 }
 
+// A WPF lesson normally leaves the entry point to the engine (WPF_LAUNCHER opens
+// MainWindow). A lesson that is *about* the entry point, such as starting the app through
+// a dependency injection host, writes its own Main; then the launcher stays out.
+const MAIN_METHOD = /\bstatic\s+(?:async\s+)?(?:void|int|Task(?:<int>)?)\s+Main\s*\(/
+function hasOwnMain(files: ProjectSpec['files']): boolean {
+  return files.some(f => f.path.endsWith('.cs') && MAIN_METHOD.test(f.content))
+}
+
 function assertKind(project: LessonProject) {
   if (!PROJECT_KINDS.has(project.kind)) throw new Error(`Unknown project kind: ${project.kind}`)
 }
@@ -57,8 +65,9 @@ export async function launchProject(
   onAfterLaunch?: (line: OutputLine | null) => void,
 ): Promise<ExecutionResult & { launched?: boolean }> {
   assertKind(project)
-  const entry = project.kind === 'wpf' ? [{ path: 'LessonLauncher.cs', content: WPF_LAUNCHER }] : []
-  return executeProject({ template: project.kind, mode: 'launch', files: [...filesFor(project, files), ...entry] }, onAfterLaunch)
+  const learnerFiles = filesFor(project, files)
+  const entry = project.kind === 'wpf' && !hasOwnMain(learnerFiles) ? [{ path: 'LessonLauncher.cs', content: WPF_LAUNCHER }] : []
+  return executeProject({ template: project.kind, mode: 'launch', files: [...learnerFiles, ...entry] }, onAfterLaunch)
 }
 
 // Builds without running and returns what the build generated: the project file, the
@@ -70,8 +79,10 @@ export async function inspectProject(project: LessonProject, files: Files): Prom
   const learnerFiles = filesFor(project, files)
   // An executable needs an entry point to build. A console challenge has none of its
   // own, so it borrows an empty test program.
-  const entry = project.kind === 'wpf'
-    ? [{ path: 'LessonLauncher.cs', content: WPF_LAUNCHER }]
-    : learnerFiles.some(f => f.path === 'Program.cs') ? [] : [{ path: 'LessonTests.cs', content: dotnetTestProgram('', { sta: false }) }]
+  const entry = hasOwnMain(learnerFiles) || learnerFiles.some(f => f.path === 'Program.cs')
+    ? []
+    : project.kind === 'wpf'
+      ? [{ path: 'LessonLauncher.cs', content: WPF_LAUNCHER }]
+      : [{ path: 'LessonTests.cs', content: dotnetTestProgram('', { sta: false }) }]
   return executeProject({ template: project.kind, mode: 'inspect', files: [...learnerFiles, ...entry] })
 }

@@ -35,6 +35,21 @@ public static class Ui
     public static void Flush() =>
         Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
 
+    // Waits for work that finishes later (an awaited Task, a background thread reporting
+    // back) while letting the UI thread keep running, as it would for a person waiting.
+    // Returns whether the condition came true within the time limit.
+    public static bool WaitUntil(Func<bool> condition, int timeoutMs = 5000)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (!condition())
+        {
+            if (clock.ElapsedMilliseconds > timeoutMs) return false;
+            Flush();
+            System.Threading.Thread.Sleep(10);
+        }
+        return true;
+    }
+
     // Shows the window off-screen, without stealing focus, and returns it.
     public static T Open<T>() where T : Window, new()
     {
@@ -103,6 +118,38 @@ public static class Ui
     public static void Select(Window window, string name, int index)
     {
         Find<Selector>(window, name).SelectedIndex = index;
+        Flush();
+    }
+
+    // Where an element is drawn, relative to the top-left of the window's content area, in
+    // device-independent pixels (1/96 inch): for layout lessons.
+    public static Rect Bounds(Window window, string name)
+    {
+        Flush();
+        var element = Find<FrameworkElement>(window, name);
+        var topLeft = element.TranslatePoint(new Point(0, 0), (UIElement)window.Content);
+        return new Rect(topLeft, new Size(element.ActualWidth, element.ActualHeight));
+    }
+
+    // The colour of a brush property (Background, Foreground, BorderBrush, Fill...) of a named
+    // element, as "#AARRGGBB", or the brush's type name when it isn't a solid colour: for
+    // lessons on resources, styles and themes.
+    public static string Color(Window window, string name, string property = "Background")
+    {
+        Flush();
+        var element = Find<FrameworkElement>(window, name);
+        var info = element.GetType().GetProperty(property)
+            ?? throw new Exception(element.GetType().Name + " \"" + name + "\" has no property " + property + ".");
+        var value = info.GetValue(element);
+        return value is System.Windows.Media.SolidColorBrush solid ? solid.Color.ToString() : value?.GetType().Name ?? "null";
+    }
+
+    // Resizes the window and lets layout run, as dragging its edge would.
+    public static void Resize(Window window, double width, double height)
+    {
+        window.Width = width;
+        window.Height = height;
+        window.UpdateLayout();
         Flush();
     }
 

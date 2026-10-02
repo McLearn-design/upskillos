@@ -77,6 +77,7 @@ Type the properties yourself. In this project file, give the app version `2.5.0`
 ```test
 var assembly = System.Reflection.Assembly.GetExecutingAssembly();
 assert assembly.GetName().Version!.ToString() == "2.5.0.0"   // Version 2.5.0 becomes the four-part 2.5.0.0
+assert System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(assembly)!.InformationalVersion.StartsWith("2.5.0")
 assert System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyCompanyAttribute>(assembly)!.Company == "Contoso Tools"
 var describe = typeof(LessonTests).GetMethod("Describe", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
 assert new System.Reflection.NullabilityInfoContext().Create(describe.GetParameters()[0]).ReadState == System.Reflection.NullabilityState.Unknown   // nullable off: the compiler records nothing about null
@@ -328,6 +329,7 @@ public static class Report
 
 ```test
 assert Report.Plural("box", 3) == "3 boxes"
+assert Report.Plural("child", 2) == "2 children"
 assert Report.Words(42) == "forty-two"
 assert Report.Unit() == "kg"   // read from units.json in the output folder
 ```
