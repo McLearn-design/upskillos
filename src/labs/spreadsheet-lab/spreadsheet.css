@@ -14,6 +14,8 @@
   --ss-error: #b91c1c;
   --ss-spill-border: #7c3aed;
   --ss-ref-colors: #2563eb, #dc2626, #7c3aed, #16a34a, #c2410c, #0891b2;
+  --ss-trace-reads: #2563eb;
+  --ss-trace-readby: #059669;
 }
 .dark .ss-root {
   --ss-bg: #0b1120;
@@ -27,6 +29,8 @@
   --ss-select-border: #38bdf8;
   --ss-error: #f87171;
   --ss-spill-border: #a78bfa;
+  --ss-trace-reads: #60a5fa;
+  --ss-trace-readby: #34d399;
 }
 
 .ss-grid { position: relative; overflow: hidden; background: var(--ss-bg); color: var(--ss-text); outline: none; user-select: none; font-size: 13px; }
@@ -78,3 +82,11 @@
   position: absolute; left: 3px; top: 5px; padding: 0 3px; border-radius: 3px; font-size: 8px; line-height: 12px; font-weight: 700;
   background: #059669; color: #fff; letter-spacing: 0.02em; pointer-events: none;
 }
+
+/* Trace arrows */
+.ss-traces { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 4; overflow: visible; }
+.ss-trace.is-reads { --ss-trace: var(--ss-trace-reads); }
+.ss-trace.is-readby { --ss-trace: var(--ss-trace-readby); }
+.ss-trace line { stroke: var(--ss-trace); stroke-width: 1.5; }
+.ss-trace circle, .ss-trace path { fill: var(--ss-trace); }
+.ss-trace-box { fill: none; stroke: var(--ss-trace-reads); stroke-width: 1.5; }

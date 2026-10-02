@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   AlignCenter, AlignLeft, AlignRight, Baseline, Bold, BookOpen, Code2, DecimalsArrowLeft, DecimalsArrowRight, Download,
-  Eraser, FilePlus2, Italic, PaintBucket, PanelRight, Redo2, Underline, Undo2, Upload,
+  Eraser, FilePlus2, Italic, PaintBucket, PanelRight, Redo2, Underline, Undo2, Upload, Waypoints,
 } from 'lucide-react'
 import { PRESET_FORMATS } from '../engine/format.js'
 
@@ -41,7 +41,7 @@ function Palette({ label, icon, colors, onPick, onClear }) {
 
 const Divider = () => <div className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
 
-export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onClearFormat, onUndo, onRedo, inspectorOpen, onToggleInspector, onNew, onOpenTour, onImport, onExport, onInsertCode }) {
+export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onClearFormat, onUndo, onRedo, inspectorOpen, onToggleInspector, onNew, onOpenTour, onImport, onExport, onInsertCode, tracing, onToggleTracing }) {
   const [codeMenu, setCodeMenu] = useState(false)
   const style = cell?.style ?? {}
   const format = cell?.format ?? 'General'
@@ -95,6 +95,7 @@ export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onCle
       <Button label="Import a CSV file as a new sheet" onClick={onImport}><Upload size={15} /></Button>
       <Button label="Download this sheet as CSV" onClick={onExport}><Download size={15} /></Button>
       <div className="flex-1" />
+      <Button label={tracing ? 'Hide the arrows' : 'Trace: draw arrows from the cells the selected cell reads (blue) and to the cells that read it (green)'} active={tracing} onClick={onToggleTracing}><Waypoints size={15} /></Button>
       <Button label={inspectorOpen ? 'Hide the inspector' : 'Show the inspector'} active={inspectorOpen} onClick={onToggleInspector}><PanelRight size={15} /></Button>
     </div>
   )

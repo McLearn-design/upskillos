@@ -9,6 +9,7 @@ import { CATEGORIES, FUNCTIONS } from '../engine/functions/index.js'
 import { PRESET_FORMATS } from '../engine/format.js'
 import { displayCell } from './display.js'
 import CodePanel from './CodePanel.jsx'
+import FormulaLearn from './FormulaLearn.jsx'
 
 const TYPE_TEXT = {
   blank: 'Empty',
@@ -47,7 +48,7 @@ function FunctionHelp({ name, open = false }) {
   )
 }
 
-function CellView({ wb, sheet, row, col, onJump }) {
+function CellView({ wb, sheet, row, col, onJump, onMakeCode }) {
   const key = cellKey(row, col)
   const cell = sheet.cells.get(key)
   const value = wb.valueAt(sheet, row, col)
@@ -111,6 +112,8 @@ function CellView({ wb, sheet, row, col, onJump }) {
         </Section>
       )}
 
+      <FormulaLearn wb={wb} sheet={sheet} row={row} col={col} cell={cell} onMakeCode={onMakeCode} />
+
       {(uses.length > 0 || usedBy.length > 0) && (
         <Section title="Connections">
           {uses.length > 0 && <p className="text-xs text-slate-600 dark:text-slate-300"><b>Reads</b> (precedents): <span className="font-mono">{uses.join(', ')}</span></p>}
@@ -155,7 +158,7 @@ function FunctionBrowser() {
   )
 }
 
-export default function Inspector({ wb, sheet, sel, onJump, tab, onTab, runtime, onApplyCode }) {
+export default function Inspector({ wb, sheet, sel, onJump, tab, onTab, runtime, onApplyCode, onMakeCode }) {
   const isCode = sheet.cells.get(cellKey(sel.active.row, sel.active.col))?.kind === 'code'
   const tabs = [...(isCode ? [['code', 'Code']] : []), ['cell', 'This cell'], ['functions', 'Functions']]
   const current = tab === 'code' && !isCode ? 'cell' : tab
@@ -169,7 +172,7 @@ export default function Inspector({ wb, sheet, sel, onJump, tab, onTab, runtime,
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {current === 'code' && <CodePanel wb={wb} sheet={sheet} row={sel.active.row} col={sel.active.col} runtime={runtime} onApply={onApplyCode} />}
-        {current === 'cell' && <CellView wb={wb} sheet={sheet} row={sel.active.row} col={sel.active.col} onJump={onJump} />}
+        {current === 'cell' && <CellView wb={wb} sheet={sheet} row={sel.active.row} col={sel.active.col} onJump={onJump} onMakeCode={onMakeCode} />}
         {current === 'functions' && <FunctionBrowser />}
       </div>
     </aside>

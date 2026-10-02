@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Workbook } from './engine/workbook.js'
 import { FUNCTIONS } from './engine/functions/index.js'
-import { formatRange, indexToCol, parseCell, parseRange, quoteSheet } from './engine/address.js'
+import { cellKey, formatRange, indexToCol, parseCell, parseRange, quoteSheet } from './engine/address.js'
 import { shiftFormula, transformFormula } from './engine/rewrite.js'
 import { fillInputs } from './engine/fill.js'
 import { canInsertReference } from './engine/editing.js'
@@ -61,6 +61,7 @@ export default function SpreadsheetLab() {
   const runtime = runtimeRef.current
   const [menu, setMenu] = useState(null)
   const [notice, setNotice] = useState(null)
+  const [tracing, setTracing] = useState(false)
   const [nameBox, setNameBox] = useState(null)
   const gridRef = useRef(null)
   const fileRef = useRef(null)
@@ -90,6 +91,22 @@ export default function SpreadsheetLab() {
   useEffect(() => {
     setInspectorTab((t) => (activeIsCode ? (t === 'cell' ? 'code' : t) : (t === 'code' ? 'cell' : t)))
   }, [activeIsCode, sel.active.row, sel.active.col, sheet.id])
+
+  // Trace arrows (Excel's Trace Precedents and Trace Dependents) for the
+  // selected cell, on this sheet.
+  const traces = useMemo(() => {
+    if (!tracing || edit) return null
+    const { row, col } = sel.active
+    const gid = sheet.id + '!' + cellKey(row, col)
+    const reads = wb.precedents.get(gid) ?? []
+    const readBy = [...wb.readersOf([{ sheet, row, col }])]
+    const here = (g) => g.startsWith(sheet.id + '!')
+    return {
+      precedents: reads.filter((r) => r.sheetId === sheet.id),
+      dependents: readBy.filter(here).map((g) => parseCell(g.slice(sheet.id.length + 1))).filter(Boolean),
+      elsewhere: reads.filter((r) => r.sheetId !== sheet.id).length + readBy.filter((g) => !here(g)).length,
+    }
+  }, [tracing, edit, sel.active.row, sel.active.col, sheet, version]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openCode = () => { setInspectorOpen(true); setInspectorTab('code') }
   const setCode = (row, col, lang, source) => {
@@ -499,6 +516,7 @@ export default function SpreadsheetLab() {
         onImport={() => fileRef.current?.click()}
         onExport={exportCSV}
         onInsertCode={(lang) => setCode(sel.active.row, sel.active.col, lang, LANGUAGES[lang].starter)}
+        tracing={tracing} onToggleTracing={() => { setTracing((t) => !t); focusGrid() }}
       />
       <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,text/csv" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) importCSV(f); e.target.value = '' }} />
@@ -549,6 +567,7 @@ export default function SpreadsheetLab() {
             pointMode={pointMode}
             onPoint={(rg) => insertReference(rg)}
             refHighlights={refHighlights}
+            traces={traces}
             onStartEdit={(row, col, initial, mode) => startEdit(row, col, initial, mode)}
             onFill={fill}
             onContextMenu={openMenu}
@@ -577,6 +596,14 @@ export default function SpreadsheetLab() {
         {inspectorOpen && (
           <Inspector wb={wb} sheet={sheet} sel={sel} version={version} tab={inspectorTab} onTab={setInspectorTab} runtime={runtime}
             onApplyCode={(source) => wb.setCells([{ sheetId: sheet.id, row: sel.active.row, col: sel.active.col, code: { lang: activeCell.code.lang, source } }])}
+            onMakeCode={(lang, source) => {
+              // Beside the formula, so the two values can be compared.
+              const { row } = sel.active
+              let col = sel.active.col + 1
+              while (col < 16383 && (wb.getCell(sheet.id, row, col) || sheet.spillOwner.has(cellKey(row, col)))) col++
+              setCode(row, col, lang, source)
+              setNotice('Made a ' + LANGUAGES[lang].label + ' cell in ' + indexToCol(col) + (row + 1) + '. It should show the same value as ' + indexToCol(sel.active.col) + (row + 1) + '.')
+            }}
             onJump={(key) => { const p = parseCell(key); if (p) setSel(cellSelection(p.row, p.col)) }} />
         )}
       </div>
@@ -598,6 +625,13 @@ export default function SpreadsheetLab() {
         }}
       >
         <div className="flex h-full items-center justify-end gap-4 px-3 text-[11px] text-slate-500 dark:text-slate-400" aria-live="polite">
+          {traces && (
+            <span>
+              <span style={{ color: 'var(--ss-trace-reads)' }}>■</span> reads {traces.precedents.length}
+              {' '}<span style={{ color: 'var(--ss-trace-readby)' }}>■</span> read by {traces.dependents.length}
+              {traces.elsewhere > 0 && <> · {traces.elsewhere} on other sheets (see the inspector)</>}
+            </span>
+          )}
           {stats && stats.numeric > 0 && <span>Average: <b>{fmt(stats.sum / stats.numeric)}</b></span>}
           {stats && <span>Count: <b>{stats.count}</b></span>}
           {stats && stats.numeric > 0 && <span>Sum: <b>{fmt(stats.sum)}</b></span>}

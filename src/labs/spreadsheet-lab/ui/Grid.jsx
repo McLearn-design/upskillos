@@ -33,7 +33,7 @@ function indexAt(starts, pos) {
 
 export default function Grid({
   wb, sheet, version, sel, onSelect, editing, renderEditor, pointMode, onPoint,
-  refHighlights = [], onStartEdit, onFill, onContextMenu, onKeyDown, gridRef,
+  refHighlights = [], traces = null, onStartEdit, onFill, onContextMenu, onKeyDown, gridRef,
 }) {
   const scrollerRef = useRef(null)
   const [scroll, setScroll] = useState({ top: 0, left: 0 })
@@ -276,6 +276,45 @@ export default function Grid({
     )
   }
 
+  // Trace arrows: from each range the active cell reads into it (blue), and
+  // from it to each cell that reads it (green), as Excel draws them.
+  const MAX_ARROWS = 60
+  const traceLayer = traces && (() => {
+    const centre = (b) => [b.left + b.width / 2, b.top + b.height / 2]
+    const activeBox = rect({ r1: sel.active.row, c1: sel.active.col, r2: sel.active.row, c2: sel.active.col })
+    const [ax, ay] = centre(activeBox)
+    const inView = (r) => r.r1 < rowCount && r.c1 < colCount
+    const arrow = (from, to, kind, key) => (
+      <g key={key} className={'ss-trace is-' + kind}>
+        <line x1={from[0]} y1={from[1]} x2={to[0]} y2={to[1]} markerEnd={'url(#ss-arrow-' + kind + ')'} />
+        <circle cx={from[0]} cy={from[1]} r="3" />
+      </g>
+    )
+    const items = []
+    traces.precedents.filter(inView).slice(0, MAX_ARROWS).forEach((r, i) => {
+      const b = rect(r)
+      if (!r.single) items.push(<rect key={'box' + i} className="ss-trace-box" x={b.left + 1} y={b.top + 1} width={b.width - 2} height={b.height - 2} />)
+      // From the range's first cell, as Excel does, so overlapping ranges stay apart.
+      const start = r.single ? centre(b) : centre(rect({ r1: r.r1, c1: r.c1, r2: r.r1, c2: r.c1 }))
+      items.push(arrow(start, [ax, ay], 'reads', 'p' + i))
+    })
+    traces.dependents.filter((d) => d.row < rowCount && d.col < colCount).slice(0, MAX_ARROWS).forEach((d, i) => {
+      items.push(arrow([ax, ay], centre(rect({ r1: d.row, c1: d.col, r2: d.row, c2: d.col })), 'readby', 'd' + i))
+    })
+    return (
+      <svg className="ss-traces" width={cols[colCount]} height={rows[rowCount]} aria-hidden="true">
+        <defs>
+          {['reads', 'readby'].map((k) => (
+            <marker key={k} id={'ss-arrow-' + k} className={'ss-trace is-' + k} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" />
+            </marker>
+          ))}
+        </defs>
+        {items}
+      </svg>
+    )
+  })()
+
   const editorBox = editing?.where === 'cell' ? rect({ r1: sel.active.row, c1: sel.active.col, r2: sel.active.row, c2: sel.active.col }) : null
 
   return (
@@ -306,6 +345,7 @@ export default function Grid({
             return <div className="ss-fill-handle" style={{ left: b.left + b.width - 4, top: b.top + b.height - 4 }} onPointerDown={handleFillDown} title="Drag to fill: copies formulas, continues series such as 1, 2, 3 or Jan, Feb" />
           })()}
           {fillTarget && <div className="ss-fill-preview" style={rect(fillTarget)} />}
+          {traceLayer}
           {editorBox && renderEditor({ ...editorBox, width: Math.max(editorBox.width, 180) })}
         </div>
       </div>
