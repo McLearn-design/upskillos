@@ -421,3 +421,31 @@ describe('executeScript — A(:) and ans', () => {
     expect(value('3 + 4;\ny = ans * 2;', 'y')).toBe(14)
   })
 })
+
+describe('executeScript — element-wise operators with decimals, signs and powers', () => {
+  const ans = (src: string) => {
+    const v = executeScript(src).workspace.find((w: any) => w.name === 'ans')?.value as any
+    return v?.toArray ? v.toArray() : v
+  }
+  it.each([
+    ['4 .* 2.5', 10],
+    ['2.5 .* 3.1', 7.75],
+    ['(3 + 1) .* 2.5', 10],
+    ['1e2 .* 0.5', 50],
+    ['.5 .* 4', 2],
+    ['6 ./ 1.5', 4],
+    ['2 .^ 0.5', Math.SQRT2],
+    ['3 .* -2', -6],
+    ['x2 = 3; x2 .* 2', 6],
+    ['2 .* 3 .^ 2', 18],
+    ['3 .^ 2 .* 2', 18],
+    ['2 .* 3^2', 18],
+    ['3^2 .* 2', 18],
+    ['[1 2 3] .* [4 5 6]', [4, 10, 18]],
+    ['[1 2 3] .^ 2 ./ 2', [0.5, 2, 4.5]],
+  ])('%s = %j', (src, expected) => {
+    const v = ans(src)
+    if (Array.isArray(expected)) expect(v).toEqual(expected)
+    else expect(v).toBeCloseTo(expected as number, 10)
+  })
+})
