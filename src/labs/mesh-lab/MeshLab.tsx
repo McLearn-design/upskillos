@@ -306,18 +306,18 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     Mesh: [
       ['Extrude', () => editor.extrude(0.5), 'E'], ['Inset (region)', () => editor.insetRegion(0.1), 'I'], ['Inset individual faces', () => editor.inset(0.25)], ['Bevel edges', () => editor.bevel(0.1, 1), 'Ctrl+B'], ['Loop cut', loopCut, 'Ctrl+R'], ['Knife (drag a line)', () => vp?.armKnife(true), 'K'],
       ['Subdivide faces', () => editor.split()], ['Subdivide smooth (Catmull–Clark)', () => editor.smoothSubdivide()],
-      ['Fill (close a hole)', () => editor.fill(), 'F'], ['Merge at centre', () => editor.merge(), 'M'], ['Merge by distance (0.001)', () => editor.mergeByDistance(0.001)], ['Measure angle (two edges at a corner)', () => editor.measureAngle()], ['Trace the vertex normal (one vertex)', () => { if (editor.traceNormalOf()) setTab('trace'); }], ['Trace drawing the face (one face: fan or ear clipping)', () => { if (editor.traceTriangulateOf()) setTab('trace'); }], ['Trace screen picking (scene camera, image centre)', () => { if (editor.traceScreenPickOf()) setTab('trace'); }], ['Smooth vertices', () => editor.smoothVerts(5, 0.5)], ['Flip normals', () => editor.flip()], ['Dissolve', () => editor.dissolve(), 'Ctrl+X'], ['Delete', () => editor.deleteElements(), 'X'],
+      ['Fill (close a hole)', () => editor.fill(), 'F'], ['Merge at centre', () => editor.merge(), 'M'], ['Merge by distance (0.001)', () => editor.mergeByDistance(0.001)], ['Measure angle (two edges at a corner)', () => editor.measureAngle()], ['Trace the vertex normal (one vertex)', () => { if (editor.traceNormalOf()) setTab('trace'); }], ['Trace the limit position (one vertex)', () => { if (editor.traceLimitOf()) setTab('trace'); }], ['Trace the Laplacian (one vertex)', () => { if (editor.traceLaplacianOf()) setTab('trace'); }], ['Trace drawing the face (one face: fan or ear clipping)', () => { if (editor.traceTriangulateOf()) setTab('trace'); }], ['Trace screen picking (scene camera, image centre)', () => { if (editor.traceScreenPickOf()) setTab('trace'); }], ['Smooth vertices', () => editor.smoothVerts(5, 0.5)], ['Flip normals', () => editor.flip()], ['Dissolve', () => editor.dissolve(), 'Ctrl+X'], ['Delete', () => editor.deleteElements(), 'X'],
     ],
     UV: [
       ['Mark seam (selected edges)', () => editor.markSeams(true)], ['Clear seam', () => editor.markSeams(false)],
       ['Seams from sharp edges', () => editor.seamsFromSharp(60)],
-      ['Unwrap (LSCM)', () => { editor.unwrap('lscm'); setTab('uv'); }, 'U'], ['Project from above', () => { editor.unwrap('planar'); setTab('uv'); }],
+      ['Unwrap (LSCM)', () => { editor.unwrap('lscm'); setTab('uv'); }, 'U'], ['Trace subdividing the UVs', () => { if (editor.traceUVSubdivisionOf()) setTab('trace'); }], ['Project from above', () => { editor.unwrap('planar'); setTab('uv'); }],
       ['Angle distortion heat map', () => editor.showField({ kind: 'uv' })], ['Show the UV layout', () => setTab('uv')],
     ],
     'Heat map': [
       ['Distance from selected vertices', () => editor.showDistanceFromSelection()],
       ['Mean curvature (H)', () => editor.showField({ kind: 'mean' })], ['Gaussian curvature (K)', () => editor.showField({ kind: 'gaussian' })],
-      ['Height (y)', () => editor.showField({ kind: 'coord', axis: 1 })],
+      ['Height (y)', () => editor.showField({ kind: 'coord', axis: 1 })], ['Trace the colour mapping', () => { if (editor.traceColourMapOf()) setTab('trace'); }],
       ['Bone weights (skinned mesh)', () => { const sk = o?.skin; if (!sk) { editor.say('Select a mesh bound to an armature'); return; } editor.showField({ kind: 'weight', bone: sk.bones.includes(editor.activeBone ?? '') ? editor.activeBone! : sk.bones[0] }); }],
       [editor.showContours ? 'Hide iso-lines' : 'Show iso-lines', () => { editor.showContours = !editor.showContours; editor.emit('select'); }],
       ['Hide heat map', () => editor.clearField()],

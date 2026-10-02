@@ -19,10 +19,14 @@
 //
 // show({ verts, faces, groups, shading }) shades smoothly with the normals given: shading[i][k] is the unit normal
 // at corner k of face i. One normal per face gives flat shading; one per vertex, smooth.
+//
+// show({ verts, faces, colors }) gives every vertex its own colour, colors[v] = [r, g, b] from 0 to 1, unlit; the GPU
+// blends the corners' colours across each triangle, exactly as a heat map is drawn. (Colours are given in sRGB and
+// turned linear for three.js, which turns them back when it draws.)
 
 export const PICTURE = `
 // ── drawing (you can leave this part alone) ─────────────────────────────────
-function show({ verts, faces, normals = true, edges = false, groups = null, values = null, zoom = 1, shading = null }) {
+function show({ verts, faces, normals = true, edges = false, groups = null, values = null, zoom = 1, shading = null, colors = null }) {
     const PALETTE = [0x4f8fd9, 0xf59e0b, 0x10b981, 0xd946ef, 0xef4444, 0x14b8a6, 0xa3e635, 0x94a3b8];
   (async () => {
     const THREE = await import('https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js');
@@ -59,9 +63,11 @@ function show({ verts, faces, normals = true, edges = false, groups = null, valu
       if (shading) { const nor = []; for (let i = 1; i + 1 < f.length; i++) for (const k of [0, i, i + 1]) nor.push(...shading[fi][k]); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); }
       else g.computeVertexNormals();
       if (shading) { model.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: groups ? PALETTE[groups[fi] % PALETTE.length] : 0x4f8fd9, side: THREE.DoubleSide, roughness: 0.45 }))); continue; }
+      if (colors) { const col = []; for (let i = 1; i + 1 < f.length; i++) for (const k of [f[0], f[i], f[i + 1]]) col.push(...colors[k].map((x) => Math.pow(x, 2.2))); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); model.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1 }))); model.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(f.flatMap((k, i) => [...verts[k], ...verts[f[(i + 1) % f.length]]]), 3)), new THREE.LineBasicMaterial({ color: 0x1e293b, transparent: true, opacity: 0.35 }))); continue; }
       if (values) { const t = Math.max(0, Math.min(1, values[fi])); model.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: new THREE.Color(t, t, t), side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1 }))); }
       else model.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: groups ? PALETTE[groups[fi] % PALETTE.length] : edges ? 0x94a3b8 : out ? 0x4f8fd9 : 0xd94f4f, side: THREE.DoubleSide, flatShading: true, polygonOffset: true, polygonOffsetFactor: 1, transparent: edges, opacity: edges ? 0.55 : 1, depthWrite: !edges })));
-      if (!edges) model.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0x1e293b })));
+      // The face's own outline, corner to corner: a bent quad is drawn as two triangles, but its diagonal is not an edge.
+      if (!edges) { const ring = []; f.forEach((k, i) => ring.push(...verts[k], ...verts[f[(i + 1) % f.length]])); const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(ring, 3)); model.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x1e293b }))); }
       if (normals && !edges && !groups && !values) model.add(new THREE.ArrowHelper(new THREE.Vector3(...u), new THREE.Vector3(...c), 0.7, out ? 0x1d4ed8 : 0xb91c1c, 0.18, 0.1));
     }
     if (edges) {

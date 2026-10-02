@@ -6,7 +6,7 @@
 
 import type { EditMesh, Vec3 } from './EditMesh';
 import { gaussianCurvature, heatGeodesic, meanCurvature } from './geometry';
-import type { Trace } from './trace';
+import { fmt, type Trace } from './trace';
 
 export type FieldSpec =
   | { kind: 'geodesic'; sources: number[] }
@@ -79,7 +79,7 @@ export function computeField(mesh: EditMesh, spec: FieldSpec, trace?: Trace): Fi
       };
     }
     case 'mean': {
-      const values = meanCurvature(mesh);
+      const values = meanCurvature(mesh, trace);
       return {
         values, label: FIELD_NAMES.mean, diverging: true, range: fieldRange(values, true, true), contours: 0,
         meaning: 'How much the surface bends, averaged over directions. Red bulges out, blue dents in, white is flat or saddle-balanced. A sphere of radius r has H = 1/r.',
@@ -176,4 +176,54 @@ export function legendGradient(diverging: boolean): string {
     return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)}) ${(i / 8) * 100}%`;
   });
   return `linear-gradient(90deg, ${stops.join(', ')})`;
+}
+
+/**
+ * Trace how a field becomes colours (Heat map › Trace the colour mapping): the range, one vertex's value turned into
+ * t ∈ [0, 1] and then into a colour, and what the GPU does between vertices: it blends the corners' colours, which is
+ * not the colour of the blended value, because the colour map is not a straight line through colour space.
+ */
+export function traceColourMap(mesh: EditMesh, result: FieldResult, trace: Trace): void {
+  const { values, range, diverging } = result;
+  const [lo, hi] = range;
+  let mn = Infinity, mx = -Infinity;
+  for (const v of values) { if (v < mn) mn = v; if (v > mx) mx = v; }
+  const tOf = (v: number) => (v - lo) / (hi - lo || 1);
+  // The vertex whose t is nearest 0.3: neither end of the scale.
+  let pick = 0, best = Infinity;
+  values.forEach((v, i) => { const d = Math.abs(tOf(v) - 0.3); if (d < best) { best = d; pick = i; } });
+  const rgb = (c: [number, number, number]) => `(${c.map((x) => Math.round(x * 255)).join(', ')})`;
+  trace.step({
+    phase: 'Range', label: `Values from ${fmt(mn)} to ${fmt(mx)}; the colours span ${fmt(lo)} to ${fmt(hi)}`,
+    detail: diverging
+      ? 'A signed field is coloured round zero: blue below, near-white at 0, red above, with the same reach both ways.'
+      : lo > mn + 1e-12 || hi < mx - 1e-12 ? 'The colours span the 2nd to 98th percentile, so a few extreme vertices do not squash everyone else into one colour; values outside are clamped.' : 'The colours span the lowest value to the highest.',
+    values: [['lowest', fmt(mn)], ['highest', fmt(mx)], ['colour range', `${fmt(lo)} to ${fmt(hi)}`], ['map', diverging ? 'cool–warm' : 'turbo']],
+  }, mesh.verts.length <= trace.snapshotLimit ? mesh : undefined);
+  const t = Math.min(1, Math.max(0, tOf(values[pick])));
+  trace.step({
+    phase: 'Normalise', label: `v${pick}: value ${fmt(values[pick])} → t = ${fmt(t)}`,
+    detail: 't = (value − low) / (high − low), clamped to 0 … 1: where the value sits along the colour range.',
+    verts: [pick],
+    quiz: { prompt: `v${pick} has the value ${fmt(values[pick], 4)}; the colours span ${fmt(lo, 4)} to ${fmt(hi, 4)}. What is t?`, answer: [t], labels: ['t'], rule: 't = (value − low) / (high − low), clamped to 0 … 1.', tolerance: 0.01 },
+  });
+  const c = colorFor(values[pick], range, diverging);
+  trace.step({
+    phase: 'Colour', label: `t = ${fmt(t)} → RGB ${rgb(c)}`,
+    detail: diverging ? 'Cool–warm blends blue → near-white → red in two straight pieces.' : 'Turbo is a fitted curve through colour space, blue → cyan → green → yellow → red, chosen so equal steps in t look like roughly equal steps in colour.',
+    values: [['t', fmt(t)], ['red', String(Math.round(c[0] * 255))], ['green', String(Math.round(c[1] * 255))], ['blue', String(Math.round(c[2] * 255))]],
+  });
+  const face = mesh.faces.find((f) => f.includes(pick)) ?? mesh.faces[0];
+  if (face && face.length >= 3) {
+    const tri = face.slice(0, 3), avgV = (values[tri[0]] + values[tri[1]] + values[tri[2]]) / 3;
+    const cols = tri.map((v) => colorFor(values[v], range, diverging));
+    const blended = [0, 1, 2].map((k) => (cols[0][k] + cols[1][k] + cols[2][k]) / 3) as [number, number, number];
+    const exact = colorFor(avgV, range, diverging);
+    const diff = Math.round(255 * Math.max(...[0, 1, 2].map((k) => Math.abs(blended[k] - exact[k]))));
+    trace.step({
+      phase: 'Between vertices', label: `Centre of triangle [${tri.join(', ')}]: the GPU shows RGB ${rgb(blended)}; the centre's own value would be ${rgb(exact)} (${diff} apart)`,
+      detail: 'Colours are given at vertices and the GPU blends them across each triangle (lesson 3.3). That is the average of three colours, not the colour of the average value: where the corners straddle a bend in the colour map, the middle can show a colour that is not on the map. More vertices make the difference smaller.',
+      faces: [mesh.faces.indexOf(face)],
+    });
+  }
 }

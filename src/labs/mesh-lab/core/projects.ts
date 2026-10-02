@@ -1266,6 +1266,121 @@ const show = (o) => { const r = o.mesh.valence(); log(o.name + ':', JSON.stringi
 show(torus); show(uv); show(ball)`,
   },
   {
+    id: 'limits',
+    title: 'Extraordinary vertices and limits',
+    icon: '🪀',
+    group: 'Learning',
+    desc: 'A spinning top, two eight-sided cones, subdivided once: its tip is a vertex with 8 edges. The trace works out where the tip ends up after infinitely many steps, then subdivides further to watch it get there, and shows the ring round it shrinking slower than at a regular vertex.',
+    lang: 'js',
+    setup: { select: 'Spinning top', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The top’s tip has 8 edges: an extraordinary vertex. In the Algorithm trace, press Play: its neighbours, its limit position (predict it), and the tip closing in on it level by level.',
+      'Read the last step: at a regular vertex the ring of edges round it halves each step; round this tip it shrinks only to 0.61, so the quads there stay long and thin.',
+      step('Tab into edit mode, select one vertex where 4 edges meet (1 for vertex select) and use Mesh › Trace the limit position: its ring halves each step.', (e) => e.trace?.op === 'Trace the limit position' && /× 0\.5/.test(e.trace.steps.at(-1)?.label ?? '')),
+      step('Add a Subdivision modifier in the Inspector and raise its levels: the faces quadruple each level, and the tip stays slightly pointed.', (e, s) => did(e, s, 'Add subsurf modifier')),
+    ],
+    code: `// Two eight-sided cones base to base: a tip on top with 8 edges, one below, and a ring of 8 round the middle.
+const n = 8, verts = [[0, 1.2, 0], [0, -1.2, 0]], faces = []
+for (let k = 0; k < n; k++) verts.push([Math.cos(2 * Math.PI * k / n), 0, Math.sin(2 * Math.PI * k / n)])
+for (let k = 0; k < n; k++) { faces.push([0, 2 + (k + 1) % n, 2 + k]); faces.push([1, 2 + k, 2 + (k + 1) % n]) }
+const top = scene.add.mesh({ name: 'Spinning top', verts, faces })
+top.material.color = '#d9a47a'
+top.mesh.subdivide(1)            // now all quads; the tip keeps its number, 0
+log('after one step:', top.mesh.stats().faces, 'quads; the tip is at y =', top.mesh.verts[0].y.toFixed(4))
+const lim = top.mesh.limit(0)
+log('its limit position: y =', lim[1].toFixed(4))`,
+  },
+  {
+    id: 'subdivide-uvs',
+    title: 'Subdividing UVs',
+    icon: '🌐',
+    group: 'Learning',
+    desc: 'A low sphere cut along one seam from pole to pole, unwrapped, with a checker texture and a subdivision modifier. The UVs are subdivided with the surface: seams split vertices, island outlines stay put, inside points move by Catmull–Clark’s rule. Traced, with a question to predict, and the distortion compared with plain linear UVs.',
+    lang: 'js',
+    setup: { select: 'Ball', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The checker squares stay close to square on the smoothed ball. In the Algorithm trace, press Play: the seam’s vertices become two UV vertices each, the outline stays, and an inside UV point moves (predict it).',
+      'The last step compares texture distortion on the subdivided surface: about 1.49 with linear UVs, 1.32 with smooth ones (1 would be none).',
+      'Open the UV tab: one island, with the seam down both its sides.',
+      step('In the Inspector, untick Smooth UVs on the subdivision modifier: the checker slides and stretches near the poles, where the surface moved most.', (e, s) => did(e, s, 'Modifier setting')),
+    ],
+    code: `const ball = scene.add.uvSphere({ name: 'Ball', segments: 12, rings: 8 })
+const m = ball.mesh
+// One seam, pole to pole, along the +x side: the edges whose ends both have z = 0 and x ≥ 0.
+const seam = m.edges.filter((e) => [e.a, e.b].every((v) => Math.abs(m.verts[v].z) < 1e-9 && m.verts[v].x >= -1e-9)).map((e) => [e.a, e.b])
+m.markSeams(seam)
+m.unwrap()
+ball.material.texture = 'checker'
+ball.modifiers.add('subsurf', { levels: 2 })
+log('seam edges:', seam.length)
+const d = ball.traceUVSubdivision(2)
+log('mean distortion on the smoothed ball: linear UVs', d.linear, '· smooth UVs', d.smooth)`,
+  },
+  {
+    id: 'fields',
+    title: 'Fields on a mesh and colour maps',
+    icon: '🌡️',
+    group: 'Learning',
+    desc: 'A grid pushed up into a hill, coloured by height: a number at every vertex turned into a colour by the turbo map. The trace goes from the range to one vertex’s t, its colour, and what the GPU does between vertices.',
+    lang: 'js',
+    setup: { select: 'Hill', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The colours are heights: blue low, red high, with the legend in the corner. Every vertex has one number; the GPU blends the colours across each triangle.',
+      'In the Algorithm trace, press Play: the range, one vertex’s t (predict it), its colour, and a triangle’s centre, where blended colours and the colour of the blended value differ.',
+      step('Heat map › Mean curvature: a different field on the same mesh, coloured round zero (blue bowls, red domes).', (e) => e.field?.spec.kind === 'mean'),
+      step('Heat map › Trace the colour mapping on the curvature: a diverging map, centred on 0.', (e) => e.trace?.op === 'Trace the colour mapping' && e.field?.spec.kind === 'mean'),
+    ],
+    code: `const hill = scene.add.grid({ name: 'Hill', size: 4, subdivisions: 16 })
+// Push every vertex up by a bump: highest in the middle, fading out towards the edges.
+for (const v of hill.mesh.verts) v.y = 1.2 * Math.exp(-(v.x * v.x + v.z * v.z) / 1.5)
+hill.mesh.showField('y')
+log(hill.mesh.traceColours())`,
+  },
+  {
+    id: 'laplacian',
+    title: 'The Laplacian',
+    icon: '∇',
+    group: 'Learning',
+    desc: 'A sphere of radius 2. The Laplacian at a vertex on its equator, built up step by step: its neighbours, the plain average (umbrella), the cotan weight of each edge, the area it stands for, and the result on positions, which points inward with length 2H. H should come out close to 1/2.',
+    lang: 'js',
+    setup: { select: 'Sphere', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'In the Algorithm trace, press Play: the neighbours, the umbrella vector, one edge’s cotan weight (predict it), the vertex’s area, and the Laplacian of position.',
+      'The last step’s arrow points to the centre of the sphere, and its length is about 1: twice the mean curvature 1/2 of a sphere of radius 2.',
+      step('Tab into edit mode, select a vertex near a pole (1 for vertex select) and use Mesh › Trace the Laplacian (one vertex): its triangles are thinner, but H is still about 1/2.', (e) => e.trace?.op === 'Trace the Laplacian' && e.selectedVerts().length === 1),
+      step('Heat map › Mean curvature: H at every vertex, nearly the same colour all over a sphere.', (e) => e.field?.spec.kind === 'mean'),
+    ],
+    code: `const sphere = scene.add.uvSphere({ name: 'Sphere', radius: 2, segments: 24, rings: 12 })
+sphere.material.color = '#8fa3b8'
+const m = sphere.mesh
+// A vertex on the equator (y = 0), facing +x.
+const v = m.verts.findIndex((p) => Math.abs(p.y) < 1e-9 && p.x > 1.99)
+const L = m.laplacianAt(v)
+log('vertex', v, ': mean curvature H ≈', L.H.toFixed(4), '(a sphere of radius 2 has H = 0.5)')`,
+  },
+  {
+    id: 'mean-curvature',
+    title: 'Mean curvature',
+    icon: '🔴',
+    group: 'Learning',
+    desc: 'A ball with a dent pressed into one side, coloured by mean curvature: red where it bulges, blue where it is dented, white where it is flat or balanced. The trace builds H from the Laplacian of the positions at every vertex, and its sign from the normal.',
+    lang: 'js',
+    setup: { select: 'Dented ball', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Red all round the ball (H about 1, a unit sphere’s), blue in the dent (it curves the other way), and a strong ring at the dent’s rim where the surface folds.',
+      'In the Algorithm trace, press Play: the Laplacian of position at every vertex, the sign test at the most dented vertex (predict it), and the range.',
+      step('Tab into edit mode, select one vertex in the dent and use Mesh › Trace the Laplacian (one vertex): its Δx points outward, against the inward-curving surface.', (e) => e.trace?.op === 'Trace the Laplacian'),
+      step('Heat map › Gaussian curvature: the next lesson’s measure. Compare where the two disagree: at the rim.', (e) => e.field?.spec.kind === 'gaussian'),
+    ],
+    code: `const ball = scene.add.uvSphere({ name: 'Dented ball', radius: 1, segments: 32, rings: 16 })
+// Press a dent into the +x side: the cap beyond x = 0.6 is reflected inward through the plane x = 0.6.
+for (const v of ball.mesh.verts) if (v.x > 0.6) v.x = 1.2 - v.x
+ball.smooth = true
+ball.mesh.showField('mean')
+const H = ball.mesh.curvature('mean')
+log('H from', Math.min(...H).toFixed(3), 'to', Math.max(...H).toFixed(3), ';', H.filter((h) => h < 0).length, 'vertices curve inward')`,
+  },
+  {
     id: 'island',
     title: 'Low-poly island',
     icon: '🏝️',

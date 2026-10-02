@@ -533,6 +533,50 @@ describe('UV and material projects', () => {
     expect(e.log).toHaveLength(3);
   });
 
+  it('mean curvature: a dented ball', () => {
+    const { e, r } = open('mean-curvature');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual(['H from -1.001 to 6.198 ; 45 vertices curve inward']);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Laplacian of position', 'Sign', 'Range']);
+    expect(e.trace!.steps[1].quiz!.answer).toEqual([-1]);
+  });
+
+  it('laplacian: a sphere vertex', () => {
+    const { e, r } = open('laplacian');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual(['vertex 121 : mean curvature H ≈ 0.4973 (a sphere of radius 2 has H = 0.5)']);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Neighbours', 'Umbrella', 'Cotan weights', 'Area', 'Laplacian']);
+    expect(e.trace!.steps[2].quiz!.answer[0]).toBeCloseTo(0.9831, 4);
+  });
+
+  it('fields: height coloured, traced', () => {
+    const { e, r } = open('fields');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual(['y coordinate']);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Range', 'Normalise', 'Colour', 'Between vertices']);
+    expect(e.trace!.steps[1].quiz!.answer[0]).toBeCloseTo(0.2953, 4);
+  });
+
+  it('subdivide uvs: seams, borders and distortion', () => {
+    const { e, r } = open('subdivide-uvs');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual(['seam edges: 8', 'mean distortion on the smoothed ball: linear UVs 1.485 · smooth UVs 1.325']);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['UV vertices', 'Borders kept', 'Inside points', 'Distortion']);
+    expect(e.trace!.steps[0].label).toBe('86 mesh vertices are 93 UV vertices: 7 extra copies where seams cut through');
+    expect(e.traceUVSubdivisionOf()).toBe(true);
+    expect(e.message).toBe('UVs subdivided 2×: distortion 1.49 linear, 1.32 smooth');
+  });
+
+  it('limits: the spinning top tip', () => {
+    const { e, r } = open('limits');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual(['after one step: 48 quads; the tip is at y = 0.9500', 'its limit position: y = 0.7692']);
+    const steps = e.trace!.steps;
+    expect(steps.map((x) => x.phase)).toEqual(['Neighbours', 'Limit', 'Levels']);
+    expect(steps[1].quiz!.answer.map((x: number) => +x.toFixed(6))).toEqual([0, 0.769231, 0]);
+    expect(steps[2].label).toMatch(/× 0\.6111 a step$/);
+  });
+
   it('clean topology: valence and the pole budget', () => {
     const { e, r } = open('clean-topology');
     expect(r.error).toBeNull();
@@ -826,6 +870,15 @@ describe('guide steps that tick themselves', () => {
     'Use Edit › Trace the undo stack': (e) => { const b = obj(e, 'Box'); e.setSmooth(b.id, true); e.setSmooth(b.id, false); e.setSmooth(b.id, true); expect(e.traceUndo()).toBe(true); },
     'Change Box three ways': (e) => { const b = obj(e, 'Box'); e.setSmooth(b.id, true); e.setTransform(b.id, 'position', 0, 1.5); e.setTransform(b.id, 'rotation', 1, 0.5); },
     'Use Script › Trace the GUI → code log': (e) => { const b = obj(e, 'Box'); e.setSmooth(b.id, true); e.setTransform(b.id, 'position', 0, 1.5); traceReplay(e); },
+    'Tab into edit mode, select one vertex in the dent': (e) => { const m = e.activeObject!.mesh!; edit(e, 'Dented ball', 'vert', [m.verts.findIndex((p) => p[0] > 0.3 && p[0] < 0.5 && Math.abs(p[1]) < 0.2)]); expect(e.traceLaplacianOf()).toBe(true); },
+    'Heat map › Gaussian curvature: the next lesson': (e) => { expect(e.showField({ kind: 'gaussian' })).toBe(true); },
+    'Tab into edit mode, select a vertex near a pole': (e) => { const m = e.activeObject!.mesh!; edit(e, 'Sphere', 'vert', [m.verts.findIndex((p) => p[1] > 1.8 && p[1] < 1.99)]); expect(e.traceLaplacianOf()).toBe(true); },
+    'Heat map › Mean curvature: H at every vertex': (e) => { expect(e.showField({ kind: 'mean' })).toBe(true); },
+    'Heat map › Mean curvature: a different field': (e) => { expect(e.showField({ kind: 'mean' })).toBe(true); },
+    'Heat map › Trace the colour mapping on the curvature': (e) => { e.showField({ kind: 'mean' }); expect(e.traceColourMapOf()).toBe(true); },
+    'In the Inspector, untick Smooth UVs on the subdivision modifier': (e) => { e.updateModifier(e.activeObject!.id, 0, { uvSmooth: false }); },
+    'Tab into edit mode, select one vertex where 4 edges meet (1 for vertex select) and use Mesh › Trace the limit position': (e) => { const m = e.activeObject!.mesh!; const v = m.verts.findIndex((_, i) => m.faces.filter((f) => f.includes(i)).length === 4); edit(e, 'Spinning top', 'vert', [v]); expect(e.traceLimitOf()).toBe(true); },
+    'Add a Subdivision modifier in the Inspector': (e) => { e.addModifier(e.activeObject!.id, 'subsurf'); },
     'Select the UV sphere and use Object › Trace clean topology': (e) => { e.selectObject(e.scene.objects.find((x) => x.name === 'UV sphere')!.id); expect(e.traceValenceOf()).toBe(true); },
     'Select the torus and trace it': (e) => { e.selectObject(e.scene.objects.find((x) => x.name === 'Torus')!.id); expect(e.traceValenceOf()).toBe(true); },
     'In the Inspector, turn the subdivision modifier off': (e) => { const o = e.scene.objects.find((x) => x.name === 'Character')!; e.updateModifier(o.id, 1, { enabled: false }); },

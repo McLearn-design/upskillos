@@ -44,6 +44,14 @@ import lesson56, { checkShrink } from './5-modelling-operations/006-merge-and-sm
 import lesson57, { checkMirrorCounts } from './5-modelling-operations/007-mirror-and-modifiers.js';
 import lesson58, { checkCage } from './5-modelling-operations/008-box-modelling-a-character.js';
 import lesson59, { checkThrees } from './5-modelling-operations/009-clean-topology.js';
+import lesson61, { checkChaikin } from './6-subdivision/001-corner-cutting.js';
+import lesson62, { checkBump } from './6-subdivision/002-catmull-clark.js';
+import lesson63, { checkLimit } from './6-subdivision/003-extraordinary-vertices-and-limits.js';
+import lesson64, { checkWidest } from './6-subdivision/004-keeping-edges-sharp.js';
+import lesson65, { checkUVVerts } from './6-subdivision/005-subdividing-uvs.js';
+import lesson71, { checkDiverging } from './7-geometry-on-a-surface/001-fields-and-colour-maps.js';
+import lesson72, { checkCotan } from './7-geometry-on-a-surface/002-the-laplacian.js';
+import lesson73, { checkCurvatures } from './7-geometry-on-a-surface/003-mean-curvature.js';
 import { evalExpr } from '../../engines/mesh/core/expr';
 
 // fileURLToPath, not .pathname: on Windows a file URL keeps a leading slash
@@ -1992,5 +2000,347 @@ describe('lesson 5.9: clean topology', () => {
     expect(at(8)).toMatch(/no 5-poles/);
     expect(at(2)).toMatch(/against the budget/);
     expect(at(6)).toMatch(/torus/);
+  });
+});
+
+describe('lesson 6.1: corner cutting', () => {
+  const cells = lesson61.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')) }, document);
+    return out;
+  };
+
+  it('one step, and the limit', () => {
+    expect(run(cells[0])[0]).toBe('one step: 8 points: (1, 0) (3, 0) (4, 1) (4, 3) (3, 4) (1, 4) (0, 3) (0, 1)');
+    const rep = run(cells[1]);
+    expect(rep.slice(0, 4)).toEqual(['step 0: 4 points, area 16, perimeter 16', 'step 1: 8 points, area 14, perimeter 13.6569', 'step 2: 16 points, area 13.5, perimeter 13.153', 'step 3: 32 points, area 13.375, perimeter 13.0275']);
+    expect(rep.at(-1)).toBe('after 9 steps, the closest point to (2, 0) is 0.0039 away; to the old corner (4, 0), 0.7071');
+  });
+
+  it('three schemes: shrink, shrink more, interpolate and bulge', () => {
+    expect(run(cells[2])).toEqual([
+      'Chaikin (quadratic): 128 points, area 13.3359, nearest to the corner 0.7085, inside the square',
+      'cubic B-spline: 128 points, area 10.8488, nearest to the corner 0.9419, inside the square',
+      '4-point: 128 points, area 21.959, nearest to the corner 0, bulges 0.5 outside the square',
+    ]);
+    expect(run(cells[3])[0]).toMatch(/blue: five steps \(128 points\)/);
+  });
+
+  it('the cubic rule is the engine\'s Catmull–Clark border rule', async () => {
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { catmullClark } = await import('../../engines/mesh/core/subdivision');
+    // A strip of three quads: the middle vertex of its bottom border has border neighbours at x = 0 and x = 2.
+    const m = new EditMesh([[0, 0, 0], [1, 0, 0.5], [2, 0, 0], [3, 0, 0], [0, 0, 1], [1, 0, 1], [2, 0, 1], [3, 0, 1]], [[0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3]]);
+    const s = catmullClark(m);
+    expect(s.verts[1].map((x) => +x.toFixed(6))).toEqual([1, 0, (0 + 6 * 0.5 + 0) / 8]);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (q, r) => checkChaikin(`const q = [${q}]\nconst r = [${r}]`).message;
+    expect(checkChaikin(challenge.solutionCode).pass).toBe(true);
+    expect(checkChaikin(challenge.startCode).pass).toBe(false);
+    expect(at('1, 3', '3, 1')).toMatch(/other order/);
+    expect(at('2, 2', '1, 3')).toMatch(/midpoint/);
+    expect(at('4, 0', '1, 3')).toMatch(/cut off/);
+  });
+});
+
+describe('lesson 6.2: Catmull–Clark', () => {
+  const cells = lesson62.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('face, edge and vertex points as the engine computes them', async () => {
+    expect(run(cells[0]).out).toEqual(['top face (y = 1): face point (0, 1, 0)', 'edge (1, 1, 1)–(1, 1, -1): edge point (0.75, 0.75, 0) = (a + b + top + right) / 4']);
+    expect(run(cells[1]).out[1]).toBe('V′ = (F̄ + 2R̄ + 0·V) / 3 = (0.5556, 0.5556, 0.5556)');
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { catmullClark } = await import('../../engines/mesh/core/subdivision');
+    const cube = new EditMesh([[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]], [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [2, 3, 7, 6], [0, 4, 7, 3], [1, 2, 6, 5]]);
+    const s = catmullClark(cube);
+    expect(s.verts[6].map((x) => +x.toFixed(4))).toEqual([0.5556, 0.5556, 0.5556]);
+    expect([s.verts.length, s.faces.length]).toEqual([26, 24]);
+  });
+
+  it('levels, and the regular case is the cubic B-spline', () => {
+    const lv = run(cells[2]).out;
+    expect(lv[0]).toBe('level 1: 26 vertices, 24 faces; the old corner at (0.5556, 0.5556, 0.5556), 0.9623 from the centre; the highest point 1 high');
+    expect(lv[1]).toMatch(/^level 2: 98 vertices, 96 faces; .* the highest point 0\.8785 high$/);
+    const g = run(cells[3]).out;
+    expect(g[0].split(':')[1].trim()).toBe(g[1].split(':')[1].trim());
+    expect(run(cells[4]).shown[0].faces).toHaveLength(6 + 24 + 96 + 384);
+  });
+
+  it('the bump challenge, checked against the engine', async () => {
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { catmullClark } = await import('../../engines/mesh/core/subdivision');
+    // A 4 × 4 grid of unit squares, its middle vertex raised; far enough from the border to be a regular vertex.
+    const verts = [], faces = [];
+    for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) verts.push([i - 2, i === 2 && j === 2 ? 1 : 0, j - 2]);
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) faces.push([i * 5 + j, i * 5 + j + 1, (i + 1) * 5 + j + 1, (i + 1) * 5 + j]);
+    expect(catmullClark(new EditMesh(verts, faces)).verts[12][1]).toBeCloseTo(0.5625, 12);
+    const at = (x) => checkBump(`const height = ${x}`).message;
+    expect(checkBump(challenge.solutionCode).pass).toBe(true);
+    expect(checkBump('const height = 9 / 16').pass).toBe(true);
+    expect(checkBump(challenge.startCode).pass).toBe(false);
+    expect(at(0.25)).toMatch(/F̄/);
+    expect(at(0.5)).toMatch(/R̄/);
+    expect(at(1)).toMatch(/approximating/);
+    expect(at(0.4375)).toMatch(/n − 3/);
+  });
+});
+
+describe('lesson 6.3: extraordinary vertices and limits', () => {
+  const cells = lesson63.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('cost and limits; the formula agrees with the engine', async () => {
+    expect(run(cells[0]).out[5]).toBe('level 5: 65,536 faces, 65,538 vertices, about 3072 KB on the GPU');
+    const lim = run(cells[1]).out;
+    expect(lim[0]).toBe('after 1 step: (0.5556, 0.5556, 0.5556); its limit by the formula: (0.5, 0.5, 0.5)');
+    expect(lim.at(-1)).toBe('after 5 steps: (0.5, 0.5, 0.5), 0.0001 from the limit');
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { catmullClark } = await import('../../engines/mesh/core/subdivision');
+    const { limitPosition } = await import('../../engines/mesh/core/limit');
+    const cube = new EditMesh([[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]], [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [2, 3, 7, 6], [0, 4, 7, 3], [1, 2, 6, 5]]);
+    const r = limitPosition(catmullClark(cube), 6);
+    expect(typeof r).toBe('object');
+    expect(r.limit.map((x) => +x.toFixed(9))).toEqual([0.5, 0.5, 0.5]);
+  });
+
+  it('λ(n) measured matches the closed form; stretching compounds', () => {
+    const eig = run(cells[2]).out;
+    expect(eig).toHaveLength(5);
+    for (const line of eig) { const [, a, b] = line.match(/× ([\d.]+) a step; λ\(\d\) = ([\d.]+)/); expect(Math.abs(Number(a) - Number(b))).toBeLessThan(0.005); }
+    expect(run(cells[3]).out[3]).toBe('n = 8: after 1, 3, 5, 8 steps the quads there are 1.2222, 1.8258, 2.7275, 4.98 × regular size');
+    const { out, shown } = run(cells[4]);
+    expect(out[0]).toBe('768 quads; the biggest is 5.6302 times the smallest, and the biggest are round the tips');
+    expect(shown[0].faces).toHaveLength(768);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (y) => checkLimit(`const limitPoint = [0, ${y}, 0]`).message;
+    expect(checkLimit(challenge.solutionCode).pass).toBe(true);
+    expect(checkLimit(challenge.startCode).pass).toBe(false);
+    expect(at(9.5 / 36)).toMatch(/n = 4/);
+    expect(at(3.5 / 50)).toMatch(/4 times/);
+    expect(at(9.5 / 25)).toMatch(/not n²/);
+  });
+});
+
+describe('lesson 6.4: keeping edges sharp', () => {
+  const cells = lesson64.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('support points on a curve: the gap is 0.236 d', () => {
+    const out = run(cells[0]).out;
+    expect(out.at(-1)).toBe('support d = 0.1: the curve comes within 0.0236 of the corner');
+    expect(out[1]).toBe('support d = 1: the curve comes within 0.2357 of the corner');
+  });
+
+  it('support loops on a cube: the same volumes as MeshLab\'s project', async () => {
+    const out = run(cells[1]).out;
+    expect(out[0]).toBe('no support loops: 35.0% of the box, the edge rounded off by 0.3532; cage 6 faces, drawn 96');
+    expect(out[3]).toBe('loops at w = 0.1: 93.4% of the box, the edge rounded off by 0.0488; cage 30 faces, drawn 480');
+    const { Editor } = await import('../../engines/mesh/core/Editor');
+    const { PROJECTS, openProject } = await import('../../labs/mesh-lab/core/projects');
+    const e = new Editor();
+    const r = openProject(e, PROJECTS.find((p) => p.id === 'support-loops'), null);
+    expect(r.output[0]).toMatch(/\(35%\)$/);
+    expect(r.output[2]).toMatch(/\(93%\)$/);
+    expect(run(cells[2]).shown[0].faces).toHaveLength(96 + 480 + 480);
+  });
+
+  it('the challenge: 0.2, and each slip is named', () => {
+    const at = (w) => checkWidest(`const widest = ${w}`).message;
+    expect(checkWidest(challenge.solutionCode).pass).toBe(true);
+    expect(checkWidest(challenge.startCode).pass).toBe(false);
+    expect(at(0.25)).toMatch(/89\.6%/);
+    expect(at(0.3)).toMatch(/88\.1%/);
+    expect(at(0.1)).toMatch(/not the widest/);
+    // 0.25 really is under 90% and 0.2 over: run cell 2's code with those widths.
+    const src = cells[1].startCode.replace('[null, 0.3, 0.2, 0.1, 0.05]', '[0.25, 0.2]');
+    const out = []; new Function('console', src)({ log: (...a) => out.push(a.join(' ')) });
+    expect(out.map((l) => l.match(/: ([\d.]+)%/)[1])).toEqual(['89.6', '90.9']);
+  });
+});
+
+describe('lesson 6.5: subdividing UVs', () => {
+  const cells = lesson65.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')) }, document);
+    return out;
+  };
+
+  it('UV vertices, and smooth UVs reproduce the projection inside the island where linear ones slide', () => {
+    expect(run(cells[0])[0]).toBe('mesh vertices: 16; UV vertices: 18');
+    expect(run(cells[1])).toEqual(['vertex 5 moved from (0.3, 0.6) to (0.35, 0.6)', 'its smooth UV: (0.35, 0.6); its linear UV: (0.3, 0.6)', 'largest slide from the projection: smooth, inside the island 0; smooth, on its border 0.05; linear 0.0559']);
+    expect(run(cells[2]).slice(0, 2)).toEqual(['border smoothed: island area 5.2234; the outline point (-0.25, 0.6) is now at (-0.2109, 0.6)', 'border kept:     island area 5.325; the outline point (-0.25, 0.6) is now at (-0.25, 0.6)']);
+    expect(run(cells[3])[0]).toBe('grey: the subdivided grid projected; blue: smooth UVs, off it at 12 corners (all on the border); amber: 64 linear UV corners slid off it');
+  });
+
+  it('the engine agrees: inside the island, smooth UVs on a flat grid are the projection', async () => {
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { subdivideUV } = await import('../../engines/mesh/core/uv');
+    const { subdivide } = await import('../../engines/mesh/core/subdivision');
+    const xs = [0, 0.3, 1, 2], zs = [0, 0.6, 1.2, 2], verts = [], faces = [];
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) verts.push([xs[i], 0, zs[j]]);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) faces.push([i * 4 + j, i * 4 + j + 1, (i + 1) * 4 + j + 1, (i + 1) * 4 + j]);
+    const g = new EditMesh(verts, faces);
+    const uv = { faces: g.faces.map((f) => f.map((v) => [g.verts[v][0], g.verts[v][2]])) };
+    const s = subdivide(g, 1), su = subdivideUV(uv, 1, g, true);
+    let inside = 0;
+    s.faces.forEach((f, fi) => f.forEach((v, k) => {
+      const t = su.faces[fi][k];
+      if ([t[0], t[1]].some((x) => Math.abs(x) < 1e-9 || Math.abs(x - 2) < 1e-9)) return; // on the island's border: kept, so it may slide
+      inside++;
+      expect(t[0]).toBeCloseTo(s.verts[v][0], 12); expect(t[1]).toBeCloseTo(s.verts[v][2], 12);
+    }));
+    expect(inside).toBeGreaterThan(50);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (a, b) => checkUVVerts(`const answer = { sixIslands: ${a}, cross: ${b} }`).message;
+    expect(checkUVVerts(challenge.solutionCode).pass).toBe(true);
+    expect(checkUVVerts(challenge.startCode).pass).toBe(false);
+    expect(at(8, 14)).toMatch(/mesh vertices/);
+    expect(at(24, 24)).toMatch(/share their corners/);
+    expect(at(24, 12)).toMatch(/column of 4/);
+  });
+});
+
+describe('lesson 7.1: fields and colour maps', () => {
+  const cells = lesson71.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('a field, its range, and the maps match the engine\'s turbo and cool–warm', async () => {
+    expect(run(cells[0]).out[2]).toBe('values at the corners: 1.2, 1.0158, 1.0158; at the centre (⅓ each): 1.0772');
+    expect(run(cells[1]).out).toEqual(['min to max (0.0058 to 12): 99% of vertices get t < 0.1, nearly one colour', '2nd to 98th percentile (0.0058 to 1.0158): 43%; the spike is clamped to t = 1']);
+    const maps = run(cells[2]).out;
+    const { turbo, coolwarm } = await import('../../engines/mesh/core/fields');
+    const rgb = (c) => '(' + c.map((x) => Math.round(x * 255)).join(', ') + ')';
+    [0, 0.25, 0.5, 0.75, 1].forEach((t, i) => expect(maps[i]).toBe('t = ' + t + ': turbo ' + rgb(turbo(t)) + ', cool–warm ' + rgb(coolwarm(t))));
+  });
+
+  it('blending colours is not blending values; the picture gives every vertex a colour', () => {
+    expect(run(cells[3]).out).toEqual(['blended colours: (110, 96, 36); colour of the blended value, turbo(0.5): (150, 250, 80)', 'corners 0, 0.5, 1: 155 apart (out of 255)', 'corners 0.3, 0.5, 0.7: 41 apart (out of 255)', 'corners 0.45, 0.5, 0.55: 3 apart (out of 255)']);
+    const { shown } = run(cells[4]);
+    expect(shown[0].colors).toHaveLength(81);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (z, t) => checkDiverging(`const answer = { zero: ${z}, three: ${t} }`).message;
+    expect(checkDiverging(challenge.solutionCode).pass).toBe(true);
+    expect(checkDiverging(challenge.startCode).pass).toBe(false);
+    expect(at(0.25, 0.625)).toMatch(/symmetric/);
+    expect(at(0.5, 0.625)).toMatch(/−6 to 6/);
+    expect(at(0.5, 0.5)).toMatch(/past the middle/);
+  });
+});
+
+describe('lesson 7.2: the Laplacian', () => {
+  const cells = lesson72.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')) }, document);
+    return out;
+  };
+
+  it('umbrella moves a flat vertex; cotan does not', () => {
+    expect(run(cells[0])).toEqual(['umbrella: average of (x_j − x_0) = (0.28, 0, 0.14): not zero, it pulls vertex 0 sideways', 'cotan:    Σ w_0j (x_j − x_0)    = (0, 0, 0): zero, the surface is flat here']);
+    expect(run(cells[1]).slice(1)).toEqual(['two angles of 30°: w = 1.7321', 'two angles of 60°: w = 0.5774', 'two angles of 90°: w = 0', 'two angles of 120°: w = -0.5774']);
+  });
+
+  it('the octahedron matrix, linear precision, and the engine\'s H', async () => {
+    const m = run(cells[2]);
+    expect(m[0]).toBe('row 0: 2.3094  0  -0.5774  -0.5774  -0.5774  -0.5774   sum 0');
+    expect(m.at(-1)).toBe('30 non-zeros of 36: sparse; symmetric: true');
+    const lin = run(cells[3]);
+    expect(lin[0]).toMatch(/^cotan: \(L f\)_0 = 0; umbrella: /);
+    expect(lin[1]).toBe('octahedron vertex (1, 0, 0): Δx = (-2, 0, 0), so H ≈ 1 (a unit sphere has H = 1)');
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { traceVertexLaplacian } = await import('../../engines/mesh/core/laplacianTrace');
+    const oct = new EditMesh([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], [[0, 2, 4], [2, 1, 4], [1, 3, 4], [3, 0, 4], [2, 0, 5], [1, 2, 5], [3, 1, 5], [0, 3, 5]]);
+    const r = traceVertexLaplacian(oct, 0);
+    expect(r.H).toBeCloseTo(1, 12);
+    expect(r.weights.every((w) => Math.abs(w - 1 / Math.sqrt(3)) < 1e-12)).toBe(true);
+  });
+
+  it('the challenge: each slip is named, and only arithmetic is run', () => {
+    const at = (x) => checkCotan(`const w = ${x}`);
+    expect(checkCotan(challenge.solutionCode).pass).toBe(true);
+    expect(at('1.1547').pass).toBe(true);
+    expect(checkCotan(challenge.startCode).pass).toBe(false);
+    expect(at('2.3094').message).toMatch(/half/);
+    expect(at('1 / Math.tan(Math.PI / 3) / 2').message).toMatch(/Both angles/);
+    expect(at('window.x').message).toMatch(/arithmetic/);
+  });
+});
+
+describe('lesson 7.3: mean curvature', () => {
+  const cells = lesson73.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('spheres, a cylinder, and the engine agrees', async () => {
+    expect(run(cells[0]).out[1]).toBe('sphere of radius 2: H mean 0.5021, from 0.3814 to 0.5092');
+    expect(run(cells[1]).out[0]).toBe('middle ring: H mean 1, from 1 to 1 (1/r = 2, and 0 along the axis: their average is 1)');
+    const { makePrimitive } = await import('../../engines/mesh/core/primitives');
+    const { meanCurvature } = await import('../../engines/mesh/core/geometry');
+    const H = Array.from(meanCurvature(makePrimitive('uvSphere', { radius: 2, segments: 24, rings: 12 })));
+    expect(H.reduce((a, b) => a + b) / H.length).toBeCloseTo(0.5, 1);
+  });
+
+  it('mixed area is somewhat better; the dent is negative', () => {
+    expect(run(cells[2]).out).toEqual(['barycentric area: H mean 1.0013, from 0.7479 to 1.2758, typical error 0.0774', 'mixed area:       H mean 0.9964, from 0.7378 to 1.2094, typical error 0.0682']);
+    expect(run(cells[3]).out).toEqual(['inside the dent: 37 vertices, H mean -0.9983, from -1.0012 to -0.9969', 'the rest of the ball: 373 vertices, H mean 1.0031, from 0.7572 to 1.0109', 'the rim of the dent, where the surface folds: the largest H, 7.1048']);
+    expect(run(cells[4]).shown[0].colors.length).toBe(run(cells[4]).shown[0].verts.length);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (a, b) => checkCurvatures(`const answer = { sphere: ${a}, cylinder: ${b} }`).message;
+    expect(checkCurvatures(challenge.solutionCode).pass).toBe(true);
+    expect(checkCurvatures(challenge.startCode).pass).toBe(false);
+    expect(at(2, 1)).toMatch(/1\/r/);
+    expect(at(0.5, 2)).toMatch(/along its axis/);
+    expect(at(0.5, 0.25)).toMatch(/1\/r = 2/);
   });
 });

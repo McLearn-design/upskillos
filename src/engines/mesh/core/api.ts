@@ -32,7 +32,7 @@ import { CHANNELS, INTERPS, cloneAnimation, hasKeys, removeBoneKey, removeKey, s
 import { boneLength, limitWeights, orderBones, posedEnds, type Bone } from './armature';
 import { applyBonePatch, bindSkin, evaluatedMesh, removeBone, skinnedSource, skinSource } from './evaluate';
 import { BRUSHES, DEFAULT_PAINT, dab, neighbourLists, type PaintSettings } from './weightPaint';
-import { angleDistortion, planarUV, sharpEdges, unwrap as unwrapMesh, uvFits } from './uv';
+import { angleDistortion, planarUV, sharpEdges, traceUVSubdivision, unwrap as unwrapMesh, uvFits } from './uv';
 import { bevelEdges, dissolveEdges, dissolveFaces, dissolveVerts, insetRegion } from './modelling';
 import { SHADER_MODELS, TEXTURES, type ShaderModel, type TextureName } from './shading';
 import { DEFAULT_CAMERA, lookAtRotation, traceDepth, traceLookAt, traceOutline, traceProjection, traceView } from './camera';
@@ -40,6 +40,9 @@ import { knife as knifeCut, knifeFaces } from './knife';
 import { Quaternion, Vector3 } from 'three';
 import { traceSilhouette } from './silhouette';
 import { traceValence } from './valence';
+import { traceColourMap } from './fields';
+import { limitPosition } from './limit';
+import { traceVertexLaplacian } from './laplacianTrace';
 
 type Vec3Handle = { x: number; y: number; z: number; set(x: number, y: number, z: number): Vec3Handle; toArray(): Vec3 };
 
@@ -150,6 +153,8 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       inset(faces: number[], amount = 0.25) { m().insetFaces(faces, amount, trace('Inset', o)); return api; },
       loopCut(a: number, b: number, t = 0.5) { m().loopCut(a, b, t, trace('Loop cut', o)); return api; },
       split(faces?: number[]) { m().subdivideFaces(faces); return api; },
+      /** Vertex v's Catmull–Clark limit position (all quads round it), traced with Record traces on. */
+      limit: (v: number) => { const r = limitPosition(m(), Number(v), trace('Trace the limit position', o)); if (typeof r === 'string') throw new Error(r); return r.limit; },
       /** Valence at every vertex, poles, face kinds and the pole budget (traced with Record traces on). */
       valence: () => { const r = traceValence(m(), trace('Trace clean topology', o)); return { inside: r.inside, poles: r.poles, tris: r.tris, quads: r.quads, ngons: r.ngons, budget: r.budget }; },
       subdivide(levels = 1) { for (let i = 0; i < levels; i++) o.mesh = catmullClark(m(), i === 0 ? trace('Catmull–Clark', o) : undefined); return api; },
@@ -183,6 +188,8 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       smooth(opts: { verts?: number[]; iterations?: number; lambda?: number; method?: 'uniform' | 'cotan' } = {}) { smoothMesh(m(), { iterations: opts.iterations ?? 5, lambda: opts.lambda ?? 0.5, method: opts.method ?? 'uniform', only: opts.verts }, trace('Smooth', o)); return api; },
       /** The cotan Laplacian as rows of [neighbour, weight] pairs, and each vertex's area (mass). */
       laplacian() { const { C, mass } = operators(m()); return { rows: C.rows.map((r) => [...r.entries()]), mass: Array.from(mass) }; },
+      /** The Laplacian at vertex v, traced with Record traces on: umbrella, cotan weights, area, and Δx (length 2H). */
+      laplacianAt: (v: number) => { const r = traceVertexLaplacian(m(), Number(v), trace('Trace the Laplacian', o)); if (typeof r === 'string') throw new Error(r); return { weights: r.weights, area: r.area, H: r.H, delta: r.cotan }; },
       /** Colour the mesh by a field: "geodesic" (with from), "mean", "gaussian", "x", "y", "z", or your own values. */
       showField(what: string | number[], opts: { from?: number | number[]; source?: number | number[]; label?: string; bone?: string } = {}) {
         const from = opts.from ?? opts.source;
@@ -195,6 +202,13 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
           : (() => { throw new Error(`showField: unknown field "${what}". Use "geodesic", "mean", "gaussian", "x", "y", "z", "weight" (with bone), "uv" or an array of numbers`); })();
         if (!editor.showField(spec, o.id)) throw new Error(editor.message);
         return api;
+      },
+      /** Trace how the heat map now showing on this object becomes colours (with Record traces on). */
+      traceColours() {
+        if (!editor.field || editor.field.objectId !== o.id) throw new Error('traceColours: show a heat map on this object first (mesh.showField)');
+        const t = trace('Trace the colour mapping', o);
+        if (t) traceColourMap(editor.field.mesh, editor.field.result, t);
+        return editor.field.result.label;
       },
       // UVs: seams cut the surface; unwrap flattens each piece (LSCM) and packs them into the unit square.
       markSeams(edges: [number, number][]) { const s = new Set(o.seams ?? []); for (const [a, b] of edges) s.add(EditMesh.edgeKey(a, b)); o.seams = [...s]; return api; },
@@ -348,6 +362,12 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
         const shown = evaluatedMesh(scene(), o);
         const r = traceSilhouette(shown, [local.x, local.y, local.z], trace('Trace the silhouette', o));
         return { faces: shown.faces.length, front: r.front.length, edges: r.edges.length };
+      },
+      /** Trace subdividing this object's UVs smoothly (with Record traces on), and compare distortion with linear UVs. */
+      traceUVSubdivision(levels = 2) {
+        if (!o.mesh || !o.uv || !uvFits(o.mesh, o.uv)) throw new Error(`${o.name} has no UVs: unwrap it first`);
+        const r = traceUVSubdivision(o.mesh, o.uv, Math.max(1, Math.min(3, Math.round(levels))), trace('Trace subdividing the UVs', o));
+        return { linear: +r.linear.mean.toFixed(3), smooth: +r.smooth.mean.toFixed(3) };
       },
       /** Trace the first enabled mirror modifier on the cage (with Record traces on). Returns the mirrored mesh's stats. */
       traceMirror() {

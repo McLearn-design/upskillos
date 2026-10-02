@@ -19,18 +19,20 @@ import { applyBonePatch, bindSkin, evaluatedMesh, removeBone, skinnedSource, ski
 import { catmullClark } from './subdivision';
 import { Trace } from './trace';
 import { traceAxes, traceDecompose, traceEuler, traceDeterminant, traceTransform, traceWorld } from './transformTrace';
-import { computeField, type FieldResult, type FieldSpec } from './fields';
+import { computeField, traceColourMap, type FieldResult, type FieldSpec } from './fields';
 import { smooth as smoothMesh } from './geometry';
 import { traceVertexNormal } from './normals';
 import { rayFromPixel, tracePick, type Pickable } from './pickRay';
 import { traceScreenPick, type ScreenPoint } from './screenPick';
 import { traceSilhouette } from './silhouette';
 import { traceValence } from './valence';
+import { limitPosition } from './limit';
+import { traceVertexLaplacian } from './laplacianTrace';
 import { SNAP, traceAxisDrag } from './gizmoDrag';
 import { CHANNELS, hasKeys, posesAt, removeBoneKey, removeKey, setBoneKey, setKey, transformAt, type Channel, type Interp } from './animation';
 import { cloneBones, limitWeights, moveJoint, orderBones, type Bone, type JointSel } from './armature';
 import { DEFAULT_PAINT, dab, neighbourLists, type PaintSettings } from './weightPaint';
-import { angleDistortion, planarUV, sharpEdges, unwrap as unwrapMesh, uvFits } from './uv';
+import { angleDistortion, planarUV, sharpEdges, traceUVSubdivision, unwrap as unwrapMesh, uvFits } from './uv';
 import { faceTriangles } from './triangulate';
 import { bevelEdges, dissolveEdges, dissolveFaces, dissolveVerts, insetRegion } from './modelling';
 import { DEFAULT_CAMERA, lookAtRotation, traceDepth, traceLookAt, traceOutline, traceProjection, traceView } from './camera';
@@ -422,6 +424,51 @@ export class Editor {
     const t = traceVertexNormal(o.mesh, verts[0], { weight, sharp: o.autoSmooth ?? null }, trace);
     this.trace = trace; this.traceTarget = o.id; this.emit('trace');
     this.message = `Vertex ${verts[0]}: ${t.faces.length} faces, normal (${t.normal.map((x) => +x.toFixed(3)).join(', ')})${t.groups > 1 ? `, ${t.groups} normals with auto smooth` : ''}`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace subdividing the active object's UVs (its subdivision modifier's levels, or 2), and the distortion saved. */
+  traceUVSubdivisionOf(): boolean {
+    const o = this.activeObject;
+    if (!o?.mesh || !o.uv || !uvFits(o.mesh, o.uv)) { this.say('Trace subdividing the UVs: select an object with UVs (UV › Unwrap first)'); return false; }
+    const mod = o.modifiers.find((m) => m.type === 'subsurf' && m.enabled);
+    const levels = mod && mod.type === 'subsurf' ? Math.max(1, Math.min(3, Math.round(mod.levels))) : 2;
+    const trace = new Trace('Trace subdividing the UVs');
+    if (o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const r = traceUVSubdivision(o.mesh, o.uv, levels, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `UVs subdivided ${levels}×: distortion ${r.linear.mean.toFixed(2)} linear, ${r.smooth.mean.toFixed(2)} smooth`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace the Laplacian at the one selected vertex: umbrella, cotan weights, area, and the result on positions. */
+  traceLaplacianOf(): boolean {
+    const o = this.editObject;
+    const verts = this.mode === 'edit' ? this.selectedVerts() : [];
+    if (!o?.mesh || verts.length !== 1) { this.say('Trace the Laplacian: Tab into edit mode and select one vertex'); return false; }
+    const trace = new Trace('Trace the Laplacian');
+    if (o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const r = traceVertexLaplacian(o.mesh, verts[0], trace);
+    if (typeof r === 'string') { this.say(r); return false; }
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `Vertex ${verts[0]}: ${r.neighbours.length} neighbours, area ${r.area.toFixed(4)}, mean curvature ≈ ${r.H.toFixed(4)}`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace the selected vertex's Catmull–Clark limit position, and how fast the ring round it shrinks. */
+  traceLimitOf(): boolean {
+    const o = this.editObject;
+    const verts = this.mode === 'edit' ? this.selectedVerts() : [];
+    if (!o?.mesh || verts.length !== 1) { this.say('Trace the limit position: Tab into edit mode and select one vertex'); return false; }
+    const trace = new Trace('Trace the limit position');
+    if (o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const r = limitPosition(o.mesh, verts[0], trace);
+    if (typeof r === 'string') { this.say(r); return false; }
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `Vertex ${verts[0]} (n = ${r.n}): limit (${r.limit.map((x) => +x.toFixed(4)).join(', ')})`;
     this.emit('select');
     return true;
   }
@@ -1360,7 +1407,7 @@ export class Editor {
       spec = { kind: 'uv', values: Array.from(angleDistortion(o.mesh, o.uv)) };
     }
     const mesh = this.fieldMesh(o, spec);
-    const trace = this.traceEnabled && spec.kind === 'geodesic' ? new Trace('Heat method') : undefined;
+    const trace = this.traceEnabled && spec.kind === 'geodesic' ? new Trace('Heat method') : this.traceEnabled && spec.kind === 'mean' ? new Trace('Mean curvature') : undefined;
     if (trace && mesh.verts.length <= trace.snapshotLimit) trace.before = mesh.toSnapshot();
     this.field = { objectId: o.id, spec, mesh, result: computeField(mesh, spec, trace) };
     if (trace && trace.steps.length) { this.trace = trace; this.traceTarget = o.id; this.emit('trace'); }
@@ -1369,6 +1416,17 @@ export class Editor {
       this.log.push({ label: `Show ${this.field.result.label}`, code: `${ref(o)}.mesh.showField(${args})` });
     }
     this.message = this.field.result.label;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace how the heat map now showing becomes colours: range, t, colour, and blending between vertices. */
+  traceColourMapOf(): boolean {
+    if (!this.field) { this.say('Trace the colour mapping: show a heat map first (Heat map menu)'); return false; }
+    const trace = new Trace('Trace the colour mapping');
+    traceColourMap(this.field.mesh, this.field.result, trace);
+    this.trace = trace; this.traceTarget = this.field.objectId; this.emit('trace');
+    this.message = `${this.field.result.label}: traced from value to colour`;
     this.emit('select');
     return true;
   }

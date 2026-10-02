@@ -160,17 +160,42 @@ export function gaussianCurvature(mesh: EditMesh, { integrated = false } = {}): 
  * Mean curvature from the Laplacian of position: Δx = −2H·n. Returns signed H
  * (positive where the surface bulges outward, 1/r on a sphere of radius r).
  */
-export function meanCurvature(mesh: EditMesh): Float64Array {
+export function meanCurvature(mesh: EditMesh, trace?: Trace): Float64Array {
   const { C, mass } = operators(mesh);
   const V = mesh.verts, H = new Float64Array(V.length);
+  const HnAt: Vec3[] = [];
   for (let i = 0; i < V.length; i++) {
     if (mass[i] < 1e-15) continue;
     let h: Vec3 = [0, 0, 0];
     for (const [j, w] of C.rows[i]) h = [h[0] + w * V[j][0], h[1] + w * V[j][1], h[2] + w * V[j][2]];
     // (C x)_i / (2 M_i) points outward with length H.
     const Hn: Vec3 = [h[0] / (2 * mass[i]), h[1] / (2 * mass[i]), h[2] / (2 * mass[i])];
+    HnAt[i] = Hn;
     const s = Math.sign(dot(Hn, mesh.vertexNormal(i))) || 1;
     H[i] = s * len(Hn);
+  }
+  if (trace) {
+    let lo = Infinity, hi = -Infinity, neg = 0;
+    H.forEach((h) => { lo = Math.min(lo, h); hi = Math.max(hi, h); if (h < 0) neg++; });
+    trace.step({
+      phase: 'Laplacian of position', label: `At every vertex: Hn = (C x)ᵢ / (2Mᵢ), the cotan Laplacian of the positions over twice the vertex's area`,
+      detail: 'The same construction as Mesh › Trace the Laplacian, at every vertex at once: a vector along the normal whose length is the mean curvature (the average of the two principal curvatures).',
+      field: Array.from(mass), fieldLabel: 'vertex area M',
+    }, V.length <= trace.snapshotLimit ? mesh : undefined);
+    // The sign at the vertex with the most negative H, if any: where the surface curves the other way.
+    const at = neg ? H.indexOf(lo) : H.indexOf(hi);
+    const n = mesh.vertexNormal(at), d = dot(HnAt[at] ?? [0, 0, 0], n);
+    trace.step({
+      phase: 'Sign', label: `v${at}: Hn · n = ${fmt(d, 4)}, so H = ${fmt(H[at], 4)} (${H[at] < 0 ? 'curving in, like a bowl' : 'bulging out, like a dome'})`,
+      detail: 'The length gives the size; the sign comes from comparing Hn with the vertex normal: along it (outward) means the surface bulges out there, against it means it is dented in.',
+      verts: [at], values: [['Hn', fmtV(HnAt[at] ?? [0, 0, 0])], ['normal n', fmtV(n)], ['Hn · n', fmt(d, 4)]],
+      quiz: { prompt: `At v${at}, Hn = ${fmtV(HnAt[at] ?? [0, 0, 0])} and the outward normal is ${fmtV(n)}. Is the mean curvature positive (1) or negative (−1) here?`, answer: [H[at] < 0 ? -1 : 1], labels: ['sign'], rule: 'Positive when Hn points along the outward normal (a dome), negative against it (a bowl).', tolerance: 0 },
+    });
+    trace.step({
+      phase: 'Range', label: `H from ${fmt(lo, 3)} to ${fmt(hi, 3)}; ${neg} of ${V.length} vertices curve inward`,
+      detail: 'On a sphere of radius r every vertex has H ≈ 1/r. Positive H (red) bulges, negative (blue) is dented, near 0 is flat or a balanced saddle.',
+      field: Array.from(H), fieldLabel: 'mean curvature H',
+    });
   }
   return H;
 }

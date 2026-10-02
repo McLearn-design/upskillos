@@ -321,10 +321,10 @@ export function mirrorUV(mesh: EditMesh, uv: UVLayer, axis: 'x' | 'y' | 'z', mer
  * Boundary edges and vertices are kept linear: an island's outline does not shrink
  * or move, so textures still meet along seams.
  */
-export function subdivideUV(uv: UVLayer, levels: number, mesh?: EditMesh, smooth = false): UVLayer {
+export function subdivideUV(uv: UVLayer, levels: number, mesh?: EditMesh, smooth = false, trace?: Trace): UVLayer {
   let faces = uv.faces, m = mesh;
   for (let l = 0; l < levels; l++) {
-    faces = smooth && m ? smoothUVLevel(m, faces) : linearUVLevel(faces);
+    faces = smooth && m ? smoothUVLevel(m, faces, l === 0 ? trace : undefined) : linearUVLevel(faces);
     if (m && l + 1 < levels) m = subdivide(m, 1);
   }
   return { faces };
@@ -340,7 +340,7 @@ function linearUVLevel(faces: UV[][]): UV[][] {
   return out;
 }
 
-function smoothUVLevel(m: EditMesh, faces: UV[][]): UV[][] {
+function smoothUVLevel(m: EditMesh, faces: UV[][], trace?: Trace): UV[][] {
   // 1. UV vertices: corners with the same mesh vertex and the same UV are one vertex.
   const ids = new Map<string, number>(), pos: UV[] = [];
   const corner = m.faces.map((f, fi) => f.map((v, k) => {
@@ -387,6 +387,30 @@ function smoothUVLevel(m: EditMesh, faces: UV[][]): UV[][] {
     const Rb = around[i].mids.reduce((s, q) => [s[0] + q[0] / k, s[1] + q[1] / k], [0, 0]);
     return [(Fb[0] + 2 * Rb[0] + (n - 3) * P[0]) / n, (Fb[1] + 2 * Rb[1] + (n - 3) * P[1]) / n];
   });
+  if (trace) {
+    const used = new Set(m.faces.flat()).size, f2 = (p: UV) => `(${fmt(p[0])}, ${fmt(p[1])})`;
+    trace.step({
+      phase: 'UV vertices', label: `${used} mesh vertices are ${pos.length} UV vertices: ${pos.length - used} extra copies where seams cut through`,
+      detail: 'A UV vertex is a mesh vertex together with one UV. A vertex on a seam has a different UV on each side, so it becomes two (or more) UV vertices, and the seam becomes an open border of the UV mesh.',
+      values: [['mesh vertices', String(used)], ['UV vertices', String(pos.length)]],
+    });
+    trace.step({
+      phase: 'Borders kept', label: `${boundary.size} UV vertices on island outlines stay where they are; edges there get their midpoint`,
+      detail: 'On an island\'s outline the UVs are not smoothed, so the outline does not shrink and the texture still meets itself across each seam.',
+    });
+    const inner = pos.findIndex((_, i) => !boundary.has(i) && around[i].f.length > 0);
+    if (inner >= 0) {
+      const n = around[inner].f.length;
+      const Fb = around[inner].f.reduce((s, fi) => [s[0] + facePt[fi][0] / n, s[1] + facePt[fi][1] / n], [0, 0]) as UV;
+      const k = around[inner].mids.length, Rb = around[inner].mids.reduce((s, q) => [s[0] + q[0] / k, s[1] + q[1] / k], [0, 0]) as UV;
+      trace.step({
+        phase: 'Inside points', label: `Inside an island the UVs move by the surface's own rule: UV vertex ${inner} → ${f2(vertPt[inner])}`,
+        detail: 'Face points, edge points and vertex points, exactly as Catmull–Clark moves positions (lesson 6.2), but in the plane of the texture: (F̄ + 2R̄ + (n − 3)P) / n.',
+        values: [['P', f2(pos[inner])], ['F̄', f2(Fb)], ['R̄', f2(Rb)], ['n', String(n)]],
+        quiz: { prompt: `An inside UV vertex at ${f2(pos[inner])} has n = ${n}; the average of its face points is ${f2(Fb)} and of its edge midpoints ${f2(Rb)}. Where does it go?`, answer: vertPt[inner], labels: ['u', 'v'], rule: '(F̄ + 2R̄ + (n − 3)P) / n, in UV space.' },
+      });
+    }
+  }
   // 5. The new faces, in subdivide's order.
   const out: UV[][] = [];
   corner.forEach((f, fi) => {
@@ -412,4 +436,21 @@ export function evaluateUV(mesh: EditMesh, uv: UVLayer, modifiers: Modifier[], m
     else if (mod.type === 'subsurf') { const lv = Math.min(maxLevels, Math.max(0, Math.round(mod.levels))); u = subdivideUV(u, lv, m, mod.uvSmooth !== false); m = subdivide(m, lv); }
   }
   return u;
+}
+
+/**
+ * Subdivide a UV layer smoothly, traced, and compare the texture distortion it leaves on the subdivided surface
+ * with linear UVs (Mesh › UV › Trace subdividing the UVs).
+ */
+export function traceUVSubdivision(mesh: EditMesh, uv: UVLayer, levels: number, trace?: Trace): { levels: number; linear: { mean: number; max: number }; smooth: { mean: number; max: number } } {
+  const smoothUV = subdivideUV(uv, levels, mesh, true, trace), linearUV = subdivideUV(uv, levels);
+  const surface = subdivide(mesh, levels);
+  const stat = (u: UVLayer) => { const d = angleDistortion(surface, u); let s = 0, mx = 0; for (const x of d) { s += x; mx = Math.max(mx, x); } return { mean: s / d.length, max: mx }; };
+  const lin = stat(linearUV), smo = stat(smoothUV);
+  trace?.step({
+    phase: 'Distortion', label: `On the surface subdivided ${levels}×: mean angle distortion ${fmt(lin.mean, 2)} with linear UVs, ${fmt(smo.mean, 2)} with smooth ones (1 is none)`,
+    detail: 'Linear UVs keep the cage\'s texture layout while the surface moves under it, so the texture slides and stretches most where the surface moved most. Smooth UVs move with the surface, so squares on the texture stay closer to square.',
+    values: [['mean, linear', fmt(lin.mean, 3)], ['mean, smooth', fmt(smo.mean, 3)], ['worst, linear', fmt(lin.max, 3)], ['worst, smooth', fmt(smo.max, 3)]],
+  });
+  return { levels, linear: lin, smooth: smo };
 }
