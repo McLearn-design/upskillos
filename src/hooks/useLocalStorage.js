@@ -46,15 +46,23 @@ export function useLocalStorage(key, initialValue) {
   }, [key])
 
   useEffect(() => {
-    const onExternalWrite = (e) => {
-      if (e.detail?.key !== key) return
+    const reread = () => {
       try {
         const item = window.localStorage.getItem(key)
         setStoredValue(item ? JSON.parse(item) : initialValueRef.current)
       } catch {}
     }
+    const onExternalWrite = (e) => { if (e.detail?.key === key) reread() }
+    // Another tab or window saved this key (key is null when storage was
+    // cleared). Without this, this tab keeps its stale copy and its next
+    // save overwrites what the other tab saved.
+    const onStorage = (e) => { if (e.key === key || e.key === null) reread() }
     window.addEventListener(EXTERNAL_WRITE_EVENT, onExternalWrite)
-    return () => window.removeEventListener(EXTERNAL_WRITE_EVENT, onExternalWrite)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener(EXTERNAL_WRITE_EVENT, onExternalWrite)
+      window.removeEventListener('storage', onStorage)
+    }
   }, [key])
 
   return [storedValue, setValue]
