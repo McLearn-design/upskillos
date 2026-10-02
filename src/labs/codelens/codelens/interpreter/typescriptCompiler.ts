@@ -70,7 +70,11 @@ export function compileTypeScript(source: string): TypeScriptCompilation {
 
   const diagnostics = (result.diagnostics ?? []).map(formatDiagnostic)
   const sourceMap = result.sourceMapText ? new TraceMap(result.sourceMapText) : null
-  const code = result.outputText.replace(/\n?\/\/# sourceMappingURL=.*$/m, '')
+  const code = result.outputText
+    .replace(/\n?\/\/# sourceMappingURL=.*$/m, '')
+    // The compiler adds a "use strict" line the learner never wrote; tracing it would show
+    // a step on line 1. Blank it, keeping the line so the source map still lines up.
+    .replace(/^"use strict";/, '')
 
   return {
     code,

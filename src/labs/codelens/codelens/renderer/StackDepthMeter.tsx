@@ -6,6 +6,7 @@
  */
 import { useMemo, useRef, useCallback, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import type { TraceEvent } from '../types'
+import { innermostFrame } from '../traceOutcomes'
 import { useCodeLensTheme } from '../ThemeContext'
 import type { CodeLensUiPalette } from '../theme'
 
@@ -90,7 +91,7 @@ export default function StackDepthMeter({ events, step, onSeek }: StackDepthMete
   const hoverData = hover !== null && depths[hover.index] > 0 ? (() => {
     const d = depths[hover.index]
     const evt = events[hover.index]
-    const topFrame = evt?.stackSnapshot?.[evt.stackSnapshot.length - 1]
+    const topFrame = evt ? innermostFrame(evt) : undefined
     return { d, fnName: topFrame?.name ?? null, color: depthColor(d, maxDepth, ui) }
   })() : null
 

@@ -14,6 +14,9 @@ import 'prismjs/components/prism-json'
 import 'prismjs/components/prism-bash'
 import 'prismjs/components/prism-c'
 import 'prismjs/components/prism-cpp'
+// C#; also registers the alias "dotnet", which lessons use for C# that is shown, not run
+// (a ```csharp fence is a runnable example in the lesson engine).
+import 'prismjs/components/prism-csharp'
 import 'prismjs/components/prism-javascript'
 
 // react-markdown wraps fenced code in its own <pre> automatically — don't

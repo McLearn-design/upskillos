@@ -55,13 +55,22 @@ self.onmessage = (event: MessageEvent<RunRequest>) => {
     self.postMessage({ type: 'progress', events: events.splice(0), output: output.splice(0) })
   }
 
+  // What console.log printed is attached to the next event, the way the Python tracer
+  // does it, so each line's explanation can say what it printed (traceOutcomes.ts).
+  let pendingPrinted = ''
   const raw = run(code, {
     limits: event.data.limits,
     onEvent: (traceEvent: TraceEvent) => {
-      events.push(remap(traceEvent))
+      const mapped = remap(traceEvent)
+      if (pendingPrinted) {
+        mapped.printed = pendingPrinted
+        pendingPrinted = ''
+      }
+      events.push(mapped)
       if (events.length >= EVENT_BATCH_SIZE) flush()
     },
     onOutput: (line: string) => {
+      pendingPrinted += line + '\n'
       output.push(line)
       if (output.length >= OUTPUT_BATCH_SIZE) flush()
     },

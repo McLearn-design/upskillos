@@ -1,7 +1,10 @@
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode, type CSSProperties } from 'react'
 import Editor, { useMonaco } from '@monaco-editor/react'
 import { buildProgramModel } from '../../../engines/js/parser/jsParser.js'
-import { runPython } from './interpreter/pythonTracer'
+import { startPythonExecution } from './interpreter/pythonExecutionClient'
+import { explainTraceEvent, eventLabel } from './explainTrace'
+import { startNativeExecution, nativeToolchains, type NativeLang } from './interpreter/nativeExecutionClient'
+import { checkBackendTools } from './interpreter/nativeTracer'
 import { runNative } from './interpreter/nativeTracer'
 import {
   startJavaScriptExecution,
@@ -16,7 +19,8 @@ import VariableWatch from './renderer/VariableWatch'
 import CallTreeView from './renderer/CallTreeView'
 import StackDepthMeter from './renderer/StackDepthMeter'
 import WatchWindow from './renderer/WatchWindow'
-import { SNIPPET_CATEGORIES } from './snippets'
+import LibraryBrowser from './LibraryBrowser'
+import { LANGUAGE_LABELS, type LibraryExample } from './library'
 import { setupOpenCalcMonaco } from '../../../utils/monacoThemes.js'
 import { CodeLensThemeProvider, useCodeLensTheme } from './ThemeContext'
 import { CODELENS_THEMES } from './theme'
@@ -29,7 +33,7 @@ import type {
 import {
   ChevronRight, ChevronDown, Code2, Boxes, Braces, ArrowLeft,
   Zap, Play, Pause, StepForward, StepBack, SkipForward, Terminal,
-  Palette, Info, Network, Layers, GitBranch, X, Eye, Square,
+  Palette, Info, Network, Layers, GitBranch, X, Eye, Square, BookOpen, RotateCcw,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -120,6 +124,96 @@ s.push(20)
 s.push(30)
 print('Stack size:', s.size())
 print('Popped:', s.pop())
+`
+
+// C# runs on the desktop app only, with the learner's own .NET SDK.
+const STARTER_CS = `// A class, a list of objects, and a method that changes them.
+var cart = new List<Item>
+{
+    new Item("Pen", 1.50m, 2),
+    new Item("Notebook", 3.25m, 1),
+};
+decimal total = 0;
+foreach (var item in cart)
+{
+    total += Subtotal(item);
+}
+cart[0].Quantity++;
+Console.WriteLine($"Total: {total}");
+
+decimal Subtotal(Item item)
+{
+    var price = item.Price * item.Quantity;
+    return price;
+}
+
+class Item
+{
+    public string Name { get; }
+    public decimal Price { get; }
+    public int Quantity { get; set; }
+
+    public Item(string name, decimal price, int quantity)
+    {
+        Name = name;
+        Price = price;
+        Quantity = quantity;
+    }
+}
+`
+
+// C and C++ run on the desktop app only, compiled and stepped through under GDB.
+const STARTER_CPP = `#include <iostream>
+#include <vector>
+
+struct Node {
+    int value;
+    Node* next;
+};
+
+int sumList(Node* node) {
+    if (node == nullptr) {
+        return 0;
+    }
+    return node->value + sumList(node->next);
+}
+
+int main() {
+    std::vector<int> values = {3, 1, 4};
+    Node* head = nullptr;
+    for (int value : values) {
+        head = new Node{value, head};
+    }
+    int total = sumList(head);
+    std::cout << "total: " << total << std::endl;
+    return 0;
+}
+`
+
+const STARTER_C = `#include <stdio.h>
+
+struct Point {
+    int x;
+    int y;
+};
+
+void moveRight(struct Point *point, int steps) {
+    point->x += steps;
+}
+
+int main(void) {
+    int scores[4] = {7, 3, 9, 4};
+    int best = scores[0];
+    for (int i = 1; i < 4; i++) {
+        if (scores[i] > best) {
+            best = scores[i];
+        }
+    }
+    struct Point p = {0, 0};
+    moveRight(&p, best);
+    printf("best %d, p.x %d\\n", best, p.x);
+    return 0;
+}
 `
 
 const STARTER_GO = `package main
@@ -273,6 +367,7 @@ function Btn({ onClick, disabled = false, title, children, active = false }: Btn
       onClick={onClick}
       disabled={disabled}
       title={title}
+      aria-pressed={active || undefined}
       style={{
         background: active ? ui.accentBgSolid : ui.border,
         border: `1px solid ${active ? ui.accentSolid : ui.borderStrong}`,
@@ -357,6 +452,12 @@ const CONCEPT_MAP = CONCEPT_GLOSSARY as Record<string, ConceptEntry>
 interface Explanation { summary: string; why?: string; concept?: string }
 const EXPLAIN_MAP = EXPLAIN as Record<string, ((event: TraceEvent) => Explanation) | undefined>
 function explainEvent(event: TraceEvent): Explanation {
+  // Python and the desktop languages tag their events with `language`; their
+  // explanations come from explainTrace.ts. The JavaScript interpreter's don't, and use
+  // its own JavaScript-specific explanations.
+  if (event.language || ((event.type === 'statement_enter' || event.type === 'statement_exit') && event.statement)) {
+    return explainTraceEvent(event)
+  }
   return EXPLAIN_MAP[event.type]?.(event) ?? { summary: event.type, why: '', concept: '' }
 }
 
@@ -656,7 +757,7 @@ function EventCard({ event, active }: { event: TraceEvent; active: boolean }) {
           fontSize: 10, padding: '1px 6px', borderRadius: 99,
           background: ui.border, color: ui.accent,
           fontFamily: 'JetBrains Mono, monospace', flexShrink: 0,
-        }}>{event.type}</span>
+        }}>{eventLabel(event)}</span>
         {event.sourceLocation?.line && (
           <span style={{ fontSize: 10, color: ui.textFaint }}>L{event.sourceLocation.line}</span>
         )}
@@ -745,6 +846,9 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
     if (initialLang === 'ts') return 'ts'
     if (initialLang === 'py') return 'py'
     if (initialLang === 'go') return 'go'
+    if (initialLang === 'c') return 'c'
+    if (initialLang === 'cpp') return 'cpp'
+    if (initialLang === 'cs' || initialLang === 'csharp') return 'cs'
     return 'js'
   })
   const [source, setSource]         = useState(() => {
@@ -752,6 +856,9 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
     if (initialLang === 'ts') return STARTER_TS
     if (initialLang === 'py') return STARTER_PY
     if (initialLang === 'go') return STARTER_GO
+    if (initialLang === 'c') return STARTER_C
+    if (initialLang === 'cpp') return STARTER_CPP
+    if (initialLang === 'cs' || initialLang === 'csharp') return STARTER_CS
     return STARTER
   })
   const [model, setModel]           = useState<ProgramModel | null>(null)
@@ -767,6 +874,10 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
   const [codeModalTab, setCodeModalTab] = useState<CodeTab | null>(null)
   const [showThemes, setShowThemes] = useState(false)
   const [showSandboxGuide, setShowSandboxGuide] = useState(false)
+  // The learning library: open or closed (and on which example), and the example loaded
+  // into the editor, so it can be reset and its notes shown beside the code.
+  const [libraryOpen, setLibraryOpen] = useState<string | true | null>(null)
+  const [loadedExample, setLoadedExample] = useState<{ example: LibraryExample; lang: Lang } | null>(null)
   const [showWatch, setShowWatch]   = useState(false)
   const [playing, setPlaying]       = useState(false)
   const [playSpeed, setPlaySpeed]   = useState('1x')
@@ -779,7 +890,24 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
   const bpDecorRef                  = useRef<string[]>([])
   const shadowDecorRef              = useRef<string[]>([])
   const editorColRef                = useRef<HTMLDivElement>(null)
-  const activeExecutionRef         = useRef<JavaScriptExecutionHandle | null>(null)
+  const activeExecutionRef         = useRef<Pick<JavaScriptExecutionHandle, 'stop'> | null>(null)
+  // Where the last run happened, e.g. "your Python 3.13.14" on the desktop app.
+  const [runHost, setRunHost]       = useState<string | null>(null)
+  // Languages beyond JS/TS/Python, offered only where they can actually run: C and C++
+  // need the desktop app with GDB; Go needs the CodeLens backend with go and dlv.
+  const [extraLangs, setExtraLangs] = useState<Lang[]>([])
+  useEffect(() => {
+    let alive = true
+    nativeToolchains().then(toolchains => {
+      if (!alive || !toolchains) return
+      const native = (['c', 'cpp', 'cs'] as NativeLang[]).filter(l => toolchains.languages[l])
+      setExtraLangs(current => [...new Set([...current, ...native])])
+    })
+    checkBackendTools().then((tools: any) => {
+      if (alive && tools?.go?.ok && tools?.dlv?.ok) setExtraLangs(current => [...new Set([...current, 'go' as Lang])])
+    })
+    return () => { alive = false }
+  }, [])
   const runGenerationRef           = useRef(0)
   // Tracks the source that produced `execution` — editing the code without
   // re-running previously left the OLD run's current-line highlight/shadow
@@ -795,16 +923,35 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
     ? execution?.diagnostics ?? []
     : []
 
+  // Playback from the keyboard: ← → step, Home/End jump, Space plays or pauses. Not while
+  // typing in the editor or a field, where those keys edit text.
+  useEffect(() => {
+    if (!totalSteps) return
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (e.altKey || e.ctrlKey || e.metaKey || !target) return
+      if (target.closest('input, textarea, select, [contenteditable="true"], .monaco-editor, [role="dialog"]')) return
+      const go = (to: number) => { e.preventDefault(); setPlaying(false); setStep(Math.max(0, Math.min(totalSteps - 1, to))) }
+      if (e.key === 'ArrowRight') go(step + 1)
+      else if (e.key === 'ArrowLeft') go(step - 1)
+      else if (e.key === 'Home') go(0)
+      else if (e.key === 'End') go(totalSteps - 1)
+      else if (e.key === ' ' && target.tagName !== 'BUTTON') { e.preventDefault(); setPlaying(p => !p) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [step, totalSteps])
+
   useEffect(() => () => {
     runGenerationRef.current += 1
     activeExecutionRef.current?.stop()
     activeExecutionRef.current = null
   }, [])
 
-  // Parse live as we type (JS + TS; not Python)
-  useEffect(() => { if (lang !== 'py') setModel(buildProgramModel(source) as ProgramModel) }, [])
+  // Parse live as we type (JS + TS only: the model comes from the JavaScript parser)
+  useEffect(() => { if (lang === 'js' || lang === 'ts') setModel(buildProgramModel(source) as ProgramModel) }, [])
   useEffect(() => {
-    if (lang === 'py') { setModel(null); return }
+    if (lang !== 'js' && lang !== 'ts') { setModel(null); return }
     const id = setTimeout(() => setModel(buildProgramModel(source) as ProgramModel), 400)
     return () => clearTimeout(id)
   }, [source, lang])
@@ -878,11 +1025,18 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
       if (ed && monaco) shadowDecorRef.current = ed.deltaDecorations(shadowDecorRef.current, [])
       return
     }
+    // Each earlier line keeps the explanation of the last time it ran (its statement_enter
+    // with statement info), not a later bookkeeping event on that line such as its
+    // statement's end or a block scope opening.
     const lastEventPerLine = new Map<number, TraceEvent>()
+    const explainedLines = new Set<number>()
     for (let i = 0; i <= step; i++) {
       const evt = execution.events[i]
       const ln = evt?.sourceLocation?.line
-      if (ln) lastEventPerLine.set(ln, evt)
+      if (!ln) continue
+      const explained = evt.type === 'statement_enter' && !!evt.statement
+      if (explained) explainedLines.add(ln)
+      if (explained || !explainedLines.has(ln)) lastEventPerLine.set(ln, evt)
     }
     const currentLine = execution.events[step]?.sourceLocation?.line
     if (currentLine) lastEventPerLine.delete(currentLine)
@@ -932,6 +1086,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
   const handleRun = useCallback(async () => {
     const generation = ++runGenerationRef.current
     setRunning(true)
+    setRunHost(null)
     setExecution(null)
     setStep(0)
     setPlaying(false)
@@ -939,7 +1094,15 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
     try {
       let result: ExecutionResult
       if (lang === 'py') {
-        result = withExecutionStatus(await runPython(source))
+        const handle = startPythonExecution(source)
+        activeExecutionRef.current = handle
+        handle.host.then(host => { if (generation === runGenerationRef.current) setRunHost(host) })
+        result = withExecutionStatus(await handle.promise)
+      } else if (lang === 'c' || lang === 'cpp' || lang === 'cs') {
+        const handle = startNativeExecution(lang, source)
+        activeExecutionRef.current = handle
+        handle.host.then(host => { if (generation === runGenerationRef.current) setRunHost(host) })
+        result = withExecutionStatus(await handle.promise)
       } else if (lang === 'go') {
         result = withExecutionStatus(await runNative(source, 'go'))
       } else {
@@ -996,12 +1159,16 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
     setStep(events.length - 1)
   }, [step, execution, breakpoints])
 
+  // The heap ("Structures") view needs heap events. The JavaScript interpreter always
+  // produces them; other languages do when their tracer records objects (Python does).
+  const hasHeapView = lang === 'js' || lang === 'ts' || !!execution?.events.some(e => (e.heapDelta?.length ?? 0) > 0)
+
   const chooseInspectorLayout = useCallback((layout: InspectorLayout) => {
     setInspectorLayout(layout)
     if (layout === 'data') {
-      setDataTab(lang === 'js' || lang === 'ts' ? 'heap' : 'variables')
+      setDataTab(hasHeapView ? 'heap' : 'variables')
     }
-  }, [lang])
+  }, [hasHeapView])
 
   // ── Inspector nav: Run / Data / Code groups, each with its own tab strip ──
   const RUN_TABS: { id: RunTab; label: string; icon: LucideIcon }[] = [
@@ -1011,10 +1178,12 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
   ]
   const DATA_TABS: { id: DataTab; label: string; icon: LucideIcon }[] = [
     { id: 'variables', label: 'Values',     icon: Layers },
-    ...((lang === 'js' || lang === 'ts') ? [{ id: 'heap' as const, label: 'Structures', icon: Network }] : []),
+    ...(hasHeapView ? [{ id: 'heap' as const, label: 'Structures', icon: Network }] : []),
     { id: 'calltree',  label: 'Calls',      icon: GitBranch },
   ]
-  const CODE_TABS: { id: CodeTab; label: string; icon: LucideIcon }[] = (lang === 'py' || lang === 'go')
+  const CODE_TABS: { id: CodeTab; label: string; icon: LucideIcon }[] = (lang === 'c' || lang === 'cpp' || lang === 'cs')
+    ? []   // no structure view for compiled languages yet
+    : (lang === 'py' || lang === 'go')
     ? [{ id: 'structure', label: 'Structure', icon: Boxes }]
     : [
         { id: 'structure', label: 'Structure', icon: Boxes },
@@ -1022,7 +1191,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
         { id: 'ast',       label: 'AST',       icon: Braces },
       ]
 
-  const heapSnapshot = ((lang === 'js' || lang === 'ts') && execution)
+  const heapSnapshot = (hasHeapView && execution)
     ? buildHeapSnapshot(execution.events, step)
     : null
 
@@ -1107,6 +1276,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
         <Code2 size={17} color={ui.accent} />
         <span style={{ fontWeight: 700, fontSize: 14 }}>CodeLens</span>
         <span style={{ fontSize: 12, color: ui.textFaint }}>· Execution Visualizer</span>
+        {runHost && <span style={{ fontSize: 11, color: ui.textFaint }} title="Where the last run happened">· ran on {runHost}</span>}
 
         {/* Language toggle */}
         <div style={{ display: 'flex', gap: 2, background: ui.panelBg,
@@ -1116,14 +1286,17 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
               { id: 'js',  label: 'JS' },
               { id: 'ts',  label: 'TS' },
               { id: 'py',  label: 'Python' },
-              { id: 'go',  label: 'Go' },
+              ...extraLangs.filter(l => l === 'c').map(() => ({ id: 'c' as Lang, label: 'C' })),
+              ...extraLangs.filter(l => l === 'cpp').map(() => ({ id: 'cpp' as Lang, label: 'C++' })),
+              ...extraLangs.filter(l => l === 'cs').map(() => ({ id: 'cs' as Lang, label: 'C#' })),
+              ...extraLangs.filter(l => l === 'go').map(() => ({ id: 'go' as Lang, label: 'Go' })),
             ] as { id: Lang; label: string }[]
           ).map(l => (
             <button key={l.id} onClick={() => {
               if (l.id === lang) return
               abandonActiveRun()
               setLang(l.id)
-              const starters: Record<string, string> = { py: STARTER_PY, ts: STARTER_TS, go: STARTER_GO }
+              const starters: Record<string, string> = { py: STARTER_PY, ts: STARTER_TS, go: STARTER_GO, c: STARTER_C, cpp: STARTER_CPP, cs: STARTER_CS }
               setSource(starters[l.id] ?? STARTER)
               setExecution(null)
               setStep(0)
@@ -1145,44 +1318,10 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
           </Btn>
         )}
 
-        {/* Teaching Snippets */}
-        <select
-          style={{
-            marginLeft: 12,
-            background: ui.panelBg,
-            border: `1px solid ${ui.border}`,
-            color: ui.textSoft,
-            padding: '4px 8px',
-            borderRadius: 6,
-            fontSize: 11,
-            fontFamily: 'JetBrains Mono, monospace',
-            cursor: 'pointer',
-            outline: 'none',
-          }}
-          onChange={(e) => {
-            if (!e.target.value) return
-            abandonActiveRun()
-            const [catIdx, itemIdx] = e.target.value.split('-').map(Number)
-            const snippet = SNIPPET_CATEGORIES[catIdx].items[itemIdx]
-            setLang('js')
-            setSource(snippet.code)
-            setExecution(null)
-            setStep(0)
-            setModel(null)
-            e.target.value = ""
-          }}
-        >
-          <option value="">📚 Load Example...</option>
-          {SNIPPET_CATEGORIES.map((cat, i) => (
-            <optgroup key={i} label={cat.group} style={{ color: ui.accent, fontStyle: 'italic', background: ui.headerBg }}>
-              {cat.items.map((s, j) => (
-                <option key={j} value={`${i}-${j}`} style={{ color: ui.textSoft, fontStyle: 'normal' }}>
-                  {s.name}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+        {/* The learning library (library.ts) */}
+        <Btn onClick={() => setLibraryOpen(true)} title="Browse examples with notes, in every language">
+          <BookOpen size={12} /> Library
+        </Btn>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           {/* Structure/Tokens/AST — buttons along the header, not a body
@@ -1235,7 +1374,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
           </div>
 
           {/* Run button */}
-          {running && (lang === 'js' || lang === 'ts') ? (
+          {running ? (
             <Btn onClick={handleStop} title="Stop this run and keep the trace collected so far">
               <Square size={12} fill="currentColor" /> Stop
             </Btn>
@@ -1243,7 +1382,7 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
             <PrimaryRunBtn onClick={handleRun} disabled={running}>
               <Play size={14} fill="currentColor" />
               {running
-                ? (lang === 'py' ? 'Loading Python…' : 'Building Go…')
+                ? (lang === 'py' ? 'Running Python…' : lang === 'c' || lang === 'cpp' || lang === 'cs' ? 'Compiling and tracing…' : 'Building Go…')
                 : execution && source === lastRunSourceRef.current ? 'Run again' : 'Run'}
             </PrimaryRunBtn>
           )}
@@ -1421,6 +1560,39 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
         />
       )}
 
+      {/* Each step's explanation, read out by screen readers as the step changes. */}
+      <div aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>
+        {currentEvent ? `Step ${step + 1} of ${totalSteps}, line ${currentEvent.sourceLocation?.line ?? ''}: ${explainEvent(currentEvent).summary}` : ''}
+      </div>
+
+      {/* ── The loaded library example: what to watch, reset, notes ── */}
+      {loadedExample && (
+        <div role="note" aria-label="Example notes" style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '6px 14px', flexWrap: 'wrap',
+          borderBottom: `1px solid ${ui.border}`, background: ui.headerBg, fontSize: 12, color: ui.textSoft,
+        }}>
+          <BookOpen size={13} color={ui.accent} />
+          <strong style={{ color: ui.text }}>{loadedExample.example.title}</strong>
+          <span style={{ color: ui.textMuted }}>{LANGUAGE_LABELS[loadedExample.lang]}</span>
+          <span style={{ flex: 1, minWidth: 200, color: ui.textMuted }}>Watch: {loadedExample.example.watch[0].replace(/`/g, '')}</span>
+          <Btn
+            onClick={() => {
+              abandonActiveRun()
+              setSource(loadedExample.example.variants[loadedExample.lang]!.code)
+              setExecution(null); setStep(0)
+            }}
+            disabled={source === loadedExample.example.variants[loadedExample.lang]!.code}
+            title="Put the example back the way it was"
+          >
+            <RotateCcw size={12} /> Reset
+          </Btn>
+          <Btn onClick={() => setLibraryOpen(loadedExample.example.id)} title="Concept, what to watch, exercises">
+            <Info size={12} /> Notes
+          </Btn>
+          <button onClick={() => setLoadedExample(null)} aria-label="Hide the example notes" style={{ background: 'none', border: 'none', color: ui.textMuted, cursor: 'pointer' }}><X size={14} /></button>
+        </div>
+      )}
+
       {/* ── Body ── */}
       <div style={{
         flex: 1, display: 'flex', alignItems: 'stretch',
@@ -1446,13 +1618,17 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
               <Code2 size={13} color={ui.accent} />
               <span style={{ fontSize: 11, fontWeight: 600, color: ui.text }}>Source</span>
               <span style={{ fontSize: 10, color: ui.textFaint, marginLeft: 'auto' }}>
-                {lang === 'ts' ? 'TypeScript' : lang === 'py' ? 'Python' : lang === 'go' ? 'Go' : 'JavaScript'}
+                {lang === 'ts' ? 'TypeScript' : lang === 'py' ? 'Python' : lang === 'go' ? 'Go' : lang === 'c' ? 'C' : lang === 'cpp' ? 'C++' : lang === 'cs' ? 'C#' : 'JavaScript'}
               </span>
             </div>
             <div style={{ height: 'calc(100% - 33px)' }}>
               <Editor
                 height="100%"
-                language={lang === 'py' ? 'python' : lang === 'ts' ? 'typescript' : lang === 'go' ? 'go' : 'javascript'}
+                // One editor model per language. With a single shared model, the JavaScript
+                // checker's error squiggles stayed on it after switching to C++ or Python,
+                // underlining valid code that the JavaScript checker couldn't parse.
+                path={`codelens/program.${lang}`}
+                language={lang === 'py' ? 'python' : lang === 'ts' ? 'typescript' : lang === 'go' ? 'go' : lang === 'c' ? 'c' : lang === 'cpp' ? 'cpp' : lang === 'cs' ? 'csharp' : 'javascript'}
                 value={source}
                 onChange={v => setSource(v ?? '')}
                 theme={activeTheme.monaco}
@@ -1563,8 +1739,12 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
                 {currentEvent && (
                   <Panel title="Call Stack" icon={Code2} badge={currentEvent.stackSnapshot?.length ?? 0}>
                     {(currentEvent.stackSnapshot?.length ?? 0) > 0 ? (
-                      [...currentEvent.stackSnapshot!].reverse().map((frame, i) => (
-                        <StackFrame key={i} frame={frame} depth={currentEvent.stackSnapshot!.length - 1 - i} />
+                      // Innermost first; the JavaScript interpreter lists its global frame last,
+                      // so put any global frame at the bottom.
+                      [...currentEvent.stackSnapshot!].reverse()
+                        .sort((a, b) => Number(a.name === '__global__') - Number(b.name === '__global__'))
+                        .map((frame, i) => (
+                        <StackFrame key={i} frame={frame} depth={i} />
                       ))
                     ) : (
                       <span style={{ color: ui.textFaint, fontSize: 12 }}>Global scope</span>
@@ -1712,6 +1892,25 @@ function CodeLensInner({ onBack, initialCode, initialLang, backLabel }: CodeLens
         </CodeDetailModal>
       )}
 
+      {libraryOpen !== null && (
+        <LibraryBrowser
+          available={['js', 'ts', 'py', ...extraLangs]}
+          preferredLang={lang}
+          initialExampleId={typeof libraryOpen === 'string' ? libraryOpen : loadedExample?.example.id}
+          onClose={() => setLibraryOpen(null)}
+          onLoad={(example, exampleLang) => {
+            abandonActiveRun()
+            setLang(exampleLang)
+            setSource(example.variants[exampleLang]!.code)
+            setExecution(null)
+            setStep(0)
+            setModel(null)
+            setLoadedExample({ example, lang: exampleLang })
+            setLibraryOpen(null)
+          }}
+        />
+      )}
+
       {showSandboxGuide && (
         <CodeDetailModal title="JavaScript and TypeScript sandbox" icon={Info} onClose={() => setShowSandboxGuide(false)}>
           <SandboxGuide />
@@ -1809,7 +2008,7 @@ function ExplainHero({ event, prevEvent, step, total }: { event: TraceEvent; pre
           fontSize: 10, padding: '2px 7px', borderRadius: 99,
           background: `${color}22`, color, border: `1px solid ${color}55`,
           fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, letterSpacing: '.04em',
-        }}>{event.type}</span>
+        }}>{eventLabel(event)}</span>
         {explain.concept && <ConceptBadge concept={explain.concept} />}
         {loc && (
           <span style={{
@@ -2202,6 +2401,17 @@ function FunctionModal({ node, callGraph, onClose }: { node: CallGraphNode; call
 
 function CodeDetailModal({ title, icon: Icon, onClose, children }: { title: string; icon?: LucideIcon; onClose: () => void; children: ReactNode }) {
   const { theme: { ui } } = useCodeLensTheme()
+  // Escape closes it; focus goes to its close button while open and back where it was after.
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  useEffect(() => {
+    const returnFocus = document.activeElement as HTMLElement | null
+    closeRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseRef.current() }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey); returnFocus?.focus?.() }
+  }, [])
   return (
     <div
       style={{
@@ -2218,6 +2428,9 @@ function CodeDetailModal({ title, icon: Icon, onClose, children }: { title: stri
           boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', overflow: 'hidden',
         }}
         onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
       >
         <div style={{
           padding: '12px 20px', borderBottom: `1px solid ${ui.border}`, background: ui.headerBg,
@@ -2225,7 +2438,7 @@ function CodeDetailModal({ title, icon: Icon, onClose, children }: { title: stri
         }}>
           {Icon && <Icon size={16} color={ui.accent} />}
           <span style={{ fontWeight: 600, color: ui.text }}>{title}</span>
-          <button onClick={onClose} style={{
+          <button ref={closeRef} onClick={onClose} aria-label={`Close ${title}`} style={{
             marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: ui.textMuted,
           }}><X size={18} /></button>
         </div>

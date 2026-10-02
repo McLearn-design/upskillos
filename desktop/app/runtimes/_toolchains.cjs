@@ -142,6 +142,45 @@ async function detectSystemPython() {
   return null
 }
 
+// ── GDB and a C compiler (CodeLens on the desktop) ───────────────────────────
+
+// CodeLens drives GDB through its Python API (runtimes/codelens/gdb_tracer.py), so a GDB
+// built without Python doesn't count.
+async function detectSystemGdb() {
+  for (const exe of await whereAll('gdb')) {
+    try {
+      const { stdout } = await execFileAsync(exe, ['-batch', '-nx', '-ex', 'python print("gdb-python-ok")'], { windowsHide: true, timeout: 20000 })
+      if (!stdout.includes('gdb-python-ok')) continue
+      const { stdout: versionText } = await execFileAsync(exe, ['--version'], { windowsHide: true, timeout: 10000 })
+      return { exe, version: versionText.split(/\r?\n/)[0].match(/(\d+\.\d+(?:\.\d+)?)\s*$/)?.[1] ?? '' }
+    } catch {
+      // GDB without Python support, or one that won't start: try the next.
+    }
+  }
+  return null
+}
+
+const C_PROBE = '#include <stdio.h>\nint main(void) { printf("probe-ok\\n"); return 0; }\n'
+
+async function detectSystemCCompiler() {
+  for (const exe of [...(await whereAll('gcc')), ...(await whereAll('clang'))]) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'opencalc-c-probe-'))
+    try {
+      const src = path.join(dir, 'probe.c')
+      const out = path.join(dir, 'probe.exe')
+      await fs.writeFile(src, C_PROBE, 'utf8')
+      await execFileAsync(exe, ['-g', '-O0', src, '-o', out], { windowsHide: true, timeout: 60000 })
+      const { stdout } = await execFileAsync(out, [], { windowsHide: true, timeout: 10000 })
+      if (stdout.trim() === 'probe-ok') return { exe, version: (await compilerVersion(exe)) || path.basename(exe) }
+    } catch {
+      // try the next one
+    } finally {
+      fs.rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  }
+  return null
+}
+
 // ── Session cache ────────────────────────────────────────────────────────────
 
 const cache = new Map()
@@ -155,4 +194,6 @@ module.exports = {
   systemDotnet: () => cached('dotnet', detectSystemDotnet),
   systemCpp: () => cached('cpp', detectSystemCpp),
   systemPython: () => cached('python', detectSystemPython),
+  systemGdb: () => cached('gdb', detectSystemGdb),
+  systemCCompiler: () => cached('c', detectSystemCCompiler),
 }

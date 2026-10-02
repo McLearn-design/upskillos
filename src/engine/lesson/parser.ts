@@ -136,7 +136,7 @@ function buildStep(raw: string, idx: number, metaLang: string): LessonStep {
   return { id: `step-${idx}`, title, prose, lenses, examples, challenge, tests, project }
 }
 
-const LANG_BY_EXTENSION: Record<string, string> = { xaml: 'xml', cs: 'csharp', xml: 'xml', json: 'json' }
+const LANG_BY_EXTENSION: Record<string, string> = { xaml: 'xml', cs: 'csharp', xml: 'xml', json: 'json', csproj: 'xml' }
 
 function projectFile(path: string, code: string, readOnly: boolean): ProjectFile {
   const extension = path.split('.').pop()?.toLowerCase() ?? ''

@@ -305,7 +305,9 @@ class Interpreter {
       throw new ExecutionLimitError('timeout', `Runtime limit (${this.limits.maxRuntimeMs} ms) reached`)
     }
 
-    this._emit(EventType.STATEMENT_ENTER, node, env)
+    // nodeType lets CodeLens tell apart statements that start on the same line
+    // (a for loop, its `let i = 0`, and its body's `{`).
+    this._emit(EventType.STATEMENT_ENTER, node, env, { nodeType: node.type })
 
     let result
     switch (node.type) {
@@ -358,7 +360,7 @@ class Interpreter {
         throw new UnsupportedFeatureError(`Statement syntax ${node.type} is not supported by CodeLens yet.`, node.loc?.start?.line ?? null)
     }
 
-    this._emit(EventType.STATEMENT_EXIT, node, env, { result: serializeValue(result) })
+    this._emit(EventType.STATEMENT_EXIT, node, env, { nodeType: node.type, result: serializeValue(result) })
     return result
   }
 
@@ -1838,7 +1840,7 @@ class Interpreter {
           items.push(this._display(obj.properties.get(String(i)), depth + 1, bounds))
         }
         if (visibleLength < len) items.push(`… ${len - visibleLength} more`)
-        return this._boundSnapshotText(`[ ${items.join(', ')} ]`, bounds)
+        return this._boundSnapshotText(items.length ? `[ ${items.join(', ')} ]` : '[]', bounds)
       }
       const pairs = []
       for (const [k, val] of obj.properties) {
@@ -1848,7 +1850,7 @@ class Interpreter {
       }
       const visibleProperties = [...obj.properties.keys()].filter(k => k !== '__mapData__' && k !== 'length').length
       if (pairs.length < visibleProperties) pairs.push(`… ${visibleProperties - pairs.length} more`)
-      return this._boundSnapshotText(`{ ${pairs.join(', ')} }`, bounds)
+      return this._boundSnapshotText(pairs.length ? `{ ${pairs.join(', ')} }` : '{}', bounds)
     }
     return String(v)
   }
@@ -1893,7 +1895,18 @@ class Interpreter {
       return { name: f.name, line: f.line ?? null, locals }
     })
 
-    const globalLocals = this._snapshotLocals(this.globalEnv)
+    let globalLocals = this._snapshotLocals(this.globalEnv)
+    // Top-level code inside a block (a loop's `i`, a `let` inside an `if`) has no function
+    // frame to show it, so its block scopes are part of the global frame while they exist.
+    if (this.callStack.length === 0 && env && env !== this.globalEnv) {
+      const blockLocals = {}
+      for (let e = env; e && e !== this.globalEnv; e = e.parent) {
+        for (const [k, b] of e.bindings) {
+          if (!(k in blockLocals)) blockLocals[k] = b.initialized ? this._snapshotValue(b.value) : '<TDZ>'
+        }
+      }
+      globalLocals = { ...globalLocals, ...blockLocals }
+    }
     const globalFrame  = { name: '__global__', line: null, locals: globalLocals }
 
     const stackSnapshot = [...functionFrames, globalFrame]

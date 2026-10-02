@@ -1,0 +1,60 @@
+{
+  "level-0.md": {
+    "Challenge: runtime_report": {
+      "RuntimeReport.cs": "using System.Runtime.InteropServices;\n\nnamespace LessonApp;\n\npublic static class RuntimeReport\n{\n    public static string AppAssemblyName()\n    {\n        return typeof(RuntimeReport).Assembly.GetName().Name!;\n    }\n\n    public static string[] OutputFolderFiles()\n    {\n        return Directory.GetFiles(AppContext.BaseDirectory).Select(Path.GetFileName).ToArray()!;\n    }\n\n    public static bool IsInSharedFramework(Type type)\n    {\n        return type.Assembly.Location.StartsWith(RuntimeEnvironment.GetRuntimeDirectory(), StringComparison.OrdinalIgnoreCase);\n    }\n}\n"
+    }
+  },
+  "level-1.md": {
+    "Challenge: where_is_it": {
+      "TypeLocator.cs": "namespace LessonApp;\n\npublic static class TypeLocator\n{\n    public static string AssemblyOf(Type type) => type.Assembly.GetName().Name!;\n\n    public static string NamespaceOf(Type type) => type.Namespace!;\n\n    public static bool SameAssembly(Type first, Type second) => AssemblyOf(first) == AssemblyOf(second);\n}\n"
+    }
+  },
+  "level-6.md": {
+    "Challenge: greeter": {
+      "MainWindow.xaml": "<Window x:Class=\"LessonApp.MainWindow\"\n        xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"\n        xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"\n        Title=\"Greeter\" Width=\"320\" Height=\"200\">\n    <StackPanel Margin=\"16\">\n        <TextBox x:Name=\"NameBox\"/>\n        <Button x:Name=\"GreetButton\" Content=\"Greet\" Margin=\"0,8,0,0\" Click=\"OnGreetClick\"/>\n        <TextBlock x:Name=\"GreetingText\" Margin=\"0,8,0,0\"/>\n    </StackPanel>\n</Window>",
+      "MainWindow.xaml.cs": "using System.Windows;\n\nnamespace LessonApp;\n\npublic partial class MainWindow : Window\n{\n    public MainWindow()\n    {\n        InitializeComponent();\n    }\n\n    private void OnGreetClick(object sender, RoutedEventArgs e)\n    {\n        string name = NameBox.Text;\n        GreetingText.Text = string.IsNullOrWhiteSpace(name) ? \"Please type your name.\" : $\"Hello, {name.Trim()}!\";\n    }\n}"
+    }
+  },
+  "level-7.md": {
+    "Challenge: code_only_counter": {
+      "MainWindow.cs": "using System.Windows;\nusing System.Windows.Controls;\n\nnamespace LessonApp;\n\npublic class MainWindow : Window\n{\n    private int count = 0;\n    private readonly TextBlock countText;\n\n    public MainWindow()\n    {\n        Title = \"Counter\";\n        NameScope.SetNameScope(this, new NameScope());\n        countText = new TextBlock { Text = \"0\", Name = \"CountText\" };\n        var addButton = new Button { Content = \"Add\", Name = \"AddButton\" };\n        addButton.Click += (sender, e) => { count++; countText.Text = count.ToString(); };\n        var stack = new StackPanel();\n        stack.Children.Add(countText);\n        stack.Children.Add(addButton);\n        Content = stack;\n        RegisterName(\"CountText\", countText);\n        RegisterName(\"AddButton\", addButton);\n    }\n}"
+    }
+  },
+  "level-14.md": {
+    "Challenge: volume_control": {
+      "VolumeViewModel.cs": "using System.ComponentModel;\n\nnamespace LessonApp;\n\npublic class VolumeViewModel : INotifyPropertyChanged\n{\n    private int volume = 5;\n\n    public VolumeViewModel()\n    {\n        VolumeUpCommand = new RelayCommand(() => Volume++, () => Volume < 10);\n        VolumeDownCommand = new RelayCommand(() => Volume--, () => Volume > 0);\n    }\n\n    public int Volume\n    {\n        get => volume;\n        private set\n        {\n            volume = value;\n            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Volume)));\n            VolumeUpCommand.RaiseCanExecuteChanged();\n            VolumeDownCommand.RaiseCanExecuteChanged();\n        }\n    }\n\n    public RelayCommand VolumeUpCommand { get; }\n    public RelayCommand VolumeDownCommand { get; }\n\n    public event PropertyChangedEventHandler? PropertyChanged;\n}",
+      "MainWindow.xaml": "<Window x:Class=\"LessonApp.MainWindow\"\n        xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"\n        xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"\n        Title=\"Volume\" Width=\"300\" Height=\"170\">\n    <StackPanel Margin=\"16\">\n        <TextBlock x:Name=\"VolumeText\" Text=\"{Binding Volume}\" FontSize=\"28\"/>\n        <StackPanel Orientation=\"Horizontal\" Margin=\"0,12,0,0\">\n            <Button x:Name=\"DownButton\" Content=\"-\" Width=\"60\" Command=\"{Binding VolumeDownCommand}\"/>\n            <Button x:Name=\"UpButton\" Content=\"+\" Width=\"60\" Margin=\"8,0,0,0\" Command=\"{Binding VolumeUpCommand}\"/>\n        </StackPanel>\n    </StackPanel>\n</Window>",
+      "MainWindow.xaml.cs": "using System.Windows;\n\nnamespace LessonApp;\n\npublic partial class MainWindow : Window\n{\n    public MainWindow()\n    {\n        InitializeComponent();\n        DataContext = new VolumeViewModel();\n    }\n}"
+    }
+  },
+  "level-2.md": {
+    "Challenge: decode_it": {
+      "Products.cs": "using System.Globalization;\n\nnamespace LessonApp;\n\npublic record Product(string Name, decimal Price);\n\npublic static class ProductExtensions\n{\n    public static Product WithTax(this Product product, decimal rate) => product with { Price = product.Price * (1 + rate) };\n\n    public static string Label(this Product? product) =>\n        product is null ? \"(no product)\" : $\"{product.Name}: {product.Price.ToString(\"0.00\", CultureInfo.InvariantCulture)}\";\n}\n\npublic class Basket\n{\n    public List<Product> Items { get; } = new();\n    public decimal Total => Items.Sum(p => p.Price);\n}\n"
+    },
+    "Challenge: thermometer": {
+      "Thermometer.cs": "namespace LessonApp;\n\npublic class Thermometer\n{\n    private double celsius;\n\n    public double Celsius\n    {\n        get => celsius;\n        set\n        {\n            celsius = value;\n            Readings++;\n        }\n    }\n\n    public double Fahrenheit => Celsius * 9 / 5 + 32;\n    public string Location { get; init; } = \"unknown\";\n    public int Readings { get; private set; }\n}\n"
+    },
+    "Challenge: display_name": {
+      "Names.cs": "namespace LessonApp;\n\npublic record Customer(string Name, string? Nickname);\n\npublic static class Names\n{\n    public static string Display(Customer? customer) => customer?.Nickname ?? customer?.Name ?? \"(guest)\";\n}\n"
+    }
+  },
+  "level-3.md": {
+    "Challenge: package_it": {
+      "LessonApp.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\">\n\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <TargetFramework>net8.0</TargetFramework>\n    <ImplicitUsings>enable</ImplicitUsings>\n    <Nullable>enable</Nullable>\n    <RootNamespace>LessonApp</RootNamespace>\n    <AssemblyName>LessonApp</AssemblyName>\n  </PropertyGroup>\n\n  <ItemGroup>\n    <PackageReference Include=\"Humanizer.Core\" Version=\"2.14.1\" />\n    <None Update=\"units.json\" CopyToOutputDirectory=\"PreserveNewest\" />\n  </ItemGroup>\n\n</Project>\n"
+    },
+    "Challenge: version_it": {
+      "LessonApp.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\">\n\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <TargetFramework>net8.0</TargetFramework>\n    <ImplicitUsings>enable</ImplicitUsings>\n    <Nullable>disable</Nullable>\n    <RootNamespace>LessonApp</RootNamespace>\n    <AssemblyName>LessonApp</AssemblyName>\n    <Version>2.5.0</Version>\n    <Company>Contoso Tools</Company>\n  </PropertyGroup>\n\n</Project>\n"
+    }
+  },
+  "level-4.md": {
+    "Challenge: shape_up": {
+      "Triangle.cs": "namespace LessonApp;\n\npublic class Triangle(double baseLength, double height) : IShape\n{\n    public string Name => \"triangle\";\n    public double Area() => baseLength * height / 2;\n}\n"
+    },
+    "Challenge: scoped_log": {
+      "Scope.cs": "namespace LessonApp;\n\npublic class Scope : IDisposable\n{\n    private readonly string name;\n    private readonly List<string> log;\n\n    public Scope(string name, List<string> log)\n    {\n        this.name = name;\n        this.log = log;\n        log.Add($\"enter {name}\");\n    }\n\n    public void Dispose() => log.Add($\"exit {name}\");\n}\n"
+    },
+    "Challenge: playlist": {
+      "Playlist.cs": "using System.Collections;\n\nnamespace LessonApp;\n\npublic record Song(string Title, int Seconds) : IComparable<Song>\n{\n    public int CompareTo(Song? other)\n    {\n        if (other is null) return 1;\n        return Seconds != other.Seconds ? Seconds.CompareTo(other.Seconds) : string.Compare(Title, other.Title, StringComparison.Ordinal);\n    }\n}\n\npublic class Playlist : IEnumerable<Song>\n{\n    private readonly List<Song> songs = new();\n\n    public void Add(Song song) => songs.Add(song);\n\n    public IEnumerator<Song> GetEnumerator() => songs.GetEnumerator();\n\n    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();\n}\n"
+    }
+  }
+}

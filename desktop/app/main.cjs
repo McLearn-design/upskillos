@@ -18,6 +18,7 @@ const cppRuntime = require('./runtimes/cpp.cjs')
 const lispRuntime = require('./runtimes/lisp.cjs')
 const javaRuntime = require('./runtimes/java.cjs')
 const dotnetRuntime = require('./runtimes/dotnet.cjs')
+const codelensRuntime = require('./runtimes/codelens.cjs')
 const projectFs = require('./project-fs.cjs')
 
 // Keyed dispatch table for the generic runtime IPC handlers below — adding
@@ -27,7 +28,7 @@ const projectFs = require('./project-fs.cjs')
 // detached GUI process rather than a run-to-completion one; it's included
 // here too so desktop:runtime-status/desktop:install-runtime work uniformly
 // across all five.
-const RUNTIMES = { python: pythonRuntime, cpp: cppRuntime, lisp: lispRuntime, java: javaRuntime, dotnet: dotnetRuntime }
+const RUNTIMES = { python: pythonRuntime, cpp: cppRuntime, lisp: lispRuntime, java: javaRuntime, dotnet: dotnetRuntime, codelens: codelensRuntime }
 
 const execAsync = promisify(exec)
 

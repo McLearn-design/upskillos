@@ -17,7 +17,26 @@ CodeLens has a strong foundation, but it is **not yet reliable enough to teach J
 - ✅ Unreliable syntax-only complexity labels are hidden until reviewed metadata or a defensible analyser replaces them.
 - ✅ The workspace defaults to one right-side panel. Learners can choose **Learn & output**, **Data structures**, or **Split view**.
 - ✅ `Array.from`, `Object.fromEntries`, `Symbol.iterator`, Map iteration, custom iteration, and destructured callback parameters cover the compatibility failures found in the initial audit.
-- ⏳ Python worker isolation, richer Python tracing, the learning library, specialized DSA views, and C++ remain planned below.
+- ⏳ The learning library, specialized DSA views, and splitting CodeLens.tsx remain planned below.
+
+### Implementation status — 2026-10-01
+
+Direction agreed: JavaScript, TypeScript and Python run in the browser; languages that need a real compiler and debugger run in the desktop app, on the learner's own toolchains.
+
+- ✅ **Python rebuilt (plan step 5).** One tracer, written in Python (`interpreter/python/codelens_tracer.py`), runs in two hosts: Pyodide in a Web Worker in the browser (off the main thread; Stop discards the worker), and the learner's own CPython in the desktop app. It records list, tuple, dict, set, deque and class-instance contents with stable object ids, so shared references, linked lists and the heap view work for Python. Limits on time, steps, recursion and output end runaway programs with their own status; `except Exception:` can't swallow them. Class bodies are no longer traced as calls.
+- ✅ **C and C++ on the desktop (plan step 6, via GDB rather than DAP).** `desktop/app/runtimes/codelens.cjs` compiles with `-g -O0` and steps through the program under the learner's GDB using its Python API (`codelens/gdb_tracer.py`). Pointers become arrows in the heap view; structs, arrays and std::vector/string/map (via libstdc++'s printers) become objects; variables appear only once declared. Single-line loops stop at the step limit (temporary breakpoints on the line's addresses); a program stuck inside one step is killed at a hard limit and the steps traced so far are kept. Segfaults are reported on their line. The language menu offers C and C++ only where GDB with Python support and the compilers are found; Go only where its backend tools are.
+- ✅ **Line-by-line explanations for Python and C/C++.** Instead of "line N runs next", each step says what that line does with its real values: assignments, updates, loop iterations and endings, `if`/`while` conditions true or false, returns, prints, definitions, closing braces. Tracers say what kind of statement each line is (Python's syntax tree; C/C++ source text); `traceOutcomes.ts` works out what each line actually did from the events that follow, shared by both languages; `explainTrace.ts` writes the sentence.
+- ✅ Tests run the real tracers on CPython and GDB when installed (skipped otherwise): shared references, recursion, containers, explanations, limits, crashes, compile errors.
+- ⏳ Not yet: Rust (needs `rustup target add x86_64-pc-windows-gnu` for GDB-readable debug info), Java/Kotlin (would need a JDI tracer), C#, return values for C/C++ calls, and per-line printed output for C/C++ (output is read when the program ends).
+
+**Later on 2026-10-01:**
+
+- ✅ **C# on the desktop.** .NET has no command-line debugger in the SDK, so `codelens/csharp/` rewrites the program instead: before each statement it adds a call reporting the line and the variables that have a value there (the compiler's own definite-assignment analysis decides which), wraps each method in a call/return pair, and makes each loop check a step. It is compiled in memory with the SDK's own Roslyn (nothing downloaded) and run in a small tracer program, built once per SDK (about 2 s, then about 2 s per run). Classes, records, structs, lists, arrays, dictionaries, StringBuilder, exceptions, recursion, iterators (`yield`, shown like Python generators), local functions, `async`/`await` and LINQ (shown as a query that hasn't run yet) all trace. Uncaught exceptions are reported where they were thrown; compile errors on their line.
+- ✅ **JavaScript and TypeScript line explanations**, like Python's: the interpreter now says which kind of statement each step is, so a loop, its `let i = 0` and its `{` on one line are told apart; each pass of a loop explains its check or the item it took. Top-level block variables (a loop's `i`) now appear in the variables view; the Call Stack panel marks the innermost frame as current.
+- ✅ **C/C++ return values and per-line output.** A GDB finish breakpoint on each call catches its return value ("Returns 4" instead of "Returns `x * x`"); stdout is made unbuffered, so each step shows what it printed.
+- ✅ **Learning library (plan step 7).** `library.ts` + `LibraryBrowser.tsx` replace the dropdown: 12 examples (data structures, algorithms, patterns, functional, React internals), each with the concept, prerequisites, difficulty, what to watch, complexity and invariants where they matter, edge cases, exercises, and expected output, in up to five languages (JS, TS, Python, C#, C++). Load, copy, reset after editing, and compare two languages side by side. `library.test.ts` runs every variant (C# and C++ through the real desktop tracers) and checks its output.
+- ✅ **Accessibility (part of step 9).** Keyboard playback (← → step, Home/End, Space), each step's explanation announced to screen readers, dialogs with Escape and focus handling, arrow keys in the library list.
+- ⏳ Still open: specialized DSA views and pattern diagrams (step 8); the rest of step 9 (splitting `CodeLens.tsx`, now 3,500 lines, and a typed event union); Rust; Java/Kotlin.
 
 ### Confirmed problems
 
@@ -43,6 +62,16 @@ The initial automatic complexity analysis was unsafe for teaching and reported:
 The estimator counted loops without understanding bounds or even distinguishing nested loops from sequential loops. Those automatic labels are now disabled. Curriculum-authored complexity metadata is safer than pretending arbitrary complexity can be inferred reliably.
 
 ### Language readiness
+
+| Language | Readiness (2026-10-01) | Main limitation |
+|---|---|---|
+| JavaScript | Educational subset, browser | Custom interpreter: no generators, async/await or modules |
+| TypeScript | Educational subset, browser | Single file; inherits the JavaScript subset |
+| Python | Full CPython semantics, browser (Pyodide) and desktop | Programs that read input get none |
+| C, C++ | Desktop, with GDB | Needs GDB with Python and GCC/Clang on the machine |
+| C# | Desktop, with the .NET SDK | Lambdas run without line steps; static fields aren't shown; a `Span` that lives across an `await` can't be traced |
+
+The table below the line is the original 2026-09 audit, kept for the record.
 
 | Language | Readiness | Main limitation |
 |---|---|---|

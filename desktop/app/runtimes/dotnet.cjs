@@ -295,6 +295,15 @@ function safeRelativePath(p) {
     && !p.split('/').some(part => part === '..' || part === '.')
 }
 
+// A lesson can supply its own LessonApp.csproj (to add NuGet packages, or copy
+// appsettings.json to the output). Its TargetFramework is written for one .NET version, so
+// it's set to the one this machine's SDK builds, as the template's is; a "-windows"
+// suffix (WPF) is kept.
+function retargetProjectFile(file, framework) {
+  if (!/\.csproj$/i.test(file.path)) return file.content
+  return file.content.replace(/<TargetFramework>net[\d.]+(-windows)?<\/TargetFramework>/, (_, windows) => `<TargetFramework>${framework}${windows ?? ''}</TargetFramework>`)
+}
+
 // spec: { template: 'wpf' | 'console', mode: 'test' | 'launch' | 'inspect', files: [{ path, content }] }
 // 'test' and 'launch' build and run (only a wpf launch shows a window);
 // 'inspect' builds only and sends the generated files (readGeneratedFiles).
@@ -319,7 +328,7 @@ async function runProject(app, spec, onOutput) {
     for (const file of files) {
       const target = path.join(runDir, ...file.path.split('/'))
       await fs.mkdir(path.dirname(target), { recursive: true })
-      await fs.writeFile(target, file.content, 'utf8')
+      await fs.writeFile(target, retargetProjectFile(file, sdk.framework), 'utf8')
     }
 
     buildAndRun({ sdk, runId, runDir, assemblyName: 'LessonApp', launch, inspect, onOutput })

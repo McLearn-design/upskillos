@@ -7,7 +7,8 @@
 // for this conversion — the goal is typing CodeLens's own consumption of these
 // shapes, not modeling every interpreter internal.
 
-export type Lang = 'js' | 'ts' | 'py' | 'go'
+// 'c', 'cpp' and 'cs' (C#) are traced by the desktop app only (interpreter/nativeExecutionClient.ts).
+export type Lang = 'js' | 'ts' | 'py' | 'go' | 'c' | 'cpp' | 'cs'
 
 export interface SourceLocation {
   file?: string
