@@ -18,8 +18,8 @@ export default function DesktopProvider({ children }) {
     () => localStorage.getItem('oc-desktop-style') || 'taskbar'
   )
 
-  // Regular routes use pb-20 lg:pb-11 on <main> to stay above the Taskbar.
-  // Full-screen routes use h-[calc(100vh-44px)] to stop before the Taskbar.
+  // AppShell keeps content clear of the Taskbar with --dock-space (index.css):
+  // regular routes pad <main> by it, full-screen routes subtract it from 100vh.
   // Body padding is not needed and caused every full-screen lab to be scrollable by 44px.
 
   const openWindow = useCallback((config) => {
