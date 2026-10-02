@@ -25,6 +25,15 @@ import { useVideoPlayer } from "../hooks/useVideoPlayer.js";
 import { useOptionalLesson } from "../hooks/useOptionalLesson.js";
 import WikiIntro from "../components/lesson/WikiIntro.jsx";
 import WikiDiagrams from "../components/lesson/WikiDiagrams.jsx";
+// A notebook needs its cells to show anything: JSNotebook without them is an
+// empty box and PythonNotebook falls back to unrelated demo cells. Hundreds of
+// lessons name a notebook as the introduction preview without passing cells;
+// their notebook already appears, with its cells, in the lesson body below.
+const NOTEBOOK_IDS = new Set(['JSNotebook', 'PythonNotebook', 'OpenMatNotebook', 'GcodeNotebook', 'PySideNotebook'])
+function isEmptyNotebookPreview(hook) {
+  return NOTEBOOK_IDS.has(hook.previewVisualizationId) && !Object.keys(hook.previewVisualizationProps ?? {}).length
+}
+
 export default function LessonPage() {
   const { chapterId, lessonSlug, "*": rest } = useParams();
   const slug = lessonSlug + (rest ? `/${rest}` : "");
@@ -251,9 +260,13 @@ export default function LessonPage() {
                 <>
                   <span className="rounded-full bg-brand-600 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-white shadow-lg shadow-brand-500/30">
                     {chapter?.title ?? chapterId}
-                    {lesson.order !== undefined
-                      ? ` · Lesson ${lesson.order}`
-                      : ""}
+                    {(() => {
+                      // Number by position in the chapter: lesson files disagree on
+                      // whether their own "order" field counts from 0 or 1.
+                      const position = (chapter?.lessons ?? []).findIndex((l) => l.slug === lessonSlug)
+                      const number = position >= 0 ? position + 1 : lesson.order
+                      return number !== undefined ? ` · Lesson ${number}` : ''
+                    })()}
                   </span>
                   {lessonSource === "override" && (
                     <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">
@@ -314,7 +327,7 @@ export default function LessonPage() {
                   />
                 </div>
               ))
-            : lesson.hook.previewVisualizationId && (
+            : lesson.hook.previewVisualizationId && !isEmptyNotebookPreview(lesson.hook) && (
                 <div className="mt-8 mb-4 overflow-hidden rounded-2xl border border-slate-200 shadow-sm dark:border-slate-800">
                   <VizFrame
                     id={lesson.hook.previewVisualizationId}
