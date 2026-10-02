@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import PlayerIdleIntro from '../../components/lesson/PlayerIdleIntro.jsx'
+import PlayerIdleIntro from './PlayerIdleIntro.jsx'
 import { useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
 import {

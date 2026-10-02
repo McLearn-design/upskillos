@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import WebLessonPlayer from './WebLessonPlayer.jsx'
+import WebLessonPlayer from '../../components/lesson/WebLessonPlayer.jsx'
 
 import { lesson as css01 } from './lessons/css-01-normal-flow.js'
 import { lesson as css02 } from './lessons/css-02-box-model.js'

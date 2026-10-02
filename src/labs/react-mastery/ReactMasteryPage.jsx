@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import WebLessonPlayer from './WebLessonPlayer.jsx'
+import WebLessonPlayer from '../../components/lesson/WebLessonPlayer.jsx'
 
 import { lesson as rs1 } from './react-s01.js'
 import { lesson as rs2 } from './react-s02.js'

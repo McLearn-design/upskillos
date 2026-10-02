@@ -1,6 +1,6 @@
 import { Suspense, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import LessonPlayer from './LessonPlayer.jsx'
+import LessonPlayer from '../../components/lesson/JsLessonPlayer.jsx'
 import LoadingSpinner from '../../components/ui/LoadingSpinner.jsx'
 
 import { lesson as l11 } from './lessons/lesson-1-1.js'
