@@ -4,6 +4,7 @@ import { useGlobalTheme } from '../../context/ThemeContext.jsx'
 // MarkdownHub is large (every doc's loader plus the renderer), and this
 // provider is mounted on every page. Load it when a concept window opens.
 const loadHub = () => import('../docs/MarkdownHub.jsx')
+import { isStaleChunkError, reloadForNewVersion } from '../../utils/staleChunk.js'
 import { Lightbulb, ChevronRight, Locate } from 'lucide-react'
 
 // Lets whatever is rendering a concept doc's *content* (ConceptDocBody,
@@ -40,14 +41,22 @@ function ConceptDocBody({ docPath }) {
       return loader().then((text) => {
         if (!cancelled) setContent(text)
       })
+    }).catch((error) => {
+      // A deploy can remove the chunk this page expects; reload for the new one.
+      if (isStaleChunkError(error) && reloadForNewVersion()) return
+      if (!cancelled) setContent(`*This concept couldn't be loaded (${error?.message ?? error}). Check your connection and try again.*`)
     })
     return () => {
       cancelled = true
     }
   }, [docPath])
 
-  if (content === null || !hub) {
+  if (content === null) {
     return <p className="text-sm text-slate-400 animate-pulse p-6">Loading concept…</p>
+  }
+  if (!hub) {
+    // Only reached when the renderer itself failed to load.
+    return <p className="text-sm text-slate-400 p-6">{content.replace(/^\*|\*$/g, '')}</p>
   }
 
   return (
