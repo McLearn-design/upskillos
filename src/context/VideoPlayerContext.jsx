@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { VideoPlayerContext } from "./videoPlayerContext.js";
 import { selectVideosByKeywords } from "./videoSelector.js";
 import { ALL_LESSONS } from "../courses/index.js";
-import { getVideos } from "../courses/courseLoader.js";
+import { getVideos, loadLesson } from "../courses/courseLoader.js";
 
 function chapterNumOf(lesson) {
   const m = String(lesson?.chapterNumber ?? "").match(/-(\d+)$/);
@@ -16,6 +16,23 @@ export function VideoPlayerProvider({ children }) {
   const [isMinimized, setIsMinimized] = useState(true);
   const [currentVideo, setCurrentVideo] = useState(null);
   const [lessonId, setLessonId] = useState(null);
+  // The course index carries only titles and slugs, so a lesson's tags (what
+  // its videos are matched on) come from the lesson file. On a lesson page it
+  // is already loaded. Kept with its key so a previous lesson's tags are never
+  // used for the next one.
+  const [loadedTags, setLoadedTags] = useState({ key: null, tags: [] });
+  useEffect(() => {
+    if (!lessonId) return;
+    let cancelled = false;
+    const slash = lessonId.lastIndexOf("/");
+    loadLesson(lessonId.slice(0, slash), lessonId.slice(slash + 1))
+      .then((lesson) => {
+        if (!cancelled) setLoadedTags({ key: lessonId, tags: Array.isArray(lesson?.tags) ? lesson.tags : [] });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [lessonId]);
+  const lessonTags = loadedTags.key === lessonId ? loadedTags.tags : null;
   const [searchQuery, setSearchQuery] = useState("");
   const [pinnedVideos, setPinnedVideos] = useState(() => {
     const saved = localStorage.getItem("open-calc-pinned-videos");
@@ -127,9 +144,10 @@ export function VideoPlayerProvider({ children }) {
       return;
     }
 
-    const tags = lesson?.tags ?? [];
+    // Wait for the lesson's tags, or every lesson would get the same video.
+    if (lessonTags === null) return;
     const courseWords = (lesson?.course ?? '').split('-').filter(Boolean);
-    const keywords = [...new Set([...tags, ...courseWords])];
+    const keywords = [...new Set([...lessonTags, ...courseWords])];
     if (keywords.length > 0 && coursePool.length > 0) {
       const matched = selectVideosByKeywords({ keywords, limit: 1, pool: coursePool });
       if (matched[0]) {
@@ -139,13 +157,14 @@ export function VideoPlayerProvider({ children }) {
     }
 
     setCurrentVideo(null);
-  }, [lessonId, customVideos]);
+  }, [lessonId, customVideos, lessonTags]);
 
   const value = useMemo(() => ({
     isOpen,
     isMinimized,
     currentVideo,
     lessonId,
+    lessonTags,
     searchQuery,
     setSearchQuery,
     customVideos,
@@ -159,7 +178,7 @@ export function VideoPlayerProvider({ children }) {
     pinnedVideos,
     addCustomVideo,
   }), [
-    isOpen, isMinimized, currentVideo, lessonId, searchQuery, setSearchQuery,
+    isOpen, isMinimized, currentVideo, lessonId, lessonTags, searchQuery, setSearchQuery,
     customVideos, openPlayer, closePlayer, toggleMinimize, selectVideo,
     setBackgroundVideo, setLessonId, togglePin, pinnedVideos, addCustomVideo,
   ]);

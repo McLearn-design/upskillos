@@ -54,6 +54,7 @@ export default function FloatingVideoPlayer() {
     isMinimized,
     currentVideo,
     lessonId,
+    lessonTags,
     searchQuery,
     setSearchQuery,
     openPlayer,
@@ -230,7 +231,7 @@ export default function FloatingVideoPlayer() {
     // Fuzzy fallback, scoped to the lesson's own course pool — searching the
     // full cross-course library let unrelated courses' videos outrank a
     // lesson's own material just on incidental tag overlap.
-    const tags = lesson?.tags ?? [];
+    const tags = lessonTags ?? [];
     const courseWords = (lesson?.course ?? '').split('-').filter(Boolean);
     const keywords = [...new Set([...tags, ...courseWords])];
     if (keywords.length > 0 && coursePool.length > 0) {
@@ -244,7 +245,7 @@ export default function FloatingVideoPlayer() {
 
   const currentLessonVideos = useMemo(
     () => getCategorizedVideos(lessonId),
-    [lessonId, customVideos],
+    [lessonId, customVideos, lessonTags],
   );
 
   const dynamicCourses = useMemo(() => {
