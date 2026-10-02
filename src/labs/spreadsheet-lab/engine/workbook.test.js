@@ -211,3 +211,61 @@ describe('array results', () => {
     expect(isMatrix(wb.getCell(s, 0, 0).value)).toBe(false)
   })
 })
+
+describe('inserting and deleting rows, columns and sheets', () => {
+  it('inserts a row: cells move down and formulas follow them', () => {
+    const { wb, s, get } = book({ A1: '1', A2: '2', A3: '=SUM(A1:A2)', B5: '=A3*10' })
+    wb.insertRows(s, 1) // above row 2
+    expect(get('A3')).toBe(2)
+    expect(wb.getCell(s, 3, 0).input).toBe('=SUM(A1:A3)')
+    expect(get('A4')).toBe(3)
+    expect(wb.getCell(s, 5, 1).input).toBe('=A4*10')
+    expect(get('B6')).toBe(30)
+    wb.undo()
+    expect(get('A3')).toBe(3)
+    expect(wb.getCell(s, 4, 1).input).toBe('=A3*10')
+  })
+
+  it('deletes a row: references to it become #REF! and ranges shrink', () => {
+    const { wb, s, get } = book({ A1: '1', A2: '2', A3: '3', B1: '=A2', B2: '=SUM(A1:A3)' })
+    wb.deleteRows(s, 1) // row 2
+    expect(wb.getCell(s, 0, 1).input).toBe('=#REF!')
+    expect(get('B1')).toBe('#REF!')
+    expect(wb.getCell(s, 1, 0).input).toBe('3')
+    wb.undo()
+    expect(get('B1')).toBe(2)
+  })
+
+  it('inserts and deletes columns', () => {
+    const { wb, s, get } = book({ A1: '5', B1: '=A1*2', C1: '=B1+1' })
+    wb.insertCols(s, 1)
+    expect(wb.getCell(s, 0, 3).input).toBe('=C1+1')
+    expect(get('D1')).toBe(11)
+    wb.deleteCols(s, 0)
+    expect(get('B1')).toBe('#REF!')
+  })
+
+  it('renames a sheet and rewrites formulas that use it', () => {
+    const { wb, get } = book({ A1: '=Data!A1*2' })
+    const data = wb.addSheet('Data')
+    wb.setInput(data.id, 0, 0, '21')
+    expect(wb.renameSheet(data.id, 'Sales 2025')).toBe(null)
+    expect(wb.getCell(wb.sheets[0].id, 0, 0).input).toBe("='Sales 2025'!A1*2")
+    expect(get('A1')).toBe(42)
+    expect(wb.renameSheet(data.id, 'Sheet1')).toMatch(/already/)
+    expect(wb.renameSheet(data.id, 'a/b')).toMatch(/cannot contain/)
+  })
+
+  it('deletes a sheet: formulas that used it show #REF!, and undo brings it back', () => {
+    const { wb, get } = book({ A1: '=Data!A1*2' })
+    const data = wb.addSheet('Data')
+    wb.setInput(data.id, 0, 0, '21')
+    wb.deleteSheet(data.id)
+    expect(get('A1')).toBe('#REF!')
+    wb.undo()
+    expect(wb.sheets.map((x) => x.name)).toEqual(['Sheet1', 'Data'])
+    expect(get('A1')).toBe(42)
+    expect(wb.deleteSheet(wb.sheets[0].id)).toBe(null)
+    expect(wb.deleteSheet(wb.sheets[0].id)).toMatch(/at least one sheet/)
+  })
+})

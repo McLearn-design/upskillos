@@ -20,6 +20,7 @@ import { parseInput } from './input.js'
 import { FUNCTIONS } from './functions/index.js'
 import { Matrix, err, isMatrix } from './values.js'
 import { cellKey, keyToPos, rangeContains } from './address.js'
+import { adjustForCols, adjustForRows, renameSheetRefs } from './rewrite.js'
 
 let sheetCounter = 0
 
@@ -567,6 +568,117 @@ export class Workbook {
     return ctx
   }
 
+  // ── Structure: rows, columns and sheets ──────────────────────────────
+  // These change many cells at once, so their undo restores a snapshot.
+  snapshot() {
+    return this.sheets.map((s) => ({
+      id: s.id, name: s.name, colWidths: { ...s.colWidths }, rowHeights: { ...s.rowHeights },
+      cells: [...s.cells].map(([k, c]) => [k, { input: c.input, format: c.format, style: c.style }]),
+    }))
+  }
+
+  restoreSnapshot(snap) {
+    this.sheets = snap.map((d) => {
+      const sheet = new Sheet(d.name)
+      sheet.id = d.id
+      sheet.colWidths = { ...d.colWidths }
+      sheet.rowHeights = { ...d.rowHeights }
+      return sheet
+    })
+    snap.forEach((d, i) => { for (const [k, c] of d.cells) { const p = keyToPos(k); this.writeCell(this.sheets[i], p.row, p.col, c) } })
+    this.rebuildIndex()
+    this.recalcAll()
+  }
+
+  structural(change) {
+    const before = this.snapshot()
+    change()
+    this.pushHistory({ type: 'snapshot', snap: before })
+    this.rebuildIndex()
+    this.recalcAll()
+  }
+
+  // Rewrites every formula's text with fn(input, sheet) → new input.
+  rewriteFormulas(fn) {
+    for (const sheet of this.sheets) {
+      for (const [key, cell] of [...sheet.cells]) {
+        if (cell.kind !== 'formula') continue
+        const next = fn(cell.input, sheet)
+        if (next !== cell.input) { const p = keyToPos(key); this.writeCell(sheet, p.row, p.col, { input: next }) }
+      }
+    }
+  }
+
+  // Moves a sheet's cells along one axis: from `at`, by `count` (negative deletes).
+  shiftCells(sheet, axis, at, count) {
+    const entries = [...sheet.cells].map(([k, c]) => [keyToPos(k), { input: c.input, format: c.format, style: c.style }])
+    for (const [k] of [...sheet.cells]) { const p = keyToPos(k); this.unindex(sheet.id + '!' + k); sheet.byNum.delete(num(p.row, p.col)) }
+    sheet.cells.clear(); sheet.spills.clear(); sheet.spillClaims.clear(); sheet.spillOwner.clear(); sheet.ownerNum.clear()
+    const sizes = axis === 'row' ? sheet.rowHeights : sheet.colWidths
+    const movedSizes = {}
+    for (const [i, size] of Object.entries(sizes)) {
+      const n = Number(i)
+      if (count < 0 && n >= at && n < at - count) continue
+      movedSizes[n >= at ? n + count : n] = size
+    }
+    if (axis === 'row') sheet.rowHeights = movedSizes
+    else sheet.colWidths = movedSizes
+    for (const [p, c] of entries) {
+      const v = axis === 'row' ? p.row : p.col
+      if (count < 0 && v >= at && v < at - count) continue // deleted
+      const moved = v >= at ? v + count : v
+      this.writeCell(sheet, axis === 'row' ? moved : p.row, axis === 'row' ? p.col : moved, c)
+    }
+  }
+
+  insertRows(sheetId, at, count = 1) { this.changeAxis(sheetId, 'row', at, count) }
+  deleteRows(sheetId, at, count = 1) { this.changeAxis(sheetId, 'row', at, -count) }
+  insertCols(sheetId, at, count = 1) { this.changeAxis(sheetId, 'col', at, count) }
+  deleteCols(sheetId, at, count = 1) { this.changeAxis(sheetId, 'col', at, -count) }
+
+  changeAxis(sheetId, axis, at, count) {
+    const target = this.sheet(sheetId)
+    if (!target) return
+    const adjust = axis === 'row' ? adjustForRows : adjustForCols
+    this.structural(() => {
+      this.rewriteFormulas((input, sheet) => adjust(input, { formulaSheet: sheet.name, sheetName: target.name, at, count }))
+      this.shiftCells(target, axis, at, count)
+    })
+  }
+
+  // Returns an explanation if the name is not allowed, or null if it is fine.
+  checkSheetName(name, exceptId = null) {
+    const n = String(name ?? '').trim()
+    if (!n) return 'A sheet needs a name.'
+    if (n.length > 31) return 'Sheet names can be at most 31 characters (as in Excel).'
+    if (/[[\]:*?/\\]/.test(n)) return 'Sheet names cannot contain [ ] : * ? / or \\.'
+    if (this.sheets.some((s) => s.id !== exceptId && s.name.toLowerCase() === n.toLowerCase())) return 'There is already a sheet called "' + n + '".'
+    return null
+  }
+
+  renameSheet(sheetId, name) {
+    const sheet = this.sheet(sheetId)
+    const problem = sheet ? this.checkSheetName(name, sheet.id) : 'No such sheet.'
+    if (problem) return problem
+    const oldName = sheet.name
+    this.structural(() => {
+      this.rewriteFormulas((input) => renameSheetRefs(input, oldName, name.trim()))
+      sheet.name = name.trim()
+    })
+    return null
+  }
+
+  deleteSheet(sheetId) {
+    if (this.sheets.length <= 1) return 'A workbook needs at least one sheet.'
+    const sheet = this.sheet(sheetId)
+    if (!sheet) return 'No such sheet.'
+    this.structural(() => {
+      this.sheets = this.sheets.filter((s) => s !== sheet)
+      this.rewriteFormulas((input) => renameSheetRefs(input, sheet.name, null))
+    })
+    return null
+  }
+
   // ── Undo / redo ───────────────────────────────────────────────────────
   pushHistory(entry) {
     this.undoStack.push(entry)
@@ -583,6 +695,10 @@ export class Workbook {
     if (entry.type === 'cells') {
       const inverse = this.setCells(entry.changes, { record: false })
       to.push({ type: 'cells', changes: inverse })
+    } else if (entry.type === 'snapshot') {
+      const now = this.snapshot()
+      this.restoreSnapshot(entry.snap)
+      to.push({ type: 'snapshot', snap: now })
     } else if (entry.type === 'addSheet') {
       const index = this.sheets.findIndex((s) => s.id === entry.sheetId)
       const [sheet] = this.sheets.splice(index, 1)
