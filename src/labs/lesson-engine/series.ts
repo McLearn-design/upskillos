@@ -135,7 +135,7 @@ export const SERIES: SeriesMeta[] = [
     label: 'WPF & .NET Mastery',
     lang: 'csharp',
     emoji: 'WPF',
-    description: 'Master WPF and the .NET machinery under it, with nothing left as magic: how .NET apps are built, what XAML compiles into, dependency properties, binding, styles and templates, MVVM, dependency injection, data and deployment. Every example launches a real window on your own .NET SDK; challenges are tested by clicking through your actual UI. Desktop app only. Plan: src/docs/MasterCurriculum/wpf-mastery-plan.md',
+    description: 'Master WPF and the .NET machinery under it, with nothing left as magic: how .NET apps are built, what XAML compiles into, dependency properties, binding, styles and templates, MVVM, dependency injection, data and deployment. Every example launches a real window on your own .NET SDK; challenges are tested by clicking through your actual UI. Runs in the desktop app; on the website you can read along and type the code in your own editor. Plan: src/docs/MasterCurriculum/wpf-mastery-plan.md',
     // Level numbers follow the plan (progress is stored per series:level), so levels
     // written later slot in without renumbering these.
     levels: [
@@ -150,17 +150,39 @@ export const SERIES: SeriesMeta[] = [
       { level: 6,  title: 'Windows, XAML & Click Events',           file: 'wpf-mastery/level-6.md' },
       { level: 7,  title: 'What XAML Compiles Into',                file: 'wpf-mastery/level-7.md' },
       { level: 8,  title: 'Layout: Grid, DockPanel and the Layout Pass', file: 'wpf-mastery/level-8.md' },
+      { level: 9,  title: 'Content Models and the Two Trees',       file: 'wpf-mastery/level-9.md' },
+      { level: 10, title: 'Dependency Properties',                  file: 'wpf-mastery/level-10.md' },
+      { level: 11, title: 'Attached Properties',                  file: 'wpf-mastery/level-11.md' },
+      { level: 12, title: 'Routed Events',                        file: 'wpf-mastery/level-12.md' },
       { level: 13, title: 'The UI Thread, the Dispatcher and async', file: 'wpf-mastery/level-13.md' },
       // Module C — data binding in depth
       { level: 14, title: 'Data Binding, Commands & MVVM',          file: 'wpf-mastery/level-14.md' },
+      { level: 15, title: 'Binding Sources, Modes and Debugging', file: 'wpf-mastery/level-15.md' },
+      { level: 16, title: 'Value Converters and Formatting',      file: 'wpf-mastery/level-16.md' },
       { level: 17, title: 'Lists: ObservableCollection and DataTemplates', file: 'wpf-mastery/level-17.md' },
+      { level: 18, title: 'Sorting, Filtering and Grouping',      file: 'wpf-mastery/level-18.md' },
+      { level: 19, title: 'Validation',                           file: 'wpf-mastery/level-19.md' },
       // Module D — look and feel
       { level: 20, title: 'Resources and Resource Lookup',          file: 'wpf-mastery/level-20.md' },
       { level: 21, title: 'Styles',                                 file: 'wpf-mastery/level-21.md' },
+      { level: 22, title: 'Triggers and Visual States',           file: 'wpf-mastery/level-22.md' },
+      { level: 23, title: 'Control Templates: Lookless Controls', file: 'wpf-mastery/level-23.md' },
+      { level: 24, title: 'Data Templates by Type',               file: 'wpf-mastery/level-24.md' },
+      { level: 25, title: 'Themes and Animation',                 file: 'wpf-mastery/level-25.md' },
       // Module E — application architecture
       { level: 26, title: 'MVVM Done Properly: CommunityToolkit.Mvvm', file: 'wpf-mastery/level-26.md' },
       { level: 27, title: 'Async Commands: Busy, Cancel, Progress and Errors', file: 'wpf-mastery/level-27.md' },
       { level: 28, title: 'The Generic Host: Dependency Injection, Configuration and Logging', file: 'wpf-mastery/level-28.md' },
+      { level: 29, title: 'Navigation and Dialogs',               file: 'wpf-mastery/level-29.md' },
+      { level: 30, title: 'Messaging Between View Models',        file: 'wpf-mastery/level-30.md' },
+      { level: 31, title: 'Testing View Models',                  file: 'wpf-mastery/level-31.md' },
+      { level: 32, title: 'UserControls and Custom Controls',     file: 'wpf-mastery/level-32.md' },
+      { level: 33, title: 'Files, Settings and JSON',             file: 'wpf-mastery/level-33.md' },
+      { level: 34, title: 'SQLite and the Repository Pattern',    file: 'wpf-mastery/level-34.md' },
+      { level: 35, title: 'Performance',                          file: 'wpf-mastery/level-35.md' },
+      { level: 36, title: 'Publishing and Deployment',            file: 'wpf-mastery/level-36.md' },
+      { level: 37, title: 'Capstone 1: A Data-Entry App',         file: 'wpf-mastery/level-37.md' },
+      { level: 38, title: 'Capstone 2: A Tool Library Manager',   file: 'wpf-mastery/level-38.md' },
     ],
   },
   {

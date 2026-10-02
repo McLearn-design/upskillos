@@ -9,7 +9,7 @@ lang: csharp
 
 Coming from C++ or Python, .NET can feel like it works by rules nobody wrote down: where did the `.exe` come from, why is the output folder so small, what is "the runtime", and why does a program need an SDK to build but not to run? This series starts with that machinery, because every later topic, WPF included, sits on top of it. By the end of this lesson you will be able to say what `dotnet build` produces and what each file is for, where the .NET libraries your program uses actually live, and how your code becomes machine instructions: compiled to IL ahead of time, then to native code by the JIT as it runs.
 
-These lessons run in the UpSkillOS desktop app, on your own .NET SDK. Each example is a small, real project: **▶ Run** builds and runs it, and **{ } Generated code** shows the project file and what the build generated.
+These lessons run in the UpSkillOS desktop app, on your own .NET SDK. On the website you can read every step and follow along in your own editor; only the Run buttons need the desktop app. Each example is a small, real project: **▶ Run** builds and runs it, and **{ } Generated code** shows the project file and what the build generated.
 
 ## Three Ways to Run Code: C++, Python and .NET
 

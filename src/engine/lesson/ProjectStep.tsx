@@ -133,7 +133,8 @@ export default function ProjectStep({ step, project, ui, onResults, onOutput }: 
   }
 
   const button = 'text-xs font-semibold px-3 py-0.5 rounded border-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed'
-  const desktopOnly = onDesktop ? undefined : 'Runs in the UpSkillOS desktop app'
+  const desktopOnly = onDesktop ? undefined
+    : 'A browser can\'t build .NET projects. Read and edit the files here, or copy them into Visual Studio or another editor and run them with your own .NET SDK; the UpSkillOS desktop app runs them in place.'
   const tabClass = (active: boolean) => `relative px-3 py-1.5 text-[12px] font-mono font-medium rounded-t-md border-t border-l border-r transition-colors cursor-pointer shrink-0 ${
     active ? `-mb-px border-brand-500/30 ${ui.bg0} text-brand-400` : `mb-0 ${ui.border} bg-transparent ${ui.txt2} hover:text-brand-400`
   }`
@@ -157,7 +158,7 @@ export default function ProjectStep({ step, project, ui, onResults, onOutput }: 
         ))}
 
         <div className="flex items-center gap-2 ml-auto pb-1 shrink-0">
-          {!onDesktop && <span className={`text-[11px] ${ui.txt2}`}>Desktop app only</span>}
+          {!onDesktop && <span className={`text-[11px] ${ui.txt2}`} title={desktopOnly}>Can't run in the browser: follow along, or copy into your own editor</span>}
           {status === 'app-open' && <span className={`text-[11px] ${ui.txt2}`}>App open: close its window when you're done</span>}
           {(edited || generated.length > 0) && (
             <button type="button" title="Put every file back to how the lesson started it"
