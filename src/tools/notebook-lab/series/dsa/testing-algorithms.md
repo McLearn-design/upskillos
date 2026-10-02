@@ -34,14 +34,14 @@ for trial in range(1, 1001):
     values = sorted(rng.randint(0, 9) for _ in range(rng.randint(0, 6)))
     target = rng.randint(-1, 10)
     expected = bisect.bisect_left(values, target)
-    if values and lower_bound(values, target) != expected:
+    if lower_bound(values, target) != expected:
         print(f"trial {trial}: lower_bound({values}, {target}) = {lower_bound(values, target)}, expected {expected}")
         break
 ```
 
 `bisect.bisect_left` from the standard library is the **oracle**: a trusted implementation of the same function. An oracle can also be a slow brute-force version, such as scanning the list for the first index.
 
-The bug is that `hi` starts at the last index instead of one past it, so a target larger than everything returns the last index instead of `len(values)`. None of the hand-picked examples had a target above every value. Random inputs found one within a few trials, and the printed case shows exactly what went wrong. Random testing does not need you to imagine the bug, only to describe the inputs. (The test above even skips empty lists, where the function is wrong in a different way, which shows that even generators need care: always include the edge cases.)
+The bug is that `hi` starts at the last index instead of one past it, so a target larger than everything returns the last index instead of `len(values)`. None of the hand-picked examples had a target above every value. Random inputs found one within a few trials, and the printed case shows exactly what went wrong. Random testing does not need you to imagine the bug, only to describe the inputs. (The generator includes empty lists, where `lower_bound` happens to be right: always make generators produce the edge cases.)
 
 ## Properties: when there is no oracle
 
@@ -49,7 +49,7 @@ Often there is no trusted second implementation, for example when you are writin
 
 - **Output checks**: a sort's output is in order **and** is a rearrangement of the input (same items, same counts). Both are needed: an "in order" check alone passes for a function that returns `[]`.
 - **Round trips**: decoding an encoding gives back the original. `decode(encode(x)) == x`.
-- **Invariance (metamorphic relations)**: changing the input in a known way changes the output in a known way. Shuffling the input must not change a sort's output; adding the same constant to every edge weight must not change which path is shortest when all paths have the same number of edges; reversing a graph's edges must not change the distance between two points in an undirected graph.
+- **Invariance (metamorphic relations)**: changing the input in a known way changes the output in a known way. Shuffling the input must not change a sort's output; adding the same constant to every edge weight must not change which path is shortest when all paths have the same number of edges; in a directed graph, the distance from a to b must equal the distance from b to a in the graph with every edge reversed.
 
 Here run-length encoding is tested with a round trip and a minimality property, with no oracle anywhere. Predict before running: which property catches the bug?
 
@@ -147,7 +147,7 @@ print("shrunk to:     ", shrink(big, fails))
 
 Data structures have **invariants**, conditions that must hold between operations (the invariants lesson met them for loops). In a heap, each parent is no larger than its children; in a binary search tree, keys are ordered. A `_check()` method that verifies the invariant, called after every operation in tests, catches corruption at the operation that caused it, not ten operations later when an answer comes out wrong.
 
-**Model-based testing** goes further. Generate a random **sequence of operations**, apply it both to the structure under test and to a simple **model** (a sorted Python list standing in for a heap), and compare every answer. Combined with shrinking the operation sequence, this finds and minimises bugs that only appear after a particular history. Predict before running: how short is the shrunk sequence that breaks the buggy heap?
+**Model-based testing** goes further. Generate a random **sequence of operations**, apply it both to the structure under test and to a simple **model** (a plain Python list queried with `min()`, standing in for a heap), and compare every answer. Combined with shrinking the operation sequence, this finds and minimises bugs that only appear after a particular history. Predict before running: how short is the shrunk sequence that breaks the buggy heap?
 
 ```python
 class Heap:
@@ -290,7 +290,7 @@ Write `shrink(values, fails)`, which takes a list of non-negative integers for w
 - **remove** one item, trying positions from the start;
 - **reduce** one item to a smaller value, trying for each position (from the start) first `0` and then half its value (`v // 2`).
 
-Keep the first change that still fails, and start again from the new list. Return the final list. Never call `fails` on the same list twice in a row without a change in between, and never change the caller's list.
+Keep the first change that still fails, and start again from the new list. Return the final list. Never try the same value twice for one position (when `v` is 1, `0` and `v // 2` are the same), and never change the caller's list.
 
 ```python starter
 def shrink(values, fails):
@@ -311,7 +311,7 @@ def shrink(values, fails):
         else:
             for i, v in enumerate(current):
                 changed = False
-                for smaller in (0, v // 2):
+                for smaller in dict.fromkeys((0, v // 2)):
                     if smaller < v:
                         candidate = current[:i] + [smaller] + current[i + 1:]
                         if fails(candidate):
@@ -334,6 +334,7 @@ assert _orig == [9, 40, 7, 3], "Do not change the caller's list."
 assert shrink([5, 1, 8, 1, 3], lambda xs: len(xs) >= 2 and xs[0] > xs[1]) == [1, 0], "First item bigger than the second: [1, 0]."
 assert shrink([4, 7, 7, 2], lambda xs: len(xs) != len(set(xs))) == [7, 7], "Any duplicate: [7, 7], since changing either 7 alone removes the duplicate."
 assert shrink([3, 9, 12], lambda xs: True) == [], "If everything fails, the empty list is smallest."
+assert shrink([8], lambda xs: len(xs) == 1 and xs[0] % 2 == 0) == [0], "Try 0 before halving: an even single item shrinks to [0]."
 def _dedupe(xs):
     return [v for i, v in enumerate(xs) if i == 0 or v != xs[i - 1]]
 _r = shrink([12, 30, 5, 30, 7, 30, 1], lambda xs: _dedupe(xs) != list(dict.fromkeys(xs)))
@@ -341,13 +342,13 @@ assert _r == [30, 0, 30], f"A value reappearing after another: [30, 0, 30]; got 
 _seen = []
 def _spy(xs):
     _seen.append(tuple(xs))
-    return sum(xs) >= 3
-shrink([3, 3], _spy)
-assert all(_a != _b for _a, _b in zip(_seen, _seen[1:])), "Don't test the same list twice in a row."
+    return xs == [1]
+shrink([1], _spy)
+assert _seen.count((0,)) == 1, "When v is 1, 0 and v // 2 are the same value: try it once, not twice."
 "SUCCESS: Random failures shrink to their essence: the smallest list that still shows the bug, found automatically."
 ```
 
-Hint: Loop forever. First try removing each position; on the first success, update and restart. If no removal works, try for each position the values `0` and `v // 2` (skip any that are not smaller than `v`); on success, update and restart. If nothing works, return the list.
+Hint: Loop forever. First try removing each position; on the first success, update and restart. If no removal works, try for each position the values `0` and `v // 2`, each once (they are equal when `v` is 1, and `dict.fromkeys((0, v // 2))` gives them without repeats; skip any that are not smaller than `v`); on success, update and restart. If nothing works, return the list.
 :::
 
 ::: challenge Model-based testing of a queue [hard]

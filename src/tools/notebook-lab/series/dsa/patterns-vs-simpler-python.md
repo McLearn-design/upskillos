@@ -76,7 +76,7 @@ Most of the patterns in this series have a lighter Python form, which the earlie
 - **Visitor**: `functools.singledispatch`, name-based dispatch, or `match`.
 - **State**: a dict-based transition table, when states differ only in their transitions.
 
-The patterns that keep their full shape in Python are the ones about **structure** rather than language limits: adapter, facade, composite, proxy, mediator, bridge, flyweight and chain of responsibility. Those describe how objects are arranged, and a language feature cannot replace an arrangement.
+The patterns that keep their full shape best are those about **structure**: adapter, composite and bridge describe how objects are arranged, and no language feature replaces an arrangement. The other structural and behavioural patterns keep their **idea** but often shrink, and Norvig counted most of them among his 16: a proxy can be a `__getattr__` forwarder, a flyweight a cached factory or a dict, a chain of responsibility a list of functions, a facade a module of functions.
 
 ## Structural pattern matching
 
@@ -118,7 +118,7 @@ for message in [Move(0, 0), Move(40, 12.5), Spindle(0), Spindle(18000), Spindle(
     print(f"{message!r:<42} -> {handle(message)}")
 ```
 
-In a class pattern such as `Move(x=x, y=y)`, `x=x` means "match the attribute `x` and bind it to the name `x`". `"on" | "off" as state` accepts either string and names it. `if rpm <= 24000` is a **guard**, an extra condition. `case _` matches anything.
+In a class pattern such as `Move(x=x, y=y)`, `x=x` means "match the attribute `x` and bind it to the name `x`". Sequence patterns like `("coolant", state)` match lists as well as tuples, but never strings. `"on" | "off" as state` accepts either string and names it. `if rpm <= 24000` is a **guard**, an extra condition. `case _` matches anything.
 
 Each message is handled by the first case whose pattern fits. `Move(0, 0)` hits the more specific origin case before the general one, so order matters, as in a chain of responsibility. The guard sends 30,000 rpm to the refusal case. The dict pattern accepts any dict with an `"alarm"` key and collects the rest. `("coolant", "mist")` matches no pattern and falls through to the default. A `match` keeps all the handling for a family of message shapes in one readable place. It is a good fit when the shapes are fixed and the code is the only consumer. When new shapes keep arriving, polymorphism, or a visitor, is still the better home for the logic.
 
@@ -210,7 +210,7 @@ A machine receives messages in several shapes. Write `route(message)` using a `m
 - for a tuple `("tool", name)` where `name` is a string: `f"load tool {name}"`;
 - for a tuple `("home",)` or the plain string `"home"`: `"homing all axes"`;
 - for a dict with key `"jog"` holding a dict with keys `"axis"` and `"mm"`: `f"jog {axis} by {mm} mm"` (extra keys anywhere are fine);
-- for a list of messages: a list of `route(m)` for each one;
+- for a list of messages: a list of `route(m)` for each one (a list is always a list of messages, never a message itself);
 - anything else: `"ignored"`.
 
 ```python starter
@@ -223,6 +223,8 @@ print(route(("feed", 80)))
 ```python solution
 def route(message):
     match message:
+        case list():
+            return [route(m) for m in message]
         case ("feed", int() | float() as n) if 1 <= n <= 200:
             return f"feed {n}%"
         case ("feed", int() | float()):
@@ -233,8 +235,6 @@ def route(message):
             return "homing all axes"
         case {"jog": {"axis": axis, "mm": mm}}:
             return f"jog {axis} by {mm} mm"
-        case list():
-            return [route(m) for m in message]
         case _:
             return "ignored"
 
@@ -253,11 +253,12 @@ assert route(("home",)) == "homing all axes" and route("home") == "homing all ax
 assert route({"jog": {"axis": "X", "mm": -0.5}, "from": "pendant"}) == "jog X by -0.5 mm", "Jog dicts, extra keys allowed."
 assert route({"jog": {"axis": "Y"}}) == "ignored" and route({"axis": "X"}) == "ignored", "Incomplete jogs are ignored."
 assert route([("home",), ("tool", "T1"), "nonsense"]) == ["homing all axes", "load tool T1", "ignored"], "Lists route each message."
+assert route(["home"]) == ["homing all axes"] and route(["feed", 80]) == ["ignored", "ignored"], "A list is a list of messages: sequence patterns match lists too, so check for lists first."
 assert route(None) == "ignored" and route(("feed",)) == "ignored", "Anything else is ignored."
 "SUCCESS: One match statement describes every message shape the machine understands, with guards for the ranges and a default for the rest."
 ```
 
-Hint: Order the cases from specific to general: the in-range feed with a guard (`if 1 <= n <= 200`) before the general feed. `int() | float() as n` matches either type and binds it. `("home",) | "home"` combines two patterns. A dict pattern `{"jog": {"axis": axis, "mm": mm}}` ignores extra keys. `case list():` catches lists, and the last case is `case _:`.
+Hint: Order the cases from specific to general: the in-range feed with a guard (`if 1 <= n <= 200`) before the general feed. `int() | float() as n` matches either type and binds it. `("home",) | "home"` combines two patterns. A dict pattern `{"jog": {"axis": axis, "mm": mm}}` ignores extra keys. Sequence patterns match lists as well as tuples (but never strings), so put `case list():` **first**, or a list such as `["home"]` would be taken for a message. The last case is `case _:`.
 :::
 
 ::: challenge A command line without the ceremony [hard]
@@ -266,7 +267,7 @@ A machine's maintenance console accepts text commands such as `speed 1200` or `o
 - `COMMANDS`, a dict from command name to function;
 - `command(name)`, a decorator factory that registers the decorated function under `name` and returns it unchanged;
 - `dispatch(line)`, which splits the line into words, looks up the first word, and converts each remaining word to the **type annotated** on the matching parameter (`int`, `float` or `str`; an unannotated parameter stays a string) before calling the function and returning its result. Use `inspect.signature(function).parameters`. Raise `KeyError` for an unknown command, `TypeError` if the number of words does not match the number of parameters, and `ValueError` if a word cannot be converted;
-- `help_text()`, returning one line per registered command, in alphabetical order: the name followed by its parameter names in angle brackets, then `" - "` and the first line of the function's docstring (or nothing after the name and parameters if it has no docstring).
+- `help_text()`, returning one line per registered command, in alphabetical order: the name followed by its parameter names in angle brackets, then `" - "` and the first line of the function's docstring (or nothing after the name and parameters if it has no docstring), with single spaces between the parts, so `home - Home all axes.` and `beep`.
 
 Then register three commands: `speed(rpm: int)` returning `f"spindle {rpm} rpm"`, `offset(tool: str, mm: float)` returning `f"{tool} offset {mm:+.3f} mm"`, and `home()` returning `"homing"`. Give each a one-line docstring.
 
@@ -367,7 +368,7 @@ Hint: `command(name)` returns a `register(function)` that stores and returns the
 
 - Many classic patterns work around limits Python does not have. Strategies are functions, simple commands are closures, factories are classes or dicts, iterators are generators, singletons are modules.
 - The ideas and the names still matter. The class-based form is just not always needed.
-- Patterns about arrangement (adapter, facade, composite, proxy, mediator, bridge, flyweight, chain of responsibility) keep their shape, because they describe structure rather than missing features.
+- Patterns about arrangement (adapter, composite, bridge) keep their shape; the others keep their ideas but often shrink to functions, dicts and modules.
 - `match` describes message and tree shapes directly, with class, sequence and dict patterns, alternatives, `as` bindings and guards. It suits fixed sets of shapes; polymorphism suits growing ones.
 - Use the full pattern when methods belong together, state must be kept, objects must be data, a framework expects it, or it reads better. Avoid patternitis: structure no change has ever needed is pure cost.
 
