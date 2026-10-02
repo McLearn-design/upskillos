@@ -5,6 +5,7 @@
 //   - `npm run <script>` commands (must be in package.json) and `node <file>` commands
 //
 // Usage: node scripts/check-docs.mjs [file.md ...]   (default: the contributor docs below)
+import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -21,6 +22,11 @@ const REPO_PATH = /^(src|scripts|docs|public|desktop|backend|packages|\.github)\
 const PLACEHOLDER = /[<>*…]|\.\.\.|\{/
 // Paths the docs name on purpose to say they no longer exist.
 const REMOVED = new Set(['src/content/', 'src/content'])
+// Gitignored paths are generated (by npm run dev / build), so they are
+// missing on a fresh checkout, which is where CI runs this check.
+const isGenerated = path => {
+  try { execFileSync('git', ['check-ignore', '-q', path], { cwd: root, stdio: 'ignore' }); return true } catch { return false }
+}
 
 // GitHub's heading anchors: lowercase, punctuation removed, spaces to hyphens.
 const slug = heading => heading.trim().toLowerCase().replace(/[`*_]/g, '').replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s/g, '-')
@@ -48,7 +54,7 @@ for (const file of files) {
   for (const m of text.matchAll(/`([^`\n]+)`/g)) {
     const code = m[1].trim()
     const pathCandidate = code.replace(/\/$/, '')
-    if (REPO_PATH.test(code) && !PLACEHOLDER.test(code) && !REMOVED.has(code) && !/\s/.test(code) && !existsSync(join(root, pathCandidate))) report(m.index, `path does not exist: ${code}`)
+    if (REPO_PATH.test(code) && !PLACEHOLDER.test(code) && !REMOVED.has(code) && !/\s/.test(code) && !existsSync(join(root, pathCandidate)) && !isGenerated(code)) report(m.index, `path does not exist: ${code}`)
   }
 
   // Commands anywhere (inline code or code blocks)
