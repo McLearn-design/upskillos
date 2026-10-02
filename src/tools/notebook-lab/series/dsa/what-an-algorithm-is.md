@@ -218,6 +218,11 @@ assert has_duplicate_sorted([2, 9, 4, 9]) == (True, 3), "[2, 9, 4, 9] sorts to [
 _keep = [3, 1, 2]
 has_duplicate_sorted(_keep)
 assert _keep == [3, 1, 2], "Don't sort the caller's list in place: use sorted(values), which returns a new list."
+import random as _random
+_rr = _random.Random(11)
+for _ in range(500):
+    _vs = [_rr.randint(0, 9) for _ in range(_rr.randint(0, 10))]
+    assert has_duplicate_sorted(_vs)[0] == (len(set(_vs)) < len(_vs)), f"has_duplicate_sorted({_vs}) gave the wrong answer."
 assert agree is True, "Set agree to True after checking your function against has_duplicate_set on random lists (they should always agree)."
 "SUCCESS: Sorting brings equal values together, so one pass of n − 1 neighbour comparisons is enough: a third correct algorithm with yet another cost."
 ```
@@ -272,7 +277,7 @@ for _ in range(2000):
     _xs = [_r.randint(-5, 5) for _ in range(_r.randint(0, 7))]
     _d = sorted(set(_xs)); _want = _d[-2] if len(_d) >= 2 else None
     assert second_largest(_xs) == _want, f"second_largest({_xs}) returned {second_largest(_xs)}; the specification gives {_want}."
-assert "sort" not in _source.split("def second_largest_brute_force")[0], "Write second_largest in a single pass, without sorting (sorting is fine in the brute-force version)."
+assert "sort" not in (_source.split("def second_largest(")[1].split("\ndef ")[0] if "def second_largest(" in _source else ""), "Write second_largest in a single pass, without sorting (sorting is fine in the brute-force version)."
 "SUCCESS: One pass, two remembered values, and every awkward case handled because the specification named them first."
 ```
 

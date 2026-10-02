@@ -50,9 +50,9 @@ T(n) = T(n − 1) + c = T(n − 2) + 2c = T(n − 3) + 3c = … = T(1) + (n − 
 
 which is O(n). For T(n) = T(n/2) + c, each step halves n, and after k steps n has become n/2ᵏ. That reaches 1 when k = log₂ n, so T(n) = T(1) + c·log₂ n = O(log n).
 
-For T(n) = T(n − 1) + cn, unrolling gives cn + c(n − 1) + c(n − 2) + … + c·2 + T(1), an arithmetic series adding up to about cn²/2: O(n²). This is the "shrinking by one, doing a full pass each time" pattern, and it is the cost of every simple sorting algorithm.
+For T(n) = T(n − 1) + cn, unrolling gives cn + c(n − 1) + c(n − 2) + … + c·2 + T(1), an arithmetic series adding up to about cn²/2: O(n²). This is the "shrinking by one, doing a full pass each time" pattern, and it is the worst-case cost of the simple sorting algorithms.
 
-For T(n) = 2T(n − 1) + c, every level **doubles** the number of calls: 1, 2, 4, …, 2ⁿ⁻¹ calls, so the total is about 2ⁿ: exponential. That is why the naive Fibonacci needed hundreds of thousands of calls for n = 25.
+For T(n) = 2T(n − 1) + c, every level **doubles** the number of calls: 1, 2, 4, …, 2ⁿ⁻¹ calls, so the total is at most about 2ⁿ: exponential. (The real Fibonacci count grows like 1.618ⁿ, since the second call is on n − 2, but that is still exponential.) That is why the naive Fibonacci needed hundreds of thousands of calls for n = 25.
 
 ## The recursion tree
 
@@ -229,7 +229,7 @@ Hint: The three cases correspond to a < bᵈ, a = bᵈ and a > bᵈ. For the exp
 :::
 
 ::: challenge A three-way split [medium]
-A function splits its input into **three** parts of size n/3, recurses on each, and then does work proportional to n to combine them, with T(1) = 1. Write `three_way(n)` evaluating T(n) = 3T(n // 3) + n with a memo table, and use it to compute `ratio_big` = T(3²⁰) / T(3¹⁹). Then set `predicted` to the class the master theorem gives, as one of `"O(n)"`, `"O(n log n)"`, `"O(n^2)"`.
+A function splits its input into **three** parts of size n/3, recurses on each, and then does work proportional to n to combine them, with T(1) = 1. Write `three_way(n)` evaluating T(n) = 3T(n // 3) + n with a memo table (write `3 * three_way(n // 3)`, one call, not three separate calls: without the memo table, three calls per level would mean billions of calls for n = 3²⁰), and use it to compute `ratio_big` = T(3²⁰) / T(3¹⁹). Then set `predicted` to the class the master theorem gives, as one of `"O(n)"`, `"O(n log n)"`, `"O(n^2)"`.
 
 Finally, for exact powers of 3 the recurrence has the closed form T(n) = n(log₃ n + 1). Write `closed_form(k)` returning that value for n = 3ᵏ as an integer, and check it agrees with `three_way` for k from 0 to 12.
 

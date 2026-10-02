@@ -72,13 +72,13 @@ print(reverse_in_place(evens), "swaps:", "".join(evens))
 
 `original[::-1]` is the fully reversed copy, so `original[::-1][:left]` is what the first `left` positions should hold when the job is done.
 
-Seven items need 3 swaps; the middle item, D, never moves, because the loop stops when the indices meet on it. Six items also need 3 swaps, and the loop stops when the indices cross. The invariant explains why `while left < right` is exactly the right condition: with `<=`, an odd-length list would harmlessly swap its middle item with itself, but get the condition wrong in the other direction and the last pair is never swapped.
+Seven items need 3 swaps; the middle item, D, never moves, because the loop stops when the indices meet on it. Six items also need 3 swaps, and the loop stops when the indices cross. The invariant explains why `while left < right` is exactly the right condition: with `<=`, an odd-length list would harmlessly swap its middle item with itself, but with `while left < right - 1` the loop would stop one pair early and the middle two items of an even-length list would never be swapped.
 
 ## Termination: proving the loop stops
 
 The three checks prove a loop gives the right answer **if it stops**. Proving it stops needs a **variant** (also called a measure): a whole number that is never negative and strictly decreases on every iteration. A whole number cannot decrease for ever without going negative, so the loop must end.
 
-For the reversing loop, the variant is `right - left`: it drops by 2 each time. For **Euclid's algorithm**, which finds the greatest common divisor (gcd) of two numbers, the argument is more interesting. Euclid's insight: the gcd of a and b equals the gcd of b and a % b, since any number dividing both a and b also divides the remainder. Repeating that until the second number is 0 gives the answer. The invariant is "gcd(a, b) is the gcd of the original pair", and the variant is b, which strictly decreases because a % b is always smaller than b. Predict before running: how many steps for gcd(1071, 462), and for two consecutive Fibonacci numbers?
+For the reversing loop, the variant is `right - left`: it drops by 2 each time. For **Euclid's algorithm**, which finds the greatest common divisor (gcd) of two numbers, the argument is more interesting. Euclid's insight: the gcd of a and b equals the gcd of b and a % b, since any number dividing both a and b also divides the remainder, and any number dividing b and the remainder also divides a, so the two pairs have exactly the same common divisors. Repeating that until the second number is 0 gives the answer. The invariant is "gcd(a, b) is the gcd of the original pair", and the variant is b, which strictly decreases because a % b is always smaller than b. Predict before running: how many steps for gcd(1071, 462), and for two consecutive Fibonacci numbers?
 
 ```python
 import math
@@ -103,9 +103,9 @@ print("gcd(10**12, 6) =", *gcd_traced(10**12, 6), "steps")
 
 gcd(1071, 462) takes 3 steps and gives 21. Consecutive Fibonacci numbers are Euclid's worst case: 832,040 and 514,229 need 28 steps. Even so, the number of steps grows only with the number of **digits**: the remainder at least halves every two steps, so Euclid's algorithm is O(log min(a, b)). The variant proved that it stops; a slightly sharper argument about how fast it decreases proved how quickly.
 
-## When an invariant catches a bug
+## Using an invariant to locate a bug
 
-Invariants are also a debugging tool: a broken invariant points at the exact iteration where things went wrong, rather than at a wrong final answer. Here is a function meant to move all the zeros in a list to the end, keeping the other values in order, with one subtle bug. Its intended invariant: **`items[:write]` holds the non-zero values seen so far, in order**. Predict before running: on which input does the invariant fail?
+Invariants are also a debugging tool. A broken invariant points at the exact iteration where things went wrong; an invariant that holds rules the loop out, and points at the code around it. Here is a function meant to move all the zeros in a list to the end, keeping the other values in order, with one subtle bug. Its intended invariant: **`items[:write]` holds the non-zero values seen so far, in order**. The check reads the global `original`, a copy of the input made before each call. Predict before running: will the invariant check fire? Which results come out wrong, and where must the bug be?
 
 ```python
 def move_zeros_buggy(items):
@@ -129,7 +129,7 @@ for test in [[0, 1, 0, 3, 12], [1, 2, 0], [4, 0, 5]]:
 
 The invariant is checked with an `if` instead of an `assert` here, so the cell can report the failure and carry on.
 
-The invariant holds on every step of the main loop, so the first part is right. Yet two of the three results are wrong: [1, 2, 0] is fine by luck, but [0, 1, 0, 3, 12] keeps a stale 12 and [4, 0, 5] keeps a stale 5. With the main loop proven correct, the bug must be in what follows. The termination step needs "everything from `write` onwards becomes zero", and the code starts at `write + 1`: an off-by-one error. The invariant narrowed the search to a single line, which is exactly what it is for. The second challenge fixes this function properly.
+The invariant holds on every step of the main loop, so the first part is right. Yet two of the three results are wrong: [1, 2, 0] is fine by luck, but [0, 1, 0, 3, 12] keeps a stale 3 and [4, 0, 5] keeps a stale 5. With the main loop proven correct, the bug must be in what follows. The termination step needs "everything from `write` onwards becomes zero", and the code starts at `write + 1`: an off-by-one error. The invariant narrowed the search to a single line, which is exactly what it is for. The second challenge fixes this function properly.
 
 ::: challenge Integer square root, with an invariant [easy]
 Write `isqrt_linear(n)` returning the largest integer r with r × r ≤ n, for n ≥ 0, by counting up from r = 0 while (r + 1)² ≤ n. Inside the loop, `assert` the invariant `r * r <= n`. Then set `invariant`, `variant` and `stop_condition` to the matching strings from this list, describing your loop: `"r * r <= n"`, `"n - r * r"`, `"(r + 1) * (r + 1) > n"`.
@@ -277,7 +277,8 @@ class _Spy(list):
         _cnt[0] += 1
         return list.__getitem__(self, i)
 _s = _Spy([_r.randint(0, 9) for _ in range(300)]); three_way_partition(_s, 5)
-assert _cnt[0] <= 2 * 300 + 5, "Examine each item about once: a single pass, not repeated scans."
+assert "sort" not in _source and "bisect" not in _source and "count(" not in _source, "Partition with the three indices in one pass, not by sorting or counting."
+assert _cnt[0] <= 6 * 300, "Examine each item a constant number of times: a single pass, not repeated scans."
 "SUCCESS: Each step shrinks the unexamined region by one (the variant high − mid + 1), and the four regions keep their meaning throughout: the partition step of three-way quicksort."
 ```
 

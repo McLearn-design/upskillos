@@ -107,7 +107,7 @@ for n in [10, 100, 1_000, 1_000_000]:
 
 `f"{'n':>10}"` right-aligns a string in 10 characters, so the heading lines up with the numbers.
 
-At a million items, n log n is about 20 million steps (a fraction of a second), n² is a trillion (around an hour at a billion simple steps per second, and far longer in Python), and 2ⁿ is a number with 301,029 digits. A plot shows the shapes:
+At a million items, at a billion simple steps per second, n log n is about 20 million steps (a fiftieth of a second), n² is a trillion (about a quarter of an hour, and far longer in Python), and 2ⁿ is a number with 301,030 digits. A plot shows the shapes:
 
 ```python
 import numpy as np
@@ -147,7 +147,7 @@ def count_equal_pairs(values):
                 count += 1
     return count
 
-for f, sizes, repeats in [(sum_of_list, [100_000, 200_000, 400_000], 5), (count_equal_pairs, [200, 400, 800], 3)]:
+for f, sizes, repeats in [(sum_of_list, [100_000, 200_000, 400_000], 5), (count_equal_pairs, [400, 800, 1600], 2)]:
     times = [timeit.timeit(lambda: f(list(range(n))), number=repeats) / repeats for n in sizes]
     ratios = [times[k + 1] / times[k] for k in range(len(times) - 1)]
     print(f"{f.__name__:<18} times {[f'{t * 1000:.1f} ms' for t in times]}  doubling ratios {[round(r, 1) for r in ratios]}")
@@ -193,7 +193,8 @@ def _run(_n):
 for _n in [0, 1, 2, 3, 10, 57]:
     assert exact_steps(_n) == _run(_n), f"For n = {_n} the loop runs {_run(_n)} times, but exact_steps gave {exact_steps(_n)}. Count how many j values there are for each i, then add them up."
 assert exact_steps(10**6) == 500000500000, "The formula should work for large n too, without looping."
-assert "for " not in _source.split("growth")[0], "Use a formula in exact_steps, not a loop."
+_fn_src = _source.split("def exact_steps")[1].split("\ngrowth")[0].split("\ndef ")[0] if "def exact_steps" in _source else ""
+assert "for " not in _fn_src and "while " not in _fn_src, "Use a formula in exact_steps, not a loop."
 assert growth == "O(n^2)", f"The count grows like n²/2, so the growth class is O(n^2); you wrote {growth!r}."
 "SUCCESS: n + (n − 1) + … + 1 = n(n + 1)/2: half of n², so still O(n²)."
 ```
@@ -336,10 +337,10 @@ for _ in range(300):
     _xs = [_r.randint(-4, 4) for _ in range(_r.randint(0, 9))]
     _t = _r.randint(-6, 6)
     assert count_pairs_fast(_xs, _t) == _slow(_xs, _t), f"count_pairs_fast({_xs}, {_t}) gave {count_pairs_fast(_xs, _t)}, expected {_slow(_xs, _t)}."
-_big = [_r.randint(0, 1000) for _ in range(100_000)]
+_big = [_r.randint(0, 1000) for _ in range(8_000)]
 _start = _time.perf_counter(); count_pairs_fast(_big, 1000); _elapsed = _time.perf_counter() - _start
-assert _elapsed < 2, f"100,000 values took {_elapsed:.1f} s: the function should make one pass, not compare every pair."
-f"SUCCESS: 100,000 values in {_elapsed * 1000:.0f} ms. The slow version would need about 5 billion comparisons."
+assert _elapsed < 0.5, f"8,000 values took {_elapsed:.1f} s: the function should make one pass, not compare every pair."
+f"SUCCESS: 8,000 values in {_elapsed * 1000:.1f} ms. The slow version needs 32 million comparisons for the same list."
 ```
 
 Hint: Before recording v, add `seen.get(target - v, 0)` to the count (those are the earlier partners); then increase `seen[v]` by one. Doing it in that order stops a value pairing with itself.

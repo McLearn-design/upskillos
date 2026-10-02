@@ -53,7 +53,7 @@ for n in [1_000, 10_000, 100_000]:
 
 The probes are spread so that about half are present and half absent; an absent value forces the list to check every item.
 
-The list's time grows tenfold with each tenfold growth of n (O(n) per lookup); the set's stays flat (O(1)). At 100,000 items the set is thousands of times faster. The cost of building the set, O(n) once, pays for itself as soon as you do more than a handful of lookups.
+The list's time grows tenfold with each tenfold growth of n (O(n) per lookup); the set's stays flat (O(1)). At 100,000 items the set is tens of thousands of times faster. The cost of building the set, O(n) once, pays for itself as soon as you do more than a handful of lookups.
 
 The other dictionary and set operations follow the same pattern: `d[key]`, `d.get(key)`, `key in d`, `d[key] = value`, `del d[key]`, `s.add(x)` and `s.discard(x)` are all O(1) on average. Looping over a dictionary or set is O(n), as you would expect. One caution: `value in d.values()` searches the values one by one, O(n), because the jump-by-hash trick only works for keys.
 
@@ -156,10 +156,10 @@ _r = _random.Random(4)
 for _ in range(200):
     _a = [_r.randint(0, 9) for _ in range(_r.randint(0, 8))]; _b = [_r.randint(0, 9) for _ in range(_r.randint(0, 8))]
     assert common_items(_a, _b) == [x for x in _a if x in _b], f"common_items({_a}, {_b}) should be {[x for x in _a if x in _b]}."
-_a = list(range(0, 200_000, 2)); _b = list(range(0, 200_000, 3))
+_a = list(range(0, 40_000, 2)); _b = list(range(0, 40_000, 3))
 _start = _time.perf_counter(); _res = common_items(_a, _b); _elapsed = _time.perf_counter() - _start
-assert len(_res) == 33_334, "Wrong result on the large lists."
-assert _elapsed < 1, f"Two lists of about 100,000 and 67,000 items took {_elapsed:.1f} s: build a set from b once, then check membership in it."
+assert len(_res) == 6_667, "Wrong result on the large lists."
+assert _elapsed < 0.3, f"Two lists of 20,000 and about 13,000 items took {_elapsed:.1f} s: build a set from b once, then check membership in it."
 f"SUCCESS: {_elapsed * 1000:.0f} ms for lists that would need billions of comparisons the slow way."
 ```
 
@@ -262,7 +262,7 @@ for _w, _want in [("racecar", True), ("rocket", False), ("", True), ("a", True),
     assert is_palindrome(_w) == _want, f"is_palindrome({_w!r}) should be {_want}."
 _big = "ab" * 50_000 + "ba" * 50_000
 assert is_palindrome(_big) is True and is_palindrome(_big + "x") is False, "Check long strings too."
-_body = _source.split("def is_palindrome(")[1] if "def is_palindrome(" in _source else ""
+_body = _source.split("def is_palindrome(")[1].split("\ndef ")[0] if "def is_palindrome(" in _source else ""
 assert "[::-1]" not in _body and ":-1]" not in _body and "[1:" not in _body, "Use two indices instead of slicing: each slice is a copy."
 "SUCCESS: Two indices, no copies: 200,000 characters checked in one pass (the slicing version would copy about 10 billion characters, and hit Python's recursion limit first)."
 ```

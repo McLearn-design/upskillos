@@ -304,6 +304,14 @@ for _bad in [2, -3]:
     except IndexError:
         pass
 assert list(_a) == ["c", "d"], "A failed deletion must leave the array unchanged."
+import random as _random
+_rr = _random.Random(12); _m2, _l2 = DynamicArray(), []
+for _ in range(1500):
+    if _l2 and _rr.random() < 0.4:
+        _ix = _rr.randint(-len(_l2), len(_l2) - 1); del _m2[_ix]; del _l2[_ix]
+    else:
+        _v = _rr.randint(0, 9); _m2.append(_v); _l2.append(_v)
+    assert list(_m2) == _l2, "After random appends and deletions, your array differs from a Python list."
 assert matches is True, "Set matches to True after checking random appends and deletions against a Python list (they should agree)."
 "SUCCESS: Deletion shifts the tail left, mirroring insert: O(n − index), so del a[0] costs O(n) just as for a list."
 ```
