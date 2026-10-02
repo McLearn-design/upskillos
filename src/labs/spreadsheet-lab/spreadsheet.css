@@ -71,3 +71,10 @@
   border: 2px solid var(--ss-select-border); background: var(--ss-bg); color: var(--ss-text); outline: none;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
 }
+
+/* Python, JavaScript and MATLAB cells carry a small badge, as Excel marks its Python cells. */
+.ss-cell.is-code { padding-left: 24px; }
+.ss-code-badge {
+  position: absolute; left: 3px; top: 5px; padding: 0 3px; border-radius: 3px; font-size: 8px; line-height: 12px; font-weight: 700;
+  background: #059669; color: #fff; letter-spacing: 0.02em; pointer-events: none;
+}

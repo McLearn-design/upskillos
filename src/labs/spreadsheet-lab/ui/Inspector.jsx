@@ -8,6 +8,7 @@ import { walk } from '../engine/parser.js'
 import { CATEGORIES, FUNCTIONS } from '../engine/functions/index.js'
 import { PRESET_FORMATS } from '../engine/format.js'
 import { displayCell } from './display.js'
+import CodePanel from './CodePanel.jsx'
 
 const TYPE_TEXT = {
   blank: 'Empty',
@@ -78,7 +79,7 @@ function CellView({ wb, sheet, row, col, onJump }) {
       <Section title={'Cell ' + indexToCol(col) + (row + 1)}>
         <dl className="grid grid-cols-[6.5rem_1fr] gap-x-2 gap-y-1 text-xs">
           <dt className="text-slate-500">You typed</dt>
-          <dd className="break-all font-mono text-slate-900 dark:text-slate-100">{cell?.input ? cell.input : spilledFrom ? '(nothing: spilled here)' : '(nothing)'}</dd>
+          <dd className="break-all font-mono text-slate-900 dark:text-slate-100">{cell?.code ? '(' + (cell.code.lang === 'py' ? 'Python' : cell.code.lang === 'js' ? 'JavaScript' : 'MATLAB') + ' code: see the Code tab)' : cell?.input ? cell.input : spilledFrom ? '(nothing: spilled here)' : '(nothing)'}</dd>
           <dt className="text-slate-500">It holds</dt>
           <dd className="text-slate-900 dark:text-slate-100">{TYPE_TEXT[type] ?? type}{type !== 'blank' && type !== 'error' && <span className="ml-1 font-mono text-slate-500">{literal(value)}</span>}</dd>
           {format && (<><dt className="text-slate-500">Shown as</dt><dd className="text-slate-900 dark:text-slate-100">{shown.text} <span className="text-slate-500">({format.label})</span></dd></>)}
@@ -154,18 +155,22 @@ function FunctionBrowser() {
   )
 }
 
-export default function Inspector({ wb, sheet, sel, onJump }) {
-  const [tab, setTab] = useState('cell')
+export default function Inspector({ wb, sheet, sel, onJump, tab, onTab, runtime, onApplyCode }) {
+  const isCode = sheet.cells.get(cellKey(sel.active.row, sel.active.col))?.kind === 'code'
+  const tabs = [...(isCode ? [['code', 'Code']] : []), ['cell', 'This cell'], ['functions', 'Functions']]
+  const current = tab === 'code' && !isCode ? 'cell' : tab
   return (
     <aside className="flex h-full w-80 shrink-0 flex-col border-l border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950" aria-label="Inspector">
       <div className="flex shrink-0 border-b border-slate-200 text-xs dark:border-slate-800" role="tablist">
-        {[['cell', 'This cell'], ['functions', 'Functions']].map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
-            className={'flex-1 px-3 py-2 font-semibold ' + (tab === id ? 'border-b-2 border-sky-600 text-sky-700 dark:text-sky-300' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')}>{label}</button>
+        {tabs.map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={current === id} onClick={() => onTab(id)}
+            className={'flex-1 px-3 py-2 font-semibold ' + (current === id ? 'border-b-2 border-sky-600 text-sky-700 dark:text-sky-300' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')}>{label}</button>
         ))}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === 'cell' ? <CellView wb={wb} sheet={sheet} row={sel.active.row} col={sel.active.col} onJump={onJump} /> : <FunctionBrowser />}
+        {current === 'code' && <CodePanel wb={wb} sheet={sheet} row={sel.active.row} col={sel.active.col} runtime={runtime} onApply={onApplyCode} />}
+        {current === 'cell' && <CellView wb={wb} sheet={sheet} row={sel.active.row} col={sel.active.col} onJump={onJump} />}
+        {current === 'functions' && <FunctionBrowser />}
       </div>
     </aside>
   )

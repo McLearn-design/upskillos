@@ -21,6 +21,7 @@ import { FUNCTIONS } from './functions/index.js'
 import { Matrix, err, isMatrix } from './values.js'
 import { cellKey, keyToPos, rangeContains } from './address.js'
 import { adjustForCols, adjustForRows, renameSheetRefs } from './rewrite.js'
+import { codeReferences, plainValue, shapeForCode, sheetValue } from './code.js'
 
 let sheetCounter = 0
 
@@ -60,7 +61,10 @@ export class Sheet {
 
 const num = (row, col) => row * 16384 + col
 
-const isEmptyCell = (cell) => !cell || (cell.input === '' && !cell.format && !cell.style)
+// Formulas and code cells are both computed from other cells.
+const isComputed = (cell) => cell?.kind === 'formula' || cell?.kind === 'code'
+
+const isEmptyCell = (cell) => !cell || (cell.input === '' && !cell.code && !cell.format && !cell.style)
 
 // A formula result as it is stored: a blank reference reads as 0, as in Excel
 // (=A1 with A1 empty shows 0).
@@ -88,6 +92,8 @@ export class Workbook {
     this.rangeEntries = new Map() // formula gid → its entries, for removal
     this.volatile = new Set()
     this.lastRecalc = { evaluated: 0, ms: 0, cycles: [] }
+    // Increases on every change; the page redraws when it changes.
+    this.version = 0
     if (!empty) this.addSheet('Sheet1', { record: false })
   }
 
@@ -118,7 +124,7 @@ export class Workbook {
     const n = num(row, col)
     const cell = sheet.byNum.get(n)
     if (cell && cell.kind !== 'blank') {
-      if (cell.kind === 'formula' && isMatrix(cell.value)) {
+      if (isComputed(cell) && isMatrix(cell.value)) {
         if (cell.spillBlocked) return err('#SPILL!', 'This formula returns ' + cell.value.height + '×' + cell.value.width + ' values, but some of the cells it would spill into are not empty.')
         return cell.value.get(0, 0)
       }
@@ -158,10 +164,12 @@ export class Workbook {
       const key = cellKey(ch.row, ch.col)
       const old = sheet.cells.get(key)
       const before = { sheetId: sheet.id, row: ch.row, col: ch.col }
-      for (const field of ['input', 'format', 'style']) if (field in ch) before[field] = old?.[field] ?? (field === 'input' ? '' : undefined)
+      for (const field of ['input', 'format', 'style', 'code']) if (field in ch) before[field] = old?.[field] ?? (field === 'input' ? '' : undefined)
+      // Typing over a code cell turns it back into an ordinary cell: undo restores the code.
+      if ('input' in ch && !('code' in ch) && old?.code) before.code = old.code
       inverse.push(before)
       // Cells this formula used to spill into lose their values: their readers must update too.
-      const oldSpill = 'input' in ch ? sheet.spills.get(key) : null
+      const oldSpill = 'input' in ch || 'code' in ch ? sheet.spills.get(key) : null
       this.writeCell(sheet, ch.row, ch.col, ch)
       touched.push({ sheet, row: ch.row, col: ch.col })
       if (oldSpill) for (let r = oldSpill.r1; r <= oldSpill.r2; r++) for (let c = oldSpill.c1; c <= oldSpill.c2; c++) touched.push({ sheet, row: r, col: c })
@@ -179,7 +187,7 @@ export class Workbook {
     const key = cellKey(row, col)
     const gid = sheet.id + '!' + key
     const old = sheet.cells.get(key)
-    const cell = { input: old?.input ?? '', format: old?.format, style: old?.style, kind: old?.kind ?? 'blank', value: old?.value ?? null }
+    const cell = { input: old?.input ?? '', format: old?.format, style: old?.style, kind: old?.kind ?? 'blank', value: old?.value ?? null, code: old?.code, output: old?.output, tree: old?.tree, runToken: old?.runToken ?? 0 }
     if ('format' in patch) cell.format = patch.format || undefined
     if ('style' in patch) cell.style = patch.style && Object.keys(patch.style).length ? patch.style : undefined
     if ('input' in patch) {
@@ -190,11 +198,33 @@ export class Workbook {
       cell.tree = parsed.tree ?? null
       cell.parseError = parsed.parseError ?? null
       cell.value = parsed.value
+      cell.code = undefined
+      cell.output = undefined
       // Typing 12% or a date picks a matching format, unless one was set explicitly.
       if (parsed.format && !('format' in patch) && !old?.format) cell.format = parsed.format
       this.unindex(gid)
       this.clearSpill(sheet, key)
       if (cell.kind === 'formula' && cell.tree) this.index(gid, sheet, cell.tree)
+    }
+    if ('code' in patch && patch.code) {
+      // A Python, JavaScript or MATLAB cell: { lang, source }.
+      cell.code = { lang: patch.code.lang, source: String(patch.code.source ?? '') }
+      cell.input = ''
+      cell.kind = 'code'
+      cell.tree = null
+      cell.parseError = null
+      cell.value = null
+      cell.output = undefined
+      this.unindex(gid)
+      this.clearSpill(sheet, key)
+      this.indexCode(gid, sheet, cell.code.source, cell.code.lang)
+    } else if ('code' in patch && !('input' in patch) && old?.code) {
+      cell.code = undefined
+      cell.kind = 'blank'
+      cell.value = null
+      cell.output = undefined
+      this.unindex(gid)
+      this.clearSpill(sheet, key)
     }
     if (isEmptyCell(cell)) { sheet.cells.delete(key); sheet.byNum.delete(num(row, col)) }
     else { sheet.cells.set(key, cell); sheet.byNum.set(num(row, col), cell) }
@@ -209,7 +239,7 @@ export class Workbook {
   }
 
   index(gid, sheet, tree) {
-    const refs = references(tree).map((r) => this.resolveRef(r, sheet)).filter(Boolean)
+    const refs = (tree.refs ?? references(tree)).map((r) => this.resolveRef(r, sheet)).filter(Boolean)
     this.precedents.set(gid, refs)
     for (const r of refs) {
       if (!r.single) { this.indexRange(gid, r); continue }
@@ -218,7 +248,7 @@ export class Workbook {
       this.cellDeps.get(target).add(gid)
     }
     let isVolatile = false
-    walk(tree, (n) => { if (n.type === 'call' && this.functions[n.name]?.volatile) isVolatile = true })
+    if (!tree.refs) walk(tree, (n) => { if (n.type === 'call' && this.functions[n.name]?.volatile) isVolatile = true })
     if (isVolatile) this.volatile.add(gid)
   }
 
@@ -236,6 +266,18 @@ export class Workbook {
     }
     if (!this.rangeEntries.has(gid)) this.rangeEntries.set(gid, [])
     this.rangeEntries.get(gid).push({ sheetId: r.sheetId, entry })
+  }
+
+  // A code cell depends on the cells its xl("…") calls read.
+  indexCode(gid, sheet, source, lang) {
+    const refs = []
+    for (const text of codeReferences(source, lang)) {
+      try {
+        const node = parse(text)
+        if (node.type === 'cell' || node.type === 'range') refs.push(node)
+      } catch { /* not a reference: the run reports it */ }
+    }
+    this.index(gid, sheet, { type: 'group', arg: null, refs })
   }
 
   unindex(gid) {
@@ -259,7 +301,10 @@ export class Workbook {
     this.rangeEntries.clear()
     this.volatile.clear()
     for (const sheet of this.sheets) {
-      for (const [key, cell] of sheet.cells) if (cell.kind === 'formula' && cell.tree) this.index(sheet.id + '!' + key, sheet, cell.tree)
+      for (const [key, cell] of sheet.cells) {
+        if (cell.kind === 'formula' && cell.tree) this.index(sheet.id + '!' + key, sheet, cell.tree)
+        else if (cell.kind === 'code') this.indexCode(sheet.id + '!' + key, sheet, cell.code.source, cell.code.lang)
+      }
     }
   }
 
@@ -311,7 +356,7 @@ export class Workbook {
     this.recalc([], { everything: true })
   }
 
-  recalc(touched, { everything = false } = {}) {
+  recalc(touched, { everything = false, exclude = null } = {}) {
     const started = performance.now()
     let evaluated = 0
     const cycles = []
@@ -320,7 +365,7 @@ export class Workbook {
     // recalculated, so repeat for the cells whose spill changed (bounded, in
     // case two spills keep pushing each other).
     for (let round = 0; round < 20 && (positions.length || (everything && round === 0)); round++) {
-      const dirty = everything && round === 0 ? this.allFormulas() : this.collectDirty(positions)
+      const dirty = everything && round === 0 ? this.allFormulas() : this.collectDirty(positions, exclude)
       if (round === 0) for (const g of this.volatile) dirty.add(g)
       if (!dirty.size) break
       const before = new Map()
@@ -356,24 +401,24 @@ export class Workbook {
 
   allFormulas() {
     const out = new Set()
-    for (const sheet of this.sheets) for (const [key, cell] of sheet.cells) if (cell.kind === 'formula') out.add(sheet.id + '!' + key)
+    for (const sheet of this.sheets) for (const [key, cell] of sheet.cells) if (isComputed(cell)) out.add(sheet.id + '!' + key)
     return out
   }
 
   // The formulas to recalculate when these positions changed: formulas at the
   // positions themselves, and everything that reads them, transitively. Works
   // level by level so a large paste is grouped by column (see readersOf).
-  collectDirty(positions) {
+  collectDirty(positions, exclude = null) {
     const dirty = new Set()
     let found = [...this.readersOf(positions)]
-    for (const { sheet, row, col } of positions) if (sheet.cells.get(cellKey(row, col))?.kind === 'formula') found.push(sheet.id + '!' + cellKey(row, col))
+    for (const { sheet, row, col } of positions) if (isComputed(sheet.cells.get(cellKey(row, col)))) found.push(sheet.id + '!' + cellKey(row, col))
     while (found.length) {
       const covered = []
       for (const gid of found) {
-        if (dirty.has(gid)) continue
+        if (dirty.has(gid) || exclude?.has(gid)) continue
         const [sid, key] = gid.split('!')
         const sheet = this.sheet(sid)
-        if (sheet?.cells.get(key)?.kind !== 'formula') continue
+        if (!isComputed(sheet?.cells.get(key))) continue
         dirty.add(gid)
         // Readers of this formula's cell, or of any cell it spills into.
         const p = keyToPos(key)
@@ -473,11 +518,72 @@ export class Workbook {
     const [sid, key] = gid.split('!')
     const sheet = this.sheet(sid)
     const cell = sheet.cells.get(key)
+    if (cell?.kind === 'code') return this.startCode(gid, sheet, key, cell)
     if (!cell || cell.kind !== 'formula' || !cell.tree) return
     const { row, col } = keyToPos(key)
     const value = settle(evaluate(cell.tree, this.context(sheet, row, col)))
     cell.value = value
     this.placeSpill(sheet, key, row, col, value)
+  }
+
+  // ── Code cells ────────────────────────────────────────────────────────
+  // Code runs in a worker, so its result arrives later: the cell shows #BUSY!
+  // until then, and the cells that read it recalculate when it arrives.
+  // `codeRunner({ lang, source, inputs })` resolves with
+  //   { value } | { rows } | { error, detail }  plus { stdout, figures, ms }.
+  startCode(gid, sheet, key, cell) {
+    const { row, col } = keyToPos(key)
+    const ctx = this.context(sheet, row, col)
+    const inputs = {}
+    for (const text of codeReferences(cell.code.source, cell.code.lang)) {
+      let v
+      try { v = evalNode(parse(text), ctx) } catch { v = err('#REF!', '"' + text + '" is not a cell or range.') }
+      const rows = isMatrix(v) ? v.rows.map((r) => r.map(plainValue)) : [[plainValue(v)]]
+      const bad = rows.flat().find((x) => x && typeof x === 'object' && 'error' in x)
+      if (bad) {
+        // As with formulas, an error in an input is passed on rather than run on.
+        cell.value = err(bad.error, text + ' contains ' + bad.error + ', so this ' + (cell.code.lang === 'py' ? 'Python' : cell.code.lang === 'js' ? 'JavaScript' : 'MATLAB') + ' cell was not run.')
+        cell.output = { skipped: true }
+        this.clearSpill(sheet, key)
+        return
+      }
+      inputs[text] = shapeForCode(rows)
+    }
+    this.clearSpill(sheet, key)
+    if (!this.codeRunner) {
+      cell.value = err('#CALC!', 'Code cells run in the Spreadsheet Lab.')
+      return
+    }
+    const token = ++cell.runToken
+    cell.value = err('#BUSY!')
+    cell.output = { running: true }
+    Promise.resolve()
+      .then(() => this.codeRunner({ lang: cell.code.lang, source: cell.code.source, inputs }))
+      .catch((e) => ({ error: '#CODE!', detail: String(e?.message ?? e) }))
+      .then((result) => this.finishCode(sheet, key, token, result))
+  }
+
+  finishCode(sheet, key, token, result) {
+    const cell = sheet.cells.get(key)
+    // A newer run started, the code changed, or the sheet was deleted: drop this result.
+    if (!cell || cell.kind !== 'code' || cell.runToken !== token || !this.sheets.includes(sheet)) return
+    const { row, col } = keyToPos(key)
+    let value
+    // Workers send rows or a value; a value that is a list or table becomes rows too.
+    const converted = result.error ? result : result.rows ? { rows: result.rows } : sheetValue(result.value)
+    if (converted.error) value = err(converted.error, converted.detail ?? '')
+    else if (converted.rows) value = settle(new Matrix(converted.rows.map((r) => r.map((x) => (x && typeof x === 'object' && 'error' in x ? err(x.error) : x)))))
+    else value = converted.value ?? null
+    cell.value = value
+    cell.output = { stdout: result.stdout ?? '', figures: result.figures ?? [], traceback: result.traceback ?? '', ms: result.ms, error: result.error ? result.detail : null }
+    const before = sheet.spills.get(key)
+    this.placeSpill(sheet, key, row, col, value)
+    const after = sheet.spills.get(key)
+    const positions = [{ sheet, row, col }]
+    for (const region of [before, after]) {
+      if (region) for (let r = region.r1; r <= region.r2; r++) for (let c = region.c1; c <= region.c2; c++) positions.push({ sheet, row: r, col: c })
+    }
+    this.recalc(positions, { exclude: new Set([sheet.id + '!' + key]) })
   }
 
   // ── Spills ────────────────────────────────────────────────────────────
@@ -546,7 +652,7 @@ export class Workbook {
       getSpill(name, r, c) {
         const s = name ? wb.sheet(name) : sheet
         const cell = s?.cells.get(cellKey(r, c))
-        if (!cell || cell.kind !== 'formula') return err('#REF!', cellKey(r, c) + '# refers to a cell that does not contain a formula.')
+        if (!isComputed(cell)) return err('#REF!', cellKey(r, c) + '# refers to a cell that does not contain a formula.')
         if (isMatrix(cell.value) && cell.spillBlocked) return err('#SPILL!')
         return cell.value
       },
@@ -588,7 +694,7 @@ export class Workbook {
   snapshot() {
     return this.sheets.map((s) => ({
       id: s.id, name: s.name, colWidths: { ...s.colWidths }, rowHeights: { ...s.rowHeights },
-      cells: [...s.cells].map(([k, c]) => [k, { input: c.input, format: c.format, style: c.style }]),
+      cells: [...s.cells].map(([k, c]) => [k, { input: c.input, format: c.format, style: c.style, code: c.code }]),
     }))
   }
 
@@ -626,7 +732,7 @@ export class Workbook {
 
   // Moves a sheet's cells along one axis: from `at`, by `count` (negative deletes).
   shiftCells(sheet, axis, at, count) {
-    const entries = [...sheet.cells].map(([k, c]) => [keyToPos(k), { input: c.input, format: c.format, style: c.style }])
+    const entries = [...sheet.cells].map(([k, c]) => [keyToPos(k), { input: c.input, format: c.format, style: c.style, code: c.code }])
     for (const [k] of [...sheet.cells]) { const p = keyToPos(k); this.unindex(sheet.id + '!' + k); sheet.byNum.delete(num(p.row, p.col)) }
     sheet.cells.clear(); sheet.spills.clear(); sheet.spillClaims.clear(); sheet.spillOwner.clear(); sheet.ownerNum.clear()
     const sizes = axis === 'row' ? sheet.rowHeights : sheet.colWidths
@@ -742,7 +848,7 @@ export class Workbook {
         name: s.name,
         colWidths: s.colWidths,
         rowHeights: s.rowHeights,
-        cells: Object.fromEntries([...s.cells].map(([k, c]) => [k, Object.fromEntries(Object.entries({ input: c.input || undefined, format: c.format, style: c.style }).filter(([, v]) => v !== undefined))])),
+        cells: Object.fromEntries([...s.cells].map(([k, c]) => [k, Object.fromEntries(Object.entries({ input: c.input || undefined, format: c.format, style: c.style, code: c.code }).filter(([, v]) => v !== undefined))])),
       })),
     }
   }
@@ -759,7 +865,7 @@ export class Workbook {
     data?.sheets?.forEach((s, i) => {
       for (const [key, c] of Object.entries(s.cells ?? {})) {
         const p = keyToPos(key)
-        if (p) wb.writeCell(wb.sheets[i], p.row, p.col, { input: c.input ?? '', format: c.format, style: c.style })
+        if (p) wb.writeCell(wb.sheets[i], p.row, p.col, { input: c.input ?? '', format: c.format, style: c.style, ...(c.code ? { code: c.code } : {}) })
       }
     })
     wb.rebuildIndex()

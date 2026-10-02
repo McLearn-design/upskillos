@@ -32,7 +32,7 @@ export const ERRORS = {
   '#CYCLE!': { title: 'Circular reference', why: 'This cell depends on itself, directly or through other cells, so there is no order in which to calculate it. (Excel shows a warning and 0; this lab shows the error so it cannot be missed.)', fix: 'Follow the precedents (the cells the formula uses) and break the loop.' },
   '#CALC!': { title: 'Calculation problem', why: 'The function could not produce a result, for example FILTER with no matching rows.', fix: 'Give the function a fallback argument, such as FILTER(A1:A9, B1:B9>5, "none").' },
   '#BUSY!': { title: 'Still calculating', why: 'A Python, JavaScript or MATLAB cell is still running. The value appears when it finishes.', fix: 'Wait a moment. If it never finishes, the code may be stuck in a loop.' },
-  '#CODE!': { title: 'Code error', why: 'A Python, JavaScript or MATLAB cell raised an error.', fix: 'Select the cell to see the error message from the language.' },
+  '#CODE!': { title: 'Code error', why: 'A Python, JavaScript or MATLAB cell raised an error.', fix: 'The message names the problem and the line it happened on. Open the cell\'s Code tab, fix that line and press Run.' },
 }
 
 export const err = (code, detail) => new CellError(code, detail)

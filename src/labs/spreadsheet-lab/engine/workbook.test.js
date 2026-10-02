@@ -269,3 +269,93 @@ describe('inserting and deleting rows, columns and sheets', () => {
     expect(wb.deleteSheet(wb.sheets[0].id)).toMatch(/at least one sheet/)
   })
 })
+
+describe('code cells', () => {
+  // A stand-in for the Python/JavaScript/MATLAB workers: "doubles" each input.
+  const runner = async ({ source, inputs }) => {
+    if (source.includes('boom')) return { error: '#CODE!', detail: 'NameError: boom' }
+    if (source.includes('table')) return { rows: [['x', 'y'], [1, 2]] }
+    const v = Object.values(inputs)[0]
+    return Array.isArray(v) ? { value: v.map((x) => x * 2) } : { value: v * 2 }
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 0))
+
+  it('runs code with its xl() inputs, shows #BUSY! meanwhile, then updates readers', async () => {
+    const { wb, s, get } = book({ A1: '21', C1: '=B1+1' })
+    wb.codeRunner = runner
+    wb.setCells([{ sheetId: s, row: 0, col: 1, code: { lang: 'py', source: 'xl("A1") * 2' } }])
+    expect(get('B1')).toBe('#BUSY!')
+    await settle()
+    expect(get('B1')).toBe(42)
+    expect(get('C1')).toBe(43)
+  })
+
+  it('re-runs when an input changes, and spills lists', async () => {
+    const { wb, s, set, get } = book({ A1: '1', A2: '2' })
+    wb.codeRunner = runner
+    wb.setCells([{ sheetId: s, row: 0, col: 1, code: { lang: 'js', source: 'return xl("A1:A2").map(x => x * 2)' } }])
+    await settle()
+    expect([get('B1'), get('B2')]).toEqual([2, 4])
+    set({ A2: '10' })
+    await settle()
+    expect(get('B2')).toBe(20)
+  })
+
+  it('shows a code error with the message, and passes input errors on without running', async () => {
+    const { wb, s, get } = book({ A1: '=1/0' })
+    wb.codeRunner = runner
+    wb.setCells([{ sheetId: s, row: 0, col: 1, code: { lang: 'py', source: 'boom' } }, { sheetId: s, row: 0, col: 2, code: { lang: 'py', source: 'xl("A1")' } }])
+    await settle()
+    expect(get('B1')).toBe('#CODE!')
+    expect(wb.getValue(s, 0, 1).detail).toMatch(/NameError/)
+    expect(get('C1')).toBe('#DIV/0!')
+    expect(wb.getValue(s, 0, 2).detail).toMatch(/was not run/)
+  })
+
+  it('keeps only the latest result when a cell is re-run before the first finishes', async () => {
+    const { wb, s, set, get } = book({ A1: '1' })
+    let calls = 0
+    wb.codeRunner = ({ inputs }) => new Promise((r) => { const n = ++calls; setTimeout(() => r({ value: inputs.A1 * 100 + n }), n === 1 ? 20 : 0) })
+    wb.setCells([{ sheetId: s, row: 0, col: 1, code: { lang: 'py', source: 'xl("A1")' } }])
+    set({ A1: '2' })
+    await new Promise((r) => setTimeout(r, 40))
+    expect(get('B1')).toBe(202)
+  })
+
+  it('saves code, and typing over a code cell makes it an ordinary cell (undo restores the code)', async () => {
+    const { wb, s, set, get } = book({ A1: '3' })
+    wb.codeRunner = runner
+    wb.setCells([{ sheetId: s, row: 0, col: 1, code: { lang: 'matlab', source: 'xl("A1")' } }])
+    await settle()
+    expect(Workbook.fromJSON(wb.toJSON()).getCell(wb.sheets[0].id, 0, 1)).toBe(null) // ids differ per workbook
+    const copy = Workbook.fromJSON(wb.toJSON())
+    expect(copy.getCell(copy.sheets[0].id, 0, 1).code).toEqual({ lang: 'matlab', source: 'xl("A1")' })
+    set({ B1: 'plain' })
+    expect(get('B1')).toBe('plain')
+    wb.undo()
+    await settle()
+    expect(wb.getCell(s, 0, 1).code.lang).toBe('matlab')
+    expect(get('B1')).toBe(6)
+  })
+
+  it('tells subscribers when a result arrives, so the page redraws', async () => {
+    const { wb, s, set } = book({ A1: '1' })
+    wb.codeRunner = runner
+    wb.setCells([{ sheetId: s, row: 0, col: 1, code: { lang: 'js', source: 'return xl("A1")' } }])
+    await settle()
+    const versions = []
+    wb.subscribe(() => versions.push(wb.version))
+    set({ A1: '5' })
+    await settle()
+    expect(versions).toHaveLength(2) // the edit, then the result
+    expect(Number.isInteger(versions[0]) && versions[1] > versions[0]).toBe(true)
+  })
+
+  it('spills a table returned by code', async () => {
+    const { wb, s, get } = book({})
+    wb.codeRunner = runner
+    wb.setCells([{ sheetId: s, row: 0, col: 0, code: { lang: 'py', source: 'table' } }])
+    await settle()
+    expect([get('A1'), get('B1'), get('A2'), get('B2')]).toEqual(['x', 'y', 1, 2])
+  })
+})

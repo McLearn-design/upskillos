@@ -11,6 +11,7 @@ export const DEFAULT_ROW_H = 24
 export const HEAD_W = 46
 export const HEAD_H = 24
 const OVERSCAN = 3
+const CODE_BADGE = { py: 'PY', js: 'JS', matlab: 'M' }
 
 // starts[i] is where row/column i begins; starts[count] is the total size.
 function prefixSums(count, sizes, fallback) {
@@ -208,7 +209,7 @@ export default function Grid({
       const key = cellKey(r, c)
       const cell = sheet.cells.get(key)
       const value = wb.valueAt(sheet, r, c)
-      if (value === null && !cell?.style?.fill) continue
+      if (value === null && !cell?.style?.fill && cell?.kind !== 'code') continue
       const shown = displayCell(value, cell?.format)
       const style = cell?.style ?? {}
       const align = style.align ?? shown.align
@@ -224,7 +225,7 @@ export default function Grid({
       cells.push(
         <div
           key={key}
-          className={'ss-cell' + (shown.kind === 'error' ? ' is-error' : '') + (overflow ? ' is-overflow' : '') + (spilled ? ' is-spilled' : '')}
+          className={'ss-cell' + (shown.kind === 'error' ? ' is-error' : '') + (overflow ? ' is-overflow' : '') + (spilled ? ' is-spilled' : '') + (cell?.kind === 'code' ? ' is-code' : '')}
           style={{
             left: cols[c], top: rows[r], width, height: rows[r + 1] - rows[r],
             textAlign: align,
@@ -237,6 +238,7 @@ export default function Grid({
           title={shown.kind === 'error' ? value.detail || value.code : undefined}
         >
           {shown.text}
+          {cell?.kind === 'code' && <span className="ss-code-badge">{CODE_BADGE[cell.code.lang]}</span>}
         </div>,
       )
     }

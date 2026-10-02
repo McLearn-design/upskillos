@@ -18,6 +18,8 @@ import SheetTabs from './ui/SheetTabs.jsx'
 import { displayCell } from './ui/display.js'
 import { MAX_GRID_COLS, MAX_GRID_ROWS, cellSelection, clampPos, jumpTarget, moveSelection, selectionLabel, selectionRange } from './ui/selection.js'
 import { sampleWorkbook } from './ui/samples.js'
+import { LANGUAGES, codeLanguageFromInput } from './engine/code.js'
+import { createCodeRuntime } from './runtime/runtime.js'
 import './spreadsheet.css'
 
 const STORE = 'upskillos.spreadsheet-lab.v1'
@@ -51,6 +53,12 @@ export default function SpreadsheetLab() {
   const [edit, setEdit] = useState(null)
   const [caretRequest, setCaretRequest] = useState(null)
   const [inspectorOpen, setInspectorOpen] = useState(() => readJSON(PREFS)?.inspector ?? true)
+  const [inspectorTab, setInspectorTab] = useState('cell')
+  // The workers that run Python, JavaScript and MATLAB cells: one set for the
+  // lab's lifetime, shut down when the lab closes.
+  const runtimeRef = useRef(null)
+  runtimeRef.current ??= createCodeRuntime()
+  const runtime = runtimeRef.current
   const [menu, setMenu] = useState(null)
   const [notice, setNotice] = useState(null)
   const [nameBox, setNameBox] = useState(null)
@@ -64,6 +72,12 @@ export default function SpreadsheetLab() {
     return () => clearTimeout(t)
   }, [wb, version, sheet])
   useEffect(() => writeJSON(PREFS, { inspector: inspectorOpen }), [inspectorOpen])
+  useEffect(() => () => runtime.release(), [runtime])
+  useEffect(() => {
+    wb.codeRunner = runtime.run
+    // A workbook opened with code cells: run them now that there is a runner.
+    if (wb.sheets.some((s) => [...s.cells.values()].some((c) => c.kind === 'code'))) wb.recalcAll()
+  }, [wb, runtime])
   useEffect(() => { if (!notice) return undefined; const t = setTimeout(() => setNotice(null), 5000); return () => clearTimeout(t) }, [notice])
 
   // Immediately, not on the next frame: a delayed focus could land after the
@@ -71,6 +85,18 @@ export default function SpreadsheetLab() {
   const focusGrid = () => gridRef.current?.focus({ preventScroll: true })
   const activeCell = wb.getCell(sheet.id, sel.active.row, sel.active.col)
   const range = selectionRange(sel)
+  const activeIsCode = activeCell?.kind === 'code'
+  // Selecting a code cell shows its code; leaving it goes back to the cell view.
+  useEffect(() => {
+    setInspectorTab((t) => (activeIsCode ? (t === 'cell' ? 'code' : t) : (t === 'code' ? 'cell' : t)))
+  }, [activeIsCode, sel.active.row, sel.active.col, sheet.id])
+
+  const openCode = () => { setInspectorOpen(true); setInspectorTab('code') }
+  const setCode = (row, col, lang, source) => {
+    wb.setCells([{ sheetId: sheet.id, row, col, code: { lang, source } }])
+    setSel(cellSelection(row, col))
+    openCode()
+  }
 
   // A selection of whole rows or columns, clipped to the part of the sheet in use.
   const clipped = (rg) => {
@@ -82,6 +108,8 @@ export default function SpreadsheetLab() {
   // ── Editing ──────────────────────────────────────────────────────────
   const startEdit = (row, col, initial, mode, where = 'cell') => {
     const cell = wb.getCell(sheet.id, row, col)
+    // Editing a code cell means editing its code, in the panel.
+    if (cell?.kind === 'code' && initial === null) { setSel(cellSelection(row, col)); openCode(); return }
     const draft = initial ?? cell?.input ?? ''
     if (sel.active.row !== row || sel.active.col !== col) setSel(cellSelection(row, col))
     setEdit({ sheetId: sheet.id, row, col, draft, caret: draft.length, mode, where, point: null, pointCell: null })
@@ -94,6 +122,12 @@ export default function SpreadsheetLab() {
       const changes = []
       eachCell(clipped(range), (r, c) => changes.push({ sheetId: edit.sheetId, row: r, col: c, input: shiftFormula(edit.draft, r - edit.row, c - edit.col) }))
       wb.setCells(changes)
+    } else if (codeLanguageFromInput(edit.draft) && edit.sheetId === sheet.id) {
+      // =PY( / =JS( / =MATLAB( turns the cell into a code cell, as =PY( does in Excel.
+      const lang = codeLanguageFromInput(edit.draft)
+      setEdit(null)
+      setCode(edit.row, edit.col, lang, LANGUAGES[lang].starter)
+      return
     } else {
       wb.setCells([{ sheetId: edit.sheetId, row: edit.row, col: edit.col, input: edit.draft }])
     }
@@ -239,7 +273,7 @@ export default function SpreadsheetLab() {
       inputs.forEach((input, k) => {
         const at = forward ? b + 1 + k : a - 1 - k
         const from = ordered[k % ordered.length]
-        changes.push({ sheetId: sheet.id, row: vertical ? at : line, col: vertical ? line : at, input, format: from?.format, style: from?.style })
+        changes.push({ sheetId: sheet.id, row: vertical ? at : line, col: vertical ? line : at, input, format: from?.format, style: from?.style, ...(from?.code ? { code: from.code } : {}) })
       })
     }
     wb.setCells(changes)
@@ -255,7 +289,7 @@ export default function SpreadsheetLab() {
       const row = [], line = []
       for (let c = rg.c1; c <= rg.c2; c++) {
         const cell = wb.getCell(sheet.id, r, c)
-        row.push({ input: cell?.input ?? '', format: cell?.format, style: cell?.style })
+        row.push({ input: cell?.input ?? '', format: cell?.format, style: cell?.style, code: cell?.code })
         line.push(displayCell(wb.valueAt(sheet, r, c), cell?.format).text)
       }
       cells.push(row)
@@ -283,6 +317,7 @@ export default function SpreadsheetLab() {
         sheetId: sheet.id, row: at.row + i, col: at.col + j,
         input: clip.cut ? c.input : shiftFormula(c.input, at.row - clip.range.r1, at.col - clip.range.c1),
         format: c.format, style: c.style,
+        ...(c.code ? { code: c.code } : {}),
       })))
       if (clip.cut) clipboard.current = null
     } else {
@@ -463,6 +498,7 @@ export default function SpreadsheetLab() {
         onOpenTour={() => { if (confirmReplace()) replaceBook(sampleWorkbook('tour'), 'The tour workbook is open.') }}
         onImport={() => fileRef.current?.click()}
         onExport={exportCSV}
+        onInsertCode={(lang) => setCode(sel.active.row, sel.active.col, lang, LANGUAGES[lang].starter)}
       />
       <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,text/csv" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) importCSV(f); e.target.value = '' }} />
@@ -480,6 +516,14 @@ export default function SpreadsheetLab() {
           className="h-7 w-24 rounded border border-slate-300 bg-white px-2 font-mono text-xs dark:border-slate-700 dark:bg-slate-900"
         />
         <span className="select-none font-serif text-sm italic text-slate-400" title="The formula bar shows what the selected cell contains">fx</span>
+        {activeIsCode && !edit ? (
+          <button type="button" onClick={openCode}
+            title="This cell holds code. Click to edit it in the Code panel."
+            className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded border border-slate-300 bg-slate-50 px-2 text-left font-mono text-[13px] dark:border-slate-700 dark:bg-slate-900">
+            <span className="rounded bg-emerald-600 px-1 text-[10px] font-bold text-white">{LANGUAGES[activeCell.code.lang].short}</span>
+            <span className="truncate text-slate-600 dark:text-slate-300">{activeCell.code.source.split('\n').find((l) => l.trim() && !/^\s*(#|\/\/|%)/.test(l)) ?? ''}</span>
+          </button>
+        ) : (
         <FormulaInput
           ariaLabel="Formula bar: what the selected cell contains"
           functions={FUNCTIONS}
@@ -494,6 +538,7 @@ export default function SpreadsheetLab() {
           wrapperClassName="min-w-0 flex-1"
           className="h-7 w-full rounded border border-slate-300 bg-white px-2 font-mono text-[13px] dark:border-slate-700 dark:bg-slate-900"
         />
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -529,7 +574,11 @@ export default function SpreadsheetLab() {
             <div role="status" className="pointer-events-none absolute bottom-3 left-1/2 z-20 -translate-x-1/2 rounded-full border border-slate-600 bg-slate-800 px-4 py-1.5 text-xs text-white shadow-lg">{notice}</div>
           )}
         </div>
-        {inspectorOpen && <Inspector wb={wb} sheet={sheet} sel={sel} version={version} onJump={(key) => { const p = parseCell(key); if (p) setSel(cellSelection(p.row, p.col)) }} />}
+        {inspectorOpen && (
+          <Inspector wb={wb} sheet={sheet} sel={sel} version={version} tab={inspectorTab} onTab={setInspectorTab} runtime={runtime}
+            onApplyCode={(source) => wb.setCells([{ sheetId: sheet.id, row: sel.active.row, col: sel.active.col, code: { lang: activeCell.code.lang, source } }])}
+            onJump={(key) => { const p = parseCell(key); if (p) setSel(cellSelection(p.row, p.col)) }} />
+        )}
       </div>
 
       <SheetTabs
