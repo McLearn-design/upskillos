@@ -41,6 +41,9 @@ jobs:
       - name: In-app links use the router
         run: npx vitest run src/components/ui/routerLinks.test.js
 
+      - name: Every lab can be opened
+        run: npx vitest run src/labs/labRegistry.test.js
+
       - name: Build
         run: npm run build
 
