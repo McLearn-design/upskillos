@@ -567,9 +567,9 @@ function ThemeModal({ onClose }) {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {[
-                    { id: 'win10', name: 'Classic (Windows 10)', desc: 'Left-aligned Start button and icons.', icon: '🖥️' },
-                    { id: 'win11', name: 'Modern (Windows 11)', desc: 'Centered Start button and icons.', icon: '🪟' },
-                    { id: 'mac', name: 'Dock (macOS)', desc: 'Centered 3D icons that expand on hover.', icon: '🍏' },
+                    { id: 'win10', name: 'Classic (Windows 10)', desc: 'Left-aligned Start button and icons. Windows minimize, maximize and close buttons.', icon: '🖥️' },
+                    { id: 'win11', name: 'Modern (Windows 11)', desc: 'Centered Start button and icons. Windows minimize, maximize and close buttons. The default.', icon: '🪟' },
+                    { id: 'mac', name: 'Dock (macOS)', desc: 'Centered 3D icons that expand on hover. macOS window dots.', icon: '🍏' },
                   ].map(style => {
                     const isActive = taskbarStyle === style.id;
                     return (

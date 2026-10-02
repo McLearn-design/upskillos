@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { Copy, Minus, Square, X } from 'lucide-react'
 import LabErrorBoundary from '../ui/LabErrorBoundary.jsx'
+import { useGlobalTheme } from '../../context/ThemeContext.jsx'
 
 const PANEL_W = 960
 const PANEL_H = 640
@@ -12,7 +14,7 @@ const TITLE_BAR_MIN_VISIBLE = 80 // px of title bar kept on-screen horizontally 
 
 function MacDots({ onClose, onMinimize, onMaximize, isMaximized }) {
   return (
-    <div className="flex items-center gap-[6px]">
+    <div className="flex items-center gap-[6px]" onDoubleClick={(e) => e.stopPropagation()}>
       <button onClick={onClose} title="Close" aria-label="Close window"
         className="w-3 h-3 rounded-full bg-[#ff5f57] hover:brightness-75 active:brightness-50 transition-all focus:outline-none" />
       <button
@@ -28,7 +30,37 @@ function MacDots({ onClose, onMinimize, onMaximize, isMaximized }) {
   )
 }
 
+// Windows-style caption buttons: labelled symbols on the right of the title bar, which
+// people recognise without knowing the macOS colour code. Used with the Windows taskbar
+// styles (the default); the macOS dock keeps the dots above.
+function WindowsButtons({ onClose, onMinimize, onMaximize, isMaximized }) {
+  const base = 'h-full w-11 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500'
+  // The title bar starts a drag on pointerdown and maximizes on double-click;
+  // neither should happen when the press is on a button.
+  const keepToButton = { onPointerDown: (e) => e.stopPropagation(), onDoubleClick: (e) => e.stopPropagation() }
+  return (
+    <div className="flex h-full items-stretch flex-shrink-0 -mr-3" {...keepToButton}>
+      {!isMaximized && (
+        <button type="button" onClick={onMinimize} title="Minimize" aria-label="Minimize window"
+          className={`${base} hover:bg-black/10 dark:hover:bg-white/10`}>
+          <Minus size={14} />
+        </button>
+      )}
+      <button type="button" onClick={onMaximize} title={isMaximized ? 'Restore' : 'Maximize'} aria-label={isMaximized ? 'Restore window' : 'Maximize window'}
+        className={`${base} hover:bg-black/10 dark:hover:bg-white/10`}>
+        {isMaximized ? <Copy size={12} className="-scale-x-100" /> : <Square size={12} />}
+      </button>
+      <button type="button" onClick={onClose} title="Close" aria-label="Close window"
+        className={`${base} hover:bg-[#e81123] hover:text-white`}>
+        <X size={16} />
+      </button>
+    </div>
+  )
+}
+
 export default function FloatingWindow({ win, zIndex, onClose, onMinimize, onMaximize, onFocus, onDockChange }) {
+  const { taskbarStyle } = useGlobalTheme()
+  const macControls = taskbarStyle === 'mac'
   const offset = (win.offset ?? 0) * 24
   // A lab can request a bigger-than-default window (win.width/height, from
   // its own meta.js) — clamped against the actual screen so a request
@@ -178,16 +210,30 @@ export default function FloatingWindow({ win, zIndex, onClose, onMinimize, onMax
             not translucent — this bar sits at z-1800 above the app's own top bar
             (z-100), and a translucent fill let that page chrome show through. */}
         <div
-          className={isMax
+          className={macControls && isMax
             ? 'flex-shrink-0 h-7 flex items-center px-3 bg-[#e8e8e8] dark:bg-[#2c2c2e]'
-            : 'flex-shrink-0 h-8 flex items-center gap-3 px-3 select-none touch-none cursor-grab active:cursor-grabbing bg-[#e8e8e8] dark:bg-[#2c2c2e] border-b border-black/10 dark:border-white/[0.08]'}
+            : `flex-shrink-0 h-8 flex items-center gap-3 px-3 select-none bg-[#e8e8e8] dark:bg-[#2c2c2e] border-b border-black/10 dark:border-white/[0.08] ${isMax ? '' : 'touch-none cursor-grab active:cursor-grabbing'}`}
           onPointerDown={isMax ? undefined : startDrag}
+          // Double-clicking a title bar maximizes or restores, as on Windows and macOS.
+          onDoubleClick={onMaximize}
+          title={isMax ? 'Double-click to restore' : 'Drag to move · double-click to maximize'}
         >
-          <MacDots onClose={onClose} onMinimize={isMax ? undefined : onMinimize} onMaximize={onMaximize} isMaximized={isMax} />
-          {!isMax && (
-            <span className="flex-1 text-center text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate pr-14">
-              {win.emoji ? `${win.emoji} ` : ''}{win.label}
-            </span>
+          {macControls ? (
+            <>
+              <MacDots onClose={onClose} onMinimize={isMax ? undefined : onMinimize} onMaximize={onMaximize} isMaximized={isMax} />
+              {!isMax && (
+                <span className="flex-1 text-center text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate pr-14">
+                  {win.emoji ? `${win.emoji} ` : ''}{win.label}
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              <span className="flex-1 text-[12px] font-medium text-slate-600 dark:text-slate-300 truncate">
+                {win.emoji ? `${win.emoji} ` : ''}{win.label}
+              </span>
+              <WindowsButtons onClose={onClose} onMinimize={onMinimize} onMaximize={onMaximize} isMaximized={isMax} />
+            </>
           )}
         </div>
         {/* transform creates a containing block so fixed-position lab canvases clip to this window */}

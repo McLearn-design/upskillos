@@ -257,7 +257,6 @@ export default function Taskbar({ windows, onFocus }) {
         <MacCube isMac={taskbarStyle === 'mac'} animationType={macAnimation} frontClass={conceptExplorerOpen ? 'bg-gradient-to-br from-amber-300 to-orange-500 text-white' : 'bg-gradient-to-br from-amber-400 to-orange-600 text-white'}>
           <Lightbulb className={`${taskbarStyle === 'mac' ? 'w-6 h-6 text-white' : 'w-5 h-5'} relative z-10 drop-shadow-md`} />
         </MacCube>
-        {taskbarStyle !== 'mac' && <Lightbulb className="w-5 h-5 relative z-10" />}
       </motion.button>
 
       <motion.button
@@ -463,13 +462,15 @@ export default function Taskbar({ windows, onFocus }) {
             }`}
           >
             <MacCube isMac={taskbarStyle === 'mac'} animationType={macAnimation} frontClass={menuOpen ? 'bg-gradient-to-br from-cyan-400 via-indigo-500 to-purple-600 text-white' : 'bg-gradient-to-br from-cyan-500 via-indigo-500 to-purple-500 text-white'}>
-              <Command className={`${taskbarStyle === 'mac' ? 'w-6 h-6 text-white' : 'w-5 h-5'} relative z-10 drop-shadow-md`} />
+              {/* ⌘ on the macOS dock; a Windows-style grid on the Windows taskbars. */}
+              {taskbarStyle === 'mac'
+                ? <Command className="w-6 h-6 text-white relative z-10 drop-shadow-md" />
+                : <LayoutGrid className="w-5 h-5 relative z-10 drop-shadow-md" />}
             </MacCube>
+            {/* MacCube renders only its children outside the dock, so the icon above is the
+                only one; drawing it again here showed it twice. */}
             {taskbarStyle !== 'mac' && (
-              <>
-                <div className="absolute inset-0 rounded-[12px] bg-gradient-to-b from-white/40 to-transparent pointer-events-none" />
-                <Command className="w-5 h-5 relative z-10" />
-              </>
+              <div className="absolute inset-0 rounded-[12px] bg-gradient-to-b from-white/40 to-transparent pointer-events-none" />
             )}
           </motion.button>
 
