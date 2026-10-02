@@ -1051,7 +1051,8 @@ export default function LessonEngineLab({ onBack }: Props) {
           }}
         />
       )}
-      <LessonJumpTool onJump={openLesson} />
+      {/* Author tool: only in development builds, never on the live site. */}
+      {import.meta.env.DEV && <LessonJumpTool onJump={openLesson} />}
     </div>
   )
 }
@@ -1154,7 +1155,7 @@ function SeriesListView({ ui, onBack, onSelectSeries, completed }: {
       <div className={`flex items-center gap-3 px-4 py-2.5 border-b ${ui.border} ${ui.bg1} shrink-0 shadow-sm z-10 relative`}>
         {onBack && (
           <button type="button" onClick={onBack} className={`text-sm ${ui.txt2} ${ui.hoverTx} bg-transparent border-none cursor-pointer flex items-center gap-1`}>
-            ← Labs
+            ✕ Close
           </button>
         )}
         <span className={`text-sm font-bold ${ui.txt1}`}>Learn to Code</span>
