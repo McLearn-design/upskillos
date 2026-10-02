@@ -4,6 +4,7 @@ import { loadPyodide } from 'pyodide';
 import { Editor } from '../../../engines/mesh/core/Editor';
 import { EditMesh } from '../../../engines/mesh/core/EditMesh';
 import { runScript } from '../../../engines/mesh/core/api';
+import { checkQuiz } from '../../../engines/mesh/core/trace';
 import { skinSource, skinnedSource } from '../../../engines/mesh/core/evaluate';
 import { PROJECTS, PROJECT_GROUPS, openProject, startState, stepText } from './projects';
 import { sampleKeys } from '../../../engines/mesh/core/animation';
@@ -209,6 +210,82 @@ describe('UV and material projects', () => {
     expect(e.scene.get('Open box')!.mesh!.topology()).toMatchObject({ chi: 1, boundaryLoops: 1, genus: 0 });
   });
 
+  it('welding and filling: 20 → 8 vertices by spatial hash, a question across a cell wall', () => {
+    const { e, r } = open('welding-and-filling');
+    expect(r.output).toEqual(['as scanned: 20 vertices, 20 open edges, 5 pieces', 'weld(0): 20 vertices', 'weld(0.001): 8 vertices, 4 open edges, 1 piece']);
+    expect(e.trace?.op).toBe('Merge by distance');
+    const asked = e.trace!.steps.filter((x) => x.quiz);
+    expect(asked).toHaveLength(1);
+    expect(asked[0].label).toMatch(/in a neighbouring cell, so it becomes \d+$/);
+    expect(e.trace!.steps.at(-1)!.label).toBe('12 vertices merged: 20 → 8; faces repointed');
+  });
+
+  it('OBJ files: 1-based lines become 0-based faces, the trace asks for the first face, and it writes back', () => {
+    const { e, r } = open('obj-files');
+    expect(r.output[0]).toBe('read: 5 vertices, 5 faces: [[0,1,2,3],[1,0,4],[2,1,4],[3,2,4],[0,3,4]]');
+    expect(r.output[1].split('\n')).toEqual(['o Pyramid', 'v -1 0 -1', 'v 1 0 -1', 'v 1 0 1', 'v -1 0 1', 'v 0 1.5 0', 's off', 'f 1 2 3 4', 'f 2 1 5', 'f 3 2 5', 'f 4 3 5', 'f 1 4 5', '']);
+    expect(e.trace?.op).toBe('Read OBJ');
+    const q = e.trace!.steps.find((x) => x.quiz)!;
+    expect(q.label).toBe('line 8: f 1 2 3 4 → face 0: 0, 1, 2, 3');
+    expect(q.quiz!.answer).toEqual([0, 1, 2, 3]);
+  });
+
+  it('vectors, dot and cross: the base corner of the pyramid, measured and traced', () => {
+    const { e, r } = open('vectors-dot-cross');
+    expect(r.output).toEqual(['u = 2, 0, 0    v = 1, 1.5, 1', '|u| = 2   |v| = 2.0616   u · v = 2   angle 60.98°', 'u × v = 0, -2, 3   triangle area 1.8028']);
+    expect(e.trace?.op).toBe('Measure angle');
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Vectors', 'Lengths', 'Dot product', 'Angle', 'Cross product']);
+    const qs = e.trace!.steps.filter((x) => x.quiz).map((x) => x.quiz!);
+    expect(checkQuiz(qs[0], [2]).correct).toBe(true);
+    expect(checkQuiz(qs[1], [61]).correct).toBe(true);    // 60.98° to the nearest degree
+    expect(checkQuiz(qs[1], [62]).correct).toBe(false);
+  });
+
+  it('translate, rotate, scale: M = T·R·S traced; v0 and the tip where the lesson says', () => {
+    const { e, r } = open('translate-rotate-scale');
+    expect(r.output).toEqual(['v0 is drawn at 0.634, 0, -1.366', 'v1 is drawn at 2.366, 0, -2.366', 'v2 is drawn at 3.366, 0, -0.634', 'v3 is drawn at 1.634, 0, 0.366', 'v4 is drawn at 2, 3, -1']);
+    expect(e.trace?.op).toBe('Trace the transform');
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Build', 'Build', 'Build', 'Combine', 'Vertices', 'Vertices', 'Vertices', 'Vertices', 'Vertices']);
+    const qs = e.trace!.steps.filter((x) => x.quiz).map((x) => x.quiz!);
+    expect(qs[0].answer).toEqual([2, 0, -1]);
+    expect(checkQuiz(qs[1], [0.634, 0, -1.366]).correct).toBe(true);
+  });
+
+  it('order matters: no shear when stretched then turned; 61.93° when turned then stretched', () => {
+    const { e, r } = open('order-matters');
+    expect(r.output).toEqual(['Stretch then turn: scale 2, 0.5, 0.5   shear 0°', 'Turn then stretch: scale 1.458, 0.5, 1.458   shear 61.928°']);
+    expect(e.trace?.op).toBe('Decompose the matrix');
+    const qs = e.trace!.steps.filter((x) => x.quiz).map((x) => x.quiz!);
+    expect(checkQuiz(qs[0], [1.4577]).correct).toBe(true);
+    expect(checkQuiz(qs[1], [28.07]).correct).toBe(true);
+  });
+
+  it('the determinant: 1 and −1.5, the baked mirror inside out, and the traced expansion', () => {
+    const { e, r } = open('the-determinant');
+    expect(r.output).toEqual(['Stretched: det 1', 'Baked mirror: its mesh holds volume -2 (inside out)', 'Mirrored: det -1.5   its unit-cube mesh fills -1.5 in the world']);
+    expect(e.trace?.op).toBe('Determinant');
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Matrix', 'Expand', 'Triple product', 'Meaning']);
+    expect(e.trace!.steps.filter((x) => x.quiz).map((x) => x.quiz!.answer)).toEqual([[-1.5], [-1.5]]);
+  });
+
+  it('hierarchies: origins down the chain, with questions on the elbow and the hand', () => {
+    const { e, r } = open('hierarchies');
+    expect(r.output).toEqual(["Shoulder's origin in the world: 0, 1, 0", "Elbow's origin in the world: -1, 2.732, 0", "Hand's origin in the world: -2.449, 3.12, 0"]);
+    expect(e.trace?.op).toBe('Trace the world matrix');
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Walk up', 'Root', 'Multiply', 'Multiply']);
+    const qs = e.trace!.steps.filter((x) => x.quiz).map((x) => x.quiz!);
+    expect(checkQuiz(qs[0], [-1, 2.732, 0]).correct).toBe(true);
+    expect(checkQuiz(qs[1], [-2.449, 3.12, 0]).correct).toBe(true);
+  });
+
+  it('hierarchies: clearing the parent keeps the hand where it is', () => {
+    const { e } = open('hierarchies');
+    const hand = e.scene.get('Hand')!;
+    const before = e.scene.worldMatrix(hand).elements.slice(12, 15);
+    expect(e.setParent(hand.id, null)).toBe(true);
+    e.scene.worldMatrix(hand).elements.slice(12, 15).forEach((x, i) => expect(x).toBeCloseTo(before[i], 9));
+  });
+
   it('two lists: the shared pyramid is closed with 5 vertices; the separate one has 16 and tears when its tip moves', () => {
     const { e, r } = open('two-lists');
     expect(r.output).toEqual(['Shared corners: 5 vertices, 5 faces', 'Separate faces: 16 vertices, 5 faces: [[0,1,2,3],[4,5,6],[7,8,9],[10,11,12],[13,14,15]]']);
@@ -362,6 +439,15 @@ describe('guide steps that tick themselves', () => {
     'Tab for edit mode, press 3 for face select, click a face of the bottom-left block': (e) => { edit(e, 'Blocks', 'face', [3]); e.selectLinked(); },
     'Now press 1 for vertex select, click a corner of the same block': (e) => { edit(e, 'Blocks', 'vert', [0]); e.selectLinked(); },
     'Make a hole: select the Closed cube': (e) => { edit(e, 'Closed cube', 'face', [0]); e.deleteElements(); },
+    'Merge Your box: select it': (e) => { e.selectObject(obj(e, 'Your box').id); e.enterEdit(); expect(e.mergeByDistance(0.001)).toBe(true); },
+    'Close it: press 1 for vertex select': (e) => { e.selectObject(obj(e, 'Your box').id); e.enterEdit(); expect(e.mergeByDistance(0.001)).toBe(true); const m = obj(e, 'Your box').mesh!; e.setSelectMode('vert'); m.verts.forEach((v, i) => { if (v[1] > 0.5) e.selectElement(i, true); }); expect(e.fill()).toBe(true); },
+    'Change the model and see the file change': (e) => { edit(e, 'Pyramid', 'face', [0]); expect(e.flip()).toBe(true); },
+    'Measure the tip: Tab for edit mode': (e) => { edit(e, 'Pyramid', 'edge', [EditMesh.edgeKey(4, 0), EditMesh.edgeKey(4, 1)]); expect(e.measureAngle()).toBe(true); expect(e.lastMeasure!.degrees).toBeCloseTo(58.03, 2); },
+    'Set Rotation Y to 90 in the Inspector': (e) => { runScript(e, `scene.get('Pyramid').rotation.y = Math.PI / 2`); e.selectObject(obj(e, 'Pyramid').id); expect(e.traceTransformOf()).toBe(true); },
+    'Fix it: select Stretcher': (e) => { runScript(e, `scene.get('Stretcher').scale = [1, 1, 1]; scene.get('Turn then stretch').scale = [2, 0.5, 0.5]`); e.selectObject(obj(e, 'Turn then stretch').id); expect(e.decomposeOf()).toBe(true); },
+    'Baked mirror has its mirror in its vertices': (e) => { e.selectObject(obj(e, 'Baked mirror').id); e.enterEdit(); e.selectAllElements(); expect(e.flip()).toBe(true); },   // as the guide says: Tab, A, Flip normals
+    'Turn the Elbow: select it and set Rotation Z to 90': (e) => { runScript(e, `scene.get('Elbow').rotation.z = Math.PI / 2`); e.selectObject(obj(e, 'Hand').id); expect(e.traceWorldOf()).toBe(true); },
+    'Unparent the Hand with Object › Clear parent': (e) => { expect(e.setParent(obj(e, 'Hand').id, null)).toBe(true); },
     'Find the rim: Edit › Select non-manifold': (e) => { e.selectObject(obj(e, 'Open box').id); expect(e.selectNonManifold()).toBe(true); },
     'Fix the last one: Tab for edit mode': (e) => { edit(e, 'Pyramid', 'face', [3]); expect(e.flip()).toBe(true); },
     'Select the left Pyramid': (e) => { runScript(e, `scene.get('Pyramid').mesh.translate([4], [0, 1, 0])`); },

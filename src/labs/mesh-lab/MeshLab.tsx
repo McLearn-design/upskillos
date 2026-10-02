@@ -304,7 +304,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     Mesh: [
       ['Extrude', () => editor.extrude(0.5), 'E'], ['Inset (region)', () => editor.insetRegion(0.1), 'I'], ['Inset individual faces', () => editor.inset(0.25)], ['Bevel edges', () => editor.bevel(0.1, 1), 'Ctrl+B'], ['Loop cut', loopCut, 'Ctrl+R'], ['Knife (drag a line)', () => vp?.armKnife(true), 'K'],
       ['Subdivide faces', () => editor.split()], ['Subdivide smooth (Catmull–Clark)', () => editor.smoothSubdivide()],
-      ['Fill (close a hole)', () => editor.fill(), 'F'], ['Merge at centre', () => editor.merge(), 'M'], ['Smooth vertices', () => editor.smoothVerts(5, 0.5)], ['Flip normals', () => editor.flip()], ['Dissolve', () => editor.dissolve(), 'Ctrl+X'], ['Delete', () => editor.deleteElements(), 'X'],
+      ['Fill (close a hole)', () => editor.fill(), 'F'], ['Merge at centre', () => editor.merge(), 'M'], ['Merge by distance (0.001)', () => editor.mergeByDistance(0.001)], ['Measure angle (two edges at a corner)', () => editor.measureAngle()], ['Smooth vertices', () => editor.smoothVerts(5, 0.5)], ['Flip normals', () => editor.flip()], ['Dissolve', () => editor.dissolve(), 'Ctrl+X'], ['Delete', () => editor.deleteElements(), 'X'],
     ],
     UV: [
       ['Mark seam (selected edges)', () => editor.markSeams(true)], ['Clear seam', () => editor.markSeams(false)],
@@ -325,6 +325,10 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       ['Shade smooth', () => o && editor.setSmooth(o.id, true)], ['Shade flat', () => o && editor.setSmooth(o.id, false)],
       ['Add mirror modifier', () => o && editor.addModifier(o.id, 'mirror')], ['Add subdivision modifier', () => o && editor.addModifier(o.id, 'subsurf')],
       ['Apply modifiers', () => o && editor.applyModifiers(o.id)], ['Clear parent', () => o && editor.setParent(o.id, null)],
+      ['Trace the transform (T·R·S)', () => { if (editor.traceTransformOf()) setTab('trace'); }],
+      ['Decompose the matrix', () => { if (editor.decomposeOf()) setTab('trace'); }],
+      ['Determinant of the matrix', () => { if (editor.determinantOf()) setTab('trace'); }],
+      ['Trace the world matrix (parents)', () => { if (editor.traceWorldOf()) setTab('trace'); }],
       ['Insert keyframe', () => { editor.insertKey(); setTab('timeline'); }, 'I'], ['Clear animation', () => o && editor.clearAnimation(o.id)],
       ['Bind to armature (automatic weights)', () => editor.bindToArmature(), 'Ctrl+P'], ['Unbind from armature', () => o?.skin && editor.unbind(o.id)],
       ['Pose mode (armature)', () => editor.enterPose(), 'Tab'], ['Clear pose', () => editor.resetPose(), 'Alt+R'],

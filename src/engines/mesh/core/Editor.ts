@@ -17,6 +17,7 @@ import { defaultModifier, evaluate, onMirrorPlane, type Modifier } from './modif
 import { applyBonePatch, bindSkin, evaluatedMesh, removeBone, skinnedSource, skinSource, skinState } from './evaluate';
 import { catmullClark } from './subdivision';
 import { Trace } from './trace';
+import { traceDecompose, traceDeterminant, traceTransform, traceWorld } from './transformTrace';
 import { computeField, type FieldResult, type FieldSpec } from './fields';
 import { smooth as smoothMesh } from './geometry';
 import { CHANNELS, hasKeys, posesAt, removeBoneKey, removeKey, setBoneKey, setKey, transformAt, type Channel, type Interp } from './animation';
@@ -668,6 +669,80 @@ export class Editor {
     return true;
   }
 
+  /** Trace how the active object's matrix M = T·R·S moves its vertices (Object › Trace the transform). */
+  traceTransformOf(): boolean {
+    const o = this.activeObject;
+    if (!o?.mesh) { this.say('Trace the transform: select a mesh object first'); return false; }
+    const trace = new Trace('Trace the transform');
+    if (o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    traceTransform(o, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${o.name}: M = T·R·S, traced in the Algorithm trace`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Decompose the active object's world matrix, traced (Object › Decompose the matrix). */
+  decomposeOf(): boolean {
+    const o = this.activeObject;
+    if (!o) { this.say('Decompose the matrix: select an object first'); return false; }
+    const trace = new Trace('Decompose the matrix');
+    if (o.mesh && o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const d = traceDecompose(this.scene.worldMatrix(o).elements, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${o.name}: position (${d.position.map((x) => +x.toFixed(3)).join(', ')}), scale (${d.scale.map((x) => +x.toFixed(3)).join(', ')})${d.shearDeg > 1e-6 ? `, shear ${d.shearDeg.toFixed(2)}°` : ''}`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Work out the active object's world determinant, traced (Object › Determinant of the matrix). */
+  determinantOf(): boolean {
+    const o = this.activeObject;
+    if (!o) { this.say('Determinant: select an object first'); return false; }
+    const trace = new Trace('Determinant');
+    if (o.mesh && o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const d = traceDeterminant(this.scene.worldMatrix(o).elements, o.mesh?.stats().closed ? o.mesh.volume() : null, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${o.name}: det = ${+d.det.toFixed(4)}${d.det < 0 ? ' (mirrored)' : ''}`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace how the active object's world matrix is built up its parent chain (Object › Trace the world matrix). */
+  traceWorldOf(): boolean {
+    const o = this.activeObject;
+    if (!o) { this.say('Trace the world matrix: select an object first'); return false; }
+    const trace = new Trace('Trace the world matrix');
+    if (o.mesh && o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const w = traceWorld(this.scene, o, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${o.name}: ${w.chain.join(' → ')}; origin at (${w.origins.at(-1)!.map((x) => +x.toFixed(3)).join(', ')})`;
+    this.emit('select');
+    return true;
+  }
+
+  /** The last Mesh › Measure angle result, for the interface and guide steps. */
+  lastMeasure: { object: string; corner: number; degrees: number; dot: number } | null = null;
+
+  /** Measure the angle between two selected edges that share a vertex (edit mode, edge select). Traced. */
+  measureAngle(): boolean {
+    const o = this.editObject;
+    if (!o?.mesh) { this.say('Measure angle: Tab into edit mode on a mesh first'); return false; }
+    const es = this.selectedEdges();
+    if (es.length !== 2) { this.say('Measure angle: select exactly two edges that meet at a corner (press 2 for edge select)'); return false; }
+    const corner = es[0].find((v) => es[1].includes(v));
+    if (corner === undefined) { this.say('Measure angle: the two edges must share a vertex'); return false; }
+    const a = es[0][0] === corner ? es[0][1] : es[0][0], c = es[1][0] === corner ? es[1][1] : es[1][0];
+    const trace = this.traceEnabled ? new Trace('Measure angle') : undefined;
+    if (trace && o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const m = o.mesh.measure(a, corner, c, trace);
+    if (trace && trace.steps.length) { this.trace = trace; this.traceTarget = o.id; this.emit('trace'); }
+    this.lastMeasure = { object: o.name, corner, degrees: m.degrees, dot: m.dot };
+    this.message = `Angle at v${corner}: ${m.degrees.toFixed(2)}° (u · v = ${+m.dot.toFixed(4)}, |u| = ${+m.lu.toFixed(4)}, |v| = ${+m.lv.toFixed(4)})`;
+    this.emit('select');
+    return true;
+  }
+
   /**
    * Select everything connected to the current selection (Ctrl+L). In face select it follows shared edges, by
    * breadth-first search over the face graph (traced); in vertex and edge select it follows faces through any
@@ -895,11 +970,28 @@ export class Editor {
       const plan = o.mesh.fillPlan(this.selectedVerts());
       if (typeof plan === 'string') { this.say(`Fill: ${plan}`); return false; }
     }
-    return this.meshOp('Fill', 'verts', (o, m, verts) => {
-      const f = m.fill(verts as number[]);
+    return this.meshOp('Fill', 'verts', (o, m, verts, t) => {
+      const f = m.fill(verts as number[], t);
       if (this.selectMode === 'face') { this.sel.faces.clear(); this.sel.faces.add(f); }
       return `${ref(o)}.mesh.fill(${lit(verts)})`;
-    });
+    }, 'Fill');
+  }
+
+  /**
+   * Merge vertices closer than a distance (Blender's Merge by Distance): the whole mesh in edit mode. Traced: the
+   * spatial hash that finds each match. The distance can be changed afterwards in Adjust.
+   */
+  mergeByDistance(distance = 0.001): boolean {
+    let merged = 0;
+    const ok = this.meshOp('Merge by distance', 'none', (o, m, _items, t) => {
+      const before = m.verts.length;
+      m.weld(distance, t);
+      merged = before - m.verts.length;
+      this.clearElements(false);
+      return `${ref(o)}.mesh.weld(${distance})`;
+    }, 'Merge by distance');
+    if (ok) { this.message = `Merge by distance (${distance}): ${merged} vert${merged === 1 ? 'ex' : 'ices'} merged`; this.remember('Merge by distance', { distance }, (p) => this.mergeByDistance(Math.max(0, p.distance))); this.emit('select'); }
+    return ok;
   }
 
   flip(): boolean {

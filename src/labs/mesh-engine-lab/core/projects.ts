@@ -470,10 +470,10 @@ log('tolerance boundary is, and a hue ramp then draws it somewhere else.')`,
 export function openProject(editor: Editor, p: ExampleProject, py?: PyodideLike): { error: string | null; output: string[] } {
   editor.newScene();
   for (const o of [...editor.scene.objects]) if (o.mesh) editor.scene.remove(o.id);
-  if (p.setup.trace) editor.tracing = true;
+  if (p.setup.trace) editor.traceEnabled = true;
 
   const r = p.lang === 'python'
-    ? (py ? runPython(editor, p.code, py) : { error: 'Python is still loading', output: [] })
+    ? (py ? runPython(editor, py, p.code) : { error: 'Python is still loading', output: [] })
     : runScript(editor, p.code);
 
   if (!r.error && p.setup.select) {

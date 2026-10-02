@@ -11,10 +11,13 @@
 //
 // show({ verts, faces, groups }) colours each face by its group (groups[i] is face i's piece number), from a
 // palette of eight colours, with no normals.
+//
+// show({ verts, faces, values }) shades each face by values[i], from 0 (black) to 1 (white), with no lights at
+// all: the picture is exactly the numbers the cell computed.
 
 export const PICTURE = `
 // ── drawing (you can leave this part alone) ─────────────────────────────────
-function show({ verts, faces, normals = true, edges = false, groups = null }) {
+function show({ verts, faces, normals = true, edges = false, groups = null, values = null }) {
     const PALETTE = [0x4f8fd9, 0xf59e0b, 0x10b981, 0xd946ef, 0xef4444, 0x14b8a6, 0xa3e635, 0x94a3b8];
   (async () => {
     const THREE = await import('https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js');
@@ -49,9 +52,10 @@ function show({ verts, faces, normals = true, edges = false, groups = null }) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       g.computeVertexNormals();
-      model.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: groups ? PALETTE[groups[fi] % PALETTE.length] : edges ? 0x94a3b8 : out ? 0x4f8fd9 : 0xd94f4f, side: THREE.DoubleSide, flatShading: true, polygonOffset: true, polygonOffsetFactor: 1, transparent: edges, opacity: edges ? 0.55 : 1, depthWrite: !edges })));
+      if (values) { const t = Math.max(0, Math.min(1, values[fi])); model.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: new THREE.Color(t, t, t), side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1 }))); }
+      else model.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: groups ? PALETTE[groups[fi] % PALETTE.length] : edges ? 0x94a3b8 : out ? 0x4f8fd9 : 0xd94f4f, side: THREE.DoubleSide, flatShading: true, polygonOffset: true, polygonOffsetFactor: 1, transparent: edges, opacity: edges ? 0.55 : 1, depthWrite: !edges })));
       if (!edges) model.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0x1e293b })));
-      if (normals && !edges && !groups) model.add(new THREE.ArrowHelper(new THREE.Vector3(...u), new THREE.Vector3(...c), 0.7, out ? 0x1d4ed8 : 0xb91c1c, 0.18, 0.1));
+      if (normals && !edges && !groups && !values) model.add(new THREE.ArrowHelper(new THREE.Vector3(...u), new THREE.Vector3(...c), 0.7, out ? 0x1d4ed8 : 0xb91c1c, 0.18, 0.1));
     }
     if (edges) {
       // The edge table: each edge once, under its two vertex numbers smallest first, with how many faces it is on.

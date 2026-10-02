@@ -18,6 +18,8 @@ import { makePrimitive, type PrimitiveParams, type PrimitiveType } from './primi
 import { defaultModifier, evaluate, onMirrorPlane, type Modifier } from './modifiers';
 import { catmullClark } from './subdivision';
 import { Trace } from './trace';
+import { exportOBJ, parseOBJ } from './formats';
+import { traceDecompose, traceDeterminant, traceTransform, traceWorld } from './transformTrace';
 import { Recorder, brief, instrument, type Recording } from './recorder';
 import { gaussianCurvature, heatGeodesic, meanCurvature, operators, smooth as smoothMesh } from './geometry';
 import type { FieldSpec } from './fields';
@@ -114,6 +116,8 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       pieces: () => m().pieces(trace('Pieces', o)),
       /** V, E, F, χ = V − E + F, pieces, boundary loops and genus (traced with Record traces on). */
       topology: () => m().topology(trace('Euler characteristic', o)),
+      /** The angle at corner b between the edges to a and c, with the vectors, dot and cross products (traced with Record traces on). */
+      measure: (a: number, b: number, c: number) => m().measure(a, b, c, trace('Measure angle', o)),
       /** The index of the vertex nearest a point (local coordinates). */
       nearest(p: Vec3) {
         let best = -1, bd = Infinity;
@@ -155,9 +159,9 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
         return knifeCut(m(), line, knifeFaces(m(), line.eye, !!p.through), trace('Knife', o));
       },
       /** Close a hole with one face: the vertices round it, in any order. Returns the new face's index. */
-      fill(verts: number[]) { return m().fill(verts); },
+      fill(verts: number[]) { return m().fill(verts, trace('Fill', o)); },
       flip(faces?: number[]) { m().flip(faces, trace('Flip normals', o)); return api; },
-      weld(tol = 0) { m().weld(tol); return api; },
+      weld(tol = 0) { m().weld(tol, tol > 0 ? trace('Merge by distance', o) : undefined); return api; },
       translate(verts: number[], d: Vec3) { m().translateVerts(verts, d); return api; },
       setVerts(map: Record<number, Vec3>) { for (const [i, p] of Object.entries(map)) m().verts[Number(i)] = [p[0], p[1], p[2]]; m().touch(); return api; },
       // Geometry processing: one number per vertex, as a plain array.
@@ -246,6 +250,14 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       get scale() { return scl; }, set scale(v: ArrayLike<number> | Vec3Handle) { assign(o.scale, v); },
       get visible() { return o.visible; }, set visible(v: boolean) { o.visible = !!v; },
       get smooth() { return o.smooth; }, set smooth(v: boolean) { o.smooth = !!v; },
+      /** How the object's matrix M = T·R·S moves its vertices (traced with Record traces on): M, and each vertex where it is drawn. */
+      traceTransform() { return traceTransform(o, trace('Trace the transform', o)); },
+      /** Take the object's world matrix apart into position, scale and rotation, and measure any shear (traced with Record traces on). */
+      decompose() { return traceDecompose(scene().worldMatrix(o).elements, trace('Decompose the matrix', o)); },
+      /** The determinant of the object's world matrix, worked out, and the volume its mesh fills in the world (traced with Record traces on). */
+      /** How the world matrix is built up the parent chain, and where each origin lands (traced with Record traces on). */
+      traceWorld() { return traceWorld(scene(), o, trace('Trace the world matrix', o)); },
+      determinant() { return traceDeterminant(scene().worldMatrix(o).elements, o.mesh?.stats().closed ? o.mesh.volume() : null, trace('Determinant', o)); },
       /** Turn to face a point (world coordinates): a camera or light looks at it along its −z axis. */
       lookAt(target: ArrayLike<number> | Vec3Handle) {
         const world = scene().worldMatrix(o), eye = [world.elements[12], world.elements[13], world.elements[14]] as Vec3;
@@ -393,6 +405,13 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
   add.empty = (p: Record<string, unknown> = {}) => objHandle(scene().add({ name: String(p.name ?? 'Empty'), kind: 'empty', ...placed(p) }));
   add.mesh = (p: Record<string, unknown> = {}) => objHandle(scene().add({ name: String(p.name ?? 'Mesh'), mesh: new EditMesh(((p.verts as Vec3[]) ?? []).map((v) => vec(v)), ((p.faces as number[][]) ?? []).map((f) => Array.from(f, Number))), ...placed(p) }));
 
+  /** Read OBJ text into new objects (traced with Record traces on); returns their handles. */
+  const readOBJ = (text: string) => {
+    const t = editor.traceEnabled ? new Trace('Read OBJ') : undefined;
+    const made = parseOBJ(String(text), t).map((o) => scene().add({ name: o.name, mesh: new EditMesh(o.verts, o.faces) }));
+    if (t && t.steps.length) { editor.trace = t; if (made[0]) editor.traceTarget = made[0].id; }
+    return made.map((o) => objHandle(o));
+  };
   const sceneApi = {
     add,
     // Short forms, matching the spec's example: scene.addCube({ size: 10 }).
@@ -400,6 +419,10 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
     addSphere: (p?: Record<string, unknown>) => add.uvSphere(p),
     get(nameOrId: string) { const o = scene().get(nameOrId); if (!o) throw new Error(`No object called "${nameOrId}"`); return objHandle(o); },
     find(nameOrId: string) { const o = scene().get(nameOrId); return o ? objHandle(o) : null; },
+    /** The visible meshes as OBJ text, as File › Export OBJ writes it (without its two header lines, which carry the date). */
+    /** Read OBJ text into new objects (traced with Record traces on); returns their handles. */
+    fromOBJ(text: string) { return readOBJ(text); },
+    toOBJ() { return exportOBJ(scene()).split('\n').slice(2).join('\n'); },
     get objects() { return scene().objects.map(objHandle); },
     get selected() { return [...editor.selected].map((id) => scene().get(id)).filter(Boolean).map((o) => objHandle(o!)); },
     get active() { const o = editor.activeObject; return o ? objHandle(o) : null; },
