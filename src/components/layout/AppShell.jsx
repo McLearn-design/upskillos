@@ -476,7 +476,7 @@ export default function AppShell({ children }) {
         <div
           className={`h-screen overflow-hidden ${isCadProRoute || isFiveAxisRoute || isCodeLensRoute || isLearnRoute ? "bg-[#08111f]" : "bg-white dark:bg-slate-950"}`}
         >
-          <div className="h-[calc(100vh-44px)] w-full overflow-hidden">
+          <div className="h-[calc(100vh-var(--dock-space))] w-full overflow-hidden">
             {children ?? <Outlet />}
           </div>
           <Suspense fallback={null}>
@@ -639,7 +639,7 @@ export default function AppShell({ children }) {
 
           {/* Main content */}
           <main
-            className={`transition-[padding] duration-500 ease-in-out ${isChemistryRoute || isFullPageToolRoute || isScrollableFullPageRoute ? "flex flex-col h-[calc(100vh-44px)] overflow-hidden" : isFullWidthRoute ? "min-h-screen pb-4 lg:pb-11" : isDesktopRoute && !isMobile ? "h-screen" : "min-h-screen pb-4 lg:pb-11"} ${isHealthRoute || isBrainRoute ? "bg-white dark:bg-slate-950" : ""} lg:pl-0 pt-[52px]`}
+            className={`transition-[padding] duration-500 ease-in-out ${isChemistryRoute || isFullPageToolRoute || isScrollableFullPageRoute ? "flex flex-col h-[calc(100vh-44px)] overflow-hidden" : isFullWidthRoute ? "min-h-screen pb-4 lg:pb-[var(--dock-space)]" : isDesktopRoute && !isMobile ? "h-screen" : "min-h-screen pb-4 lg:pb-[var(--dock-space)]"} ${isHealthRoute || isBrainRoute ? "bg-white dark:bg-slate-950" : ""} lg:pl-0 pt-[52px]`}
             style={{
               paddingRight: scratchSnap === "right" ? `${scratchSnapW}px` : undefined,
               ...(scratchSnap === "left"

@@ -779,7 +779,7 @@ ${codeToRun}
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-row h-screen bg-[#050505] text-slate-100 overflow-hidden font-sans selection:bg-indigo-500/30">
+    <div className="flex flex-row h-full bg-[#050505] text-slate-100 overflow-hidden font-sans selection:bg-indigo-500/30">
 
       {/* Left Pane */}
       <div className="flex flex-col border-r border-white/5 shrink-0 relative z-20 shadow-[10px_0_40px_rgba(0,0,0,0.5)]" style={{ width: leftWidth }}>

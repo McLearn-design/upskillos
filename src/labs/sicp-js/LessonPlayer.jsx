@@ -613,7 +613,7 @@ export default function LessonPlayer({ lesson, onBack, onNext, nextTitle, series
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-screen bg-[#050505] text-slate-100 overflow-hidden font-sans selection:bg-indigo-500/30">
+    <div className="flex flex-col h-full bg-[#050505] text-slate-100 overflow-hidden font-sans selection:bg-indigo-500/30">
 
       {/* 1. Header (Nav + Title + Progress) */}
       <div className="flex items-center gap-4 px-4 py-2 border-b border-white/10 bg-black/50 backdrop-blur-md shrink-0 z-50">

@@ -13,10 +13,18 @@
 @tailwind components;
 @tailwind utilities;
 
+@media (min-width: 1024px) {
+  :root { --dock-space: 72px; }
+}
+
 @layer base {
   :root {
     --sidebar-width: 280px;
     --topbar-height: 60px;
+    /* Room kept free for the fixed dock (Taskbar), which only shows on large
+       screens. Pages pad their bottom by this, and full-height pages subtract
+       it, so the dock never covers their last row of content. */
+    --dock-space: 0px;
     
     /* Default Tailwind Slate */
     --tw-custom-slate-50: 248 250 252;
