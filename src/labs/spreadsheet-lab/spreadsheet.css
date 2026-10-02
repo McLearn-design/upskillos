@@ -1,0 +1,73 @@
+/* The grid draws hundreds of cells, so it uses plain classes rather than
+   long Tailwind strings on every cell. Colours are variables so dark mode is
+   one block below. */
+.ss-root {
+  --ss-bg: #ffffff;
+  --ss-grid: #e2e8f0;
+  --ss-header-bg: #f8fafc;
+  --ss-header-text: #64748b;
+  --ss-header-active-bg: #e0f2fe;
+  --ss-header-active-text: #0369a1;
+  --ss-text: #0f172a;
+  --ss-select-fill: rgba(14, 165, 233, 0.10);
+  --ss-select-border: #0284c7;
+  --ss-error: #b91c1c;
+  --ss-spill-border: #7c3aed;
+  --ss-ref-colors: #2563eb, #dc2626, #7c3aed, #16a34a, #c2410c, #0891b2;
+}
+.dark .ss-root {
+  --ss-bg: #0b1120;
+  --ss-grid: #1e293b;
+  --ss-header-bg: #0f172a;
+  --ss-header-text: #94a3b8;
+  --ss-header-active-bg: #0c4a6e;
+  --ss-header-active-text: #e0f2fe;
+  --ss-text: #e2e8f0;
+  --ss-select-fill: rgba(56, 189, 248, 0.14);
+  --ss-select-border: #38bdf8;
+  --ss-error: #f87171;
+  --ss-spill-border: #a78bfa;
+}
+
+.ss-grid { position: relative; overflow: hidden; background: var(--ss-bg); color: var(--ss-text); outline: none; user-select: none; font-size: 13px; }
+.ss-scroller { position: absolute; overflow: auto; overscroll-behavior: contain; }
+.ss-headers { position: absolute; overflow: hidden; background: var(--ss-header-bg); z-index: 5; }
+.ss-corner { position: absolute; left: 0; top: 0; background: var(--ss-header-bg); border-right: 1px solid var(--ss-grid); border-bottom: 1px solid var(--ss-grid); z-index: 6; cursor: pointer; }
+
+.ss-head {
+  position: absolute; display: flex; align-items: center; justify-content: center;
+  color: var(--ss-header-text); font-size: 11px; font-variant-numeric: tabular-nums;
+  border-right: 1px solid var(--ss-grid); border-bottom: 1px solid var(--ss-grid); box-sizing: border-box; cursor: default;
+}
+.ss-head.is-active { background: var(--ss-header-active-bg); color: var(--ss-header-active-text); font-weight: 600; }
+.ss-resize { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 2; }
+.ss-resize-row { position: absolute; left: 0; bottom: -3px; height: 6px; width: 100%; cursor: row-resize; z-index: 2; }
+
+.ss-cell {
+  position: absolute; box-sizing: border-box; padding: 0 5px; line-height: 23px;
+  border-right: 1px solid var(--ss-grid); border-bottom: 1px solid var(--ss-grid);
+  white-space: nowrap; overflow: hidden; text-overflow: clip;
+}
+.ss-cell.is-overflow { z-index: 1; background: var(--ss-bg); overflow: visible; border-right-color: transparent; }
+.ss-cell.is-error { color: var(--ss-error); font-weight: 600; }
+.ss-cell.is-error::after {
+  content: ''; position: absolute; left: 0; top: 0; border-style: solid; border-width: 6px 6px 0 0;
+  border-color: var(--ss-error) transparent transparent transparent;
+}
+.ss-cell.is-spilled { font-style: normal; }
+
+.ss-selection { position: absolute; pointer-events: none; border: 1px solid var(--ss-select-border); background: var(--ss-select-fill); z-index: 3; }
+.ss-active { position: absolute; pointer-events: none; border: 2px solid var(--ss-select-border); z-index: 4; }
+.ss-spill-outline { position: absolute; pointer-events: none; border: 1px dashed var(--ss-spill-border); z-index: 3; }
+.ss-ref-outline { position: absolute; pointer-events: none; border: 2px solid; z-index: 3; }
+.ss-fill-handle {
+  position: absolute; width: 7px; height: 7px; background: var(--ss-select-border); border: 1px solid var(--ss-bg);
+  z-index: 6; cursor: crosshair;
+}
+.ss-fill-preview { position: absolute; pointer-events: none; border: 1px dashed var(--ss-select-border); z-index: 4; }
+
+.ss-editor {
+  position: absolute; z-index: 7; box-sizing: border-box; padding: 0 4px; font: inherit; line-height: 21px;
+  border: 2px solid var(--ss-select-border); background: var(--ss-bg); color: var(--ss-text); outline: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}

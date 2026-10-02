@@ -166,3 +166,27 @@ function formatDate(serial, section) {
   }
   return out
 }
+
+// The toolbar's "more/fewer decimals" buttons: change how many decimal places
+// a format code shows. General has no fixed decimals, so it starts from the
+// decimals the value currently shows.
+export function adjustDecimals(code, delta, value) {
+  let c = code || 'General'
+  if (c === 'General') {
+    const shown = typeof value === 'number' ? formatGeneral(value) : '0'
+    const d = /\.(\d+)/.exec(shown)?.[1].length ?? 0
+    c = d ? '0.' + '0'.repeat(d) : '0'
+  }
+  return splitSections(c).map((section) => {
+    if (/[ymdhs]/i.test(section.replace(/"[^"]*"/g, '').replace(/\[[^\]]*\]/g, ''))) return section // dates and times ([Red] is a colour, not a date)
+    const m = /\.(0*)/.exec(section)
+    if (m) {
+      const n = Math.max(0, m[1].length + delta)
+      return section.replace(/\.0*/, n ? '.' + '0'.repeat(n) : '')
+    }
+    if (delta <= 0) return section
+    // No decimal point yet: add one after the last digit placeholder.
+    const i = Math.max(section.lastIndexOf('0'), section.lastIndexOf('#'))
+    return i < 0 ? section : section.slice(0, i + 1) + '.' + '0'.repeat(delta) + section.slice(i + 1)
+  }).join(';')
+}

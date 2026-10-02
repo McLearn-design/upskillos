@@ -351,8 +351,7 @@ export class Workbook {
       }
     }
     this.lastRecalc = { evaluated, ms: performance.now() - started, cycles }
-    this.version++
-    for (const fn of this.listeners) fn(this)
+    this.notify()
   }
 
   allFormulas() {
@@ -566,6 +565,22 @@ export class Workbook {
       },
     }
     return ctx
+  }
+
+  // Column widths and row heights (in pixels). Not undoable: they change
+  // how the sheet looks, not what it calculates.
+  setSize(sheetId, axis, index, size) {
+    const sheet = this.sheet(sheetId)
+    if (!sheet) return
+    const map = axis === 'col' ? sheet.colWidths : sheet.rowHeights
+    if (size == null) delete map[index]
+    else map[index] = Math.max(axis === 'col' ? 24 : 16, Math.round(size))
+    this.notify()
+  }
+
+  notify() {
+    this.version++
+    for (const fn of this.listeners) fn(this)
   }
 
   // ── Structure: rows, columns and sheets ──────────────────────────────

@@ -11,7 +11,7 @@
     "courses": 44,
     "chapters": 229,
     "lessons": 1302,
-    "labs": 53,
+    "labs": 54,
     "games": 15
   },
   "courses": [
@@ -632,6 +632,12 @@
       "label": "Sim Lab",
       "kind": "lab",
       "path": "/sim-lab"
+    },
+    {
+      "id": "spreadsheet-lab",
+      "label": "Spreadsheet Lab",
+      "kind": "lab",
+      "path": "/lab/spreadsheet-lab"
     },
     {
       "id": "sprite-forge",
