@@ -70,7 +70,7 @@ Count, for every pair of words, how often they appear within two positions of ea
 \text{PMI}(a, b) = \ln \frac{P(a, b)}{P(a)\,P(b)}, \qquad \text{PPMI} = \max(\text{PMI}, 0)
 \]
 
-Each row of the PPMI matrix already describes a word by its contexts. To get short, dense vectors, compress it with the SVD, exactly as PCA did: keep the first `d` singular directions. Before running, predict: which words will be the nearest neighbours of "cat"?
+Each row of the PPMI matrix already describes a word by its contexts. To get short, dense vectors, compress it with the SVD, much as PCA did (but without centring the columns first): keep the first `d` singular directions. Before running, predict: which words will be the nearest neighbours of "cat"?
 
 ```python
 import numpy as np
@@ -127,7 +127,7 @@ for word in ["cat", "dog", "bread", "chef", "garden"]:
 
 `np.errstate(divide="ignore")` silences the warning for log(0) on pairs that never co-occur (their PMI becomes −∞, and the `maximum` turns it into 0). `U[:, :6] * S[:6]` keeps the six strongest directions, scaled by their singular values: a 6-number vector for each of the 24 words. Neighbours are ranked by cosine similarity, with the word itself excluded.
 
-Without being told anything about categories, the vectors group the words: cat's nearest neighbours are fox, cow and horse; bread's are apple, rice and cheese; chef's are baker, then child and farmer; garden's are the other places. Notice "dog": its neighbours are still animals, but less closely (0.98, 0.80, 0.80, against 1.00 for cat's nearest), and it is not among cat's top three. It also appears in "the dog eats the bread", so its contexts overlap with the people's, which pulls its vector a little away from the other animals. Embeddings reflect how words are **used**, not what they mean, which is both their power and, on real text, their danger: they absorb whatever associations, including biased ones, the text contains.
+Without being told anything about categories, the vectors group the words: cat's nearest neighbours are fox, cow and horse; bread's are apple, rice and cheese; chef's are baker, then child and farmer; garden's are the other places. Notice "dog": its neighbours are still animals, but less closely (0.98, 0.80, 0.80, against 1.00 for cat's nearest), and it is not among cat's top three. Its contexts differ from the other animals' in small ways (it appears in "the dog eats the bread", for instance, though "the horse eats the apple" appears just as often), and with a corpus this small, such quirks are enough to move a word's vector noticeably; treat individual neighbours in a small corpus with caution. Embeddings reflect how words are **used**, not what they mean, which is both their power and, on real text, their danger: they absorb whatever associations, including biased ones, the text contains.
 
 ## Method 2: skip-gram with negative sampling
 
@@ -273,70 +273,67 @@ assert nearest(_E, _v, "volcano", 1) == ["big-cat"], "nearest should work for an
 Hint: For `nearest`, compute every row's cosine with the word's row in one expression (`E @ E[i]` divided by the product of norms), set the word's own entry to `-np.inf`, and take the first `k` of `np.argsort(-sims)`.
 :::
 
-::: challenge The embedding layer's backward pass [medium]
-A network looks up `E[ids]` for a batch of ids, and backpropagation delivers `d_vectors`, the gradient for each looked-up vector (shape `(len(ids), d)`). Write `embedding_backward(E_shape, ids, d_vectors)` returning the gradient for the whole matrix E: an array of shape `E_shape`, where each row is the **sum** of the gradients for every occurrence of that id in the batch, and rows that do not appear are zero.
+::: challenge Training an embedding layer [medium]
+Write `embedding_sgd_step(E, ids, d_vectors, lr)` that returns a **new** embedding matrix after one gradient descent step: the batch looked up the rows `E[ids]`, backpropagation delivered `d_vectors` (one gradient per looked-up row, shape `(len(ids), d)`), and every row must move by −lr times the **sum** of the gradients for all its occurrences in the batch; rows that do not appear stay as they are. Leave `E` itself unchanged.
 
-Then show the trap: write `naive_backward(E_shape, ids, d_vectors)` that does `grad[ids] += d_vectors` (which looks right), and store in `lost` the total amount of gradient (the sum of all entries) that `naive_backward` misses compared with yours, for the starter's batch.
+Then write `lost_gradient(E_shape, ids, d_vectors)` returning how much gradient (the sum of all entries) a careless implementation would lose: one that builds the gradient matrix with `grad[ids] += d_vectors` instead of accumulating every occurrence.
 
 ```python starter
 import numpy as np
 
-def embedding_backward(E_shape, ids, d_vectors):
-    return np.zeros(E_shape)
+def embedding_sgd_step(E, ids, d_vectors, lr):
+    return E
 
-def naive_backward(E_shape, ids, d_vectors):
-    grad = np.zeros(E_shape)
-    grad[ids] += d_vectors
-    return grad
-
-ids = np.array([3, 1, 3, 3, 0, 1])
-d_vectors = np.ones((6, 2))
-lost = 0.0
-print(lost)
+def lost_gradient(E_shape, ids, d_vectors):
+    return 0.0
 ```
 
 ```python solution
 import numpy as np
 
-def embedding_backward(E_shape, ids, d_vectors):
-    grad = np.zeros(E_shape)
+def embedding_sgd_step(E, ids, d_vectors, lr):
+    grad = np.zeros_like(E)
     np.add.at(grad, ids, d_vectors)
-    return grad
+    return E - lr * grad
 
-def naive_backward(E_shape, ids, d_vectors):
-    grad = np.zeros(E_shape)
-    grad[ids] += d_vectors
-    return grad
-
-ids = np.array([3, 1, 3, 3, 0, 1])
-d_vectors = np.ones((6, 2))
-lost = float(embedding_backward((5, 2), ids, d_vectors).sum() - naive_backward((5, 2), ids, d_vectors).sum())
-print(lost)
+def lost_gradient(E_shape, ids, d_vectors):
+    correct = np.zeros(E_shape)
+    np.add.at(correct, ids, d_vectors)
+    careless = np.zeros(E_shape)
+    careless[ids] += d_vectors
+    return float(correct.sum() - careless.sum())
 ```
 
 ```python test
 import numpy as _np
-assert "embedding_backward" in dir(), "Keep the function's name as embedding_backward."
-_ids = _np.array([3, 1, 3, 3, 0, 1])
-_g = embedding_backward((5, 2), _ids, _np.ones((6, 2)))
-assert _np.shape(_g) == (5, 2), "The gradient should have the shape of E."
-assert _np.array_equal(_g, [[1, 1], [2, 2], [0, 0], [3, 3], [0, 0]]), f"Id 3 appears three times, so its row should collect 3 in each column; got {_g.tolist()}. A repeated id must add up all its gradients."
-_r = _np.random.default_rng(0)
-_ids2 = _r.integers(0, 7, 40)
-_d2 = _r.normal(size=(40, 3))
-_want = _np.zeros((7, 3))
-for _i, _row in zip(_ids2, _d2):
-    _want[_i] += _row
-assert _np.allclose(embedding_backward((7, 3), _ids2, _d2), _want), "Wrong for a random batch with many repeats."
-assert _np.isclose(lost, 6.0), f"The naive version keeps only one gradient per repeated id: it misses 2 of id 3's three and 1 of id 1's two, so 3 rows' worth × 2 columns = 6 in total; got {lost}."
-"SUCCESS: np.add.at keeps every occurrence's gradient. The naive version silently drops them, the classic embedding bug: frequent words would barely learn."
+assert "embedding_sgd_step" in dir() and "lost_gradient" in dir(), "Keep both function names."
+_r = _np.random.default_rng(11)
+_E = _r.normal(size=(9, 4))
+_ids = _r.integers(0, 9, 60)
+_d = _r.normal(size=(60, 4))
+_before = _E.copy()
+_new = embedding_sgd_step(_E, _ids, _d, 0.1)
+_ref = _E.copy()
+for _i, _g in zip(_ids, _d):
+    _ref[_i] -= 0.1 * _g
+assert _np.array_equal(_E, _before), "embedding_sgd_step changed E itself: return a new matrix."
+assert _np.allclose(_new, _ref), "The updated matrix is wrong. Each row should move by −lr times the sum of the gradients for every occurrence of its id; repeated ids must not be dropped."
+_unused = sorted(set(range(9)) - set(_ids.tolist()))
+assert all(_np.array_equal(_new[u], _E[u]) for u in _unused), "Rows that do not appear in the batch should not change."
+_ids2 = _np.array([2, 2, 2, 0, 5, 5])
+_d2 = _r.normal(size=(6, 3))
+_c = _np.zeros((7, 3)); _np.add.at(_c, _ids2, _d2)
+_k = _np.zeros((7, 3)); _k[_ids2] += _d2
+assert _np.isclose(lost_gradient((7, 3), _ids2, _d2), _c.sum() - _k.sum()), "lost_gradient should compare the full sum of gradients with what grad[ids] += d_vectors keeps."
+assert _np.isclose(lost_gradient((7, 3), _np.array([0, 1, 2]), _d2[:3]), 0.0), "With no repeated ids, nothing is lost."
+"SUCCESS: Every occurrence of a word contributes to its row. The careless version keeps only one per batch, so frequent words, the ones repeated most, would barely learn."
 ```
 
-Hint: `np.add.at(grad, ids, d_vectors)` adds each row of `d_vectors` into `grad[ids[k]]`, including repeats. For `lost`, compare the sums of the two results.
+Hint: Accumulate the gradient matrix with `np.add.at`, which adds every row of `d_vectors` into its id's row, repeats included. For `lost_gradient`, build the gradient both ways and compare their sums.
 :::
 
 ::: challenge PPMI by hand [medium]
-Write `ppmi(counts)` that turns a co-occurrence count matrix into a PPMI matrix: with P(a, b) = counts / total and P(a) = row sums / total (the matrix is symmetric, so row and column sums are equal), PMI = ln(P(a, b) / (P(a) P(b))), and PPMI = max(PMI, 0), with pairs that never co-occur (count 0) giving 0. Make sure no warning is printed and no `nan` or `inf` remains.
+Write `ppmi(counts)` that turns a co-occurrence count matrix into a PPMI matrix: with P(a, b) = counts / total and P(a) = row sums / total (the matrix is symmetric, so row and column sums are equal), PMI = ln(P(a, b) / (P(a) P(b))), and PPMI = max(PMI, 0), with pairs that never co-occur (count 0) giving 0. Real vocabularies contain words that never co-occur with anything in a given window (a whole row of zeros); those must give a row of zeros too. Make sure no warning is printed and no `nan` or `inf` remains.
 
 Then apply it to the starter's tiny count matrix and store the result in `table`.
 
@@ -381,6 +378,11 @@ with _w.catch_warnings():
     _w.simplefilter("error")
     _t = ppmi(_c)
 assert _np.isfinite(_t).all(), "No nan or inf should remain: give zero-count pairs a PPMI of 0."
+_z = _np.array([[0.0, 3.0, 0.0], [3.0, 1.0, 0.0], [0.0, 0.0, 0.0]])
+with _w.catch_warnings():
+    _w.simplefilter("error")
+    _tz = ppmi(_z)
+assert _np.isfinite(_tz).all() and (_tz[2] == 0).all() and (_tz[:, 2] == 0).all(), "A word that never co-occurs (an all-zero row and column) should get PPMI 0 everywhere, not nan."
 _total = 12.0
 _p = _c.sum(axis=1) / _total
 assert _np.isclose(_t[0, 1], max(_np.log((4 / 12) / (_p[0] * _p[1])), 0)), "PPMI(0, 1) is wrong: ln(P(a, b) / (P(a) P(b))), with P from counts divided by the grand total."

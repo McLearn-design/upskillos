@@ -8,7 +8,7 @@ This lesson builds the three improvements that almost every network is trained w
 
 The function f(x, y) = ½(x² + 25y²) is a bowl 25 times steeper in the y direction than in x: a long, narrow valley along the x-axis, with its lowest point at (0, 0). Its gradient is (x, 25y). Gradient descent from (−10, 2) must travel a long way in x while not overshooting in y.
 
-For a bowl like this, plain gradient descent becomes unstable once the learning rate exceeds 2 divided by the steepest curvature, here 2/25 = 0.08: across the valley, every step overshoots by more than it corrects, and the zigzag grows. Predict before running: what happens at a rate of 0.081?
+For a bowl like this, plain gradient descent becomes unstable once the learning rate exceeds 2 divided by the steepest curvature (the second derivative, which is 25 in the y direction), here 2/25 = 0.08: across the valley, every step overshoots by more than it corrects, and the zigzag grows. Predict before running: what happens at a rate of 0.081?
 
 ```python
 import numpy as np
@@ -43,7 +43,7 @@ Picture a heavy ball rolling down the valley. It does not respond to each gradie
 v \leftarrow \beta v + g, \qquad w \leftarrow w - \eta \, v
 \]
 
-where `g` is the gradient, η (eta) the learning rate, and β, usually 0.9, controls how much of the old velocity is kept. The velocity is a running, decaying sum of past gradients: with β = 0.9, roughly the last ten.
+where `g` is the gradient, η (eta) the learning rate, and β, usually 0.9, controls how much of the old velocity is kept. The velocity is a running, decaying sum of past gradients: with β = 0.9, roughly the last ten. One consequence to keep in mind: when the gradient points the same way step after step, the velocity builds up to g/(1 − β), so the step becomes η/(1 − β), **ten times** larger than plain gradient descent's at the same η. Across the valley, where the gradient flips sign each step, the contributions cancel instead, which is why momentum can use a rate whose long-run step would be unstable for plain descent.
 
 ## RMSProp
 
@@ -118,11 +118,11 @@ The plots show the first 60 steps of each path over the contour lines of the val
 - **Gradient descent** (best stable rate, 0.03) bounces across the valley at first, then creeps along it, reaching the target at step 178.
 - **Momentum** at the same rate swings across a few times, but the swings cancel while speed builds along the valley: the target at step 83, about twice as fast.
 - **RMSProp** heads almost straight for the minimum, since each direction's step has been rescaled to a similar size, and reaches the target first, at step 50. But then it cannot settle: with gradients divided by their own size, every step stays around η long, so it bounces around the bottom: after 300 steps its loss is 0.29, worse than when it first reached the target. This is why RMSProp and Adam are usually combined with a decreasing learning rate.
-- **Adam** gets the benefits of both: a direct heading and smoothing momentum, reaching the target at step 87 and settling to essentially zero, because its momentum term shrinks as the gradients cancel at the bottom.
+- **Adam** gets the benefits of both: a direct heading and smoothing momentum, reaching the target at step 87 and settling to essentially zero. The difference from RMSProp is in the squared-gradient average: RMSProp's ρ = 0.9 forgets within about ten steps, so near the bottom its tiny gradients are divided by their own tiny size and every step is rescaled back to about η. Adam's β₂ = 0.999 remembers the large early gradients for about a thousand steps, so √v̂ stays large while m shrinks, and the steps shrink with it.
 
 ## On a real network
 
-Valleys in two dimensions are a cartoon. Here are the optimisers on the digits network from the last lesson, each with the learning rate that suits it, for 10 epochs. Before running, guess: will Adam's famous default learning rate of 0.001 do well here?
+Valleys in two dimensions are a cartoon. Here are the optimisers on the digits network from the last lesson for 10 epochs. To be fair to plain SGD, it gets its own best rate (0.5) as well as 0.1; remember that momentum at rate 0.1 takes steady steps of up to 0.1/(1 − 0.9) = 1.0. Before running, guess: will Adam's famous default learning rate of 0.001 do well here?
 
 ```python
 import numpy as np
@@ -187,14 +187,14 @@ def train(method, learning_rate, epochs=10, seed=0):
         losses.append(validation_loss(params))
     return losses
 
-for method, rate in [("SGD", 0.1), ("momentum", 0.1), ("Adam", 0.001), ("Adam", 0.01)]:
+for method, rate in [("SGD", 0.1), ("SGD", 0.5), ("momentum", 0.1), ("Adam", 0.001), ("Adam", 0.01)]:
     losses = train(method, rate)
     print(f"{method:<8} rate {rate:<5}: validation loss after epochs 1, 3, 10: {losses[0]:.3f}, {losses[2]:.3f}, {losses[-1]:.3f}")
 ```
 
 Each parameter needs its own running averages, so `first` and `second` are dictionaries of arrays shaped like the parameters, and `t` counts update steps (not epochs) for Adam's bias correction.
 
-After 10 epochs, plain SGD reaches a validation loss of 0.21, momentum 0.08 and Adam with rate 0.01 0.09: the improved optimisers get there more than twice as fast. Adam with its default rate of 0.001 is the slowest of all here (0.30). That default suits large networks trained for a long time; on a small network with few steps, it is too timid. "Adam with default settings" is a good **starting point**, not a guarantee: the learning rate still needs checking.
+After 10 epochs, plain SGD at 0.1 reaches a validation loss of 0.21; at its better rate of 0.5, about 0.11. Momentum reaches 0.08 and Adam with rate 0.01 0.09. So the improved optimisers do win, but by less than the 0.1 comparison suggests: part of momentum's apparent advantage is simply its larger effective step. Adam with its default rate of 0.001 is the slowest of all here (0.30). That default suits large networks trained for a long time; on a small network with few steps, it is too timid. "Adam with default settings" is a good **starting point**, not a guarantee: the learning rate still needs checking.
 
 ## Learning rate schedules
 
@@ -255,10 +255,10 @@ assert _np.allclose(final_w, _W), f"After 100 momentum steps the point should be
 Hint: Compute the new velocity first, then use it for the weights: `v = beta * v + grad` creates a new array (unlike `v *= beta`), so the caller's arrays stay unchanged.
 :::
 
-::: challenge Adam with bias correction [medium]
-Write `adam_step(w, m, v, grad, t, lr, beta1=0.9, beta2=0.999, eps=1e-8)` returning the new `(w, m, v)`, using the lesson's formulas, with `t` the step number starting at 1.
+::: challenge Adam ignores the scale [medium]
+Write `adam_step(w, m, v, grad, t, lr, beta1=0.9, beta2=0.999, eps=1e-8)` returning the new `(w, m, v)`, using the lesson's formulas (return `m` and `v` uncorrected; use the corrected m̂ and v̂ only for the step), with `t` the step number starting at 1.
 
-Then show why bias correction matters. For a single parameter with a constant gradient of 2.0, starting from w = 0, m = v = 0, compute the size of the **first** step (|w after one step − 0|) with lr 0.1, storing it in `first_step`. Then store in `first_step_uncorrected` what the first step would have been without the correction (using m and v directly instead of m̂ and v̂).
+Then demonstrate Adam's most useful property. For a single parameter starting at w = 0 with m = v = 0, apply 20 Adam steps with lr 0.1 and a **constant** gradient `g`, for each `g` in `[0.002, 2.0, 2000.0]`, and store in `adam_moved` a dictionary mapping each `g` to how far w has moved, |w|. Store in `sgd_moved` the same for 20 steps of plain gradient descent, w ← w − 0.1·g.
 
 ```python starter
 import numpy as np
@@ -266,9 +266,9 @@ import numpy as np
 def adam_step(w, m, v, grad, t, lr, beta1=0.9, beta2=0.999, eps=1e-8):
     return w, m, v
 
-first_step = 0.0
-first_step_uncorrected = 0.0
-print(first_step, first_step_uncorrected)
+adam_moved = {}
+sgd_moved = {}
+print(adam_moved, sgd_moved)
 ```
 
 ```python solution
@@ -281,12 +281,14 @@ def adam_step(w, m, v, grad, t, lr, beta1=0.9, beta2=0.999, eps=1e-8):
     v_hat = v / (1 - beta2 ** t)
     return w - lr * m_hat / (np.sqrt(v_hat) + eps), m, v
 
-w, m, v = adam_step(np.array(0.0), np.array(0.0), np.array(0.0), 2.0, 1, 0.1)
-first_step = float(abs(w))
-m1 = 0.1 * 2.0
-v1 = 0.001 * 2.0 ** 2
-first_step_uncorrected = float(0.1 * m1 / (np.sqrt(v1) + 1e-8))
-print(first_step, first_step_uncorrected)
+adam_moved, sgd_moved = {}, {}
+for g in [0.002, 2.0, 2000.0]:
+    w, m, v = 0.0, 0.0, 0.0
+    for t in range(1, 21):
+        w, m, v = adam_step(w, m, v, g, t, 0.1)
+    adam_moved[g] = abs(w)
+    sgd_moved[g] = abs(-20 * 0.1 * g)
+print(adam_moved, sgd_moved)
 ```
 
 ```python test
@@ -303,13 +305,18 @@ for _t in range(1, 6):
     _g = _r.normal(size=3)
     _w, _m, _v = adam_step(_w, _m, _v, _g, _t, 0.01)
     _W, _M, _V = _ref(_W, _M, _V, _g, _t, 0.01)
-    assert _np.allclose(_w, _W) and _np.allclose(_m, _M) and _np.allclose(_v, _V), f"After step {_t}, your Adam differs from the expected one. Check that m and v are returned without bias correction, and that the step uses m̂ / (√v̂ + ε)."
-assert _np.isclose(first_step, 0.1, atol=1e-6), f"With bias correction, the first step has size lr × (2/2) = 0.1, but first_step is {first_step}."
-assert _np.isclose(first_step_uncorrected, 0.1 * 0.2 / _np.sqrt(0.004)), f"Without correction, m = 0.2 and v = 0.004, so the step is 0.1 × 0.2 / √0.004 ≈ 0.316, but got {first_step_uncorrected}."
-"SUCCESS: Bias-corrected, Adam's first step is exactly lr in size; uncorrected, it would be about 3 times larger, because the zero-started squared average v is underestimated far more than m."
+    assert _np.allclose(_w, _W) and _np.allclose(_m, _M) and _np.allclose(_v, _V), f"After step {_t}, your Adam differs from the lesson's formulas. Return m and v without bias correction, and step by lr × m̂ / (√v̂ + ε)."
+assert sorted(adam_moved) == [0.002, 2.0, 2000.0] and sorted(sgd_moved) == [0.002, 2.0, 2000.0], "Both dictionaries should have the keys 0.002, 2.0 and 2000.0."
+for _g in [0.002, 2.0, 2000.0]:
+    _x, _mm, _vv = 0.0, 0.0, 0.0
+    for _t in range(1, 21):
+        _x, _mm, _vv = _ref(_x, _mm, _vv, _g, _t, 0.1)
+    assert _np.isclose(adam_moved[_g], abs(_x)), f"adam_moved[{_g}] is wrong: run 20 Adam steps from w = m = v = 0 with that constant gradient."
+    assert _np.isclose(sgd_moved[_g], 20 * 0.1 * _g), f"sgd_moved[{_g}] is wrong: plain gradient descent moves lr × g per step."
+f"SUCCESS: Over a million-fold range of gradient sizes, Adam moved about {adam_moved[2.0]:.2f} every time; plain gradient descent moved from {sgd_moved[0.002]:.3f} to {sgd_moved[2000.0]:,.0f}. Adam's steps depend on the gradient's direction and consistency, not its scale, so one learning rate suits parameters whose gradients differ wildly in size."
 ```
 
-Hint: Update `m` and `v` first and return them **uncorrected**; compute `m_hat` and `v_hat` only for the step. For the uncorrected first step, m = 0.1 × 2 and v = 0.001 × 2², and the step is lr × m / √v.
+Hint: Inside the loop over gradients, reset `w, m, v` to 0 and call `adam_step` 20 times with `t` from 1 to 20. With a constant gradient, plain descent moves exactly 20 × 0.1 × g.
 :::
 
 ::: challenge Warm-up and cosine decay [medium]
@@ -365,7 +372,7 @@ Hint: Handle the warm-up case first with an `if`, returning early. For the decay
 - Plain gradient descent uses one step size for every direction; in a narrow valley the steepest direction limits the rate (unstable above 2/curvature) and progress along the valley is slow (178 steps on the example).
 - Momentum keeps a decaying sum of gradients, v ← βv + g: consistent directions build speed, oscillations cancel (83 steps).
 - RMSProp divides each parameter's gradient by the root of its running mean square, giving every parameter a similar step size; with a fixed rate it hovers near the minimum.
-- Adam combines both, with bias correction for the zero-started averages (m / (1 − β₁ᵗ), v / (1 − β₂ᵗ)); default β₁ = 0.9, β₂ = 0.999.
+- Adam combines both, with bias correction for the zero-started averages (m / (1 − β₁ᵗ), v / (1 − β₂ᵗ)); default β₁ = 0.9, β₂ = 0.999. Its steps do not depend on the gradient's scale.
 - On the digits network momentum and Adam (rate 0.01) beat plain SGD; Adam's default rate 0.001 was too small for this short run. Always check the learning rate.
 - Schedules change the rate during training: step decay, cosine decay, and warm-up at the start. AdamW applies weight decay separately from Adam's scaling.
 

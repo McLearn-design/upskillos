@@ -27,7 +27,7 @@ The cell state update is the heart of it. Forget some of the old memory, add som
 
 ## Why the gradient survives
 
-Follow the gradient backwards along the cell state. Since cₜ = fₜ ⊙ cₜ₋₁ + (terms not involving cₜ₋₁ directly), the gradient passes from cₜ to cₜ₋₁ multiplied by fₜ, element by element. Over many steps, it is multiplied by the forget gates' values, nothing more. If the network has learned to keep a memory (forget gate near 1), the gradient comes back almost undiminished; the plain RNN, by contrast, multiplies by W_h and a tanh derivative at every step. Because a forget gate value of exactly 1 would never be learned from scratch, LSTMs are usually initialised with a **forget gate bias of about 1 or 2**, so that σ(b) starts near 0.75–0.9 and memories are kept by default until the network learns to drop them.
+Follow the gradient backwards along the cell state. Since cₜ = fₜ ⊙ cₜ₋₁ + (terms not involving cₜ₋₁ directly), the gradient passes from cₜ to cₜ₋₁ multiplied by fₜ, element by element. Over many steps, it is multiplied by the forget gates' values, nothing more. If the network has learned to keep a memory (forget gate near 1), the gradient comes back almost undiminished; the plain RNN, by contrast, multiplies by W_h and a tanh derivative at every step. With a forget-gate bias of 0, the gate starts at σ(0) = 0.5, so at the start of training memories and their gradients halve at every step, decaying like 0.5ᵀ before the network has had any chance to learn that something is worth keeping. So LSTMs are usually initialised with a **forget gate bias of about 1 or 2**, making σ(b) start near 0.75–0.9: memories are kept by default until the network learns to drop them.
 
 Compare the surviving fraction after 50 steps. Predict first: if a plain RNN's factor is about 0.5 per step (as measured in the last lesson) and an LSTM's forget gate stays at 0.95, how big is each product?
 
@@ -118,7 +118,12 @@ for kind in ["RNN", "LSTM"]:
     print(f"{kind:<4} on 50-step sequences: test accuracy {run(kind, 50):.3f}")
 ```
 
-Both networks share one function: `kind` chooses between the plain tanh step and the LSTM step, whose four gates come out of a single matrix product (`z` has 4H columns, split into f, i, g and o). The backward pass is BPTT as in the last lesson, plus the cell state's own gradient `dc`. At each step `dc` collects the gradient arriving through hₜ = oₜ ⊙ tanh(cₜ), feeds the gradients of the four gate pre-activations (each gate's derivative is its effect on cₜ or hₜ times its sigmoid or tanh slope), and is multiplied by fₜ on its way back: exactly the surviving path described above. The forget-gate biases (the first H entries of `b`) start at 2.
+Both networks share one function: `kind` chooses between the plain tanh step and the LSTM step, whose four gates come out of a single matrix product (`z` has 4H columns, split into f, i, g and o). The backward pass is BPTT as in the last lesson, plus the cell state's own gradient `dc`. At each step, working from the local derivatives of the two equations:
+
+- through hₜ = oₜ ⊙ tanh(cₜ): ∂hₜ/∂oₜ = tanh(cₜ) and ∂hₜ/∂cₜ = oₜ(1 − tanh²cₜ), so `dc` gains `dh * o * (1 - tanh_c ** 2)`;
+- through cₜ = fₜ ⊙ cₜ₋₁ + iₜ ⊙ gₜ: ∂cₜ/∂fₜ = cₜ₋₁, ∂cₜ/∂iₜ = gₜ, ∂cₜ/∂gₜ = iₜ;
+- each gate's pre-activation gradient is that, times its own slope: σ(1 − σ) for f, i and o, 1 − g² for the candidate. These four make `dz`;
+- the gradient then leaves the step along **two** paths: along the cell state, `dc = dc * f` (the protected path), and through the gates' recurrent weights, `dh = dz @ Wh.T`, to the previous hidden state. The forget-gate biases (the first H entries of `b`) start at 2.
 
 The plain RNN ends at about 0.48: chance. It never learns that the answer was the very first input, because the gradient from the end of the sequence barely reaches step 0. The LSTM reaches about 0.99. Try other seeds (the `seed` argument): in our runs the RNN stayed near chance in three of four and reached 0.70 once, while the LSTM scored 0.97 or more every time. (On 5-step sequences both solve the task easily; the difference is entirely about distance.)
 
@@ -131,7 +136,7 @@ The **gated recurrent unit** (GRU), from 2014, simplifies the LSTM: no separate 
 - The **candidate** h̃ₜ = tanh(xₜW + (rₜ ⊙ hₜ₋₁)U + b).
 - The new state blends old and new: hₜ = (1 − zₜ) ⊙ hₜ₋₁ + zₜ ⊙ h̃ₜ.
 
-When zₜ is near 0, the state is copied forward unchanged, giving the same protected path for gradients that the LSTM's forget gate provides. With three blocks of weights instead of four, a GRU has about three-quarters of an LSTM's parameters, and in practice the two perform similarly; which is better depends on the task.
+(Some libraries, PyTorch among them, use the opposite convention, hₜ = zₜ ⊙ hₜ₋₁ + (1 − zₜ) ⊙ h̃ₜ; the idea is the same.) When zₜ is near 0, the state is copied forward unchanged, giving the same protected path for gradients that the LSTM's forget gate provides. With three blocks of weights instead of four, a GRU has about three-quarters of an LSTM's parameters, and in practice the two perform similarly; which is better depends on the task.
 
 ## Where they stand
 
@@ -248,58 +253,80 @@ assert _np.allclose(_out, (1 - _z) * _h + _z * _cand), "The new state should be 
 _shut = [_np.zeros((3, 5)), _np.zeros((5, 5)), _np.full(5, -50.0)] + _P[3:]
 assert _np.allclose(gru_step(_x, _h, *_shut), _h), "With the update gate shut (z ≈ 0), the state should be copied forward unchanged."
 assert recurrent_parameters("rnn", 100, 256) == 100 * 256 + 256 * 256 + 256, "An RNN layer has input × hidden + hidden × hidden + hidden parameters."
-assert counts == {"rnn": 91392, "gru": 274176, "lstm": 365568}, f"Expected rnn 91,392, gru 274,176 and lstm 365,568, but got {counts}."
+assert recurrent_parameters("gru", 7, 5) == 3 * (35 + 25 + 5) and recurrent_parameters("lstm", 7, 5) == 4 * (35 + 25 + 5), "A GRU has three blocks of (input × hidden + hidden × hidden + hidden), an LSTM four."
+assert counts == {k: recurrent_parameters(k, 100, 256) for k in ["rnn", "gru", "lstm"]} and sorted(counts) == ["gru", "lstm", "rnn"], "counts should map rnn, gru and lstm to recurrent_parameters(kind, 100, 256)."
 "SUCCESS: The GRU keeps a copy-forward path like the LSTM's, with three quarters of the parameters."
 ```
 
 Hint: Compute `z` and `r` like LSTM gates, each from its own weights. In the candidate, the old state is multiplied by `r` **before** going through `Uc`. For the counts, look up the number of blocks in a dictionary and multiply.
 :::
 
-::: challenge Choosing the forget bias [medium]
-If a forget gate holds a constant value f, a fraction fᵀ of the cell state, and of its gradient, survives T steps. Write `forget_value_for(T, fraction)` returning the constant forget gate value f needed for exactly `fraction` to survive `T` steps, and `bias_for(f)` returning the bias b with σ(b) = f (when all other inputs to the gate are zero), which is ln(f / (1 − f)).
+::: challenge One LSTM step backwards [medium]
+Write `lstm_step_backward(x, h, c, W, U, b, dh_new, dc_new)` for one LSTM step (the same shapes and gate order as `lstm_step`: forget, input, candidate, output). Given the gradients arriving at the step's outputs, `dh_new` (for the new hidden state) and `dc_new` (for the new cell state, from the next step), return a dictionary with the gradients `"x"`, `"h"`, `"c"`, `"W"`, `"U"` and `"b"`, each the shape of the corresponding input.
 
-Then store, in `needed`, a dictionary mapping each `T` in `[10, 100, 1000]` to the bias needed for half the memory to survive `T` steps.
+Recompute the forward step first, then follow the lesson's list: add the path through hₜ into the cell-state gradient, form the four pre-activation gradients `dz`, and send gradients to x, h (through W and U), and c (along the cell state).
 
 ```python starter
 import numpy as np
 
-def forget_value_for(T, fraction):
-    return 1.0
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
 
-def bias_for(f):
-    return 0.0
-
-needed = {}
-print(needed)
+def lstm_step_backward(x, h, c, W, U, b, dh_new, dc_new):
+    return {"x": np.zeros_like(x), "h": np.zeros_like(h), "c": np.zeros_like(c),
+            "W": np.zeros_like(W), "U": np.zeros_like(U), "b": np.zeros_like(b)}
 ```
 
 ```python solution
 import numpy as np
 
-def forget_value_for(T, fraction):
-    return fraction ** (1 / T)
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
 
-def bias_for(f):
-    return float(np.log(f / (1 - f)))
-
-needed = {T: bias_for(forget_value_for(T, 0.5)) for T in [10, 100, 1000]}
-print(needed)
+def lstm_step_backward(x, h, c, W, U, b, dh_new, dc_new):
+    H = h.shape[1]
+    z = x @ W + h @ U + b
+    f, i = sigmoid(z[:, :H]), sigmoid(z[:, H:2 * H])
+    g, o = np.tanh(z[:, 2 * H:3 * H]), sigmoid(z[:, 3 * H:])
+    c_new = f * c + i * g
+    tanh_c = np.tanh(c_new)
+    dc = dc_new + dh_new * o * (1 - tanh_c ** 2)
+    dz = np.concatenate([dc * c * f * (1 - f), dc * g * i * (1 - i),
+                         dc * i * (1 - g ** 2), dh_new * tanh_c * o * (1 - o)], axis=1)
+    return {"x": dz @ W.T, "h": dz @ U.T, "c": dc * f,
+            "W": x.T @ dz, "U": h.T @ dz, "b": dz.sum(axis=0)}
 ```
 
 ```python test
 import numpy as _np
-assert "forget_value_for" in dir() and "bias_for" in dir(), "Keep both function names."
-assert _np.isclose(forget_value_for(10, 0.5) ** 10, 0.5), "forget_value_for(T, fraction) raised to the power T should give fraction."
-assert _np.isclose(forget_value_for(1, 0.3), 0.3), "For one step, the forget value is the fraction itself."
+assert "lstm_step_backward" in dir(), "Keep the function's name as lstm_step_backward."
 _s = lambda z: 1 / (1 + _np.exp(-z))
-for _f in (0.1, 0.5, 0.88, 0.999):
-    assert _np.isclose(_s(bias_for(_f)), _f), f"sigmoid(bias_for({_f})) should equal {_f}. Use ln(f / (1 − f))."
-assert sorted(needed) == [10, 100, 1000], "needed should have keys 10, 100 and 1000."
-assert _np.isclose(needed[100], _np.log(0.5 ** 0.01 / (1 - 0.5 ** 0.01))), "needed[100] is wrong."
-f"SUCCESS: Keeping half a memory for 10 steps needs a forget bias of {needed[10]:.1f}; for 100 steps {needed[100]:.1f}; for 1000 steps {needed[1000]:.1f}. Long memory means a gate held very close to 1, which is why LSTMs start with positive forget biases and learn the rest."
+def _step(x, h, c, W, U, b):
+    H = h.shape[1]
+    z = x @ W + h @ U + b
+    f, i, g, o = _s(z[:, :H]), _s(z[:, H:2 * H]), _np.tanh(z[:, 2 * H:3 * H]), _s(z[:, 3 * H:])
+    cn = f * c + i * g
+    return o * _np.tanh(cn), cn
+_r = _np.random.default_rng(7)
+_in = {"x": _r.normal(size=(3, 2)), "h": _r.normal(size=(3, 4)), "c": _r.normal(size=(3, 4)),
+       "W": _r.normal(size=(2, 16)), "U": _r.normal(size=(4, 16)), "b": _r.normal(size=16)}
+_dh, _dc = _r.normal(size=(3, 4)), _r.normal(size=(3, 4))
+def _obj(v):
+    hn, cn = _step(v["x"], v["h"], v["c"], v["W"], v["U"], v["b"])
+    return _np.sum(hn * _dh) + _np.sum(cn * _dc)
+_g = lstm_step_backward(_in["x"], _in["h"], _in["c"], _in["W"], _in["U"], _in["b"], _dh, _dc)
+for _name in ["c", "h", "x", "b", "U", "W"]:
+    assert _name in _g and _np.shape(_g[_name]) == _in[_name].shape, f"The gradient for {_name} should have shape {_in[_name].shape}."
+    _num = _np.zeros_like(_in[_name])
+    for _idx in _np.ndindex(_in[_name].shape):
+        _u = {k: v.copy() for k, v in _in.items()}; _u[_name][_idx] += 1e-6
+        _d = {k: v.copy() for k, v in _in.items()}; _d[_name][_idx] -= 1e-6
+        _num[_idx] = (_obj(_u) - _obj(_d)) / 2e-6
+    assert _np.allclose(_g[_name], _num, atol=1e-6), f"The gradient for {_name} does not match the numerical one." + (" Along the cell state it is the total cell gradient (including the path through h) times f." if _name == "c" else "")
+"SUCCESS: The full LSTM step, backwards, checked against nudging every input: two paths out (along the cell and through the gates), with the cell's gradient multiplied only by f."
 ```
 
-Hint: Solve fᵀ = fraction for f: f = fraction ** (1 / T). For the bias, invert the sigmoid: b = ln(f / (1 − f)), with `np.log`.
+Hint: Recompute `f, i, g, o`, the new cell and `tanh_c`. The total cell gradient is `dc_new + dh_new * o * (1 - tanh_c ** 2)`. The four parts of `dz` are that times `c` (for f), times `g` (for i), times `i` (for g), and `dh_new * tanh_c` (for o), each multiplied by its own slope. Then `x` gets `dz @ W.T`, `h` gets `dz @ U.T`, and `c` gets the cell gradient times `f`.
 :::
 
 ## What you learned

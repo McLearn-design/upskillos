@@ -138,9 +138,9 @@ for label, data, settings in [("augmented", (X_aug, y_aug), {}), ("augmented + d
     print(f"{label:<24} validation loss {val_loss:.3f}, accuracy {val_acc:.3f}")
 ```
 
-`shift` reshapes each 64-pixel row into an 8 × 8 image and copies it into a blank image displaced by `dx` columns and `dy` rows; pixels pushed off one edge are lost, and the opposite edge fills with blank pixels. The slices look fiddly, but they only say "copy this rectangle to that one" (you will write a cleaner version in a challenge). `np.tile(y_train, 5)` repeats the labels to match the five copies.
+`shift` reshapes each 64-pixel row into an 8 × 8 image and copies it into a blank image displaced by `dx` columns and `dy` rows; pixels pushed off one edge are lost, and the opposite edge fills with blank pixels. The slices look fiddly, but they only say "copy this rectangle to that one" (a challenge builds the same thing another way, with `np.roll`). `np.tile(y_train, 5)` repeats the labels to match the five copies.
 
-Augmentation alone lowers the validation loss to 0.232; combined with dropout, to 0.188 with accuracy 0.936, the best of all the runs. Regularisers stack: each attacks overfitting in a different way.
+Augmentation alone lowers the validation loss to 0.232; combined with dropout, to 0.188 with accuracy 0.936, the best of all the runs. Regularisers stack: each attacks overfitting in a different way. (Each comparison here is a single training run on about 720 validation images, so differences of a point of accuracy are within the noise of a different random seed; the validation losses are the steadier guide.)
 
 ## Early stopping
 
@@ -148,7 +148,7 @@ The training lesson's challenge built **early stopping**: keep the parameters fr
 
 ## Batch normalisation
 
-**Batch normalisation** (batch norm) is a layer usually placed just before an activation. During training, for each unit, it standardises that unit's scores **across the current mini-batch**: subtract the batch mean, divide by the batch standard deviation (plus a tiny ε for safety). Then it scales and shifts the result with two learned parameters per unit, γ (gamma) and β (beta), so the network can still choose any mean and spread it needs:
+**Batch normalisation** (batch norm) is a layer usually placed just before an activation. During training, for each unit, it standardises that unit's scores **across the current mini-batch**: subtract the batch mean, divide by the batch standard deviation (plus a tiny ε for safety). Then it scales and shifts the result with two learned parameters per unit, γ (gamma) and β (beta), so the network can still choose any mean and spread it needs. (Their gradients are simple, dγ = Σ upstream gradient × ẑ and dβ = Σ upstream gradient; the gradient back through the normalisation itself is longer, and left to libraries here.)
 
 \[
 \hat z = \frac{z - \mu_{\text{batch}}}{\sqrt{\sigma^2_{\text{batch}} + \epsilon}}, \qquad \text{output} = \gamma \hat z + \beta
@@ -180,7 +180,7 @@ for use_batch_norm in [False, True]:
 
 These weights are deliberately badly scaled (standard deviation 1 instead of He's √(2/100) ≈ 0.14). Without batch norm, the activations grow about sevenfold per layer, to around 10⁸ after 10 layers. With it, every layer's activations have a spread of about 0.58 (a standardised score after ReLU), whatever the weights do.
 
-That stability lets deep networks train with larger learning rates and much less sensitivity to initialisation, which is why batch norm made very deep networks practical in 2015. It also regularises a little: each example's normalisation depends on which other examples share its batch, a small random disturbance much like dropout's.
+That stability lets deep networks train with larger learning rates and much less sensitivity to initialisation, which is why batch norm, together with the residual connections of the next lessons, helped make very deep networks practical from 2015. It also regularises a little: each example's normalisation depends on which other examples share its batch, a small random disturbance much like dropout's.
 
 At **test time** there may be just one example, so there is no batch to take statistics from. Instead, during training the layer keeps **running averages** of the batch means and variances, and at test time it normalises with those fixed values. Getting this switch wrong (training mode versus evaluation mode) is a classic bug in real projects. Transformers use a close cousin, **layer normalisation**, which standardises across the units of each single example instead of across the batch, so it behaves the same in training and at test time.
 
@@ -296,10 +296,10 @@ assert _np.allclose(running_mean, _s["mean"]), f"running_mean should be about {_
 Hint: Choose the mean and variance with an `if`: from `Z` (with `axis=0`) in training, from `state` in evaluation. Update `state[...]` only in the training branch. The normalisation line is the same for both.
 :::
 
-::: challenge Shift without wrapping [medium]
-Write `shift_images(X, dx, dy)` for flattened 8 × 8 images (one per row of `X`). It should return images moved `dx` pixels right (left if negative) and `dy` pixels down (up if negative), filling the uncovered edge with zeros, for any shifts from −7 to 7.
+::: challenge Shift by rolling [medium]
+The lesson's `shift` copied rectangles with fiddly slices. Here is another way. `np.roll(images, d, axis=...)` moves every pixel `d` places along an axis, but it **wraps**: pixels pushed off one edge reappear on the other side, which would put bits of a digit where they do not belong. So roll first, then blank the strip that wrapped round.
 
-`np.roll` would be tempting, but it **wraps** pixels pushed off one edge round to the other, which would put bits of a digit on the wrong side. Instead, create a zero image of shape `(n, 8, 8)` and copy the right rectangle into it, or roll and then zero the wrapped strip.
+Write `shift_images(X, dx, dy)` for flattened 8 × 8 images (one per row of `X`) using `np.roll`: move the images `dx` pixels right (left if negative) and `dy` pixels down (up if negative), then set the wrapped-in columns and rows to zero. It must work for any shift from −7 to 7, including 0.
 
 Then store, in `augmented`, the starter's 10 images stacked with all 8 shifts by one pixel in any direction (including diagonals): a `(90, 64)` array with the originals first, then the shifts in the order of `offsets`.
 
@@ -321,14 +321,16 @@ import numpy as np
 from sklearn.datasets import load_digits
 
 def shift_images(X, dx, dy):
-    images = X.reshape(-1, 8, 8)
-    moved = np.zeros_like(images)
-    rows_to = slice(max(dy, 0), 8 + min(dy, 0))
-    rows_from = slice(max(-dy, 0), 8 + min(-dy, 0))
-    cols_to = slice(max(dx, 0), 8 + min(dx, 0))
-    cols_from = slice(max(-dx, 0), 8 + min(-dx, 0))
-    moved[:, rows_to, cols_to] = images[:, rows_from, cols_from]
-    return moved.reshape(-1, 64)
+    images = np.roll(X.reshape(-1, 8, 8), (dy, dx), axis=(1, 2))
+    if dy > 0:
+        images[:, :dy, :] = 0
+    elif dy < 0:
+        images[:, dy:, :] = 0
+    if dx > 0:
+        images[:, :, :dx] = 0
+    elif dx < 0:
+        images[:, :, dx:] = 0
+    return images.reshape(-1, 64)
 
 X = load_digits().data[:10] / 16
 offsets = [(dx, dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1) if (dx, dy) != (0, 0)]
@@ -339,23 +341,28 @@ print(augmented.shape)
 ```python test
 import numpy as _np
 assert "shift_images" in dir(), "Keep the function's name as shift_images."
-_img = _np.zeros((8, 8)); _img[0, 7] = 1.0; _img[3, 2] = 0.5
+assert "np.roll" in _source, "Use np.roll to move the pixels, then blank the strips that wrapped round."
+_img = _np.zeros((8, 8)); _img[0, 7] = 1.0; _img[3, 2] = 0.5; _img[7, 0] = 0.25
 _flat = _img.reshape(1, 64)
 _right = shift_images(_flat, 1, 0).reshape(8, 8)
 assert _right[3, 3] == 0.5, "Shifting right by 1 should move the pixel at row 3, column 2 to column 3."
-assert _right[0, 0] == 0 and _right.sum() == 0.5, "The pixel in the last column should fall off the edge, not wrap round to column 0. Don't use np.roll on its own."
+assert _right[:, 0].sum() == 0, "After shifting right, column 0 should be blank: the last column's pixels wrapped into it and must be zeroed."
 _up = shift_images(_flat, 0, -2).reshape(8, 8)
 assert _up[1, 2] == 0.5 and _up[6:, :].sum() == 0, "Shifting up by 2 should move row 3 to row 1 and leave the bottom two rows blank."
+_diag = shift_images(_flat, -1, 1).reshape(8, 8)
+assert _diag[4, 1] == 0.5 and _diag[0, :].sum() == 0 and _diag[:, 7].sum() == 0, "A diagonal shift (left 1, down 1) should blank the top row and the right column."
 assert _np.array_equal(shift_images(_flat, 0, 0), _flat), "A shift of (0, 0) should leave the image unchanged."
-assert shift_images(_flat, 7, 0).sum() == 0.0 and shift_images(_flat, -2, 0).reshape(8, 8)[3, 0] == 0.5, "Shifts work for any size: by 7 to the right everything here falls off; by 2 to the left, column 2 moves to column 0."
+assert shift_images(_flat, 7, 0).sum() == 0.25 and shift_images(_flat, 7, 0).reshape(8, 8)[7, 7] == 0.25, "Shifting right by 7, only the pixel in column 0 survives, landing in column 7; everything else falls off."
+_before = _flat.copy(); shift_images(_flat, 2, 2)
+assert _np.array_equal(_flat, _before), "Don't change the array passed in."
 _X = __import__("sklearn.datasets", fromlist=["load_digits"]).load_digits().data[:10] / 16
 assert _np.shape(augmented) == (90, 64), f"augmented should have shape (90, 64), not {_np.shape(augmented)}."
 assert _np.allclose(augmented[:10], _X), "The original 10 images should come first."
 assert _np.allclose(augmented[10:20], shift_images(_X, -1, -1)), "Then the shifts in the order of offsets, starting with (−1, −1)."
-"SUCCESS: Nine versions of every image, each still the same digit, and no pixels wrapped round to the wrong side."
+"SUCCESS: Nine versions of every image, each still the same digit, with nothing wrapped round to the wrong side."
 ```
 
-Hint: For a shift `d`, the destination range is `max(d, 0)` to `8 + min(d, 0)` and the source range is `max(-d, 0)` to `8 + min(-d, 0)`; use rows for `dy` and columns for `dx`. Python's `slice(start, stop)` lets you name these ranges.
+Hint: `np.roll(images, (dy, dx), axis=(1, 2))` shifts rows and columns together. For a positive shift `d` the wrapped strip is the first `d` rows or columns (`[:d]`); for a negative one it is the last `|d|` (`[d:]`). Do nothing for 0, since `[:0]` is empty but `[0:]` is everything.
 :::
 
 ## What you learned

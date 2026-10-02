@@ -44,7 +44,7 @@ Backpropagation goes through the layers in reverse; each layer receives the grad
 - **Dense and softmax**: exactly as before. D = (P − Y)/n, the weight gradient is flatᵀ D, and the gradient flowing back to the flattened maps is D Wᵀ, reshaped to (n, 16, 4, 4).
 - **Max pooling**: each pooled value is a copy of one input value, the maximum of its block, so only that input affects the loss. The gradient of each pooled value goes back to the position that held the maximum, and every other position in the block gets zero. One trap: if several positions tie for the maximum (common in blank areas, where a filter gives the same value everywhere), the gradient must still go to **one** of them, or it would be counted several times. In code, `first_max_mask` puts a 1 at the first maximum of each 2 × 2 block (it rearranges each block's four values into a row, takes `argmax`, and turns that into a one-hot pattern with `np.eye(4)`), and `np.repeat` spreads each pooled gradient over its block.
 - **ReLU**: multiply by 1 where the score was positive, 0 elsewhere, as always.
-- **Convolution**: each output is Σ patch × filter, so, exactly like a dense layer's "error times input", each filter weight's gradient is the sum, over every image and every position, of the error signal at that position times the pixel that weight was multiplied by there. With all the patches from `sliding_window_view`, that is one `einsum`. (A deeper network would also need the gradient with respect to the convolution's input, to pass further back; this network's convolution is the first layer, so it is not needed.)
+- **Convolution**: each output is Σ patch × filter, so, exactly like a dense layer's "error times input", each filter weight's gradient is the sum, over every image and every position, of the error signal at that position times the pixel that weight was multiplied by there. With all the patches from `sliding_window_view`, that is one `einsum`. (A deeper network would also need the gradient with respect to the convolution's **input**, to pass further back: each input pixel collects error × weight from every output position whose window covered it. This network's convolution is the first layer, so it is not needed here; the second challenge builds it.)
 
 ```python
 import numpy as np
@@ -189,7 +189,7 @@ for pixels in [1, 2]:
 
 After 10 epochs the CNN reads about **98%** of the unseen digits, a little better than the dense network from the training lesson, with about half as many parameters. On images this small (8 × 8, already centred and scaled), there is little room for convolution to show its strength; on real photographs, hundreds of pixels across, the gap between convolutional and dense networks is enormous.
 
-The shift test is sobering, and honest. Shifting every test digit one pixel to the right drops the accuracy to about 0.56, and two pixels to about 0.16. A dense network trained on the same split does worse still (about 0.41 to 0.47 for a one-pixel shift), but neither is truly shift-proof. The convolution itself is shift-equivariant, but the dense layer after pooling still learns "this feature at this position", and one 2 × 2 pooling only absorbs very small shifts. Real CNNs get much more robustness from **many** layers of convolution and pooling, from **global pooling** (averaging each feature map over all positions before the dense layer), and above all from **data augmentation** with shifted, scaled and rotated training images.
+The shift test is sobering, and honest. Shifting every test digit one pixel to the right drops the accuracy to about 0.56, and two pixels to about 0.16. A dense network trained on the same split does worse still (in a separate run with scikit-learn's `MLPClassifier`, about 0.41 to 0.47 for a one-pixel shift), but neither is truly shift-proof. The convolution itself is shift-equivariant, but the dense layer after pooling still learns "this feature at this position", and one 2 × 2 pooling only absorbs very small shifts. Real CNNs get much more robustness from **many** layers of convolution and pooling, from **global pooling** (averaging each feature map over all positions before the dense layer), and above all from **data augmentation** with shifted, scaled and rotated training images.
 
 ## What the filters learn
 
@@ -244,6 +244,7 @@ def gradients(params, images, labels):
 digits = load_digits()
 X_train, X_test, y_train, y_test = train_test_split(digits.images / 16, digits.target, test_size=0.3, random_state=0)
 params = init(0)
+initial_filters = params["K"].copy()
 rng = np.random.default_rng(0)
 velocity = {name: np.zeros_like(value) for name, value in params.items()}
 for epoch in range(10):
@@ -255,22 +256,33 @@ for epoch in range(10):
             velocity[name] = 0.9 * velocity[name] + grads[name]
             params[name] -= 0.05 * velocity[name]
 
-fig, axes = plt.subplots(2, 8, figsize=(9, 2.6))
-for f, ax in enumerate(axes.ravel()):
-    kernel = params["K"][f]
-    ax.imshow(kernel, cmap="RdBu_r", vmin=-np.abs(kernel).max(), vmax=np.abs(kernel).max())
-    ax.axis("off")
+change = np.abs(params["K"] - initial_filters).mean()
+print(f"average size of a filter weight at the start: {np.abs(initial_filters).mean():.2f}; average change during training: {change:.2f}")
+
+fig, axes = plt.subplots(4, 8, figsize=(9, 5))
+for f in range(16):
+    for row, kernels in [(0, initial_filters), (2, params["K"])]:
+        ax = axes[row + f // 8, f % 8]
+        ax.imshow(kernels[f], cmap="RdBu_r", vmin=-np.abs(kernels[f]).max(), vmax=np.abs(kernels[f]).max())
+        ax.axis("off")
+axes[0, 0].set_title("before training (rows 1-2)", fontsize=8, loc="left")
+axes[2, 0].set_title("after training (rows 3-4)", fontsize=8, loc="left")
 plt.show()
 
 maps = forward(params, X_test[:1])[2][0]
-fig, axes = plt.subplots(2, 8, figsize=(9, 2.6))
-for f, ax in enumerate(axes.ravel()):
-    ax.imshow(maps[f], cmap="gray_r")
+fig, axes = plt.subplots(2, 9, figsize=(10, 2.6))
+axes[0, 0].imshow(X_test[0], cmap="gray_r")
+axes[0, 0].set_title("input", fontsize=8)
+for ax in axes.ravel():
     ax.axis("off")
+for f in range(16):
+    axes[f // 8, 1 + f % 8].imshow(maps[f], cmap="gray_r")
 plt.show()
 ```
 
-The top grid shows the 16 learned filters (red positive, blue negative); the bottom grid shows what each produces, after ReLU, for the first test digit. Several of the filters have the same character as the hand-designed ones from the last lesson: positive on one side and negative on the other, responding to edges at various angles. Nobody told the network about edges; detecting them is simply the most useful first step towards telling digits apart, so gradient descent found it. In large CNNs trained on photographs, the first layer's filters reliably become edge and colour detectors, and deeper layers combine them into textures, parts and objects.
+The first figure shows the 16 filters before training (top two rows) and after (bottom two rows), red positive and blue negative; the second shows the input digit and what each learned filter produces from it, after ReLU.
+
+Be honest about what you see. The filters have changed, but only partly: the average weight moved by about 0.26, against a starting size of about 0.37, and many learned filters still resemble their random beginnings. Random 3 × 3 filters already look somewhat like edge detectors (positive on one side, negative on the other), so on tiny 8 × 8 digits with 10 epochs of training there is little pressure to change them much: the dense layer does a lot of the work. The famous result comes from large CNNs trained on photographs: there the first layer's filters reliably become clean edge and colour detectors, and deeper layers combine them into textures, parts and objects, with nobody telling the network about edges.
 
 ## Deeper networks
 
@@ -317,58 +329,67 @@ assert _np.allclose(_out, _ref), "The values are wrong: each output should be th
 Hint: Reshape to `(n, f, h // size, size, w // size, size)`, so each block's rows are on axis 3 and its columns on axis 5, then take `.max(axis=(3, 5))`.
 :::
 
-::: challenge Pooling backwards [medium]
-Write `max_pool_backward(A, d_pooled, size)`: given the input maps `A` (shape `(n, f, h, w)`) and the gradient with respect to the pooled output (shape `(n, f, h // size, w // size)`), return the gradient with respect to `A`. Each block's gradient goes entirely to the position holding the block's maximum; all other positions get zero. If a block's maximum appears more than once, give the whole gradient to the **first** tied position in row-by-row order within the block, as the lesson's `first_max_mask` does.
+::: challenge The gradient for the input [medium]
+To stack convolution layers, backpropagation must pass the gradient **through** a convolution to its input. For the lesson's convolution (padding 1, 3 × 3 filters, one input channel), the forward pass is Z[n, f, h, w] = Σᵢⱼ padded[n, h + i, w + j] · K[f, i, j] + bias. So each padded input pixel at (h + i, w + j) receives d_Z[n, f, h, w] · K[f, i, j] from every output position (h, w), every filter f, and every offset (i, j) that touches it.
 
-The check compares your answer with numerical gradients, and with a hand-worked case that has ties.
+Write `conv_input_gradient(d_Z, K)` that takes `d_Z` of shape `(n, F, H, W)` and `K` of shape `(F, 3, 3)` and returns the gradient for the unpadded input, shape `(n, H, W)`: build the gradient for the padded input (shape `(n, H + 2, W + 2)`), adding the contributions for each of the nine offsets, then crop off the padding border.
+
+The check compares your result with numerical gradients.
 
 ```python starter
 import numpy as np
 
-def max_pool_backward(A, d_pooled, size):
-    return np.zeros_like(A)
+def conv_input_gradient(d_Z, K):
+    n, F, H, W = d_Z.shape
+    return np.zeros((n, H, W))
 ```
 
 ```python solution
 import numpy as np
 
-def max_pool_backward(A, d_pooled, size):
-    n, f, h, w = A.shape
-    rows, cols = h // size, w // size
-    blocks = A.reshape(n, f, rows, size, cols, size).transpose(0, 1, 2, 4, 3, 5).reshape(n, f, rows, cols, size * size)
-    first = np.eye(size * size)[blocks.argmax(axis=-1)] * d_pooled[..., None]
-    return first.reshape(n, f, rows, cols, size, size).transpose(0, 1, 2, 4, 3, 5).reshape(n, f, h, w)
+def conv_input_gradient(d_Z, K):
+    n, F, H, W = d_Z.shape
+    d_padded = np.zeros((n, H + 2, W + 2))
+    for i in range(3):
+        for j in range(3):
+            d_padded[:, i:i + H, j:j + W] += np.einsum("nfhw,f->nhw", d_Z, K[:, i, j])
+    return d_padded[:, 1:-1, 1:-1]
 ```
 
 ```python test
 import numpy as _np
-assert "max_pool_backward" in dir(), "Keep the function's name as max_pool_backward."
-_A = _np.array([[1, 3, 0, 2], [4, 2, 1, 1], [0, 0, 5, 6], [1, 2, 7, 0]], dtype=float).reshape(1, 1, 4, 4)
-_d = _np.array([[10.0, 20.0], [30.0, 40.0]]).reshape(1, 1, 2, 2)
-_want = _np.zeros((4, 4)); _want[1, 0] = 10; _want[0, 3] = 20; _want[3, 1] = 30; _want[3, 2] = 40
-assert _np.array_equal(max_pool_backward(_A, _d, 2).reshape(4, 4), _want), f"Each block's gradient should land on its maximum: 10 at row 1 col 0 (the 4), 20 at row 0 col 3, 30 at row 3 col 1, 40 at row 3 col 2. Got {max_pool_backward(_A, _d, 2).reshape(4, 4)}."
-_tie = _np.array([[2.0, 2.0], [1.0, 2.0]]).reshape(1, 1, 2, 2)
-_gt = max_pool_backward(_tie, _np.array([5.0]).reshape(1, 1, 1, 1), 2).reshape(2, 2)
-assert _np.array_equal(_gt, [[5.0, 0.0], [0.0, 0.0]]), f"With three tied maxima, the whole gradient (5) should go to the first one, at the top left, and nowhere else; got {_gt.tolist()}. Giving it to every tied position would count it three times."
-_r = _np.random.default_rng(3)
-_X = _r.normal(size=(2, 3, 6, 6))
-_G = _r.normal(size=(2, 3, 3, 3))
-def _f(X):
-    return _np.sum(X.reshape(2, 3, 3, 2, 3, 2).max(axis=(3, 5)) * _G)
+from numpy.lib.stride_tricks import sliding_window_view as _swv
+assert "conv_input_gradient" in dir(), "Keep the function's name as conv_input_gradient."
+_r = _np.random.default_rng(2)
+_X = _r.normal(size=(2, 5, 6))
+_K = _r.normal(size=(3, 3, 3))
+_G = _r.normal(size=(2, 3, 5, 6))
+def _forward(X):
+    patches = _swv(_np.pad(X, ((0, 0), (1, 1), (1, 1))), (3, 3), axis=(1, 2))
+    return _np.einsum("nhwij,fij->nfhw", patches, _K)
+def _objective(X):
+    return _np.sum(_forward(X) * _G)
 _num = _np.zeros_like(_X)
-for _i in _np.ndindex(_X.shape):
-    _u = _X.copy(); _u[_i] += 1e-6
-    _l = _X.copy(); _l[_i] -= 1e-6
-    _num[_i] = (_f(_u) - _f(_l)) / 2e-6
-assert _np.allclose(max_pool_backward(_X, _G, 2), _num, atol=1e-6), "Your gradient does not match the numerical gradient on random maps."
-"SUCCESS: Pooling's gradient is a router: each pooled value's gradient goes back to the single input that won its block."
+for _idx in _np.ndindex(_X.shape):
+    _u = _X.copy(); _u[_idx] += 1e-6
+    _d = _X.copy(); _d[_idx] -= 1e-6
+    _num[_idx] = (_objective(_u) - _objective(_d)) / 2e-6
+_got = conv_input_gradient(_G, _K)
+assert _np.shape(_got) == (2, 5, 6), f"The result should have the input's shape (2, 5, 6), not {_np.shape(_got)}: crop the padding."
+_flipped = _np.zeros((2, 7, 8))
+for _i in range(3):
+    for _j in range(3):
+        _flipped[:, _i:_i + 5, _j:_j + 6] += _np.einsum("nfhw,f->nhw", _G, _K[:, 2 - _i, 2 - _j])
+assert not _np.allclose(_got, _flipped[:, 1:-1, 1:-1]), "You used the filter flipped: offset (i, j) should use K[f, i, j]."
+assert _np.allclose(_got, _num, atol=1e-6), "Your input gradient does not match the numerical one. Each offset (i, j) adds d_Z weighted by K[:, i, j] into the window starting at row i, column j of the padded gradient."
+"SUCCESS: With the input gradient, convolution layers can be stacked and trained end to end. (It is itself a convolution: of the padded error with the flipped filters.)"
 ```
 
-Hint: Rearrange so each block's values form the last axis, as `first_max_mask` does: reshape to `(n, f, rows, size, cols, size)`, `transpose(0, 1, 2, 4, 3, 5)`, and reshape to `(n, f, rows, cols, size * size)`. Then `argmax(axis=-1)` finds the first maximum, `np.eye(size * size)[...]` makes it one-hot, multiply by `d_pooled[..., None]`, and undo the rearrangement.
+Hint: Loop over the nine offsets. For offset `(i, j)`, `np.einsum("nfhw,f->nhw", d_Z, K[:, i, j])` sums each position's error times that weight over the filters; add it into `d_padded[:, i:i + H, j:j + W]`. Finally return `d_padded[:, 1:-1, 1:-1]`.
 :::
 
 ::: challenge Receptive fields [medium]
-A unit's receptive field is the size of the input region it can see. For a stack of layers, each given as `(kernel_size, stride)` (a pooling layer counts too: 2 × 2 pooling with stride 2 is `(2, 2)`), the receptive field can be computed layer by layer: start with `field = 1` and `jump = 1` (the distance in input pixels between neighbouring units); for each layer, `field += (kernel_size - 1) * jump`, then `jump *= stride`.
+A unit's receptive field is the size of the input region it can see. For a stack of layers, each given as `(kernel_size, stride)` (a pooling layer counts too: 2 × 2 pooling with stride 2 is `(2, 2)`), the receptive field can be computed layer by layer: start with `field = 1` and `jump = 1` (the distance in input pixels between neighbouring units); for each layer, `field += (kernel_size - 1) * jump`, then `jump *= stride`. Why: a layer's window spans `kernel_size` neighbouring units of the layer below, which adds `kernel_size − 1` gaps of `jump` input pixels each to what one unit sees; and a stride of `s` puts neighbouring units `s` times further apart in the input.
 
 Write `receptive_field(layers)` implementing this. Then store the receptive field of three 3 × 3 convolutions with stride 1 in `three_convs`, of the lesson's network (a 3 × 3 convolution then 2 × 2 pooling) in `lesson_net`, and of the stack `conv3, pool2, conv3, pool2, conv3` (strides 1, 2, 1, 2, 1) in `small_vgg`.
 
@@ -413,8 +434,9 @@ Hint: Loop over the `(kernel_size, stride)` pairs, updating `field` with the cur
 
 - A CNN stacks convolution, ReLU and pooling layers, then flattens the maps into dense layers; its filters are learned by backpropagation.
 - Max pooling keeps each block's maximum: smaller maps and slight tolerance of small shifts. Its backward pass routes each gradient to the block's maximum (one position only, even when there are ties).
+- To stack convolutions, the gradient must also pass to a convolution's input: each input pixel collects error × weight from every window that covered it.
 - A convolution's filter gradient sums (error at each position × the pixel the weight touched there) over all images and positions: one `einsum` over the patches.
-- A 16-filter CNN read about 98% of unseen digits with about half the parameters of the dense network. Its learned filters look like edge detectors.
+- A 16-filter CNN read about 98% of unseen digits with about half the parameters of the dense network. On such small images its filters moved only partly from their random start; in large CNNs on photographs, first-layer filters become clear edge detectors.
 - One convolution and pooling layer does not make a network shift-proof (one-pixel shifts dropped accuracy to about 0.56); depth, global pooling and data augmentation provide real robustness.
 - Stacking layers grows the receptive field; LeNet, AlexNet, VGG and ResNet (with skip connections) are the landmark designs.
 

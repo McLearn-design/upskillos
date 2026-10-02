@@ -127,7 +127,7 @@ for step in range(1, 1001):
 
 The targets are the inputs shifted by one character: at every position the network is asked for the next character. In the backward loop, `dh` adds the two sources of gradient for hₜ: from this step's prediction (`d_scores @ Wy.T`) and from the following step (`dh_from_later`). `d_pre` passes it through the tanh, then it is split three ways: into W_x (only the row for this step's character), into W_h (with the previous hidden state as the input) and into the bias, and finally `d_pre @ Wh.T` becomes the gradient for the previous step. The `+=` everywhere implements the sum over steps for shared weights.
 
-Read the samples as training goes on. After 100 steps the network already produces words and the rhythm of the sentences, with mistakes: "the cat she the cnt". By step 500 the samples are made of correct sentences from the text. But look closely: "the cat sat on the log". In the training text it is the **dog** that sat on the log. To get this right, the network must remember which animal was mentioned about ten characters earlier, through "sat on the", and its memory of that is weak. By step 1,000 the loss is tiny, yet the same mix-up is still there. That kind of long-range mistake is exactly where RNNs struggle.
+Read the samples as training goes on. After 100 steps the network already produces words and the rhythm of the sentences, with mistakes: "the cat she the cnt". By step 500 the samples are made of correct sentences from the text. But look closely: "the cat sat on the log". In the training text it is the **dog** that sat on the log. To get this right, the network must connect "log" with the "dog" about fifteen characters earlier. Here that is impossible for a reason worth knowing: training cuts the text into 20-character chunks, and "dog" and "log" fall in different chunks, so truncated backpropagation never passes any gradient from the one to the other. The network has no way to learn that the animal matters, and indeed it ignores it, predicting "m" or "l" with roughly equal odds after either animal. By step 1,000 the printed loss is tiny (it is the loss on the last chunk only, not the whole text), yet the mix-up is still there. Truncation caps how far back a network can learn; the next section shows that even without truncation, plain RNNs struggle to reach far back.
 
 ## Vanishing gradients through time
 
@@ -154,7 +154,7 @@ for t in range(1, 41):
 
 `jacobian` holds, for every pair of units, how much a change in the starting state's unit `i` changes the current state's unit `j`: each step multiplies it by W_h, with each column scaled by that step's tanh derivative 1 − h². (`np.linalg.norm` of a matrix is the square root of the sum of its squared entries, a measure of overall size.) The sensitivity roughly halves with every step: after 10 steps it is about 0.02, after 20 about 5 × 10⁻⁵, and after 40 around 10⁻¹⁰. To gradient descent, an event 40 steps back is all but invisible, so the network can hardly learn to use it.
 
-This is why plain RNNs in practice remember only around 10 steps. The next lesson's LSTM and GRU fix it by giving the network a separate memory path along which information, and gradients, can travel many steps almost unchanged.
+(The 0.9 scale of W_h was chosen for this demonstration; other weights shrink or grow at other rates, but the exponential trend is the same.) This is why plain RNNs in practice rarely learn to use information more than a few dozen steps back. The next lesson's LSTM and GRU fix it by giving the network a separate memory path along which information, and gradients, can travel many steps almost unchanged.
 
 ::: challenge The forward pass over a sequence [easy]
 Write `rnn_forward(xs, h0, Wx, Wh, b)` for a sequence of input **vectors** `xs` (shape `(T, input_size)`) and a starting hidden state `h0` (length `hidden_size`). Return the array of all hidden states, shape `(T, hidden_size)`, using hₜ = tanh(xₜ W_x + hₜ₋₁ W_h + b).
@@ -247,15 +247,15 @@ Hint: The total is `np.sqrt` of the sum, over the dictionary's values, of `np.su
 :::
 
 ::: challenge Backpropagation through time by hand [medium]
-Take the smallest RNN there is: one hidden unit, hₜ = tanh(w·hₜ₋₁ + u·xₜ), starting from h₋₁ = 0, with the loss simply the last state, L = h_T (the final hₜ). Write `bptt(xs, w, u)` returning `(dL_dw, dL_du)` by backpropagation through time: run forward storing every hₜ, then go backwards with a running gradient `dh` (starting at 1 for the last state). At each step, `d_pre = dh * (1 - h_t ** 2)`; add `d_pre * h_(t−1)` to the gradient for `w` and `d_pre * x_t` to the gradient for `u`; then pass `dh = d_pre * w` back to the previous step.
+Take the smallest RNN there is: one hidden unit, hₜ = tanh(w·hₜ₋₁ + u·xₜ), starting from h₋₁ = 0, with the loss simply the last state, L = h_T (the final hₜ). Write `bptt(xs, w, u)` returning `(dL_dw, dL_du, dL_dx0)` by backpropagation through time: run forward storing every hₜ, then go backwards with a running gradient `dh` (starting at 1 for the last state). At each step, `d_pre = dh * (1 - h_t ** 2)`; add `d_pre * h_(t−1)` to the gradient for `w` and `d_pre * x_t` to the gradient for `u`; then pass `dh = d_pre * w` back to the previous step. The gradient for the first input, x₀, is the `d_pre` at the first step times `u`.
 
-Then use it to measure how much the **first** input matters: store, in `influence`, a dictionary mapping each length T in `[5, 20, 50]` to the derivative of L with respect to x₀ (the first input) for the sequence `np.ones(T)`, with `w = 0.5` and `u = 1.0`. (∂L/∂x₀ is the `d_pre` at the first step times `u`.)
+Then use `bptt` to measure how much the **first** input matters: store, in `influence`, a dictionary mapping each length T in `[5, 20, 50]` to dL/dx₀ for the sequence `np.ones(T)`, with `w = 0.5` and `u = 0.8`.
 
 ```python starter
 import numpy as np
 
 def bptt(xs, w, u):
-    return 0.0, 0.0
+    return 0.0, 0.0, 0.0
 
 influence = {}
 print(influence)
@@ -274,19 +274,9 @@ def bptt(xs, w, u):
         dw += d_pre * hs[t]
         du += d_pre * xs[t]
         dh = d_pre * w
-    return dw, du
+    return dw, du, d_pre * u
 
-def first_input_gradient(xs, w, u):
-    hs = [0.0]
-    for x in xs:
-        hs.append(np.tanh(w * hs[-1] + u * x))
-    dh = 1.0
-    for t in reversed(range(len(xs))):
-        d_pre = dh * (1 - hs[t + 1] ** 2)
-        dh = d_pre * w
-    return d_pre * u
-
-influence = {T: first_input_gradient(np.ones(T), 0.5, 1.0) for T in [5, 20, 50]}
+influence = {T: bptt(np.ones(T), 0.5, 0.8)[2] for T in [5, 20, 50]}
 print(bptt(np.array([1.0, -0.5, 2.0]), 0.8, 0.3), influence)
 ```
 
@@ -299,21 +289,31 @@ def _L(xs, w, u):
         h = _np.tanh(w * h + u * x)
     return h
 for _xs, _w, _u in [(_np.array([1.0, -0.5, 2.0]), 0.8, 0.3), (_np.array([0.3, 0.9, -1.2, 0.4, 0.1]), -1.1, 0.7)]:
-    _dw, _du = bptt(_xs, _w, _u)
+    _out = bptt(_xs, _w, _u)
+    assert len(_out) == 3, "bptt should return three gradients: (dL_dw, dL_du, dL_dx0)."
+    _dw, _du, _dx = _out
     _nw = (_L(_xs, _w + 1e-6, _u) - _L(_xs, _w - 1e-6, _u)) / 2e-6
     _nu = (_L(_xs, _w, _u + 1e-6) - _L(_xs, _w, _u - 1e-6)) / 2e-6
-    assert _np.isclose(_dw, _nw, atol=1e-7) and _np.isclose(_du, _nu, atol=1e-7), f"bptt gives ({_dw:.6f}, {_du:.6f}) but the numerical gradients are ({_nw:.6f}, {_nu:.6f}). Sum the contributions from every step, and pass dh = d_pre * w back."
+    _x1 = _xs.copy(); _x1[0] += 1e-6
+    _x2 = _xs.copy(); _x2[0] -= 1e-6
+    _nx = (_L(_x1, _w, _u) - _L(_x2, _w, _u)) / 2e-6
+    assert _np.isclose(_dw, _nw, atol=1e-7) and _np.isclose(_du, _nu, atol=1e-7), f"bptt gives dw, du = ({_dw:.6f}, {_du:.6f}) but the numerical gradients are ({_nw:.6f}, {_nu:.6f}). Sum the contributions from every step, and pass dh = d_pre * w back."
+    assert _np.isclose(_dx, _nx, atol=1e-7), f"dL/dx0 should be about {_nx:.6f}, but bptt gives {_dx:.6f}. It is the first step's d_pre times u."
+def _exact(T, w, u):
+    hs = [0.0]
+    for _ in range(T):
+        hs.append(_np.tanh(w * hs[-1] + u))
+    g = u
+    for t in range(1, T + 1):
+        g *= 1 - hs[t] ** 2
+    return g * w ** (T - 1)
 assert sorted(influence) == [5, 20, 50], "influence should have keys 5, 20 and 50."
 for _T in [5, 20, 50]:
-    _ones = _np.ones(_T)
-    _bumped = _ones.copy(); _bumped[0] += 1e-6
-    _lower = _ones.copy(); _lower[0] -= 1e-6
-    _want = (_L(_bumped, 0.5, 1.0) - _L(_lower, 0.5, 1.0)) / 2e-6
-    assert _np.isclose(influence[_T], _want, atol=1e-9, rtol=1e-4), f"influence[{_T}] should be about {_want:.3e}."
-f"SUCCESS: The first input's influence on the last state: {influence[5]:.1e} after 5 steps, {influence[20]:.1e} after 20, {influence[50]:.1e} after 50. Vanishing gradients, in one unit."
+    assert _np.isclose(influence[_T], _exact(_T, 0.5, 0.8), rtol=1e-6, atol=0), f"influence[{_T}] should be dL/dx0 from bptt for np.ones({_T}) with w = 0.5 and u = 0.8."
+f"SUCCESS: The first input's influence on the last state: {influence[5]:.1e} after 5 steps, {influence[20]:.1e} after 20, {influence[50]:.1e} after 50. Each step multiplies it by w times a tanh slope, so it vanishes exponentially."
 ```
 
-Hint: Store the states in a list starting with 0.0, so `hs[t]` is the state before step `t` and `hs[t + 1]` the state after it. In the backward loop, use `hs[t + 1]` for the tanh derivative and `hs[t]` as the input to `w`. For the influence, the last `d_pre` computed (at step 0) times `u` is ∂L/∂x₀.
+Hint: Store the states in a list starting with 0.0, so `hs[t]` is the state before step `t` and `hs[t + 1]` the state after it. In the backward loop, use `hs[t + 1]` for the tanh derivative and `hs[t]` as the input to `w`. After the loop, `d_pre` holds the first step's value, so return `d_pre * u` as the third result.
 :::
 
 ## What you learned

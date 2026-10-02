@@ -38,7 +38,7 @@ With many queries at once, stacked as the rows of a matrix Q, keys as the rows o
 
 QKᵀ holds every query's score against every key; the softmax is taken along each row (over the keys), giving a weight matrix whose rows add to 1; multiplying by V averages the values. d_k is the length of the key vectors.
 
-Why divide by √d_k? If the entries of a query and a key are independent with variance 1, their dot product is a sum of d_k terms and has variance d_k. With 64-dimensional keys, scores spread over a range like −20 to 20, and a softmax over such scores puts nearly all the weight on the single largest one. The softmax is then **saturated**: its gradient is almost zero, and learning stalls, just like a saturated sigmoid. Dividing by √d_k brings the scores back to variance 1. Before running, predict how the largest weight changes with d_k when the scores are not scaled:
+Why divide by √d_k? If the entries of a query and a key are independent with mean 0 and variance 1, their dot product is a sum of d_k terms and has variance d_k. With 64-dimensional keys, scores spread over a range like −20 to 20, and a softmax over such scores puts nearly all the weight on the single largest one. The softmax is then **saturated**: its gradient is almost zero, and learning stalls, just like a saturated sigmoid. Dividing by √d_k brings the scores back to variance 1. Before running, predict how the largest weight changes with d_k when the scores are not scaled:
 
 ```python
 import numpy as np
@@ -54,7 +54,7 @@ for d in [4, 64, 512]:
     print(f"d_k = {d:>3}: score spread {raw.std():5.1f}; largest weight unscaled {softmax(raw).max():.3f}, scaled {softmax(raw / np.sqrt(d)).max():.3f}")
 ```
 
-Unscaled, the largest of 10 weights grows from moderate to essentially 1 as d_k grows (the score spread grows like √d_k); scaled, it stays moderate whatever the dimension.
+Unscaled, the score spread grows like √d_k (0.6, 6.4, 22.6), and the softmax becomes dominated by one or two keys: the largest weight jumps from 0.21 at d_k = 4 to 0.95 at 64 and 0.75 at 512 (where two keys happen to share the top). Scaled, the largest weight stays between 0.15 and 0.25 whatever the dimension.
 
 ## Self-attention
 
@@ -101,7 +101,7 @@ Here is a task built so that a model must find one item in a sequence. Each sequ
 
 A model that simply **averages** the items cannot see the marked item's value clearly: it is one of ten, diluted by nine random ones. An attention model can learn a query that matches the marked item's key and put almost all its weight there. The model below: keys K = X W_K, a single learned query vector `q` (the same for every sequence), weights = softmax(K q / √d), output = Σ weights × (X W_V), then logistic regression on the output.
 
-Its backward pass needs one new piece, the gradient through the softmax. If a = softmax(s) and the gradient arriving at a is da, the gradient for the scores is ds = a ⊙ (da − Σ a ⊙ da): each score's gradient is its weight times how much its own value's gradient exceeds the weighted average. Everything else is the familiar "error times input" pattern. Before running, predict: what accuracy will the averaging model reach, and how much weight will the attention model put on the marked item?
+Its backward pass needs one new piece, the gradient through the softmax. Each weight aᵢ = e^(sᵢ) / Σₖ e^(sₖ) depends on **every** score: differentiating the quotient gives ∂aᵢ/∂sᵢ = aᵢ(1 − aᵢ) and ∂aᵢ/∂sⱼ = −aᵢaⱼ for j ≠ i, which together are aᵢ(δᵢⱼ − aⱼ), where δᵢⱼ is 1 when i = j and 0 otherwise. If the gradient arriving at the weights is da, the chain rule sums over all the weights each score affects: dsⱼ = Σᵢ daᵢ · aᵢ(δᵢⱼ − aⱼ) = aⱼ daⱼ − aⱼ Σᵢ aᵢ daᵢ. In vector form, ds = a ⊙ (da − Σ a ⊙ da): each score's gradient is its weight times how much its own value's gradient exceeds the weighted average. Everything else is the familiar "error times input" pattern. Before running, predict: what accuracy will the averaging model reach, and how much weight will the attention model put on the marked item?
 
 ```python
 import numpy as np
@@ -163,7 +163,7 @@ for use_attention, label in [(False, "averaging (no attention)"), (True, "learne
 
 With the query and key weights fixed at zero, every score is 0 and the softmax gives every item weight 1/10: the averaging baseline. `np.einsum("nt,ntd->nd", a, V)` forms each sequence's weighted average of its value vectors.
 
-The averaging model reaches only about 0.60: the marked item's signal is drowned in the noise of the nine others. The attention model reaches about **0.996**, putting about 98% of its weight on the marked item. It has learned, from the labels alone, a key that makes "marked" items stand out and a query that seeks them. Nothing told it where to look.
+The averaging model reaches only about 0.60: the marked item's signal is drowned in the noise of the nine others. The attention model reaches about **0.997**, putting about 98% of its weight on the marked item. It has learned, from the labels alone, a key that makes "marked" items stand out and a query that seeks them. Nothing told it where to look.
 
 ::: challenge Attention in matrices [easy]
 Write `attention(Q, K, V, mask=None)` returning a tuple `(output, weights)` for scaled dot-product attention: scores QKᵀ / √d_k, a softmax along each row (subtract each row's maximum first, for stability), then weights @ V. If `mask` is given, it is a boolean array the shape of the scores, `True` where attention is **not** allowed; set those scores to −∞ before the softmax.
@@ -264,8 +264,13 @@ _X = _r.normal(size=(6, 5))
 _Ws = [_r.normal(size=(5, 3)) for _ in range(3)]
 for _t in (0, 2, 4):
     assert leaks(_X, *_Ws, _t) < 1e-12, f"Changing positions after {_t} changed the outputs up to {_t}: the mask is letting the future leak in."
-_unmasked_change = _np.abs(attention(_X @ _Ws[0], _X @ _Ws[1], _X @ _Ws[2])[0][:3] - attention(_np.vstack([_X[:3], _np.random.default_rng(0).normal(size=(3, 5))]) @ _Ws[0], _np.vstack([_X[:3], _np.random.default_rng(0).normal(size=(3, 5))]) @ _Ws[1], _np.vstack([_X[:3], _np.random.default_rng(0).normal(size=(3, 5))]) @ _Ws[2])[0][:3]).max()
-assert _unmasked_change > 1e-3, "Sanity check: without a mask the future does leak."
+_real_mask = causal_mask
+try:
+    globals()["causal_mask"] = lambda T: _np.zeros((T, T), dtype=bool)
+    _leak_without_mask = leaks(_X, *_Ws, 2)
+finally:
+    globals()["causal_mask"] = _real_mask
+assert _leak_without_mask > 1e-3, "With the mask switched off, leaks should detect the future leaking in. Make leaks really recompute attention with causal_mask before and after changing the later positions."
 _Xc = _X.copy()
 leaks(_Xc, *_Ws, 2)
 assert _np.array_equal(_Xc, _X), "leaks changed the sequence passed in: work on a copy."
@@ -275,65 +280,82 @@ assert _np.array_equal(_Xc, _X), "leaks changed the sequence passed in: work on 
 Hint: `np.triu(np.ones((T, T), dtype=bool), k=1)` is the strictly upper triangle. In `leaks`, compare the outputs for rows `:t + 1` before and after replacing rows `t + 1:` of a copy.
 :::
 
-::: challenge The softmax gradient [medium]
-Derive and check the backward pass of the softmax used in attention. For a = softmax(s) (one row) and a gradient `da` arriving at a, write `softmax_backward(a, da)` returning the gradient for the scores, using the lesson's formula ds = a ⊙ (da − Σ a ⊙ da). Make it work for a 2-D array of rows (a softmax along each row), summing within each row.
+::: challenge The softmax Jacobian [medium]
+The lesson derived ∂aᵢ/∂sⱼ = aᵢ(δᵢⱼ − aⱼ) for a = softmax(s). Collect all of these into the **Jacobian matrix** J, with J[i, j] = ∂aᵢ/∂sⱼ, and use it.
 
-Then confirm the formula numerically: write `numeric_softmax_grad(s, da)` that, for a single row of scores `s`, nudges each score by ±1e-6, recomputes the softmax, and returns the vector of (change in Σ da ⊙ softmax(s)) / (2 × 1e-6).
+Write `softmax_jacobian(s)` for a single row of scores `s`, returning the n × n matrix J built from the formula without loops (hint: it is a diagonal matrix minus an outer product). Then write `numeric_jacobian(s)` that estimates the same matrix by nudging each score sⱼ by ±1e-6 and measuring the change in the whole softmax vector (column j of J). Finally, store in `chain_ok` whether `J.T @ da` equals the lesson's formula a ⊙ (da − Σ a ⊙ da) for the starter's `s` and `da` (a boolean, from `np.allclose`).
 
 ```python starter
 import numpy as np
 
-def softmax_backward(a, da):
-    return da
+def softmax(s):
+    e = np.exp(s - s.max())
+    return e / e.sum()
 
-def numeric_softmax_grad(s, da):
-    return np.zeros_like(s)
+def softmax_jacobian(s):
+    return np.eye(len(s))
+
+def numeric_jacobian(s):
+    return np.eye(len(s))
+
+s = np.array([1.0, -0.5, 2.0, 0.3])
+da = np.array([0.2, -1.0, 0.5, 0.0])
+chain_ok = False
+print(chain_ok)
 ```
 
 ```python solution
 import numpy as np
 
-def softmax_backward(a, da):
-    return a * (da - (a * da).sum(axis=-1, keepdims=True))
+def softmax(s):
+    e = np.exp(s - s.max())
+    return e / e.sum()
 
-def numeric_softmax_grad(s, da):
-    def objective(z):
-        e = np.exp(z - z.max())
-        return np.sum(da * e / e.sum())
-    grad = np.zeros_like(s)
-    for i in range(len(s)):
+def softmax_jacobian(s):
+    a = softmax(s)
+    return np.diag(a) - np.outer(a, a)
+
+def numeric_jacobian(s):
+    J = np.zeros((len(s), len(s)))
+    for j in range(len(s)):
         up, down = s.copy(), s.copy()
-        up[i] += 1e-6
-        down[i] -= 1e-6
-        grad[i] = (objective(up) - objective(down)) / 2e-6
-    return grad
+        up[j] += 1e-6
+        down[j] -= 1e-6
+        J[:, j] = (softmax(up) - softmax(down)) / 2e-6
+    return J
+
+s = np.array([1.0, -0.5, 2.0, 0.3])
+da = np.array([0.2, -1.0, 0.5, 0.0])
+a = softmax(s)
+chain_ok = bool(np.allclose(softmax_jacobian(s).T @ da, a * (da - np.sum(a * da))))
+print(chain_ok)
 ```
 
 ```python test
+import ast as _ast
 import numpy as _np
-assert "softmax_backward" in dir() and "numeric_softmax_grad" in dir(), "Keep both function names."
+assert "softmax_jacobian" in dir() and "numeric_jacobian" in dir(), "Keep both function names."
+_fns = {n.name: n for n in _ast.walk(_ast.parse(_source)) if isinstance(n, _ast.FunctionDef)}
+assert not any(isinstance(n, (_ast.For, _ast.While, _ast.ListComp)) for n in _ast.walk(_fns["softmax_jacobian"])), "Build the Jacobian from the formula without loops."
+assert "softmax_jacobian" not in _ast.unparse(_fns["numeric_jacobian"]), "numeric_jacobian must measure the softmax's changes itself, not call softmax_jacobian."
+def _sm(z):
+    e = _np.exp(z - z.max()); return e / e.sum()
 _r = _np.random.default_rng(4)
-_s = _r.normal(size=6)
-_da = _r.normal(size=6)
-_e = _np.exp(_s - _s.max()); _a = _e / _e.sum()
-_num = numeric_softmax_grad(_s, _da)
-assert _np.allclose(softmax_backward(_a, _da), _num, atol=1e-8), "softmax_backward disagrees with the numerical gradient."
-_ref = _np.zeros(6)
-for _i in range(6):
-    _u = _s.copy(); _u[_i] += 1e-6
-    _d = _s.copy(); _d[_i] -= 1e-6
-    _fu = _np.exp(_u - _u.max()); _fd = _np.exp(_d - _d.max())
-    _ref[_i] = (_np.sum(_da * _fu / _fu.sum()) - _np.sum(_da * _fd / _fd.sum())) / 2e-6
-assert _np.allclose(_num, _ref, atol=1e-8), "numeric_softmax_grad should nudge each score by ±1e-6 and measure the change in sum(da * softmax(s))."
-_S = _r.normal(size=(4, 5)); _DA = _r.normal(size=(4, 5))
-_E = _np.exp(_S - _S.max(axis=1, keepdims=True)); _A = _E / _E.sum(axis=1, keepdims=True)
-_rows = _np.array([numeric_softmax_grad(_S[k], _DA[k]) for k in range(4)])
-assert _np.allclose(softmax_backward(_A, _DA), _rows, atol=1e-8), "For a 2-D array, apply the formula to each row separately: sum within each row (axis=-1, keepdims=True)."
-assert _np.allclose(softmax_backward(_A, _np.ones((4, 5))), 0), "Adding the same gradient to every weight changes nothing (the weights always sum to 1), so the score gradient should be 0."
-"SUCCESS: The softmax's gradient: each score moves by its weight times how much its value beats the weighted average. It is the one new piece in backpropagating through attention."
+for _n in (3, 6):
+    _s = _r.normal(size=_n)
+    _ref = _np.zeros((_n, _n))
+    for _j in range(_n):
+        _u, _d = _s.copy(), _s.copy(); _u[_j] += 1e-6; _d[_j] -= 1e-6
+        _ref[:, _j] = (_sm(_u) - _sm(_d)) / 2e-6
+    assert _np.allclose(numeric_jacobian(_s), _ref, atol=1e-8), "numeric_jacobian should fill column j with the change in the softmax when s_j is nudged by ±1e-6."
+    assert _np.allclose(softmax_jacobian(_s), _ref, atol=1e-8), "softmax_jacobian does not match the numerical Jacobian. Entry [i, j] is a_i (δ_ij − a_j): a diagonal matrix of a minus the outer product of a with itself."
+_J = softmax_jacobian(_r.normal(size=5))
+assert _np.allclose(_J.sum(axis=0), 0), "Each column of the Jacobian should sum to 0, since the weights always add to 1."
+assert chain_ok is True or chain_ok == True, "chain_ok should be True: Jᵀ da reproduces the lesson's formula."
+"SUCCESS: The whole Jacobian, diag(a) − aaᵀ, checked against nudging every score; multiplying it by the incoming gradient gives back the lesson's compact formula."
 ```
 
-Hint: In `softmax_backward`, `(a * da).sum(axis=-1, keepdims=True)` is the weighted average for each row. In `numeric_softmax_grad`, define a small function computing `np.sum(da * softmax(z))` and nudge each score in turn.
+Hint: For one row, `np.diag(a) - np.outer(a, a)` has a_i(1 − a_i) on the diagonal and −a_i a_j elsewhere. For the numerical version, loop over the scores and set whole columns: `J[:, j] = (softmax(up) - softmax(down)) / 2e-6`.
 :::
 
 ## What you learned
@@ -342,6 +364,6 @@ Hint: In `softmax_backward`, `(a * da).sum(axis=-1, keepdims=True)` is the weigh
 - Scaled dot-product attention: softmax(QKᵀ/√d_k)V for all queries at once. Dividing by √d_k keeps the scores' variance near 1 so the softmax does not saturate.
 - In self-attention, Q, K and V all come from the same sequence through learned matrices W_Q, W_K, W_V; every position can draw directly on every other. It ignores order unless positions are added.
 - A causal mask sets scores for later positions to −∞, so each position sees only the past; the weight matrix is lower-triangular.
-- The softmax's backward pass is ds = a ⊙ (da − Σ a ⊙ da). With it, an attention model learned to find a marked item (accuracy 0.996, 98% of its weight on it) where averaging managed about 0.60.
+- The softmax's backward pass is ds = a ⊙ (da − Σ a ⊙ da). With it, an attention model learned to find a marked item (accuracy 0.997, 98% of its weight on it) where averaging managed about 0.60.
 
 One attention layer is a powerful lookup, but on its own it is still a weighted average. The next lesson assembles the full **transformer block**: several attention heads in parallel, positional information, a small feed-forward network, residual connections and layer normalisation, the unit that is stacked dozens of times in a large language model.

@@ -80,10 +80,30 @@ The vertical-edge filter responds strongly along the **left and right sides** of
 A convolutional layer is just a layer whose weights are a set of filters. It differs from a dense layer in three ways that suit images:
 
 - **Locality**: each output depends only on a small neighbourhood of pixels. Nearby pixels are related; distant ones, at first, are not.
-- **Weight sharing**: the same filter is used at every position, so a 3 × 3 filter has 9 weights (plus a bias) whatever the image size. A dense layer from a 28 × 28 image to 100 units needs 78,400 weights; 32 3 × 3 filters need 288.
+- **Weight sharing**: the same filter is used at every position, so a 3 × 3 filter has 9 weights (plus a bias) whatever the image size; the channels section below compares this with a dense layer.
 - **Shift equivariance**: shift the input and the feature map shifts with it, because the same filter is applied everywhere. A feature detector learned in one corner works in every corner.
 
-You can check the last property directly: shift the digit one pixel right, and the feature map is the old one shifted one pixel right too (except at the border, where pixels fall off the edge).
+You can check the last property directly: shift the digit one pixel right, and the feature map is the old one shifted one pixel right too (except at the border, where pixels fall off the edge):
+
+```python
+import numpy as np
+from sklearn.datasets import load_digits
+
+def conv2d(image, kernel):
+    k = kernel.shape[0]
+    rows, cols = image.shape[0] - k + 1, image.shape[1] - k + 1
+    return np.array([[np.sum(image[r:r + k, c:c + k] * kernel) for c in range(cols)] for r in range(rows)])
+
+digit = load_digits().images[0] / 16
+shifted = np.zeros_like(digit)
+shifted[:, 1:] = digit[:, :-1]
+sobel = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
+original_map, shifted_map = conv2d(digit, sobel), conv2d(shifted, sobel)
+print("shifted map equals the original map moved right (ignoring the first column):",
+      np.allclose(shifted_map[:, 1:], original_map[:, :-1]))
+```
+
+The comparison skips the first column of the new map, where the blank column that slid in sits under the filter.
 
 ## Padding, stride and output size
 
@@ -207,6 +227,7 @@ def conv2d(image, kernel, padding=0, stride=1):
 import numpy as _np
 from scipy.signal import correlate2d as _c2d
 assert "conv2d" in dir() and "output_size" in dir(), "Keep both function names."
+assert "correlate" not in _source and "convolve" not in _source, "Write the sliding loop yourself rather than calling a library correlation."
 assert output_size(8, 3, 0, 1) == 6 and output_size(8, 3, 1, 1) == 8 and output_size(8, 3, 1, 2) == 4 and output_size(28, 5, 2, 2) == 14, "output_size should be (n + 2p − k) // s + 1."
 _r = _np.random.default_rng(0)
 _img = _r.normal(size=(7, 9))
