@@ -14,7 +14,9 @@
 // Note: the browser stores caches per origin, and every localhost port is its own origin. A dev
 // server that starts on a different port downloads the model again (see vite.config.js strictPort).
 
-import { CreateMLCEngine, deleteModelAllInfoInCache } from '@mlc-ai/web-llm'
+// Imported on first use, not at startup: the runtime is about 6 MB and most
+// visitors never start a model. Every page that imports this file used to pay for it.
+const webllm = () => import('@mlc-ai/web-llm')
 
 export const WEBLLM_MODEL_ID = 'Llama-3.2-1B-Instruct-q4f16_1-MLC'
 
@@ -61,7 +63,7 @@ export async function getSharedEngine(onProgress, requestedModelId = WEBLLM_MODE
       _engine = null
       _engineModelId = null
     }
-    const engine = await CreateMLCEngine(modelId, {
+    const engine = await (await webllm()).CreateMLCEngine(modelId, {
       initProgressCallback: ({ text, progress }) => onProgress?.(text || 'Loading…', progress ?? 0),
     })
     _engine = engine
@@ -84,7 +86,7 @@ export async function forgetModel(requestedModelId) {
   if (!requestedModelId || requestedModelId === WEBLLM_MODEL_ID) return
   const modelId = await runnableModelId(requestedModelId)
   if (modelId === _engineModelId) await unloadSharedEngine()
-  await deleteModelAllInfoInCache(modelId).catch(() => {})
+  await (await webllm()).deleteModelAllInfoInCache(modelId).catch(() => {})
 }
 
 /** Unload the engine from memory (the cached files stay, so the next use loads quickly). */
@@ -109,5 +111,5 @@ export async function deleteCachedModel(requestedModelId) {
     await Promise.all(names.filter(n => n.startsWith('webllm/')).map(n => caches.delete(n)))
     return
   }
-  await deleteModelAllInfoInCache(modelId).catch(() => {})
+  await (await webllm()).deleteModelAllInfoInCache(modelId).catch(() => {})
 }

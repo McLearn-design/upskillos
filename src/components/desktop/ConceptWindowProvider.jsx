@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import FloatingWindow from './FloatingWindow.jsx'
 import { useGlobalTheme } from '../../context/ThemeContext.jsx'
-import { DOCS_MODULES, SectionedMarkdown } from '../docs/MarkdownHub.jsx'
+// MarkdownHub is large (every doc's loader plus the renderer), and this
+// provider is mounted on every page. Load it when a concept window opens.
+const loadHub = () => import('../docs/MarkdownHub.jsx')
 import { Lightbulb, ChevronRight, Locate } from 'lucide-react'
 
 // Lets whatever is rendering a concept doc's *content* (ConceptDocBody,
@@ -22,30 +24,35 @@ export const useConceptWindow = () => useContext(ConceptWindowContext)
 function ConceptDocBody({ docPath }) {
   const { themeStyles, typography } = useGlobalTheme()
   const [content, setContent] = useState(null)
+  const [hub, setHub] = useState(null)
 
   useEffect(() => {
     let cancelled = false
     setContent(null)
-    const loader = DOCS_MODULES[docPath]
-    if (!loader) {
-      setContent('*Concept file not found.*')
-      return
-    }
-    loader().then((text) => {
-      if (!cancelled) setContent(text)
+    loadHub().then((module) => {
+      if (cancelled) return
+      setHub(module)
+      const loader = module.DOCS_MODULES[docPath]
+      if (!loader) {
+        setContent('*Concept file not found.*')
+        return
+      }
+      return loader().then((text) => {
+        if (!cancelled) setContent(text)
+      })
     })
     return () => {
       cancelled = true
     }
   }, [docPath])
 
-  if (content === null) {
+  if (content === null || !hub) {
     return <p className="text-sm text-slate-400 animate-pulse p-6">Loading concept…</p>
   }
 
   return (
     <div className="p-6">
-      <SectionedMarkdown
+      <hub.SectionedMarkdown
         content={content}
         ui={themeStyles?.ui}
         accentColor={themeStyles?.accentHex || '#0ea5e9'}
