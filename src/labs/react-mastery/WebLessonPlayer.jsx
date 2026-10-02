@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import PlayerIdleIntro from '../../components/lesson/PlayerIdleIntro.jsx'
 import { useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
 import {
@@ -277,6 +278,11 @@ export default function WebLessonPlayer({ lesson, onBack, onNext, nextTitle, ser
 
   const [code, setCode]                       = useState(initCode)
   const [files, setFiles]                     = useState(initFiles)
+  // runFrom is memoised, so it reads the latest code through refs, not stale state.
+  const codeRef = useRef(code)
+  codeRef.current = code
+  const filesRef = useRef(files)
+  filesRef.current = files
   const [activeTab, setActiveTab]             = useState(() => autoTab(initFiles))
   const [logs, setLogs]                       = useState([])
   const [runError, setRunError]               = useState(null)
@@ -456,7 +462,7 @@ export default function WebLessonPlayer({ lesson, onBack, onNext, nextTitle, ser
           const newCode = seg.code ?? ''
           const newFiles = seg.files ?? { html: newCode, css: '', js: '' }
           highlightNewLines(newCode)
-          typeCode(newCode, newFiles, code, files)
+          typeCode(newCode, newFiles, codeRef.current, filesRef.current)
           if (lesson.language === 'web') setActiveTab(seg.defaultTab ?? autoTab(newFiles))
           setLogs([])
           setRunError(null)
@@ -472,7 +478,7 @@ export default function WebLessonPlayer({ lesson, onBack, onNext, nextTitle, ser
         return
 
       } else if (seg.type === 'checkpoint') {
-        saveCheckpoint(lesson.id, seg.id, i, code, files)
+        saveCheckpoint(lesson.id, seg.id, i, codeRef.current, filesRef.current)
         setReachedCp(prev => prev.includes(seg.id) ? prev : [...prev, seg.id])
 
       } else if (seg.type === 'challenge') {
@@ -945,6 +951,9 @@ ${codeToRun}
               </div>
             )}
 
+            {phase === 'idle' && (
+              <PlayerIdleIntro title={lesson.title} resuming={Boolean(savedCp)} steps={segments.length} onStart={handlePlay} />
+            )}
             {(phase === 'playing' || phase === 'paused') && currentSeg?.type === 'narration' && (
               <p className="text-[15px] text-slate-200 leading-relaxed tracking-tight font-medium">
                 <TypewriterText 

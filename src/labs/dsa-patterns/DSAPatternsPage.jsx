@@ -98,7 +98,7 @@ export default function DSAPatternsPage() {
       <LessonPlayer
         key={lesson.id}
         lesson={lesson}
-        onBack={() => navigate('/')}
+        onBack={() => navigate('/labs')}
         onNext={nextId ? () => navigate(`/learn/dsa-patterns/${nextId}`) : null}
         nextTitle={nextId ? (LESSONS[nextId]?.title ?? null) : null}
         seriesLessons={seriesLessons}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import PlayerIdleIntro from '../../components/lesson/PlayerIdleIntro.jsx'
 import { useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
 import {
@@ -226,7 +227,10 @@ export default function LessonPlayer({ lesson, onBack, onNext, nextTitle, series
 
   const [segIdx, setSegIdx]                   = useState(pastEnd ? segments.length - 1 : initialIdx)
   const [phase, setPhase]                     = useState(pastEnd ? 'done' : 'idle')
-  const [code, setCode]                       = useState(savedCp?.code || '')
+  const [code, setCode]                       = useState(savedCp?.code || (segments[initialIdx]?.startCode ?? segments[initialIdx]?.code ?? ''))
+  // runFrom is memoised, so it reads the latest code through refs, not stale state.
+  const codeRef = useRef(code)
+  codeRef.current = code
   const [logs, setLogs]                       = useState([])
   const [runError, setRunError]               = useState(null)
   const [challengeResult, setChallengeResult] = useState(null)
@@ -373,7 +377,7 @@ export default function LessonPlayer({ lesson, onBack, onNext, nextTitle, series
         setIsTypingText(true)
         if (seg.code !== null && seg.code !== undefined) {
           highlightNewLines(seg.code)
-          typeCode(seg.code, code)
+          typeCode(seg.code, codeRef.current)
           setLogs([])
           setRunError(null)
           setChallengeResult(null)
@@ -395,7 +399,7 @@ export default function LessonPlayer({ lesson, onBack, onNext, nextTitle, series
         return
 
       } else if (seg.type === 'checkpoint') {
-        saveCheckpoint(lesson.id, seg.id, i, code)
+        saveCheckpoint(lesson.id, seg.id, i, codeRef.current)
         setReachedCp(prev => prev.includes(seg.id) ? prev : [...prev, seg.id])
 
       } else if (seg.type === 'challenge') {
@@ -778,6 +782,9 @@ export default function LessonPlayer({ lesson, onBack, onNext, nextTitle, series
             </div>
           )}
 
+          {phase === 'idle' && (
+            <PlayerIdleIntro title={lesson.title} resuming={Boolean(savedCp)} steps={segments.length} onStart={handlePlay} />
+          )}
           {(phase === 'playing' || phase === 'paused') && currentSeg?.type === 'narration' && (
             <p className="text-[15px] text-slate-200 leading-relaxed tracking-tight font-medium">
               <TypewriterText 

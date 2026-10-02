@@ -61,7 +61,7 @@ export default function ReactMasteryPage() {
     <WebLessonPlayer
       key={lesson.id}
       lesson={lesson}
-      onBack={() => navigate('/')}
+      onBack={() => navigate('/labs')}
       onNext={nextId ? () => navigate(`/web-learn/react-mastery/${nextId}`) : null}
       nextTitle={nextId ? LESSONS[nextId]?.title : null}
       seriesLessons={seriesLessons}

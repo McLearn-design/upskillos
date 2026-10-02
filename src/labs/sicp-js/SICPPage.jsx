@@ -87,7 +87,7 @@ export default function SICPPage() {
       <LessonPlayer
         key={lesson.id}
         lesson={lesson}
-        onBack={() => navigate('/')}
+        onBack={() => navigate('/labs')}
         onNext={nextId ? () => navigate(`/learn/sicp/${nextId}`) : null}
         nextTitle={nextId ? (LESSONS[nextId]?.title ?? null) : null}
         seriesLessons={seriesLessons}
