@@ -11,7 +11,9 @@ export function LessonProgressBadge({ status, percent = 0, correct = 0, total = 
     )
   }
 
-  if (status === 'in-progress' && total > 0) {
+  // A score ring only means something once a question has been answered
+  // correctly; before that, "0% · 0/6 correct" reads like a failing grade.
+  if (status === 'in-progress' && total > 0 && correct > 0) {
     const radius = 14
     const circumference = 2 * Math.PI * radius
     const strokeDashoffset = circumference - (percent / 100) * circumference
@@ -58,7 +60,7 @@ export function LessonProgressBadge({ status, percent = 0, correct = 0, total = 
     )
   }
 
-  if (status === 'in-progress' && total === 0) {
+  if (status === 'in-progress') {
      return (
       <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 text-amber-600 dark:text-amber-500 rounded-full border border-amber-500/20 font-medium text-sm shadow-[0_0_15px_rgba(245,158,11,0.1)]">
         <CircleDashed size={16} className="animate-[spin_4s_linear_infinite]" />
