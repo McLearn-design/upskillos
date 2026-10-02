@@ -5,6 +5,7 @@ import "./styles/index.css";
 import "./styles/proof.css";
 import "./utils/lazyMonaco.js";
 import { reloadForNewVersion } from "./utils/staleChunk.js";
+import LastResortBoundary from "./components/layout/LastResortBoundary.jsx";
 
 // Apply saved theme before first paint (avoids flash)
 const saved = localStorage.getItem("oc-theme");
@@ -96,6 +97,8 @@ setInterval(_checkVersion, 60_000);
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <App />
+    <LastResortBoundary>
+      <App />
+    </LastResortBoundary>
   </React.StrictMode>,
 );

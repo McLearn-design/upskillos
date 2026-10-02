@@ -14,6 +14,7 @@ import DesktopProvider from "./components/desktop/DesktopProvider.jsx";
 import ConceptWindowProvider from "./components/desktop/ConceptWindowProvider.jsx";
 import { ChatProvider } from "./context/ChatContext.jsx";
 import RootErrorBoundary from "./components/layout/RootErrorBoundary.jsx";
+import SilentBoundary from "./components/layout/SilentBoundary.jsx";
 import { TourProvider } from "./context/TourContext.jsx";
 import { MontyProvider } from "./features/compass/MontyContext.tsx";
 import TourSpotlight from "./components/ui/TourSpotlight.jsx";
@@ -101,13 +102,15 @@ export default function App() {
                   <ChatProvider>
                   <DesktopProvider>
                   <ConceptWindowProvider>
-                    <FloatingVideoPlayer />
-                    <Suspense fallback={null}>
-                      <NotificationToast />
-                    </Suspense>
-                    <TourAutoStart />
-                    <InAppLinks />
-                    <TourSpotlight />
+                    <SilentBoundary name="Video player"><FloatingVideoPlayer /></SilentBoundary>
+                    <SilentBoundary name="Notifications">
+                      <Suspense fallback={null}>
+                        <NotificationToast />
+                      </Suspense>
+                    </SilentBoundary>
+                    <SilentBoundary name="Tour"><TourAutoStart /></SilentBoundary>
+                    <SilentBoundary name="In-app links"><InAppLinks /></SilentBoundary>
+                    <SilentBoundary name="Tour spotlight"><TourSpotlight /></SilentBoundary>
                     <RootErrorBoundary>
                       <AppShell>
                         <Suspense fallback={<Fallback />}>
@@ -371,7 +374,7 @@ export default function App() {
                         </Suspense>
                       </AppShell>
                     </RootErrorBoundary>
-                    <LaserCursor />
+                    <SilentBoundary name="Laser pointer"><LaserCursor /></SilentBoundary>
                   </ConceptWindowProvider>
                   </DesktopProvider>
                   </ChatProvider>
