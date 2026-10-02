@@ -10,8 +10,8 @@
   "counts": {
     "courses": 44,
     "chapters": 225,
-    "lessons": 1268,
-    "labs": 52,
+    "lessons": 1269,
+    "labs": 53,
     "games": 15
   },
   "courses": [
@@ -269,7 +269,7 @@
       "domain": "creative",
       "description": "The maths, algorithms, computer graphics and tools behind 3D modelling: meshes, transforms, the rendering pipeline, picking, modelling operations, subdivision, curvature, UVs, shading, animation and skinning, each built by hand in a notebook and then used in MeshLab",
       "chapters": 1,
-      "lessons": 4
+      "lessons": 5
     },
     {
       "id": "native-languages",
@@ -680,6 +680,12 @@
       "label": "Vue Studio",
       "kind": "lesson",
       "path": "/lab/vue-studio"
+    },
+    {
+      "id": "web-data-science",
+      "label": "Data Science on the Web",
+      "kind": "lab",
+      "path": "/lab/web-data-science"
     }
   ],
   "games": [
