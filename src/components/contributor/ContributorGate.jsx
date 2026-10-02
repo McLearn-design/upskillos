@@ -51,7 +51,7 @@ export default function ContributorGate({ children, label = 'editing' }) {
       <div>
         <p className="text-sm font-semibold text-slate-200 mb-1">Desktop app required</p>
         <p className="text-xs text-slate-400 max-w-xs">
-          Contributing lessons and diagrams requires the OpenCalc desktop app.
+          Contributing lessons and diagrams requires the UpSkillOS desktop app.
           The web version is read-only.
         </p>
       </div>

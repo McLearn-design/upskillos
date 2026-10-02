@@ -212,9 +212,17 @@ export default function ProjectStudio() {
         <h2 style={{ margin: '0 0 8px', fontSize: 18, color: C.text }}>🖥️ Project Studio needs the desktop app</h2>
         <p style={{ margin: 0, fontSize: 13, color: C.hint, lineHeight: 1.7, maxWidth: 520 }}>
           This lab reads and writes real files in a folder on your computer and runs them with a real
-          interpreter — neither of which a browser tab is allowed to do. Open it in the OpenCalc desktop
-          app (<code>npm run desktop:dev</code>) to use it.
+          Python interpreter, which a browser tab is not allowed to do. The free UpSkillOS desktop app
+          (Windows and macOS) includes it, along with everything in the web version.
         </p>
+        <a
+          href="https://github.com/g4m3rm1k3/upskillos/releases/latest"
+          target="_blank"
+          rel="noreferrer"
+          style={{ marginTop: 16, padding: '8px 16px', borderRadius: 8, background: '#0f766e', color: '#fff', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}
+        >
+          Download the desktop app →
+        </a>
       </Centered>
     );
   }
