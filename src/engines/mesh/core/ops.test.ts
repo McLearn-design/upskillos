@@ -4,6 +4,9 @@ import { makePrimitive } from './primitives';
 import { catmullClark, subdivide } from './subdivision';
 import { mirror, evaluate } from './modifiers';
 import { Trace, checkQuiz } from './trace';
+import { traceAxes, traceEuler } from './transformTrace';
+import { cornerNormals, traceVertexNormal } from './normals';
+import { Euler, Matrix4 } from 'three';
 
 const cube = () => makePrimitive('cube', { size: 2 });
 const find = (m: EditMesh, p: number[]) => m.verts.findIndex((v) => v.every((x, i) => Math.abs(x - p[i]) < 1e-9));
@@ -256,5 +259,57 @@ describe('fill, traced', () => {
     expect(m.faceNormal(f).map((x) => x + 0)).toEqual([0, 1, 0]);
     expect(checkQuiz(t.steps[5].quiz!, [0, 1, 0]).correct).toBe(true);
     expect(m.stats().closed).toBe(true);
+  });
+});
+
+describe('traceAxes', () => {
+  it('a sheared matrix is not square, and the inverse still finds the point', () => {
+    // A child turned 45° about y under a parent stretched 3× along x: its columns are not at right angles.
+    const m = new Matrix4().makeScale(3, 1, 1).multiply(new Matrix4().makeRotationFromEuler(new Euler(0, Math.PI / 4, 0)));
+    const p: [number, number, number] = [1, 2, 3];
+    const t = new Trace('Trace the local axes');
+    const a = traceAxes(m.elements, p, t);
+    expect(a.square).toBe(false);
+    const back = new Matrix4().copy(m).elements;
+    const world = [0, 1, 2].map((i) => back[i] * a.local[0] + back[4 + i] * a.local[1] + back[8 + i] * a.local[2] + back[12 + i]);
+    world.forEach((x, i) => expect(x).toBeCloseTo(p[i], 9));
+    expect(t.steps.filter((x) => x.quiz)).toHaveLength(1);
+  });
+
+  it('a squashed matrix has no local coordinates', () => {
+    expect(() => traceAxes(new Matrix4().makeScale(1, 0, 1).elements)).toThrow(/length 0/);
+  });
+});
+
+describe('traceEuler', () => {
+  const d = Math.PI / 180;
+  it('decodes angles it built, when not locked', () => {
+    const t = traceEuler([30 * d, 45 * d, 60 * d]);
+    expect(t.locked).toBe(false);
+    expect(t.decoded).toEqual([30, 45, 60]);
+    expect(t.rows[0]).toEqual([0.3536, -0.6124, 0.7071]);
+  });
+  it('at y = 90° only x + z counts; at y = −90° only x − z', () => {
+    expect(traceEuler([20 * d, 90 * d, 10 * d])).toMatchObject({ locked: true, decoded: [30, 90, 0] });
+    expect(traceEuler([20 * d, -90 * d, 10 * d])).toMatchObject({ locked: true, decoded: [10, -90, 0] });
+    expect(traceEuler([5 * d, -90 * d, -5 * d]).rows).toEqual(traceEuler([10 * d, -90 * d, 0]).rows);
+  });
+});
+
+describe('vertex normals', () => {
+  it('a cube corner: (−1, −1, −1)/√3 smooth; three normals with auto smooth', () => {
+    const cube = makePrimitive('cube', { size: 2 });
+    traceVertexNormal(cube, 0).normal.forEach((x) => expect(x).toBeCloseTo(-1 / Math.sqrt(3), 9));
+    expect(traceVertexNormal(cube, 0, { sharp: 30 }).groups).toBe(3);
+    // Auto smooth on a cube: every corner keeps its own face's normal, exactly flat shading.
+    const cn = cornerNormals(cube, { sharp: 30 });
+    cube.faces.forEach((f, fi) => f.forEach((_, k) => cn[fi][k].forEach((x, i) => expect(x).toBeCloseTo(cube.faceNormal(fi)[i], 9))));
+  });
+
+  it('angle weights do not change when a face is cut into triangles', () => {
+    const quad = new EditMesh([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1]], [[0, 1, 2, 3], [0, 4, 1]]);
+    const tri = new EditMesh([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1]], [[0, 1, 2], [0, 2, 3], [0, 4, 1]]);
+    const a = traceVertexNormal(quad, 0, { weight: 'angle' }).normal, b = traceVertexNormal(tri, 0, { weight: 'angle' }).normal;
+    a.forEach((x, i) => expect(x).toBeCloseTo(b[i], 9));
   });
 });

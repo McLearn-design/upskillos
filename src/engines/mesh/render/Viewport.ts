@@ -15,6 +15,10 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { cornerNormals } from '../core/normals';
+import { faceTriangles } from '../core/triangulate';
+import { nearestPoint, nearestSegment, type ScreenPoint } from '../core/screenPick';
+import { SNAP } from '../core/gizmoDrag';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import type { Editor } from '../core/Editor';
 import { EditMesh, type MeshSnapshot, type Vec3 } from '../core/EditMesh';
@@ -27,10 +31,10 @@ import { hasKeys, keyFrames } from '../core/animation';
 import { evaluateUV, uvFits, type UVLayer } from '../core/uv';
 import { DEFAULT_CUSTOM, VERTEX_SHADER, fragmentShader, textureRGBA, type TextureName } from '../core/shading';
 import { boneLength, boneMatrices } from '../core/armature';
-import { DEFAULT_CAMERA, frustumCorners } from '../core/camera';
+import { DEFAULT_CAMERA, OUTLINE_THICKNESS, frustumCorners } from '../core/camera';
 
 export type GizmoMode = 'translate' | 'rotate' | 'scale';
-export interface ViewOptions { grid: boolean; axes: boolean; localAxes: boolean; normals: boolean; wire: boolean; xray: boolean }
+export interface ViewOptions { grid: boolean; axes: boolean; localAxes: boolean; normals: boolean; wire: boolean; xray: boolean; /** The stencil that keeps the selection outline outside the body (on unless false); off shows why it is needed. */ outlineStencil?: boolean }
 
 const COL = {
   bg: 0x1d1f23, grid: 0x3a3d44, gridCenter: 0x555a63,
@@ -47,10 +51,10 @@ function signature(o: SceneObject): string {
   const mix = (x: number) => { h ^= Math.round(x * 1e6) | 0; h = Math.imul(h, 16777619); };
   for (const v of o.mesh.verts) { mix(v[0]); mix(v[1]); mix(v[2]); }
   for (const f of o.mesh.faces) { mix(f.length); for (const i of f) mix(i); }
-  return `${o.mesh.verts.length}/${o.mesh.faces.length}/${h}/${JSON.stringify(o.modifiers)}/${o.smooth}`;
+  return `${o.mesh.verts.length}/${o.mesh.faces.length}/${h}/${JSON.stringify(o.modifiers)}/${o.smooth}/${o.autoSmooth ?? ''}`;
 }
 
-/** An indexed BufferGeometry from an EditMesh: fan triangles, plus which face each triangle came from. */
+/** An indexed BufferGeometry from an EditMesh: its triangles (fans, or ear clipping for concave faces), plus which face each came from. */
 export function toGeometry(mesh: EditMesh | MeshSnapshot): { geo: THREE.BufferGeometry; faceIndex: Uint32Array } {
   const m = mesh instanceof EditMesh ? mesh : EditMesh.fromSnapshot(mesh);
   const t = m.triangulate();
@@ -62,10 +66,11 @@ export function toGeometry(mesh: EditMesh | MeshSnapshot): { geo: THREE.BufferGe
 }
 
 /**
- * A geometry with UVs: every triangle corner its own vertex (UVs can differ on each
- * side of a seam), normals smooth (area-weighted per vertex) or flat (per face).
+ * A geometry with every triangle corner its own vertex, so UVs can differ on each side of a seam and normals on
+ * each side of a hard edge: normals smooth (area-weighted per vertex), flat (per face), or given per face corner
+ * (auto smooth, from cornerNormals). Without UVs it has no uv attribute.
  */
-export function toGeometryUV(m: EditMesh, uv: UVLayer, smooth: boolean): THREE.BufferGeometry {
+export function toGeometryUV(m: EditMesh, uv: UVLayer | null, smooth: boolean, corner?: Vec3[][]): THREE.BufferGeometry {
   const vn: number[][] = m.verts.map(() => [0, 0, 0]);
   const fns = m.faces.map((f) => {
     let n: Vec3 = [0, 0, 0];
@@ -81,16 +86,16 @@ export function toGeometryUV(m: EditMesh, uv: UVLayer, smooth: boolean): THREE.B
   const unit = (n: number[]) => { const l = Math.hypot(n[0], n[1], n[2]) || 1; return [n[0] / l, n[1] / l, n[2] / l]; };
   const pos: number[] = [], nor: number[] = [], uvs: number[] = [];
   m.faces.forEach((f, fi) => {
-    for (let i = 1; i + 1 < f.length; i++) for (const k of [0, i, i + 1]) {
+    for (const tri of faceTriangles(m.verts, f)) for (const k of tri) {
       pos.push(...m.verts[f[k]]);
-      nor.push(...(smooth ? unit(vn[f[k]]) : fns[fi]));
-      uvs.push(uv.faces[fi][k][0], uv.faces[fi][k][1]);
+      nor.push(...(corner ? corner[fi][k] : smooth ? unit(vn[f[k]]) : fns[fi]));
+      if (uv) uvs.push(uv.faces[fi][k][0], uv.faces[fi][k][1]);
     }
   });
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  if (uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   return g;
 }
 
@@ -107,7 +112,14 @@ export function edgeLines(mesh: EditMesh, keys?: Iterable<string>): THREE.Buffer
 export class Viewport {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera: THREE.PerspectiveCamera;
+  /** The view's camera: the perspective one, or the orthographic one (View › Orthographic, 5; Front, Right and Top switch to it). */
+  camera: THREE.PerspectiveCamera | THREE.OrthographicCamera;
+  private readonly persp: THREE.PerspectiveCamera;
+  private readonly orthoCam: THREE.OrthographicCamera;
+  /** Half the orthographic view's height at zoom 1, in scene units. */
+  private orthoHalf = 4;
+  /** Called when the view switches between perspective and orthographic, so the UI can show it. */
+  onProjectionChange?: (orthographic: boolean) => void;
   readonly orbit: OrbitControls;
   readonly gizmo: TransformControls;
   readonly labels: HTMLDivElement;
@@ -178,7 +190,9 @@ export class Viewport {
     el.tabIndex = 0;
 
     this.scene.background = new THREE.Color(COL.bg);
-    this.camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
+    this.persp = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
+    this.orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 1000);
+    this.camera = this.persp;
     this.camera.position.set(6, 4.5, 7);
     this.orbit = new OrbitControls(this.camera, el);
     this.orbit.enableDamping = true;
@@ -278,8 +292,43 @@ export class Viewport {
   private fit(): void {
     const w = Math.max(1, this.container.clientWidth), h = Math.max(1, this.container.clientHeight);
     this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    const aspect = w / h, half = this.orthoHalf;
+    this.persp.aspect = aspect;
+    this.persp.updateProjectionMatrix();
+    Object.assign(this.orthoCam, { left: -half * aspect, right: half * aspect, top: half, bottom: -half });
+    this.orthoCam.updateProjectionMatrix();
+  }
+
+  /** Whether the view is orthographic: parallel lines stay parallel and nothing shrinks with distance. */
+  get orthographic(): boolean { return this.camera === this.orthoCam; }
+
+  /**
+   * Switch between perspective and orthographic, keeping the target the same size on screen: the orthographic
+   * view is as tall as the perspective one is at the target's distance, 2 · d · tan(fov / 2), and back again.
+   */
+  setOrthographic(on: boolean): void {
+    if (on === this.orthographic) return;
+    if (this.through) this.lookThrough(false);
+    const t = this.orbit.target, tan = Math.tan(THREE.MathUtils.degToRad(this.persp.fov / 2));
+    if (on) {
+      this.orthoHalf = (this.persp.position.distanceTo(t) || 10) * tan;
+      this.orthoCam.position.copy(this.persp.position);
+      this.orthoCam.quaternion.copy(this.persp.quaternion);
+      this.orthoCam.zoom = 1;
+      this.camera = this.orthoCam;
+    } else {
+      const d = this.orthoHalf / this.orthoCam.zoom / tan;
+      const dir = this.orthoCam.position.clone().sub(t).normalize();
+      this.persp.position.copy(t).addScaledVector(dir.lengthSq() ? dir : new THREE.Vector3(0, 0, 1), d);
+      this.persp.quaternion.copy(this.orthoCam.quaternion);
+      this.camera = this.persp;
+    }
+    this.orbit.object = this.camera;
+    this.gizmo.camera = this.camera;
+    this.fit();
+    this.orbit.update();
+    this.sync();
+    this.onProjectionChange?.(on);
   }
 
   // ── building the three.js scene from the model ─────────────────────────
@@ -417,7 +466,10 @@ export class Viewport {
         const ev = evaluatedMesh(this.editor.scene, o, 3);
         // With UVs, carry them through the modifiers and split vertices at seams; without, share vertices.
         const uvEv = uvFits(o.mesh, o.uv) ? evaluateUV(o.mesh, o.uv, o.modifiers, 3, !!o.skin) : null;
-        const geo = uvEv && uvFits(ev, uvEv) ? toGeometryUV(ev, uvEv, o.smooth) : toGeometry(ev).geo;
+        const uvOk = !!uvEv && uvFits(ev, uvEv);
+        // Auto smooth: split normals at edges sharper than the angle, so hard edges stay hard.
+        const geo = o.smooth && o.autoSmooth != null ? toGeometryUV(ev, uvOk ? uvEv : null, true, cornerNormals(ev, { sharp: o.autoSmooth }))
+          : uvOk ? toGeometryUV(ev, uvEv!, o.smooth) : toGeometry(ev).geo;
         if (!v.body) {
           v.body = new THREE.Mesh(geo, new THREE.MeshStandardMaterial());
           v.body.userData.id = o.id;
@@ -431,7 +483,7 @@ export class Viewport {
         if (!v.outline) {
           v.outline = new THREE.Mesh(hull, new THREE.ShaderMaterial({
             side: THREE.BackSide,
-            uniforms: { uColor: { value: new THREE.Color(COL.select) }, uThickness: { value: 0.0035 } },
+            uniforms: { uColor: { value: new THREE.Color(COL.select) }, uThickness: { value: OUTLINE_THICKNESS } },
             vertexShader: 'uniform float uThickness; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vec3 n = normalize(normalMatrix * normal); mv.xyz += n * uThickness * -mv.z; gl_Position = projectionMatrix * mv; }',
             fragmentShader: 'uniform vec3 uColor; void main() { gl_FragColor = vec4(uColor, 1.0);\n#include <colorspace_fragment>\n}',
             // Test the stencil (write nothing): draw only where no selected body is.
@@ -454,7 +506,9 @@ export class Viewport {
       // come in front of the body. Drawing the hull only where the stencil is not 1 keeps it to the
       // silhouette, outside the object.
       const bm = v.body.material as THREE.Material;
-      bm.stencilWrite = selected && !editing;
+      const stencilOn = this.options.outlineStencil !== false;
+      bm.stencilWrite = selected && !editing && stencilOn;
+      (v.outline!.material as THREE.Material).stencilWrite = stencilOn;
       bm.stencilRef = 1; bm.stencilFunc = THREE.AlwaysStencilFunc; bm.stencilZPass = THREE.ReplaceStencilOp;
       v.body.visible = !(this.traceView && this.traceTargetId() === o.id) && this.editor.field?.objectId !== o.id;
       v.outline!.visible = selected && !editing && v.body.visible;
@@ -550,6 +604,8 @@ export class Viewport {
     if (on) {
       const sc = this.editor.scene;
       if (!sc.activeCamera || !sc.get(sc.activeCamera)) { this.editor.say('There is no scene camera: Add › Camera first'); return false; }
+      // Looking through the scene camera is always in perspective.
+      if (this.orthographic) this.setOrthographic(false);
       if (!this.through) this.through = { position: this.camera.position.clone(), target: this.orbit.target.clone() };
       this.orbit.enabled = false;
     } else if (this.through) {
@@ -560,8 +616,8 @@ export class Viewport {
         const d = back.position.distanceTo(back.target) || 8;
         this.orbit.target.copy(this.camera.position).addScaledVector(new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion), d);
       } else { this.camera.position.copy(back.position); this.orbit.target.copy(back.target); }
-      this.camera.fov = 45;
-      this.camera.updateProjectionMatrix();
+      this.persp.fov = 45;
+      this.persp.updateProjectionMatrix();
       this.gizmoHelper.visible = true;
     }
     this.passepartout.style.display = this.through ? 'block' : 'none';
@@ -586,8 +642,11 @@ export class Viewport {
     const W = this.container.clientWidth || 1, H = this.container.clientHeight || 1;
     const a = this.renderSize.width / this.renderSize.height, view = W / H, fov = o.camera.fov;
     const vfov = view >= a ? fov : (2 * Math.atan(Math.tan((fov * Math.PI) / 360) * (a / view)) * 180) / Math.PI;
-    if (Math.abs(this.camera.fov - vfov) > 1e-9) { this.camera.fov = vfov; this.camera.updateProjectionMatrix(); }
-    this.camera.near = o.camera.near; this.camera.far = o.camera.far;
+    const cam = this.persp;
+    if (Math.abs(cam.fov - vfov) > 1e-9 || cam.near !== o.camera.near || cam.far !== o.camera.far) {
+      cam.fov = vfov; cam.near = o.camera.near; cam.far = o.camera.far;
+      cam.updateProjectionMatrix();
+    }
     // The camera's own gizmo would sit on the lens.
     this.gizmoHelper.visible = this.editor.active !== o.id;
     this.camera.updateMatrixWorld();
@@ -926,9 +985,9 @@ export class Viewport {
   setGizmoMode(m: GizmoMode): void { this.gizmoMode = m; this.gizmo.setMode(m); }
   setSpace(s: 'local' | 'world'): void { this.gizmo.setSpace(s); }
   setSnap(on: boolean): void {
-    this.gizmo.setTranslationSnap(on ? 0.25 : null);
-    this.gizmo.setRotationSnap(on ? THREE.MathUtils.degToRad(15) : null);
-    this.gizmo.setScaleSnap(on ? 0.1 : null);
+    this.gizmo.setTranslationSnap(on ? SNAP.move : null);
+    this.gizmo.setRotationSnap(on ? THREE.MathUtils.degToRad(SNAP.turnDeg) : null);
+    this.gizmo.setScaleSnap(on ? SNAP.scale : null);
   }
   setOptions(o: Partial<ViewOptions>): void {
     const normalsChanged = o.normals !== undefined && o.normals !== this.options.normals;
@@ -1159,30 +1218,19 @@ export class Viewport {
     return best;
   }
 
-  private nearestVert(o: SceneObject, g: THREE.Object3D, x: number, y: number, radius = 12): number | null {
-    let best: number | null = null, bd = radius, bz = Infinity;
+  /** Every vertex of o on screen (null if behind the camera), for screen-space picking. */
+  private screenPoints(o: SceneObject, g: THREE.Object3D): (ScreenPoint | null)[] {
     const s = new THREE.Vector3();
-    o.mesh!.verts.forEach((p, i) => {
-      this.toScreen(p, g, s);
-      if (s.z > 1) return;
-      const d = Math.hypot(s.x - x, s.y - y);
-      if (d < bd - 1 || (Math.abs(d - bd) <= 1 && s.z < bz)) { bd = d; bz = s.z; best = i; }
-    });
-    return best;
+    return o.mesh!.verts.map((p) => { this.toScreen(p, g, s); return s.z > 1 ? null : { x: s.x, y: s.y, z: s.z }; });
+  }
+
+  private nearestVert(o: SceneObject, g: THREE.Object3D, x: number, y: number, radius = 12): number | null {
+    return nearestPoint(this.screenPoints(o, g), x, y, radius)?.index ?? null;
   }
 
   nearestEdge(o: SceneObject, g: THREE.Object3D, x: number, y: number, radius = 10): string | null {
-    let best: string | null = null, bd = radius;
-    const a = new THREE.Vector3(), b = new THREE.Vector3();
-    for (const [key, e] of o.mesh!.edges()) {
-      this.toScreen(o.mesh!.verts[e.a], g, a); this.toScreen(o.mesh!.verts[e.b], g, b);
-      if (a.z > 1 || b.z > 1) continue;
-      const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy || 1;
-      const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / len2));
-      const d = Math.hypot(a.x + t * dx - x, a.y + t * dy - y);
-      if (d < bd) { bd = d; best = key; }
-    }
-    return best;
+    const pts = this.screenPoints(o, g);
+    return nearestSegment([...o.mesh!.edges()].map(([key, e]) => ({ key, a: pts[e.a], b: pts[e.b] })), x, y, radius)?.key ?? null;
   }
 
   /** The edge under the mouse pointer, if any (for loop cut). */
@@ -1222,7 +1270,9 @@ export class Viewport {
     const c = box.getCenter(new THREE.Vector3()), r = Math.max(0.5, box.getSize(new THREE.Vector3()).length() / 2);
     const dir = this.camera.position.clone().sub(this.orbit.target).normalize();
     if (!dir.lengthSq()) dir.set(1, 0.8, 1).normalize();
-    const dist = r / Math.sin(THREE.MathUtils.degToRad(this.camera.fov / 2)) * 1.1;
+    const dist = r / Math.sin(THREE.MathUtils.degToRad(this.persp.fov / 2)) * 1.1;
+    // Orthographic: make the view just as tall as the sphere, with the same 10% margin.
+    if (this.orthographic) { this.orthoHalf = r * 1.1; this.orthoCam.zoom = 1; this.fit(); }
     this.orbit.target.copy(c);
     this.camera.position.copy(c).addScaledVector(dir, dist);
   }
@@ -1247,6 +1297,8 @@ export class Viewport {
     const t = this.orbit.target, d = this.camera.position.distanceTo(t) || 10;
     const dir = { front: [0, 0, 1], right: [1, 0, 0], top: [0, 1, 0.0001], persp: [0.62, 0.45, 0.65] }[which];
     this.camera.position.copy(t).addScaledVector(new THREE.Vector3(...(dir as Vec3)).normalize(), d);
+    // As in Blender: the straight-on views are orthographic, the angled one perspective.
+    this.setOrthographic(which !== 'persp');
   }
 
   // ── traces ──────────────────────────────────────────────────────────────

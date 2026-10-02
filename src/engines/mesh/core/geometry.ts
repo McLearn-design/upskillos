@@ -17,7 +17,8 @@
 // heat method (Crane, Weischedel & Wardetzky 2013), which is two linear solves.
 
 import type { EditMesh, Vec3 } from './EditMesh';
-import { Trace, fmt } from './trace';
+import { Trace, fmt, fmtV } from './trace';
+import { faceTriangles } from './triangulate';
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -39,10 +40,10 @@ export function weightedTriangles(mesh: EditMesh): { tris: Tri[]; weights: Float
   return { tris, weights: Float64Array.from(w), primary: Uint8Array.from(primary) };
 }
 
-/** One fan per face: what is drawn, and what iso-lines are traced on. */
+/** One triangulation per face (a fan, or ear clipping if concave): what is drawn, and what iso-lines are traced on. */
 export function triangles(mesh: EditMesh): [number, number, number][] {
   const out: [number, number, number][] = [];
-  for (const f of mesh.faces) for (let i = 1; i + 1 < f.length; i++) out.push([f[0], f[i], f[i + 1]]);
+  for (const f of mesh.faces) for (const [a, b, c] of faceTriangles(mesh.verts, f)) out.push([f[a], f[b], f[c]]);
   return out;
 }
 
@@ -293,6 +294,22 @@ export function smooth(mesh: EditMesh, { iterations = 1, lambda = 0.5, method = 
       return [p[0] + lambda * (avg[0] - p[0]), p[1] + lambda * (avg[1] - p[1]), p[2] + lambda * (avg[2] - p[2])] as Vec3;
     });
     const moved = next.map((p, i) => len(sub(p, V[i])));
+    if (trace && it === 0) {
+      // One vertex in full, the one that moves most: its neighbours, their average, and the step towards it.
+      const i = moved.indexOf(Math.max(...moved));
+      if (moved[i] > 0) {
+        let avg: Vec3 = [0, 0, 0];
+        for (const j of nb[i]) avg = [avg[0] + V[j][0], avg[1] + V[j][1], avg[2] + V[j][2]];
+        avg = [avg[0] / nb[i].length, avg[1] / nb[i].length, avg[2] / nb[i].length];
+        trace.step({
+          phase: 'Smoothing', label: `v${i}: ${nb[i].length} neighbours${method === 'uniform' ? `, average ${fmtV(avg)}` : ''}; it moves ${fmt(moved[i], 4)}, the most of any vertex`,
+          detail: 'Each vertex steps the fraction λ of the way from where it is to the average of its neighbours: x ← x + λ (x̄ − x). Vertices on an open edge stay put, so the outline keeps its shape.',
+          verts: [i, ...nb[i]], points: [{ p: V[i], label: `v${i}`, color: '#38bdf8' }, { p: next[i], color: '#f59e0b' }],
+          values: [['x', fmtV(V[i])], ['neighbours', nb[i].map((j) => `v${j}`).join(', ')], ['λ', fmt(lambda)]],
+          quiz: method === 'uniform' ? { prompt: `v${i} is at ${fmtV(V[i])}; the average of its ${nb[i].length} neighbours is ${fmtV(avg)}. Where is it after one step with λ = ${fmt(lambda)}?`, answer: next[i], labels: ['x', 'y', 'z'], rule: 'x + λ (x̄ − x): the fraction λ of the way to the neighbours\' average.' } : undefined,
+        });
+      }
+    }
     mesh.verts = next;
     mesh.touch();
     if (trace && trace.detailed(1)) {

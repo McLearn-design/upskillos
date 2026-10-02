@@ -30,7 +30,7 @@ const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const cross = (u: Vec3, v: Vec3): Vec3 => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
 const dot = (u: Vec3, v: Vec3) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
 
-type Crossing = { vert: number } | { edge: string; a: number; b: number; p: Vec3; after: number };
+type Crossing = { vert: number } | { edge: string; a: number; b: number; p: Vec3; after: number; t: number };
 
 /**
  * Cut `faces` (all faces if omitted) along a knife line. Returns the new edges
@@ -47,6 +47,9 @@ export function knife(mesh: EditMesh, line: KnifeLine, faces?: number[], trace?:
   // Between the two rays, and in front of the eye.
   const inWedge = (p: Vec3) => { const r = sub(p, eye); return dot(cross(u, r), n) >= -eps && dot(cross(r, w), n) >= -eps && dot(r, [u[0] + w[0], u[1] + w[1], u[2] + w[2]]) > 0; };
   const on = (v: number) => Math.abs(d(V[v])) <= eps;
+  const r = (x: number) => +(Math.abs(x) < 1e-12 ? 0 : x).toFixed(4);
+  const v3 = (p: Vec3) => `(${p.map(r).join(', ')})`;
+  trace?.step({ phase: 'Plane', label: `The knife plane: through the eye ${v3(eye)}, with normal n = (from − eye) × (to − eye) = ${v3(n)}`, detail: 'Every point that lands on the line drawn on the screen lies on one plane: the plane through the eye and the line\'s two ends. The cut is where that plane meets the faces, kept between the rays through the two ends.', values: [['eye', v3(eye)], ['from', v3(line.from)], ['to', v3(line.to)], ['n', v3(n)]] });
 
   // 1. Where each candidate face is crossed.
   const plans: { face: number; cuts: Crossing[] }[] = [];
@@ -61,7 +64,7 @@ export function knife(mesh: EditMesh, line: KnifeLine, faces?: number[], trace?:
       const da = d(V[a]), db = d(V[b]);
       if ((da < 0) === (db < 0)) continue;
       const t = da / (da - db), p: Vec3 = [V[a][0] + t * (V[b][0] - V[a][0]), V[a][1] + t * (V[b][1] - V[a][1]), V[a][2] + t * (V[b][2] - V[a][2])];
-      if (inWedge(p)) cuts.push({ edge: EditMesh.edgeKey(a, b), a, b, p, after: i });
+      if (inWedge(p)) cuts.push({ edge: EditMesh.edgeKey(a, b), a, b, p, after: i, t });
     }
     // 2. Exactly two crossings, and not two corners already joined by an edge of the face.
     if (cuts.length !== 2) continue;
@@ -71,7 +74,16 @@ export function knife(mesh: EditMesh, line: KnifeLine, faces?: number[], trace?:
     }
     plans.push({ face: fi, cuts });
   }
-  if (!plans.length) return [];
+  if (!plans.length) { trace?.step({ phase: 'Crossings', label: 'No face is crossed twice inside the wedge: nothing to cut', detail: 'Each edge is tested by the signs of d at its ends; only crossings between the line\'s two rays count.', values: [] }); return []; }
+  if (trace) {
+    const first = plans.flatMap((pl) => pl.cuts).find((c) => 'edge' in c) as Extract<Crossing, { edge: string }> | undefined;
+    for (const [k, pl] of plans.entries()) trace.step({
+      phase: 'Crossings', label: `Face ${pl.face}: crossed ${pl.cuts.map((c) => ('vert' in c ? `at vertex ${c.vert}` : `on edge ${c.a}–${c.b} at t = ${r(c.t)}`)).join(' and ')}`,
+      detail: 'For each edge, d(x) = (x − eye) · n is the signed distance from the plane (times |n|). Ends with opposite signs mean the edge crosses it, at t = d(a) / (d(a) − d(b)) along the edge.',
+      faces: [pl.face], values: pl.cuts.map((c, i) => [`crossing ${i + 1}`, 'vert' in c ? `vertex ${c.vert}` : `${v3(c.p)}, t = ${r(c.t)}`] as [string, string]),
+      quiz: k === 0 && first ? { prompt: `Edge ${first.a}–${first.b}: d(a) = ${r(d(V[first.a]))} and d(b) = ${r(d(V[first.b]))}. How far along the edge (t, from vertex ${first.a}) is it crossed?`, answer: [first.t], labels: ['t'], rule: 't = d(a) / (d(a) − d(b)): where the signed distance passes through zero.', tolerance: 0.005 } : undefined,
+    });
+  }
 
   // New vertices on crossed edges, one per edge, shared by the faces on both sides.
   const edgeVert = new Map<string, number>();
@@ -98,9 +110,10 @@ export function knife(mesh: EditMesh, line: KnifeLine, faces?: number[], trace?:
   mesh.faces = out;
   mesh.touch();
   trace?.step({
-    phase: 'Knife', label: `${plans.length} face${plans.length === 1 ? '' : 's'} cut, ${edgeVert.size} new vertices on edges`,
-    detail: 'The knife is the plane through the eye and the line’s two ends. Each crossed edge gets a vertex at p = a + t(b − a), t = d(a) / (d(a) − d(b)); each face crossed twice is split between the two.',
+    phase: 'Split', label: `${plans.length} face${plans.length === 1 ? '' : 's'} cut, ${edgeVert.size} new vertices on edges`,
+    detail: 'Each crossed edge gets one new vertex, shared by the faces on both sides so no crack opens; each face crossed twice is split in two along the segment between its crossings.',
     points: [...edgeVert.values()].map((v) => ({ p: V[v], color: '#f59e0b' })),
+    quiz: { prompt: 'How many faces does the cut split?', answer: [plans.length], labels: ['faces'], rule: 'Every face crossed exactly twice inside the wedge is split in two.', tolerance: 0 },
   }, mesh);
   return cutEdges;
 }

@@ -22,7 +22,7 @@
 //   The shape stays; only the division into faces changes.
 
 import { EditMesh, type Vec3 } from './EditMesh';
-import { Trace, fmt } from './trace';
+import { Trace, fmt, fmtV } from './trace';
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -51,20 +51,40 @@ export function insetRegion(mesh: EditMesh, faceIdxs: number[], thickness: numbe
   const into = new Map<number, typeof outline[number]>(), outOf = new Map<number, typeof outline[number]>();
   for (const e of outline) { outOf.set(e.a, e); into.set(e.b, e); }
   const inward = (e: typeof outline[number]) => unit(cross(mesh.faceNormal(e.f), sub(V[e.b], V[e.a])));
+  trace?.step({
+    phase: 'Outline', label: `${outline.length} outline edges; ${outOf.size} vertices move in by ${fmt(thickness)}`,
+    detail: 'The outline is every edge of the selection with a face on one side only. Each outline vertex gets an inner copy, pushed along the average of its two edges\' inward directions and lengthened at corners so both edges stay the same distance away.',
+    edges: outline.map((e) => [e.a, e.b]),
+  }, mesh);
   const copy = new Map<number, number>();
+  let asked = false;
   for (const [v, eo] of outOf) {
     const ei = into.get(v) ?? eo;
     const i1 = inward(ei), i2 = inward(eo);
     const dir = unit(add(i1, i2));
-    const scale = thickness / Math.max(0.2, dot(dir, i1)); // the mitre
+    const half = dot(dir, i1);                                // sin(φ/2), φ the corner's angle inside the region
+    const scale = thickness / Math.max(0.2, half); // the mitre
     copy.set(v, V.length);
     V.push(add(V[v], mul(dir, scale)));
+    if (trace && trace.detailed(outOf.size)) {
+      // The interior angle: π minus the outline's turn at v, signed about the face normal.
+      const n = mesh.faceNormal(eo.f), e1 = unit(sub(V[v], V[ei.a])), e2 = unit(sub(V[eo.b], V[v]));
+      const phi = Math.PI - Math.atan2(dot(n, cross(e1, e2)), dot(e1, e2));
+      const deg = Math.round(phi * 180 / Math.PI * 100) / 100;
+      const bent = Math.abs(half - 1) > 1e-6;
+      const ask = bent && !asked;
+      if (ask) asked = true;
+      trace.step({
+        phase: 'Mitre', label: `v${v}: ${bent ? `a ${fmt(deg)}° corner` : 'straight (180°)'}, moves ${fmt(scale)}${half < 0.2 ? ' (capped)' : ''}`,
+        detail: bent
+          ? `The two edges' inward directions are averaged; to keep both edges ${fmt(thickness)} away, the corner moves t / sin(φ/2) = ${fmt(thickness)} / ${fmt(half)}${half < 0.2 ? ', capped at 5t so a sharp corner does not shoot off' : ''}.`
+          : 'A straight run of the outline: both edges point the same way, so the vertex moves exactly t along their inward direction.',
+        values: [['φ', `${fmt(deg)}°`], ['inward in', fmtV(i1)], ['inward out', fmtV(i2)], ['sin(φ/2)', fmt(half)], ['distance', fmt(scale)]],
+        points: [{ p: V[v], label: `v${v}`, color: '#38bdf8' }, { p: V[V.length - 1], label: `v${v}′`, color: '#f59e0b' }],
+        quiz: ask ? { prompt: `The outline has a ${fmt(deg)}° corner at v${v} = ${fmtV(V[v])}. Its edges' inward directions are ${fmtV(i1)} and ${fmtV(i2)}, and the thickness is t = ${fmt(thickness)}. Where does the corner's inner copy go?`, answer: V[V.length - 1], labels: ['x', 'y', 'z'], rule: 'v′ = v + (t / sin(φ/2)) · unit(i₁ + i₂): along the average inward direction, lengthened so both edges end up t away.' } : undefined,
+      }, mesh);
+    }
   }
-  trace?.step({
-    phase: 'Outline', label: `${outline.length} outline edges; ${copy.size} vertices move in by ${fmt(thickness)}`,
-    detail: 'The outline is every edge of the selection with a face on one side only. Each outline vertex gets an inner copy, pushed along the average of its two edges\' inward directions and lengthened at corners so both edges stay the same distance away.',
-    edges: outline.map((e) => [e.a, e.b]),
-  }, mesh);
   // Region faces use the inner copies on their outline; bridges join old outline to new.
   for (const f of region) mesh.faces[f] = mesh.faces[f].map((v) => copy.get(v) ?? v);
   const bridges: number[] = [];
@@ -113,9 +133,33 @@ export function bevelEdges(mesh: EditMesh, edges: [number, number][], width: num
   let w = width;
   for (const e of orig.values()) if (ends.has(e.a) || ends.has(e.b)) w = Math.min(w, 0.49 * len(sub(V[e.a], V[e.b])));
   const nseg = Math.max(1, Math.round(segments));
+  trace?.step({
+    phase: 'Width', label: `${bev.size} edge${bev.size === 1 ? '' : 's'}, width ${fmt(w)}${w < width - 1e-12 ? ` (clamped from ${fmt(width)})` : ''}, ${nseg} segment${nseg === 1 ? '' : 's'}`,
+    detail: w < width - 1e-12
+      ? 'The width is measured along the edges at each bevelled vertex. It is clamped to just under half the shortest of those edges, so the bevels from its two ends cannot cross in the middle.'
+      : 'The width is measured along the edges at each bevelled vertex. It is under half the shortest of those edges, so the bevels from an edge\'s two ends cannot meet.',
+    edges: [...bev].map((k) => k.split('-').map(Number) as [number, number]),
+    values: [['width', fmt(w)], ['asked for', fmt(width)], ['segments', String(nseg)]],
+  }, mesh);
+  let askedSlide = false, askedCurve = false;
 
   const slid = new Map<string, number>(); // `${v}>${other}` → the new vertex on edge v–other, w from v
-  const slide = (v: number, o: number) => { const k = `${v}>${o}`; if (!slid.has(k)) { slid.set(k, V.length); V.push(add(V[v], mul(unit(sub(V[o], V[v])), w))); } return slid.get(k)!; };
+  const slide = (v: number, o: number) => {
+    const k = `${v}>${o}`;
+    if (!slid.has(k)) {
+      slid.set(k, V.length); V.push(add(V[v], mul(unit(sub(V[o], V[v])), w)));
+      if (trace && !askedSlide) {
+        askedSlide = true;
+        trace.step({
+          phase: 'Slide', label: `v${v} slides ${fmt(w)} along its edge to v${o}`,
+          detail: 'A corner beside a bevelled edge is replaced by a point the width along the face\'s other edge: p = v + w · unit(o − v).',
+          points: [{ p: V[v], label: `v${v}`, color: '#38bdf8' }, { p: V[V.length - 1], color: '#f59e0b' }], edges: [[v, o]],
+          quiz: { prompt: `v${v} = ${fmtV(V[v])} slides the width w = ${fmt(w)} along its edge towards v${o} = ${fmtV(V[o])}. Where does the new point go?`, answer: V[V.length - 1], labels: ['x', 'y', 'z'], rule: 'v + w · (o − v) / |o − v|: the width along the edge, from v.' },
+        });
+      }
+    }
+    return slid.get(k)!;
+  };
   const corner = new Map<string, number[]>();  // `${f}:${v}` → what replaces corner v of face f
   const side = new Map<string, number>();      // `${f}|${v}|${o}` → face f's point beside bevelled edge v–o, at v
   const profiles = new Map<string, number[]>(); // the curve's inner points from p to q around v
@@ -128,6 +172,16 @@ export function bevelEdges(mesh: EditMesh, edges: [number, number][], width: num
       for (let s = 1; s < nseg; s++) {
         const t = s / nseg, a = (1 - t) * (1 - t), b = 2 * t * (1 - t), c = t * t; // quadratic Bézier, control point v
         pts.push(V.length); V.push(add(add(mul(V[p], a), mul(V[v], b)), mul(V[q], c)));
+        if (trace && !askedCurve) {
+          askedCurve = true;
+          trace.step({
+            phase: 'Profile', label: `A curve from v${p} to v${q}, bent towards the old corner v${v}: ${nseg - 1} point${nseg === 2 ? '' : 's'} between`,
+            detail: 'With more than one segment, the bevel follows a quadratic Bézier curve: B(t) = (1 − t)² p + 2t(1 − t) v + t² q, with the old corner v as its control point, at t = 1/n, 2/n, …',
+            points: [{ p: V[p], color: '#38bdf8' }, { p: V[v], label: 'control', color: '#94a3b8' }, { p: V[q], color: '#38bdf8' }, { p: V[V.length - 1], color: '#f59e0b' }],
+            values: [['t', fmt(t)], ['(1 − t)²', fmt(a)], ['2t(1 − t)', fmt(b)], ['t²', fmt(c)]],
+            quiz: { prompt: `The curve runs from p = ${fmtV(V[p])} to q = ${fmtV(V[q])} with control point v = ${fmtV(V[v])}. Where is its point at t = ${fmt(t)}?`, answer: V[V.length - 1], labels: ['x', 'y', 'z'], rule: 'B(t) = (1 − t)² p + 2t(1 − t) v + t² q.' },
+          });
+        }
       }
       profiles.set(k, pts);
     }
@@ -177,6 +231,21 @@ export function bevelEdges(mesh: EditMesh, edges: [number, number][], width: num
       }
     }
     if (fan.closed && cyc.length >= 3) patches.push([...cyc].reverse());
+    if (trace && trace.detailed(ends.size)) {
+      const nb = info.filter((c) => c.bout).length + (fan.closed ? 0 : info.filter((c, k) => c.bin && k === 0).length);
+      const kind = (c: typeof info[number]) => {
+        if (c.bin && c.bout) return 'between two bevels: one point, w along each edge';
+        if (c.bin || c.bout) return 'beside one bevel: slides along its other edge';
+        const seq = corner.get(`${c.f}:${v}`)!;
+        return seq.includes(v) ? (seq.length > 1 ? 'no bevel: keeps v, plus the slid point beside it' : 'no bevel: unchanged') : `no bevel: the corner is cut off by ${seq.length - 1} edge${seq.length === 2 ? '' : 's'} between its slid points`;
+      };
+      trace.step({
+        phase: 'Corners', label: `v${v}: ${info.length} face corners, ${nb} bevelled edge${nb === 1 ? '' : 's'}${fan.closed && cyc.length >= 3 ? `, a ${cyc.length}-sided hole to patch` : ''}`,
+        detail: 'Every face corner at v is replaced by new points, so v itself drops out of the bevelled faces. Where three or more bevelled edges meet, the new points leave a hole round v, filled by a corner patch.',
+        values: info.map((c) => [`face ${c.f}`, kind(c)] as [string, string]),
+        points: [{ p: V[v], label: `v${v}`, color: '#38bdf8' }, ...info.flatMap((c) => corner.get(`${c.f}:${v}`)!.filter((x) => x !== v).map((x) => ({ p: V[x], color: '#f59e0b' })))],
+      });
+    }
   }
 
   const faceCount = mesh.faces.length;
@@ -192,6 +261,9 @@ export function bevelEdges(mesh: EditMesh, edges: [number, number][], width: num
     const ca = [fa!, ...profile(a, fa!, ga!), ga!], cb = [fb!, ...profile(b, fb!, gb!), gb!];
     for (let s2 = 0; s2 < ca.length - 1; s2++) { added.push(mesh.faces.length); mesh.faces.push([cb[s2], ca[s2], ca[s2 + 1], cb[s2 + 1]]); }
   }
+  const strips = added.length;
+  trace?.step({ phase: 'Strips', label: `${added.length} strip face${added.length === 1 ? '' : 's'}: ${nseg} across each bevelled edge`, detail: 'Each bevelled edge a–b becomes a strip joining face f\'s two new points beside it to face g\'s, through the curve\'s points if there are any: quads [b, a, a′, b′] in a row.', faces: [...added] }, mesh);
+  if (patches.length) trace?.step({ phase: 'Patches', label: `${patches.length} corner patch${patches.length === 1 ? '' : 'es'}: ${[...new Set(patches.map((p) => p.length))].join(', ')} sided`, detail: 'Where three bevelled edges meet, the strips leave a hole at the corner. One face fills it; with several segments it is curved, so it is fanned into triangles from its centre.' });
   for (const p of patches) {
     if (nseg === 1 || p.length <= 4) { added.push(mesh.faces.length); mesh.faces.push(p); continue; }
     // A rounded corner is curved: one n-gon would be far from flat, so fan it from a centre point.
@@ -201,7 +273,7 @@ export function bevelEdges(mesh: EditMesh, edges: [number, number][], width: num
   }
   mesh.compact();
   trace?.step({
-    phase: 'Bevel', label: `${bev.size} edge${bev.size === 1 ? '' : 's'} bevelled by ${fmt(w)}${w < width - 1e-12 ? ` (clamped from ${fmt(width)} so bevels do not cross)` : ''}, ${nseg} segment${nseg === 1 ? '' : 's'}: ${added.length - patches.length} strip faces, ${patches.length} corner patches (${faceCount} → ${mesh.faces.length} faces)`,
+    phase: 'Bevel', label: `${bev.size} edge${bev.size === 1 ? '' : 's'} bevelled by ${fmt(w)}${w < width - 1e-12 ? ` (clamped from ${fmt(width)} so bevels do not cross)` : ''}, ${nseg} segment${nseg === 1 ? '' : 's'}: ${strips} strip face${strips === 1 ? '' : 's'}, ${patches.length} corner patch${patches.length === 1 ? '' : 'es'} in ${added.length - strips} face${added.length - strips === 1 ? '' : 's'} (${faceCount} → ${mesh.faces.length} faces)`,
     detail: 'At each end of a bevelled edge, every face corner is replaced by points slid along its edges by the width. Strips join the two sides of each bevelled edge; where the new points around a corner leave a hole (three bevels meeting), a patch fills it.',
     faces: added,
   }, mesh);
@@ -237,7 +309,22 @@ function mergeGroups(mesh: EditMesh, groups: number[][], trace?: Trace, label = 
     if (!loop || loop.length < 3) continue;
     g.forEach((f, i) => replace.set(f, i === 0 ? loop : null));
     merged++;
-    trace?.step({ phase: label, label: `${g.length} faces → one ${loop.length}-sided face`, detail: 'The faces\' shared edges go; what remains is their outline, walked in order: the new face.', faces: g }, mesh);
+    if (trace) {
+      const directed = new Set<string>();
+      for (const f of g) mesh.faces[f].forEach((a, i) => directed.add(`${a}>${mesh.faces[f][(i + 1) % mesh.faces[f].length]}`));
+      const shared = [...directed].filter((d) => { const [a, b] = d.split('>'); return a < b && directed.has(`${b}>${a}`); }).map((d) => d.split('>').map(Number) as [number, number]);
+      trace.step({
+        phase: label, label: `${g.length} faces: ${shared.length} shared edge${shared.length === 1 ? '' : 's'} go, ${loop.length} outline edges stay`,
+        detail: 'An edge walked both ways by the group (a → b by one face, b → a by another) is inside it: it goes. An edge walked one way only is on the outline: it stays.',
+        faces: g, edges: shared,
+      });
+      trace.step({
+        phase: label, label: `The outline, walked in order: one ${loop.length}-sided face [${loop.join(', ')}]`,
+        detail: 'Each outline vertex has exactly one outline edge leaving it, so following them from any vertex walks the outline once round, in the faces\' own direction: the new face faces the same way as the old ones.',
+        verts: loop,
+        quiz: { prompt: `The outline edges leave each vertex once. Starting at v${loop[0]}, which vertex comes next round the merged face?`, answer: [loop[1]], labels: ['vertex'], rule: 'Follow the outline edge that leaves the vertex: the one the group walks one way only.', tolerance: 0 },
+      });
+    }
   }
   mesh.faces = mesh.faces.flatMap((f, i) => (replace.has(i) ? (replace.get(i) ? [replace.get(i)!] : []) : [f]));
   // Vertices left with two edges in a straight line inside a face stay (as Blender's plain dissolve); loose ones go.

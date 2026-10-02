@@ -183,6 +183,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       if (e.key === 'Home') return act(() => vp?.frameAll());
       if (k === '0' && mod && e.altKey) return act(alignCamera);
       if (k === '0' && !mod) return act(() => vp?.lookThrough());
+      if (k === '5' && !mod) return act(() => { if (vp) { vp.setOrthographic(!vp.orthographic); ed.say(vp.orthographic ? 'Orthographic: no perspective, parallel lines stay parallel (5 to switch back)' : 'Perspective'); } });
       if (k === 'x' || e.key === 'Delete') return act(() => (edit ? ed.deleteElements() : ed.deleteObjects()));
       if (edit && k === 'e') return act(() => { ed.extrude(0.5); setGizmo('translate'); });
       if (edit && k === 'i') return act(() => ed.insetRegion(0.1));
@@ -315,7 +316,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       ['Bind to armature (automatic weights)', () => editor.bindToArmature(), 'Ctrl+P'], ['Unbind from armature', () => o?.skin && editor.unbind(o.id)],
       ['Pose mode (armature)', () => editor.enterPose(), 'Tab'], ['Clear pose', () => editor.resetPose(), 'Alt+R'],
     ],
-    View: [['Frame selected', () => vp?.frameSelected(), 'F (object) / .'], ['Frame all', () => vp?.frameAll(), 'Home'], ['Front', () => vp?.view('front')], ['Right', () => vp?.view('right')], ['Top', () => vp?.view('top')], ['Perspective', () => vp?.view('persp')], ['Look through the scene camera', () => vp?.lookThrough(), '0'], ['Align the scene camera to this view', alignCamera, 'Ctrl+Alt+0'], ['Render still (PNG)', renderStill]],
+    View: [['Frame selected', () => vp?.frameSelected(), 'F (object) / .'], ['Frame all', () => vp?.frameAll(), 'Home'], ['Front', () => vp?.view('front')], ['Right', () => vp?.view('right')], ['Top', () => vp?.view('top')], ['Perspective', () => vp?.view('persp')], ['Orthographic / perspective', () => { if (vp) { vp.setOrthographic(!vp.orthographic); editor.say(vp.orthographic ? 'Orthographic: no perspective, parallel lines stay parallel (5 to switch back)' : 'Perspective'); } }, '5'], ['Look through the scene camera', () => vp?.lookThrough(), '0'], ['Align the scene camera to this view', alignCamera, 'Ctrl+Alt+0'], ['Render still (PNG)', renderStill]],
     Script: [['Open script panel', () => setTab('script')], ['Show the GUI → code log', () => setTab('log')]],
     Examples: [['Browse example projects and challenges…', () => setGallery(true)], ...PROJECTS.map((p) => [`${p.icon}  ${p.title}`, () => openExample(p)] as [string, () => void])],
     Help: [['Keyboard shortcuts', () => setHelp(true), '?']],

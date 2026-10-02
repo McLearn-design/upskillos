@@ -217,3 +217,36 @@ describe('loop select (Alt+click)', () => {
     expect(e.sel.faces.size).toBe(48);       // the faces the tube edge (0, 1) crosses, all round
   });
 });
+
+describe('drawing concave faces', () => {
+  it('a convex face keeps its fan; an L-shaped hexagon is ear-clipped, every triangle inside', async () => {
+    const { faceTriangles, fan } = await import('./triangulate');
+    const sq: [number, number, number][] = [[0, 0, 0], [0, 0, 1], [1, 0, 1], [1, 0, 0]];
+    expect(faceTriangles(sq, [0, 1, 2, 3])).toEqual(fan(4));
+    // An L of three unit squares, facing up, starting at the inside corner (where a fan would cover the notch).
+    const L: [number, number, number][] = [[1, 0, 1], [2, 0, 1], [2, 0, 0], [0, 0, 0], [0, 0, 2], [1, 0, 2]];
+    const f = [0, 1, 2, 3, 4, 5];
+    const tris = faceTriangles(L, f);
+    expect(tris).toHaveLength(4);
+    // Each triangle faces up (counter-clockwise seen from +y) and the areas add up to 3.
+    let area = 0;
+    for (const [a, b, c] of tris) {
+      const [p, q, r] = [L[a], L[b], L[c]];
+      const up = (q[2] - p[2]) * (r[0] - p[0]) - (q[0] - p[0]) * (r[2] - p[2]);
+      expect(up).toBeGreaterThan(0);
+      area += up / 2;
+    }
+    expect(area).toBeCloseTo(3, 9);
+  });
+
+  it('the trace says concave, tests ears, and asks about a blocked corner', async () => {
+    const { faceTriangles } = await import('./triangulate');
+    const { Trace } = await import('./trace');
+    const L: [number, number, number][] = [[1, 0, 1], [2, 0, 1], [2, 0, 0], [0, 0, 0], [0, 0, 2], [1, 0, 2]];
+    const t = new Trace('t');
+    faceTriangles(L, [0, 1, 2, 3, 4, 5], t);
+    expect(t.steps[0].label).toMatch(/^1 corner turns the other way \(corner 0\): concave/);
+    expect(t.steps.some((s) => s.quiz)).toBe(true);
+    expect(t.steps.at(-1)!.label).toMatch(/^4 triangles/);
+  });
+});

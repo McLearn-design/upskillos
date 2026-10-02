@@ -4,6 +4,7 @@
 //   core/    the scene model, mesh operations, traces, scripting: plain TypeScript, tested headlessly
 //   render/  the three.js viewport, built from the model and never the source of truth
 //   ui/      panels that read the editor and send it commands
+import { traceReplay } from '../../engines/mesh/core/logReplay';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Editor } from '../../engines/mesh/core/Editor';
 import type { SceneJSON } from '../../engines/mesh/core/Scene';
@@ -73,7 +74,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
   const [gizmo, setGizmo] = useState<GizmoMode>('translate');
   const [space, setSpace] = useState<'local' | 'world'>('local');
   const [snap, setSnap] = useState(false);
-  const [opts, setOpts] = useState<ViewOptions>({ grid: true, axes: true, localAxes: true, normals: false, wire: false, xray: false });
+  const [opts, setOpts] = useState<ViewOptions>({ grid: true, axes: true, localAxes: true, normals: false, wire: false, xray: false, outlineStencil: true });
   const [boxArmed, setBoxArmed] = useState(false);
   const [knifeArmed, setKnifeArmed] = useState(false);
   const [tab, setTab] = useState<'trace' | 'script' | 'timeline' | 'uv' | 'shader' | 'log'>('trace');
@@ -107,7 +108,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     return () => { v.dispose(); setVp(null); };
   }, [editor]);
   useEffect(() => { vp?.setGizmoMode(gizmo); }, [vp, gizmo]);
-  useEffect(() => { if (vp) { vp.renderSize = renderSize; vp.sync(); } }, [vp, renderSize]);
+  useEffect(() => { editor.renderSize = renderSize; if (vp) { vp.renderSize = renderSize; vp.sync(); } }, [vp, renderSize, editor]);
   const renderStill = useCallback(async () => {
     if (!vp) return;
     try {
@@ -120,7 +121,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
   const cameraFromView = () => { if (vp) editor.addCamera(vp.viewPose()); };
   const alignCamera = () => { if (vp) { const p = vp.viewPose(); if (vp.lookingThrough) vp.lookThrough(false); editor.alignCamera(p.position, p.rotation); } };
   useEffect(() => { vp?.setSpace(space); }, [vp, space]);
-  useEffect(() => { vp?.setSnap(snap); }, [vp, snap]);
+  useEffect(() => { editor.snap = snap; vp?.setSnap(snap); }, [vp, snap, editor]);
   useEffect(() => { vp?.setOptions(opts); }, [vp, opts]);
 
   // Autosave, a moment after each change.
@@ -197,6 +198,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       if (e.key === 'Home') return act(() => vp?.frameAll());
       if (k === '0' && mod && e.altKey) return act(alignCamera);
       if (k === '0' && !mod) return act(() => vp?.lookThrough());
+      if (k === '5' && !mod) return act(() => { if (vp) { vp.setOrthographic(!vp.orthographic); ed.say(vp.orthographic ? 'Orthographic: no perspective, parallel lines stay parallel (5 to switch back)' : 'Perspective'); } });
       if (k === 'x' || e.key === 'Delete') return act(() => (edit ? ed.deleteElements() : ed.deleteObjects()));
       if (edit && k === 'e') return act(() => { ed.extrude(0.5); setGizmo('translate'); });
       if (edit && k === 'i') return act(() => ed.insetRegion(0.1));
@@ -299,12 +301,12 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       ['Export OBJ (keeps quads, for Blender)', () => download('scene.obj', exportOBJ(editor.modelScene), 'text/plain')],
       ['Export GLB', exportGlb],
     ],
-    Edit: [['Undo', () => editor.undo(), 'Ctrl+Z'], ['Redo', () => editor.redo(), 'Ctrl+Shift+Z'], ['Duplicate', () => editor.duplicate(), 'Shift+D'], ['Delete', () => (edit ? editor.deleteElements() : editor.deleteObjects()), 'X'], ['Select all', () => (edit ? editor.selectAllElements() : editor.selectAllObjects()), 'A'], ['Select loop (Alt+click an edge)', () => { const e = vp?.hoveredEdge() ?? editor.selectedEdges()[0]; if (e) editor.selectLoop(e[0], e[1], false); else editor.say('Select loop: Alt+click an edge in edit mode'); }, 'Alt+click'], ['Select linked', () => editor.selectLinked(), 'Ctrl+L'], ['Select non-manifold (open edges, edges on 3+ faces)', () => editor.selectNonManifold(), 'Shift+Ctrl+Alt+M']],
+    Edit: [['Undo', () => editor.undo(), 'Ctrl+Z'], ['Redo', () => editor.redo(), 'Ctrl+Shift+Z'], ['Trace the undo stack', () => { if (editor.traceUndo()) setTab('trace'); }], ['Duplicate', () => editor.duplicate(), 'Shift+D'], ['Delete', () => (edit ? editor.deleteElements() : editor.deleteObjects()), 'X'], ['Select all', () => (edit ? editor.selectAllElements() : editor.selectAllObjects()), 'A'], ['Select loop (Alt+click an edge)', () => { const e = vp?.hoveredEdge() ?? editor.selectedEdges()[0]; if (e) editor.selectLoop(e[0], e[1], false); else editor.say('Select loop: Alt+click an edge in edit mode'); }, 'Alt+click'], ['Select linked', () => editor.selectLinked(), 'Ctrl+L'], ['Select non-manifold (open edges, edges on 3+ faces)', () => editor.selectNonManifold(), 'Shift+Ctrl+Alt+M']],
     Add: [...PRIMS.map(([t, label]) => [label, () => editor.addPrimitive(t)] as [string, () => void]), ['Empty', () => editor.addEmpty()], ['Armature (one bone)', () => editor.addArmature()], ['Camera', () => editor.addCamera()], ['Camera from this view', cameraFromView]],
     Mesh: [
       ['Extrude', () => editor.extrude(0.5), 'E'], ['Inset (region)', () => editor.insetRegion(0.1), 'I'], ['Inset individual faces', () => editor.inset(0.25)], ['Bevel edges', () => editor.bevel(0.1, 1), 'Ctrl+B'], ['Loop cut', loopCut, 'Ctrl+R'], ['Knife (drag a line)', () => vp?.armKnife(true), 'K'],
       ['Subdivide faces', () => editor.split()], ['Subdivide smooth (Catmull–Clark)', () => editor.smoothSubdivide()],
-      ['Fill (close a hole)', () => editor.fill(), 'F'], ['Merge at centre', () => editor.merge(), 'M'], ['Merge by distance (0.001)', () => editor.mergeByDistance(0.001)], ['Measure angle (two edges at a corner)', () => editor.measureAngle()], ['Smooth vertices', () => editor.smoothVerts(5, 0.5)], ['Flip normals', () => editor.flip()], ['Dissolve', () => editor.dissolve(), 'Ctrl+X'], ['Delete', () => editor.deleteElements(), 'X'],
+      ['Fill (close a hole)', () => editor.fill(), 'F'], ['Merge at centre', () => editor.merge(), 'M'], ['Merge by distance (0.001)', () => editor.mergeByDistance(0.001)], ['Measure angle (two edges at a corner)', () => editor.measureAngle()], ['Trace the vertex normal (one vertex)', () => { if (editor.traceNormalOf()) setTab('trace'); }], ['Trace drawing the face (one face: fan or ear clipping)', () => { if (editor.traceTriangulateOf()) setTab('trace'); }], ['Trace screen picking (scene camera, image centre)', () => { if (editor.traceScreenPickOf()) setTab('trace'); }], ['Smooth vertices', () => editor.smoothVerts(5, 0.5)], ['Flip normals', () => editor.flip()], ['Dissolve', () => editor.dissolve(), 'Ctrl+X'], ['Delete', () => editor.deleteElements(), 'X'],
     ],
     UV: [
       ['Mark seam (selected edges)', () => editor.markSeams(true)], ['Clear seam', () => editor.markSeams(false)],
@@ -322,19 +324,28 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     ],
     Object: [
       ['Edit mode', () => editor.toggleEdit(), 'Tab'],
-      ['Shade smooth', () => o && editor.setSmooth(o.id, true)], ['Shade flat', () => o && editor.setSmooth(o.id, false)],
+      ['Shade smooth', () => o && editor.setSmooth(o.id, true)], ['Shade auto smooth (30°)', () => o && editor.setAutoSmooth(o.id, 30)], ['Shade flat', () => o && editor.setSmooth(o.id, false)],
       ['Add mirror modifier', () => o && editor.addModifier(o.id, 'mirror')], ['Add subdivision modifier', () => o && editor.addModifier(o.id, 'subsurf')],
-      ['Apply modifiers', () => o && editor.applyModifiers(o.id)], ['Clear parent', () => o && editor.setParent(o.id, null)],
+      ['Apply modifiers', () => o && editor.applyModifiers(o.id)], ['Trace the mirror modifier', () => { if (editor.traceMirrorOf()) setTab('trace'); }], ['Trace the silhouette (scene camera)', () => { if (editor.traceSilhouetteOf()) setTab('trace'); }], ['Trace clean topology (valence, poles)', () => { if (editor.traceValenceOf()) setTab('trace'); }], ['Clear parent', () => o && editor.setParent(o.id, null)],
       ['Trace the transform (T·R·S)', () => { if (editor.traceTransformOf()) setTab('trace'); }],
       ['Decompose the matrix', () => { if (editor.decomposeOf()) setTab('trace'); }],
       ['Determinant of the matrix', () => { if (editor.determinantOf()) setTab('trace'); }],
       ['Trace the world matrix (parents)', () => { if (editor.traceWorldOf()) setTab('trace'); }],
+      ['Trace the local axes', () => { if (editor.traceAxesOf()) setTab('trace'); }],
+      ['Trace the Euler angles', () => { if (editor.traceEulerOf()) setTab('trace'); }],
+      ['Trace the view matrix (camera)', () => { if (editor.traceViewOf()) setTab('trace'); }],
+      ['Trace the projection (camera)', () => { if (editor.traceProjectionOf()) setTab('trace'); }],
+      ['Trace the depth buffer (camera)', () => { if (editor.traceDepthOf()) setTab('trace'); }],
+      ['Trace the outline width (camera)', () => { if (editor.traceOutlineOf()) setTab('trace'); }],
+      ['Trace look-at (aim the camera at the first mesh)', () => { if (editor.traceLookAtOf()) setTab('trace'); }],
+      ['Trace picking (camera, the image centre)', () => { if (editor.tracePickOf()) setTab('trace'); }],
+      ['Trace a gizmo drag (X arrow, 120 px right, scene camera)', () => { if (editor.traceDragOf()) setTab('trace'); }],
       ['Insert keyframe', () => { editor.insertKey(); setTab('timeline'); }, 'I'], ['Clear animation', () => o && editor.clearAnimation(o.id)],
       ['Bind to armature (automatic weights)', () => editor.bindToArmature(), 'Ctrl+P'], ['Unbind from armature', () => o?.skin && editor.unbind(o.id)],
       ['Pose mode (armature)', () => editor.enterPose(), 'Tab'], ['Clear pose', () => editor.resetPose(), 'Alt+R'],
     ],
-    View: [['Frame selected', () => vp?.frameSelected(), 'F (object) / .'], ['Frame all', () => vp?.frameAll(), 'Home'], ['Front', () => vp?.view('front')], ['Right', () => vp?.view('right')], ['Top', () => vp?.view('top')], ['Perspective', () => vp?.view('persp')], ['Look through the scene camera', () => vp?.lookThrough(), '0'], ['Align the scene camera to this view', alignCamera, 'Ctrl+Alt+0'], ['Render still (PNG)', renderStill]],
-    Script: [['Open script panel', () => setTab('script')], ['Show the GUI → code log', () => setTab('log')]],
+    View: [['Frame selected', () => vp?.frameSelected(), 'F (object) / .'], ['Frame all', () => vp?.frameAll(), 'Home'], ['Front', () => vp?.view('front')], ['Right', () => vp?.view('right')], ['Top', () => vp?.view('top')], ['Perspective', () => vp?.view('persp')], ['Outline stencil on / off (see why it is needed)', () => { toggle('outlineStencil'); editor.say(opts.outlineStencil !== false ? 'Outline stencil off: the outline now shows inside concave creases too' : 'Outline stencil on: the outline stays outside the object'); }], ['Orthographic / perspective', () => { if (vp) { vp.setOrthographic(!vp.orthographic); editor.say(vp.orthographic ? 'Orthographic: no perspective, parallel lines stay parallel (5 to switch back)' : 'Perspective'); } }, '5'], ['Look through the scene camera', () => vp?.lookThrough(), '0'], ['Align the scene camera to this view', alignCamera, 'Ctrl+Alt+0'], ['Render still (PNG)', renderStill]],
+    Script: [['Open script panel', () => setTab('script')], ['Show the GUI → code log', () => setTab('log')], ['Trace the GUI → code log (replay it)', () => { traceReplay(editor); setTab('trace'); }]],
     Examples: [['Browse example projects and challenges…', () => setGallery(true)], ...PROJECTS.map((p) => [`${p.icon}  ${p.title}`, () => openExample(p)] as [string, () => void])],
     Help: [['Keyboard shortcuts', () => setHelp(true), '?']],
   };

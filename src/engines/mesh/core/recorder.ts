@@ -33,7 +33,7 @@ export function sceneHash(scene: Scene): number {
   const mixS = (s: string) => { for (let i = 0; i < s.length; i++) mix(s.charCodeAt(i)); };
   mix(scene.objects.length); mix(scene.timeline.frame); mix(scene.timeline.start); mix(scene.timeline.end); mix(scene.timeline.fps);
   for (const o of scene.objects) {
-    mixS(o.id); mixS(o.name); mixS(o.parent ?? '-'); mix(o.visible ? 1 : 0); mix(o.smooth ? 1 : 0);
+    mixS(o.id); mixS(o.name); mixS(o.parent ?? '-'); mix(o.visible ? 1 : 0); mix(o.smooth ? 1 : 0); mix(o.autoSmooth ?? -1);
     for (const v of [o.position, o.rotation, o.scale]) { mix(v[0]); mix(v[1]); mix(v[2]); }
     mixS(o.material.color); mix(o.material.roughness); mix(o.material.metalness);
     mixS(JSON.stringify(o.modifiers)); if (o.anim) mixS(JSON.stringify(o.anim));

@@ -5,7 +5,7 @@
 
 import { EditMesh, type Vec3 } from './EditMesh';
 import { subdivide } from './subdivision';
-import { Trace, fmt } from './trace';
+import { Trace, fmt, fmtV } from './trace';
 
 export type Axis = 'x' | 'y' | 'z';
 export type Modifier =
@@ -36,10 +36,13 @@ export function mirror(mesh: EditMesh, axis: Axis = 'x', merge = 0.001, trace?: 
     map[i] = verts.length; verts.push(r);
   });
   const onPlane = map.filter((m, i) => m === i).length;
+  const first = mesh.verts.findIndex((_, i) => map[i] !== i);
   trace?.step({
     phase: 'Reflect', label: `${n - onPlane} vertices reflected, ${onPlane} on the plane shared`,
     detail: `Reflection in the ${axis} = 0 plane negates the ${axis} coordinate. Vertices within ${fmt(merge)} of the plane are not copied, so the two halves join.`,
     verts: mesh.verts.map((_, i) => i).filter((i) => map[i] === i),
+    values: [['plane', `${axis} = 0`], ['merge distance', fmt(merge)], ['shared', String(onPlane)], ['copied', String(n - onPlane)]],
+    quiz: first >= 0 ? { prompt: `The mirror reflects in the ${axis} = 0 plane. Where does the copy of v${first} = ${fmtV(mesh.verts[first])} go?`, answer: verts[map[first]], labels: ['x', 'y', 'z'], rule: `Negate the ${axis} coordinate; keep the other two. The reflection matrix is the identity with −1 in the ${axis} place.` } : undefined,
   });
   const faces = mesh.faces.map((f) => f.slice());
   const seen = new Set(faces.map((f) => [...f].sort((a, b) => a - b).join(',')));

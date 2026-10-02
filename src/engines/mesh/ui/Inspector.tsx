@@ -289,6 +289,7 @@ function CameraPanel({ editor, controls }: { editor: Editor; controls: CameraCon
   return (
     <Section title="CAMERA">
       <Row label="Field of view"><NumberField value={fov} digits={1} step={1} onCommit={(v) => editor.setCameraFov(o.id, v)} /><span style={{ color: C.dim }}>° tall, {horizontalFov(fov, width / height).toFixed(1)}° wide</span></Row>
+      <Row label="Near, far"><NumberField value={o.camera?.near ?? 0.1} digits={3} step={0.1} onCommit={(v) => editor.setCameraClip(o.id, 'near', v)} /><NumberField value={o.camera?.far ?? 200} digits={1} step={10} onCommit={(v) => editor.setCameraClip(o.id, 'far', v)} /></Row>
       <Row label="Render size">
         <select data-testid="render-size" value={`${width}x${height}`} onChange={(e) => { const [w, h] = e.target.value.split('x').map(Number); controls.setRenderSize(w, h); }}
           style={{ background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 3, fontSize: 12 }}>

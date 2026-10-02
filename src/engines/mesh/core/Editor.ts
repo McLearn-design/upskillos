@@ -10,22 +10,30 @@
 // The GUI and scripts share this path, so undo, the log and traces behave the
 // same however a change was made.
 
+import { Vector3 } from 'three';
 import { EditMesh, type Vec3 } from './EditMesh';
 import { Scene, type SceneJSON, type SceneObject } from './Scene';
 import { makePrimitive, type PrimitiveParams, type PrimitiveType } from './primitives';
-import { defaultModifier, evaluate, onMirrorPlane, type Modifier } from './modifiers';
+import { defaultModifier, evaluate, mirror, onMirrorPlane, type Modifier } from './modifiers';
 import { applyBonePatch, bindSkin, evaluatedMesh, removeBone, skinnedSource, skinSource, skinState } from './evaluate';
 import { catmullClark } from './subdivision';
 import { Trace } from './trace';
-import { traceDecompose, traceDeterminant, traceTransform, traceWorld } from './transformTrace';
+import { traceAxes, traceDecompose, traceEuler, traceDeterminant, traceTransform, traceWorld } from './transformTrace';
 import { computeField, type FieldResult, type FieldSpec } from './fields';
 import { smooth as smoothMesh } from './geometry';
+import { traceVertexNormal } from './normals';
+import { rayFromPixel, tracePick, type Pickable } from './pickRay';
+import { traceScreenPick, type ScreenPoint } from './screenPick';
+import { traceSilhouette } from './silhouette';
+import { traceValence } from './valence';
+import { SNAP, traceAxisDrag } from './gizmoDrag';
 import { CHANNELS, hasKeys, posesAt, removeBoneKey, removeKey, setBoneKey, setKey, transformAt, type Channel, type Interp } from './animation';
 import { cloneBones, limitWeights, moveJoint, orderBones, type Bone, type JointSel } from './armature';
 import { DEFAULT_PAINT, dab, neighbourLists, type PaintSettings } from './weightPaint';
 import { angleDistortion, planarUV, sharpEdges, unwrap as unwrapMesh, uvFits } from './uv';
+import { faceTriangles } from './triangulate';
 import { bevelEdges, dissolveEdges, dissolveFaces, dissolveVerts, insetRegion } from './modelling';
-import { DEFAULT_CAMERA, lookAtRotation } from './camera';
+import { DEFAULT_CAMERA, lookAtRotation, traceDepth, traceLookAt, traceOutline, traceProjection, traceView } from './camera';
 import { knife as knifeCut, knifeFaces } from './knife';
 
 export type Mode = 'object' | 'edit' | 'pose' | 'weight' | 'bones';
@@ -174,6 +182,40 @@ export class Editor {
     this.emit('scene');
   }
 
+  /**
+   * Trace the undo history (Edit › Trace the undo stack): every step is a pair of whole-scene snapshots (before and
+   * after), so undo restores "before" and redo restores "after". A new change empties the redo stack. Predict
+   * questions on what is left after two undos, and on whether redo survives a new change.
+   */
+  traceUndo(): boolean {
+    const trace = new Trace('Undo stack');
+    const size = (e: { before: SceneJSON; after: SceneJSON }) => JSON.stringify(e.before).length + JSON.stringify(e.after).length;
+    const n = this.undoStack.length, total = this.undoStack.reduce((s, e) => s + size(e), 0);
+    const kb = (x: number) => `${(x / 1024).toFixed(1)} KB`;
+    trace.step({
+      phase: 'Stack', label: n ? `${n} step${n === 1 ? '' : 's'} can be undone, oldest first: ${this.undoStack.map((e) => e.label).join(', ')}` : 'Nothing to undo yet: make a change first',
+      detail: 'Every change goes through one path (run): snapshot the scene, change it, snapshot again, push the pair. So every kind of change can be undone the same way.',
+      values: this.undoStack.slice(-8).map((e, i) => [`${n - Math.min(8, n) + i + 1}. ${e.label}`, kb(size(e))] as [string, string]),
+    });
+    if (n) trace.step({
+      phase: 'Undo', label: `Undo puts back the scene from before "${this.undoStack[n - 1].label}" and moves that step to the redo stack`,
+      detail: 'Undo pops the newest step, restores its "before" snapshot, and pushes the step onto the redo stack, so redo can restore its "after" snapshot.',
+      values: [['undo stack after one undo', String(n - 1)], ['redo stack after one undo', String(this.redoStack.length + 1)]],
+      quiz: { prompt: `There are ${n} steps on the undo stack. How many are left after pressing Ctrl+Z twice?`, answer: [Math.max(0, n - 2)], labels: ['steps'], rule: 'Each undo pops one step (none if the stack is empty).', tolerance: 0 },
+    });
+    trace.step({
+      phase: 'Redo', label: `${this.redoStack.length} step${this.redoStack.length === 1 ? '' : 's'} can be redone`,
+      detail: 'Redo pops from the redo stack, restores the "after" snapshot and pushes the step back onto the undo stack. Any new change empties the redo stack: the undone future is gone.',
+      values: this.redoStack.map((e) => ['redo', e.label] as [string, string]),
+      quiz: { prompt: 'You undo twice, then move an object. How many steps can now be redone?', answer: [0], labels: ['steps'], rule: 'A new change clears the redo stack.', tolerance: 0 },
+    });
+    trace.step({ phase: 'Memory', label: `The undo stack holds ${kb(total)} of snapshots (at most 200 steps are kept)`, detail: 'Snapshots are simple and always correct, but each step stores the whole scene twice. The command pattern stores only what changed, at the cost of writing an undo for every command.', values: [['total', kb(total)], ['steps', String(n)]] });
+    this.trace = trace; this.traceTarget = this.active; this.emit('trace');
+    this.message = `Undo stack: ${n} steps, redo stack: ${this.redoStack.length}`;
+    this.emit('select');
+    return true;
+  }
+
   private restore(j: SceneJSON): void {
     this.scene = Scene.fromJSON(j);
     this.selected = new Set([...this.selected].filter((id) => this.scene.get(id)));
@@ -293,6 +335,15 @@ export class Editor {
     this.run('Camera setting', `${ref(o)}.fov = ${lit(fov)}`, () => { o.camera = { ...o.camera!, fov }; });
   }
 
+  /** A camera's near or far plane: nothing nearer than near or further than far is drawn; near must stay above 0 and below far. */
+  setCameraClip(id: string, which: 'near' | 'far', value: number): void {
+    const o = this.scene.get(id);
+    if (!o?.camera || !(value > 0)) return;
+    const next = { ...o.camera, [which]: value };
+    if (!(next.near < next.far)) { this.say('The near plane must be closer than the far plane'); return; }
+    this.run('Camera setting', `${ref(o)}.${which} = ${lit(value)}`, () => { o.camera = next; });
+  }
+
   deleteObjects(ids = [...this.selected]): void {
     if (this.mode === 'edit' || !ids.length) return;
     const objs = ids.map((id) => this.scene.get(id)).filter(Boolean) as SceneObject[];
@@ -354,9 +405,90 @@ export class Editor {
     this.run('Material', Object.entries(patch).map(([k, v]) => `${ref(o)}.material.${k} = ${lit(v)}`).join('\n'), () => Object.assign(o.material, patch));
   }
 
+  /** Auto smooth: smooth shading that keeps edges sharper than `degrees` hard (null: smooth everywhere). */
+  setAutoSmooth(id: string, degrees: number | null): void {
+    const o = this.scene.get(id);
+    if (!o?.mesh || (degrees !== null && !(degrees >= 0 && degrees <= 180))) return;
+    this.run(degrees === null ? 'Shade smooth' : `Shade auto smooth ${degrees}°`, `${ref(o)}.autoSmooth = ${degrees === null ? 'null' : lit(degrees)}`, () => { o.autoSmooth = degrees; o.smooth = true; });
+  }
+
+  /** Trace how the one selected vertex's smooth normal is built (Mesh › Trace the vertex normal). */
+  traceNormalOf(weight: 'area' | 'angle' = 'area'): boolean {
+    const o = this.editObject;
+    const verts = this.mode === 'edit' ? this.selectedVerts() : [];
+    if (!o?.mesh || verts.length !== 1) { this.say('Trace the vertex normal: Tab into edit mode and select one vertex'); return false; }
+    const trace = new Trace('Trace the vertex normal');
+    if (o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const t = traceVertexNormal(o.mesh, verts[0], { weight, sharp: o.autoSmooth ?? null }, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `Vertex ${verts[0]}: ${t.faces.length} faces, normal (${t.normal.map((x) => +x.toFixed(3)).join(', ')})${t.groups > 1 ? `, ${t.groups} normals with auto smooth` : ''}`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace the active object's topology: valence at every vertex, poles, face kinds and the pole budget. */
+  traceValenceOf(): boolean {
+    const o = this.activeObject;
+    if (!o?.mesh) { this.say('Trace clean topology: select an object with a mesh'); return false; }
+    const trace = new Trace('Trace clean topology');
+    if (o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const r = traceValence(o.mesh, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${o.name}: ${r.poles} pole${r.poles === 1 ? '' : 's'}; ${r.quads} quads, ${r.tris} triangles, ${r.ngons} n-gons`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace the active object's silhouette (modifiers applied) as seen from the scene camera: facing, then outline edges. */
+  traceSilhouetteOf(): boolean {
+    const o = this.activeObject, cam = this.scene.activeCamera ? this.scene.get(this.scene.activeCamera) : undefined;
+    if (!o?.mesh) { this.say('Trace the silhouette: select an object with a mesh'); return false; }
+    if (!cam?.camera) { this.say('Trace the silhouette: add a scene camera first (Add › Camera)'); return false; }
+    const shown = evaluatedMesh(this.scene, o);
+    const c = this.scene.worldMatrix(cam).elements;
+    const local = new Vector3(c[12], c[13], c[14]).applyMatrix4(this.scene.worldMatrix(o).clone().invert());
+    const trace = new Trace('Trace the silhouette');
+    const r = traceSilhouette(shown, [local.x, local.y, local.z], trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${o.name} from ${cam.name}: ${r.front.length} of ${shown.faces.length} faces face the camera, ${r.edges.length} silhouette edges`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace the active object's (first enabled) mirror modifier on its cage: reflection, shared vertices, winding. */
+  traceMirrorOf(): boolean {
+    const o = this.activeObject;
+    const mod = o?.modifiers.find((m) => m.type === 'mirror' && m.enabled);
+    if (!o?.mesh || !mod || mod.type !== 'mirror') { this.say('Trace the mirror modifier: select an object with a mirror modifier switched on'); return false; }
+    const trace = new Trace('Trace the mirror modifier');
+    if (o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const out = mirror(o.mesh, mod.axis, mod.merge, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `Mirror in ${mod.axis} = 0: cage ${o.mesh.verts.length} vertices, ${o.mesh.faces.length} faces → ${out.verts.length} vertices, ${out.faces.length} faces`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace how the one selected face is cut into triangles for drawing: a fan if convex, ear clipping if not. */
+  traceTriangulateOf(): boolean {
+    const o = this.editObject;
+    const faces = this.mode === 'edit' ? this.selectedFaces() : [];
+    if (!o?.mesh || faces.length !== 1) { this.say('Trace drawing a face: Tab into edit mode and select one face'); return false; }
+    const trace = new Trace('Trace drawing the face');
+    if (o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const f = o.mesh.faces[faces[0]];
+    const tris = faceTriangles(o.mesh.verts, f, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `Face ${faces[0]}: ${f.length} corners, ${tris.length} triangles`;
+    this.emit('select');
+    return true;
+  }
+
   setSmooth(id: string, smooth: boolean): void {
     const o = this.scene.get(id);
     if (!o) return;
+    // Shade smooth after auto smooth smooths everywhere again, as in Blender.
+    if (smooth && o.autoSmooth != null) { this.run('Shade smooth', `${ref(o)}.autoSmooth = null`, () => { o.smooth = true; o.autoSmooth = null; }); return; }
     this.run(smooth ? 'Shade smooth' : 'Shade flat', `${ref(o)}.smooth = ${smooth}`, () => { o.smooth = smooth; });
   }
 
@@ -587,7 +719,11 @@ export class Editor {
       ring.faces.forEach((f) => this.sel.faces.add(f));
       this.say(`Face loop: ${ring.faces.length} faces${ring.closed ? ', all the way round' : ''}`);
     } else {
-      const loop = m.edgeLoop(a, b);
+      // With Record traces on, the walk is traced vertex by vertex.
+      const trace = this.traceEnabled ? new Trace('Edge loop') : undefined;
+      if (trace && m.verts.length <= trace.snapshotLimit) trace.before = m.toSnapshot();
+      const loop = m.edgeLoop(a, b, trace);
+      if (trace) { this.trace = trace; this.traceTarget = this.editObject!.id; this.emit('trace'); }
       for (const [x, y] of loop.edges) {
         if (this.selectMode === 'edge') this.sel.edges.add(EditMesh.edgeKey(x, y));
         else { this.sel.verts.add(x); this.sel.verts.add(y); }
@@ -717,6 +853,182 @@ export class Editor {
     const w = traceWorld(this.scene, o, trace);
     this.trace = trace; this.traceTarget = o.id; this.emit('trace');
     this.message = `${o.name}: ${w.chain.join(' → ')}; origin at (${w.origins.at(-1)!.map((x) => +x.toFixed(3)).join(', ')})`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace the active object's own axes, read from its world matrix, and where the world origin is in its coordinates (Object › Trace the local axes). */
+  traceAxesOf(): boolean {
+    const o = this.activeObject;
+    if (!o) { this.say('Trace the local axes: select an object first'); return false; }
+    const trace = new Trace('Trace the local axes');
+    if (o.mesh && o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const a = traceAxes(this.scene.worldMatrix(o).elements, [0, 0, 0], trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    const f = (v: number[]) => v.map((x) => +x.toFixed(3)).join(', ');
+    this.message = `${o.name}: local x (${f(a.axes[0])}), y (${f(a.axes[1])}), z (${f(a.axes[2])})${a.square ? '' : ', not at right angles'}`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace the active object's Euler angles into a matrix and back, and say if they are in gimbal lock (Object › Trace the Euler angles). */
+  traceEulerOf(): boolean {
+    const o = this.activeObject;
+    if (!o) { this.say('Trace the Euler angles: select an object first'); return false; }
+    const trace = new Trace('Trace the Euler angles');
+    if (o.mesh && o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const t = traceEuler(o.rotation, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${o.name}: decodes to (${t.decoded.join('°, ')}°)${t.locked ? ', gimbal lock' : ''}`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace the active camera's view matrix, and where the world origin (or the first other object) lands in its camera space (Object › Trace the view matrix). */
+  traceViewOf(): boolean {
+    const o = this.activeObject;
+    if (!o || o.kind !== 'camera') { this.say('Trace the view matrix: select a camera first (Add › Camera)'); return false; }
+    const target = this.scene.objects.find((x) => x.kind === 'mesh');
+    const p = target ? this.scene.worldMatrix(target).elements : null;
+    const point: Vec3 = p ? [p[12], p[13], p[14]] : [0, 0, 0];
+    const trace = new Trace('Trace the view matrix');
+    const v = traceView(this.scene.worldMatrix(o).elements, point, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${o.name}: ${target ? target.name : 'the world origin'} is at (${v.camera.map((x) => +x.toFixed(3)).join(', ')}) in camera space`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Whether the toolbar's Snap is on; MeshLab keeps it in step, for the drag trace. */
+  snap = false;
+
+  /** The image size the projection trace assumes; MeshLab keeps it in step with the render size. */
+  renderSize = { width: 1280, height: 720 };
+
+  /** Trace how the first mesh's origin reaches the active camera's image (Object › Trace the projection). */
+  traceProjectionOf(): boolean {
+    const o = this.activeObject;
+    if (!o?.camera) { this.say('Trace the projection: select a camera first (Add › Camera)'); return false; }
+    const target = this.scene.objects.find((x) => x.kind === 'mesh');
+    const p = target ? this.scene.worldMatrix(target).elements : null;
+    const point: Vec3 = p ? [p[12], p[13], p[14]] : [0, 0, 0];
+    const trace = new Trace('Trace the projection');
+    const t = traceProjection(this.scene.worldMatrix(o).elements, o.camera, this.renderSize, point, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${o.name}: ${target ? target.name : 'the world origin'} lands at pixel (${t.pixel.map((x) => Math.round(x)).join(', ')})${t.inside ? '' : ', outside the image'}`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace the first two meshes' origins through the active camera's depth buffer (Object › Trace the depth buffer). */
+  traceDepthOf(): boolean {
+    const o = this.activeObject;
+    if (!o?.camera) { this.say('Trace the depth buffer: select a camera first (Add › Camera)'); return false; }
+    const meshes = this.scene.objects.filter((x) => x.kind === 'mesh').slice(0, 2);
+    if (meshes.length < 2) { this.say('Trace the depth buffer: it compares two meshes, and there is only ' + meshes.length); return false; }
+    const at = (m: SceneObject): Vec3 => { const e = this.scene.worldMatrix(m).elements; return [e[12], e[13], e[14]]; };
+    const trace = new Trace('Trace the depth buffer');
+    const t = traceDepth(this.scene.worldMatrix(o).elements, o.camera, at(meshes[0]), at(meshes[1]), 24, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${o.name}: ${meshes[0].name} and ${meshes[1].name} store ${t.stored.join(' and ')}${t.fight ? ': they fight' : ''}`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace how wide the selection outline of the first mesh is on the active camera's image (Object › Trace the outline width). */
+  traceOutlineOf(): boolean {
+    const o = this.activeObject;
+    if (!o?.camera) { this.say('Trace the outline width: select a camera first (Add › Camera)'); return false; }
+    const target = this.scene.objects.find((x) => x.kind === 'mesh');
+    if (!target) { this.say('Trace the outline width: there is no mesh to outline'); return false; }
+    const e = this.scene.worldMatrix(target).elements;
+    const trace = new Trace('Trace the outline width');
+    const t = traceOutline(this.scene.worldMatrix(o).elements, o.camera, this.renderSize, [e[12], e[13], e[14]], undefined, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${o.name}: ${target.name}'s outline is ${t.pixels.toFixed(2)} pixels wide on a ${this.renderSize.height}-pixel-tall image`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Aim the active camera at the first mesh with look-at, traced (Object › Trace look-at). */
+  traceLookAtOf(): boolean {
+    const o = this.activeObject;
+    if (!o?.camera || o.parent) { this.say('Trace look-at: select a camera with no parent first'); return false; }
+    const target = this.scene.objects.find((x) => x.kind === 'mesh');
+    if (!target) { this.say('Trace look-at: there is no mesh to look at'); return false; }
+    const w = this.scene.worldMatrix(target).elements, at: Vec3 = [w[12], w[13], w[14]];
+    const trace = new Trace('Trace look-at');
+    let t;
+    try { t = traceLookAt(o.position, at, trace); } catch (e) { this.say(e instanceof Error ? e.message : String(e)); return false; }
+    const rad = t.rotationDeg.map((a) => (a * Math.PI) / 180) as Vec3;
+    this.run('Look at', `${ref(o)}.lookAt(${lit(at)})`, () => { o.rotation = rad; });
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${o.name} now looks at ${target.name}: rotation (${t.rotationDeg.map((a) => +a.toFixed(1)).join('°, ')}°)`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Every visible mesh in world coordinates, for picking. */
+  pickables(): Pickable[] {
+    return this.scene.objects.filter((o) => o.kind === 'mesh' && o.mesh && o.visible).map((o) => {
+      const w = this.scene.worldMatrix(o).elements;
+      return { name: o.name, faces: o.mesh!.faces, verts: o.mesh!.verts.map(([x, y, z]) => [w[0] * x + w[4] * y + w[8] * z + w[12], w[1] * x + w[5] * y + w[9] * z + w[13], w[2] * x + w[6] * y + w[10] * z + w[14]] as Vec3) };
+    });
+  }
+
+  /** Trace the pick ray through a pixel of the active camera's image (default: the centre), and select what it hits (Object › Trace picking). */
+  tracePickOf(px?: number, py?: number): boolean {
+    const o = this.activeObject;
+    if (!o?.camera) { this.say('Trace picking: select a camera first (Add › Camera)'); return false; }
+    const { width, height } = this.renderSize;
+    const ray = rayFromPixel(this.scene.worldMatrix(o).elements, o.camera, this.renderSize, px ?? width / 2 - 0.5, py ?? height / 2 - 0.5);
+    const trace = new Trace('Trace picking');
+    const hit = tracePick(ray, this.pickables(), trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = hit ? `${o.name}: the ray hits ${hit.name}, face ${hit.face}, ${hit.t.toFixed(3)} away` : `${o.name}: the ray hits nothing`;
+    this.emit('select');
+    return true;
+  }
+
+  /** The edit mesh's vertices on the scene camera's image (null behind it), for screen-space picking. */
+  screenPointsOf(o: SceneObject, cam: SceneObject): (ScreenPoint | null)[] {
+    const w = this.scene.worldMatrix(o).elements, cw = this.scene.worldMatrix(cam).elements;
+    return o.mesh!.verts.map(([x, y, z]) => {
+      const p: Vec3 = [w[0] * x + w[4] * y + w[8] * z + w[12], w[1] * x + w[5] * y + w[9] * z + w[13], w[2] * x + w[6] * y + w[10] * z + w[14]];
+      const t = traceProjection(cw, cam.camera!, this.renderSize, p);
+      return t.clip[3] > 0 ? { x: t.pixel[0], y: t.pixel[1], z: t.ndc[2] } : null;
+    });
+  }
+
+  /** Trace picking the vertex or edge nearest a point of the scene camera's image (default: its centre), and select it (Mesh › Trace screen picking). */
+  traceScreenPickOf(px?: number, py?: number): boolean {
+    const o = this.editObject, cam = this.scene.activeCamera ? this.scene.get(this.scene.activeCamera) : undefined;
+    if (this.mode !== 'edit' || !o?.mesh || (this.selectMode !== 'vert' && this.selectMode !== 'edge')) { this.say('Trace screen picking: Tab into edit mode, vertex (1) or edge (2) select'); return false; }
+    if (!cam?.camera) { this.say('Trace screen picking: add a scene camera first (Add › Camera)'); return false; }
+    const trace = new Trace('Trace screen picking');
+    if (o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const edges = [...o.mesh.edges().values()].map((e) => [e.a, e.b] as [number, number]);
+    const r = traceScreenPick(this.selectMode, this.screenPointsOf(o, cam), edges, px ?? this.renderSize.width / 2, py ?? this.renderSize.height / 2, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    if (this.selectMode === 'vert') this.selectElement(r.index, false); else this.selectElement(r.key, false);
+    this.message = r.d === null ? 'Nothing within reach of the pointer' : `Picked ${r.index !== null ? 'vertex ' + r.index : 'edge ' + r.key}, ${r.d.toFixed(1)} px from the pointer`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace dragging the active object's X arrow 120 px to the right on the scene camera's image (Object › Trace a gizmo drag). */
+  traceDragOf(axis: 0 | 1 | 2 = 0, dx = 120, dy = 0): boolean {
+    const o = this.activeObject, cam = this.scene.activeCamera ? this.scene.get(this.scene.activeCamera) : undefined;
+    if (!o || o.kind === 'camera') { this.say('Trace a gizmo drag: select an object (not the camera)'); return false; }
+    if (!cam?.camera) { this.say('Trace a gizmo drag: add a scene camera first (Add › Camera)'); return false; }
+    const w = this.scene.worldMatrix(o).elements, origin: Vec3 = [w[12], w[13], w[14]], cw = this.scene.worldMatrix(cam).elements;
+    const at = traceProjection(cw, cam.camera, this.renderSize, origin).pixel;
+    const u: Vec3 = [0, 0, 0]; u[axis] = 1;
+    const ray = (px: number, py: number) => rayFromPixel(cw, cam.camera!, this.renderSize, px - 0.5, py - 0.5);
+    const trace = new Trace('Trace a gizmo drag');
+    const t = traceAxisDrag(origin, u, ray(at[0], at[1]), ray(at[0] + dx, at[1] + dy), this.snap ? SNAP.move : null, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = t ? `${o.name}: dragging ${dx} px moves it ${t.move.toFixed(3)} along ${'xyz'[axis]}${this.snap ? `, snapped to ${t.snapped}` : ''}` : `${o.name}: that axis points at the camera`;
     this.emit('select');
     return true;
   }

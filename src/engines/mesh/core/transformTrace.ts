@@ -154,3 +154,88 @@ export function traceWorld(scene: ChainScene, o: SceneObject, trace?: Trace): { 
   });
   return { chain: chain.map((n) => n.name), origins, matrix: [...world.elements] };
 }
+
+/**
+ * The object's own axes, read from its world matrix (Object › Trace the local axes). The first three columns are
+ * where the object's x, y and z axes point in the world, each as long as its scale; divided by their lengths they
+ * are the directions the gizmo draws in Local axes mode. Then a world point is changed into the object's own
+ * coordinates: its offset from the object's origin, dotted with each unit axis and divided by that axis's scale.
+ * That shortcut needs the axes at right angles; the trace checks, and always cross-checks with the inverse
+ * matrix. Traced, with Predict questions on the unit x axis and on the point's local coordinates.
+ */
+export function traceAxes(elements: ArrayLike<number>, point: Vec3 = [0, 0, 0], trace?: Trace): { origin: Vec3; axes: [Vec3, Vec3, Vec3]; lengths: Vec3; square: boolean; local: Vec3 } {
+  const m = new Matrix4().fromArray(Array.from(elements));
+  const e = m.elements, col = (j: number) => new Vector3(e[j * 4], e[j * 4 + 1], e[j * 4 + 2]);
+  const c = [col(0), col(1), col(2)], origin: Vec3 = [e[12], e[13], e[14]];
+  const lengths = c.map((v) => v.length()) as Vec3;
+  if (lengths.some((l) => l < 1e-12)) throw new Error('An axis has length 0: the matrix squashes the object flat, so it has no local coordinates');
+  const u = c.map((v, i) => v.clone().divideScalar(lengths[i]));
+  const axes = u.map((v) => [v.x, v.y, v.z]) as [Vec3, Vec3, Vec3];
+  const dots = [u[0].dot(u[1]), u[1].dot(u[2]), u[0].dot(u[2])];
+  const square = dots.every((d) => Math.abs(d) < 1e-6);
+  const d = new Vector3(...point).sub(new Vector3(...origin));
+  const local = (square ? u.map((v, i) => v.dot(d) / lengths[i]) : (() => { const q = new Vector3(...point).applyMatrix4(m.clone().invert()); return [q.x, q.y, q.z]; })()) as Vec3;
+  if (trace) {
+    const names = ['x', 'y', 'z'];
+    trace.step({ phase: 'Columns', label: `Columns of the world matrix: x ${v3(c[0])}, y ${v3(c[1])}, z ${v3(c[2])}`, detail: 'The matrix sends the object\'s own (1, 0, 0) to its first column, (0, 1, 0) to its second and (0, 0, 1) to its third. So each column is where one of the object\'s axes points in the world, scaled by the object\'s scale along it.', values: [['x column', v3(c[0])], ['y column', v3(c[1])], ['z column', v3(c[2])], ['origin (4th column)', v3(origin)]] });
+    trace.step({
+      phase: 'Unit axes', label: `Lengths ${v3(lengths)}; unit axes x ${v3(u[0])}, y ${v3(u[1])}, z ${v3(u[2])}`,
+      detail: 'A column\'s length is the scale along that axis. Dividing by it leaves a direction of length 1: the arrows the gizmo draws in Local axes mode. In World axes mode it draws (1, 0, 0), (0, 1, 0) and (0, 0, 1) instead.',
+      values: [...names.map((n, i) => [`|${n} column|`, String(r(lengths[i]))] as [string, string]), ...names.map((n, i) => [`unit ${n}`, v3(u[i])] as [string, string])],
+      quiz: { prompt: `The x column of the world matrix is ${v3(c[0])}. Which direction does the gizmo's local x arrow point (a unit vector)?`, answer: axes[0], labels: ['x', 'y', 'z'], rule: 'Divide the column by its length: the length is the scale, the rest is the direction.' },
+    });
+    trace.step({ phase: 'Right angles', label: square ? 'The unit axes are at right angles (every dot product is 0)' : `The unit axes are not at right angles: dot products ${dots.map(r).join(', ')}`, detail: square ? 'A rotation keeps right angles, and a scale along the object\'s own axes does too. So these three directions are a frame like the world\'s, only turned.' : 'A child under a parent scaled unevenly is sheared (lesson 2.3). The gizmo then shows the nearest rotation, and dot products no longer give local coordinates: the inverse matrix does.', values: [['x · y', String(r(dots[0]))], ['y · z', String(r(dots[1]))], ['x · z', String(r(dots[2]))]] });
+    trace.step({ phase: 'Move', label: `Moving 1 along local x moves ${v3(u[0])} in the world; along world x, (1, 0, 0)`, detail: 'A drag along a local axis adds that unit axis to the position, times the distance dragged. The same drag in World axes mode adds (1, 0, 0). The two agree only when the object is not turned.', values: [['1 along local x', v3(u[0])], ['1 along world x', '(1, 0, 0)']] });
+    trace.step({
+      phase: 'Change of basis', label: `World point ${v3(point)} is at ${v3(local)} in the object's own coordinates`,
+      detail: square ? 'Take the point\'s offset from the object\'s origin. Its dot product with each unit axis is how far along that axis it lies; dividing by the axis\'s scale gives the coordinate the mesh itself would use. The inverse matrix gives the same numbers.' : 'The axes are not at right angles, so the dot products would mix them up. The inverse of the world matrix undoes it exactly: local = inverse(world) × point.',
+      values: [['offset from origin', v3(d)], ...names.map((n, i) => [`unit ${n} · offset`, String(r(u[i].dot(d)))] as [string, string]), ['local', v3(local)]],
+      quiz: square ? { prompt: `The object's origin is at ${v3(origin)}, its unit axes are x ${v3(u[0])}, y ${v3(u[1])}, z ${v3(u[2])}, and its scales are ${v3(lengths)}. Where is the world point ${v3(point)} in the object's own coordinates?`, answer: local, labels: ['x', 'y', 'z'], rule: 'Subtract the origin, dot the offset with each unit axis, and divide each result by that axis\'s scale.' } : undefined,
+    });
+  }
+  return { origin, axes, lengths, square, local };
+}
+
+/**
+ * Euler angles to a matrix and back (Object › Trace the Euler angles). MeshLab turns in XYZ order,
+ * R = Rx·Ry·Rz, as three.js does. The top-right entry of R is sin y, so decoding takes y = asin(r13), then x and
+ * z from atan2 of two entries each. When cos y = 0 (y = ±90°) those entries are all 0: x and z turn about the
+ * same axis, and only x + z (y = 90°) or x − z (y = −90°) can be read back. That is gimbal lock; decoding then
+ * puts all of it in x and sets z = 0. Traced, with Predict questions on r13 and on the decoded angles.
+ */
+export function traceEuler(rotation: Vec3, trace?: Trace): { rows: number[][]; decoded: Vec3; locked: boolean } {
+  const [x, y, z] = rotation, deg = (a: number) => r(a * 180 / Math.PI);
+  const Rx = new Matrix4().makeRotationX(x), Ry = new Matrix4().makeRotationY(y), Rz = new Matrix4().makeRotationZ(z);
+  const R = Rx.clone().multiply(Ry).multiply(Rz);
+  const e = R.elements, at = (i: number, j: number) => e[j * 4 + i];   // row i, column j (from 0)
+  const r13 = Math.max(-1, Math.min(1, at(0, 2)));
+  const locked = Math.abs(r13) >= 0.9999999;
+  const dy = Math.asin(r13);
+  const dx = locked ? Math.atan2(at(2, 1), at(1, 1)) : Math.atan2(-at(1, 2), at(2, 2));
+  const dz = locked ? 0 : Math.atan2(-at(0, 1), at(0, 0));
+  const decoded: Vec3 = [deg(dx), deg(dy), deg(dz)];
+  const rows3 = [0, 1, 2].map((i) => [0, 1, 2].map((j) => r(at(i, j))));
+  if (trace) {
+    const show3 = (m: Matrix4) => [0, 1, 2].map((i) => `[${[0, 1, 2].map((j) => r(m.elements[j * 4 + i])).join('  ')}]`).join(' ');
+    trace.step({ phase: 'Build', label: `Rx(${deg(x)}°), Ry(${deg(y)}°), Rz(${deg(z)}°)`, detail: 'One turn about each world axis. Each has a 1 on the diagonal for its own axis, and cos and sin of its angle in the other two rows and columns.', values: [['Rx', show3(Rx)], ['Ry', show3(Ry)], ['Rz', show3(Rz)]] });
+    trace.step({
+      phase: 'Combine', label: `R = Rx·Ry·Rz: ${rows3.map((row) => `[${row.join('  ')}]`).join(' ')}`,
+      detail: 'Read right to left: turn about z first, then y, then x. A different order gives a different matrix (lesson 2.3).',
+      values: [['R', rows3.map((row) => `[${row.join('  ')}]`).join(' ')]],
+      quiz: { prompt: `R = Rx·Ry·Rz with y = ${deg(y)}°. Its top-right entry, row 1 column 3, is always one simple function of y alone. What is it here?`, answer: [r13], labels: ['r13'], rule: 'Multiplying out Rx·Ry·Rz, row 1 of Rx is (1, 0, 0), so row 1 of R is row 1 of Ry·Rz, whose last entry is sin y.' },
+    });
+    trace.step({
+      phase: 'Decode', label: locked ? `r13 = ${r(r13)}: y = ${deg(dy)}°, and cos y = 0, so the usual formulas for x and z divide 0 by 0` : `y = asin(r13) = ${deg(dy)}°, x = atan2(−r23, r33) = ${deg(dx)}°, z = atan2(−r12, r11) = ${deg(dz)}°`,
+      detail: locked ? 'Every entry the x and z formulas use is cos y times something, and cos y is 0. The matrix still holds one angle, x + z or x − z, in other entries: decoding reads that and puts it all in x.' : 'asin gives y between −90° and 90°. Then r23 and r33 are −sin x cos y and cos x cos y; dividing out cos y leaves x. r12 and r11 give z the same way.',
+      values: [['r13 = sin y', String(r(r13))], ['cos y', String(r(Math.cos(dy)))], ['decoded (x, y, z)', `(${decoded.join('°, ')}°)`]],
+      quiz: { prompt: `Decode R back into XYZ Euler angles (degrees), the way three.js and MeshLab do: y from asin, and if y is ±90°, z = 0.`, answer: decoded, labels: ['x°', 'y°', 'z°'], rule: locked ? 'At y = ±90° only x + z (or x − z) is in the matrix; put it all in x and set z = 0.' : 'y = asin(r13); x = atan2(−r23, r33); z = atan2(−r12, r11).' },
+    });
+    const sum = deg(y > 0 ? x + z : x - z);
+    trace.step({
+      phase: 'Lock', label: locked ? `Gimbal lock: at y = ${deg(dy)}°, the x and z turns are about the same axis; only x ${y > 0 ? '+' : '−'} z = ${sum}° counts` : `No lock: cos y = ${r(Math.cos(dy))}, so x, y and z each change the matrix in their own way`,
+      detail: locked ? 'With y at 90°, Ry has turned the z axis onto the x axis, so the first and last turns spin about the same line. Any x and z with the same sum make the same matrix: one way to turn has been lost.' : 'The three turns are about three different axes, so a small change of any one angle turns the object a different way.',
+      values: locked ? [['same matrix', `(${sum}°, ${deg(dy)}°, 0°) and (0°, ${deg(dy)}°, ${y > 0 ? sum : -sum}°)`]] : [['cos y', String(r(Math.cos(dy)))]],
+    });
+  }
+  return { rows: rows3, decoded, locked };
+}

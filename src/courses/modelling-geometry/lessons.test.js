@@ -18,6 +18,33 @@ import lesson22, { checkMatrix } from './2-vectors-and-transforms/002-translate-
 import lesson23, { checkOrder } from './2-vectors-and-transforms/003-order-matters.js';
 import lesson24, { checkScale } from './2-vectors-and-transforms/004-the-determinant.js';
 import lesson25, { checkReach } from './2-vectors-and-transforms/005-hierarchies.js';
+import lesson26, { checkMove } from './2-vectors-and-transforms/006-local-and-global-axes.js';
+import lesson27, { checkTwins } from './2-vectors-and-transforms/007-euler-angles-and-gimbal-lock.js';
+import lesson28, { checkGrouping } from './2-vectors-and-transforms/008-numbers-you-can-type.js';
+import lesson31, { checkFraming } from './3-from-scene-to-screen/001-cameras.js';
+import lesson32, { checkPixel } from './3-from-scene-to-screen/002-projection.js';
+import lesson33, { checkWeights } from './3-from-scene-to-screen/003-rasterization.js';
+import lesson34, { checkNear } from './3-from-scene-to-screen/004-the-depth-buffer.js';
+import lesson35, { checkCorner } from './3-from-scene-to-screen/005-flat-and-smooth-shading.js';
+import lesson36, { checkThickness } from './3-from-scene-to-screen/006-lines-outlines-and-overlays.js';
+import lesson37, { checkWide } from './3-from-scene-to-screen/007-a-camera-and-a-still.js';
+import lesson41, { checkHit } from './4-interacting-with-3d/001-picking-by-ray.js';
+import lesson42, { checkSegment } from './4-interacting-with-3d/002-picking-in-screen-space.js';
+import lesson43, { checkLoop } from './4-interacting-with-3d/003-box-and-loop-selection.js';
+import lesson44, { checkClosest } from './4-interacting-with-3d/004-dragging-with-a-gizmo.js';
+import lesson45, { checkCrossing } from './4-interacting-with-3d/005-the-knife.js';
+import lesson46, { checkStacks } from './4-interacting-with-3d/006-undo-and-redo.js';
+import lesson47, { checkLine } from './4-interacting-with-3d/007-every-click-is-code.js';
+import lesson51, { checkBlock } from './5-modelling-operations/001-extrude.js';
+import lesson52, { checkCorner120 } from './5-modelling-operations/002-inset.js';
+import lesson53, { checkTwoCuts } from './5-modelling-operations/003-edge-rings-and-loop-cuts.js';
+import lesson54, { checkSegments } from './5-modelling-operations/004-bevel.js';
+import lesson55, { checkGridDissolve } from './5-modelling-operations/005-dissolve-and-delete.js';
+import lesson56, { checkShrink } from './5-modelling-operations/006-merge-and-smooth-vertices.js';
+import lesson57, { checkMirrorCounts } from './5-modelling-operations/007-mirror-and-modifiers.js';
+import lesson58, { checkCage } from './5-modelling-operations/008-box-modelling-a-character.js';
+import lesson59, { checkThrees } from './5-modelling-operations/009-clean-topology.js';
+import { evalExpr } from '../../engines/mesh/core/expr';
 
 // fileURLToPath, not .pathname: on Windows a file URL keeps a leading slash
 // before the drive letter and percent-encodes spaces, so the naive version
@@ -633,5 +660,1337 @@ describe('lesson 2.5: hierarchies', () => {
     expect(at(-90)).toMatch(/anticlockwise \(a larger angle\)/);
     expect(checkReach('const elbowDeg = -60.5').pass).toBe(true);
     expect(checkReach('let a = 1').message).toMatch(/^Keep the line/);
+  });
+});
+
+describe('lesson 2.6: local and global axes', () => {
+  const cells = lesson26.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('the columns: the axes and scales MeshLab\'s trace reports', () => {
+    expect(run(cells[0]).out).toEqual(['x column 0.866, 0, -0.5   length 1', 'y column 0, 1, 0   length 1', 'z column 0.75, 0, 1.299   length 1.5', 'unit z 0.5, 0, 0.866']);
+  });
+
+  it('the two moves of the prediction', () => {
+    expect(run(cells[1]).out).toEqual(['move 1 along world x: 2, 0.5, 2', 'move 1 along local x: 1.866, 0.5, 1.5']);
+  });
+
+  it('change of basis: (3, 0.5, 2) is (1.732, 0, 0.667), as in example 2 and the MeshLab project', () => {
+    expect(run(cells[2]).out).toEqual(['offset from origin: 2, 0, 0', 'dot with unit axes: 1.732, 0, 1', 'local (divide by scales 1, 1, 1.5): 1.732, 0, 0.667', 'check, M × local: 3, 0.5, 2']);
+  });
+
+  it('the picture: the crate, both sets of axes and the point', () => {
+    const { out, shown } = run(cells[3]);
+    expect(out).toEqual(['48 faces: the crate, the world axes, its own axes, the point']);
+    expect(shown[0].groups).toEqual([1, 7, 7, 7, 4, 2, 0, 3].flatMap((g) => Array(6).fill(g)));
+    // The crate's own z stick is as long as the others (a unit axis), though the crate is 1.5 deep.
+    const v = shown[0].verts;
+    const zStick = v.slice(48, 56), crate = v.slice(0, 8);
+    const span = (pts) => Math.max(...pts.map((p) => Math.hypot(p[0] - pts[0][0], p[1] - pts[0][1], p[2] - pts[0][2])));
+    expect(Math.max(...zStick.map((p) => Math.hypot(p[0] - 1, p[1] - 0.5, p[2] - 2)))).toBeCloseTo(Math.hypot(1.6, 0.06, 0.06), 6);
+    expect(span(crate)).toBeCloseTo(Math.hypot(1, 1, 1.5), 6);
+  });
+
+  it('the challenge: each wrong move is named', () => {
+    const at = (v) => checkMove(`const move = [${v}]`).message;
+    expect(checkMove(challenge.solutionCode).pass).toBe(true);
+    expect(run({ startCode: challenge.solutionCode }).out).toEqual(['crate moves to 2, 0.5, 3.732, a distance of 2']);
+    expect(checkMove(challenge.startCode).message).toMatch(/^That is 2 along the world's z/);
+    expect(at('1.5, 0, 2.598')).toMatch(/^That moves 3, not 2/);
+    expect(at('0.5, 0, 0.866')).toBe('Right direction, but it moves 1, not 2.');
+    expect(at('-1, 0, 1.732')).toMatch(/^It moves 2, but along \(-0\.5, 0, 0\.866\), which is 60° away/);
+    expect(at('0, 0, 0')).toMatch(/does not move/);
+    expect(at('1, 0')).toMatch(/^Keep the line/);
+  });
+});
+
+describe('lesson 2.7: Euler angles and gimbal lock', () => {
+  const cells = lesson27.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('angles to a matrix: the rows the prose quotes, and ZYX differs', () => {
+    expect(run(cells[0]).out).toEqual(['XYZ row 1: 0.3536, -0.6124, 0.7071', 'XYZ row 2: 0.9268, 0.1268, -0.3536', 'XYZ row 3: 0.1268, 0.7803, 0.6124', 'ZYX row 1: 0.3536, -0.5732, 0.7392']);
+  });
+
+  it('decoding: both triples come back as (30, 45, 60)', () => {
+    expect(run(cells[1]).out).toEqual(['(30, 45, 60) decodes to 30, 45, 60', '(210, 135, 240) decodes to 30, 45, 60', 'same matrix: true']);
+  });
+
+  it('the lock: x + 10 and z + 10 roll the wing the same way (the misconception\'s numbers)', () => {
+    expect(run(cells[2]).out).toEqual([
+      '(20, 90, 10) = (30, 90, 0): true;  = (0, 90, 30): true',
+      'start: nose 1, 0, 0   wing 0, 0.5, -0.866',
+      'x + 10: nose 1, 0, 0   wing 0, 0.6428, -0.766',
+      'z + 10: nose 1, 0, 0   wing 0, 0.6428, -0.766',
+      'y = 45: x + 10 moves the nose to 0.7071, -0.3536, 0.6124; z + 10 leaves it at 0.7071, -0.2418, 0.6645',
+    ]);
+  });
+
+  it('the gimbal: the X and Z rings line up at 90° and part at 45°', () => {
+    const { out, shown } = run(cells[3]);
+    expect(out).toEqual(["y = 90°: the X and Z rings' axes are 0° apart"]);
+    expect(shown[0].faces).toHaveLength(156);
+    expect(run({ startCode: cells[3].startCode.replace('const y = 90', 'const y = 45') }).out).toEqual(["y = 45°: the X and Z rings' axes are 45° apart"]);
+  });
+
+  it('the challenge: two names for one rotation, and each mistake named', () => {
+    const say = (a, b) => checkTwins(`const a = [${a}]\nconst b = [${b}]`).message;
+    expect(checkTwins(challenge.solutionCode).pass).toBe(true);
+    expect(run({ startCode: challenge.solutionCode }).out).toEqual(['a matches: true, b matches: true']);
+    expect(checkTwins(challenge.startCode).message).toMatch(/^a and b are the same angles/);
+    expect(checkTwins('const a = [0, 90, 30]\nconst b = [200, 90, 190]').pass).toBe(true);
+    expect(say('20, 90, 10', '20, 90, 370')).toMatch(/same angles/);
+    expect(say('20, 90, 10', '20, 45, 10')).toMatch(/^b = \(20, 45, 10\) has y = 45°/);
+    expect(say('20, 90, 10', '40, 90, 10')).toMatch(/keeps x − z = 30°/);
+    expect(say('20, 90, 10', '20, 90, 20')).toMatch(/has x \+ z = 40°/);
+    expect(say('20, 90', '1, 2, 3')).toMatch(/^Keep the lines/);
+  });
+});
+
+describe('lesson 2.8: numbers you can type', () => {
+  const cells = lesson28.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell, html = []) => {
+    const out = [];
+    const document = { body: { insertAdjacentHTML: (_, h) => html.push(h) } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')) }, document);
+    return out;
+  };
+
+  it('left to right gives 20; precedence gives 14', () => {
+    expect(run(cells[0])).toEqual(['left to right: 20', 'with precedence (as JavaScript does it): 14']);
+  });
+
+  it('tokens: spaces separate, "1 2" is two tokens', () => {
+    expect(run(cells[1])).toEqual(['"2+3*4" → ["2","+","3","*","4"]', '" 2 * ( 1 + 1 ) " → ["2","*","(","1","+","1",")"]', '"1 2" → ["1","2"]', '"pi/4" → ["pi","/","4"]']);
+  });
+
+  it('the parser: groupings, values and order of operations, and the three errors', () => {
+    expect(run(cells[2])).toEqual([
+      '2 + 3 * 4 → (2 + (3 * 4)) = 14 (3 * 4 = 12, 2 + 12 = 14)',
+      '8 - 3 - 2 → ((8 - 3) - 2) = 3 (8 - 3 = 5, 5 - 2 = 3)',
+      '-2^2 → -(2 ^ 2) = -4 (2 ^ 2 = 4, -(4) = -4)',
+      '2^3^2 → (2 ^ (3 ^ 2)) = 512 (3 ^ 2 = 9, 2 ^ 9 = 512)',
+      '(2 + 3) * 4 → ((2 + 3) * 4) = 20 (2 + 3 = 5, 5 * 4 = 20)',
+      '"1 2": expected an operator but found "2"',
+      '"(1 + 2": expected )',
+      '"2 +": expected a number, but the text ended',
+    ]);
+  });
+
+  it('the notebook parser agrees with MeshLab\'s on every expression in the lesson', () => {
+    for (const [text, v] of [['2 + 3 * 4', 14], ['8 - 3 - 2', 3], ['-2^2', -4], ['2^3^2', 512], ['(2 + 3) * 4', 20], ['-2^3^2/4', -128], ['90/4', 22.5]]) expect(evalExpr(text)).toBe(v);
+    for (const bad of ['1 2', '(1 + 2', '2 +']) expect(evalExpr(bad)).toBeNull();
+  });
+
+  it('the tree: five nodes for 2 + 3 * 4, + at the top', () => {
+    const html = [];
+    expect(run(cells[3], html)).toEqual(['2 + 3 * 4 → (2 + (3 * 4)): 5 nodes; the operator at the top is done last']);
+    expect(html[0].match(/<circle/g)).toHaveLength(5);
+    expect(html[0]).toMatch(/<text x="92.5" y="35" fill="white">\+<\/text>/);   // the root: above the middle of its two children, 2 and ×
+  });
+
+  it('the challenge: every wrong grouping is named', () => {
+    const say = (answers) => checkGrouping(`const answers = [${answers.map((a) => `'${a}'`).join(', ')}]`).message;
+    const right = ['(8 - 3) - 2', '-(2^2)', '2^(3^2)', '1 + (2 * (3^2))'];
+    expect(checkGrouping(challenge.solutionCode).pass).toBe(true);
+    expect(checkGrouping(challenge.startCode).message).toBe('Answer 1 groups correctly, but 1 of its 1 inner operations has no brackets of its own. Bracket every operation except the last one done.');
+    expect(say(['8 - (3 - 2)', ...right.slice(1)])).toBe('Answer 1 groups "8 - 3 - 2" as (8 − (3 − 2)), which is 7, not 3. − goes left to right: the first subtraction is done first.');
+    expect(say([right[0], '(-2)^2', ...right.slice(2)])).toMatch(/^Answer 2 groups "-2\^2" as \(\(−2\) \^ 2\), which is 4, not -4/);
+    expect(say([...right.slice(0, 2), '(2^3)^2', right[3]])).toMatch(/which is 64, not 512\. \^ groups to the right/);
+    expect(say([...right.slice(0, 3), '(1 + 2) * 3^2'])).toMatch(/^Answer 4 groups/);
+    expect(say([...right.slice(0, 3), '1 + (2 * 3^2)'])).toMatch(/^Answer 4 groups correctly, but 1 of its 2 inner operations/);
+    expect(say([...right.slice(0, 3), '1 + (2 * (3^2)'])).toMatch(/^Answer 4 could not be read: a \( is not closed/);
+    expect(say(right.slice(0, 3))).toMatch(/^Keep const answers/);
+    expect(checkGrouping(`const answers = [${right.map((a) => `"${a}"`).join(', ')}]`).pass).toBe(true);
+  });
+});
+
+describe('lesson 3.1: cameras', () => {
+  const cells = lesson31.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('look-at: the axes the prose quotes, at right angles', () => {
+    expect(run(cells[0]).out).toEqual(['forward -0.582, -0.364, -0.727', 'right 0.781, 0, -0.625', 'up -0.227, 0.932, -0.284', 'right · up = 0, right · forward = 0, up · forward = 0']);
+  });
+
+  it('the view matrix: the same camera space as MeshLab\'s trace and three.js', () => {
+    expect(run(cells[1]).out).toEqual([
+      'row 1: 0.781, 0, -0.625, 0',
+      'row 2: -0.227, 0.932, -0.284, -0.466',
+      'row 3: 0.582, 0.364, 0.727, -7.056',
+      '(0, 0.5, 0) → (0, 0, -6.874), 6.874 in front',
+      '(0, 0, 0) → (0, -0.466, -7.056), 7.056 in front',
+      '(0, 0, 10) → (-6.247, -3.306, 0.218), behind the camera',
+    ]);
+  });
+
+  it('orbit, pan and zoom (example 3)', () => {
+    expect(run(cells[2]).out).toEqual(['orbit 90°: eye 5, 3, -4, still 6.874 from the target', 'pan 1 right: eye 4.781, 3, 4.375, target 0.781, 0.5, -0.625', 'zoom in to half: eye 2, 1.75, 2.5, 3.437 from the target']);
+  });
+
+  it('the picture: box, camera pyramid and line of sight', () => {
+    const { out, shown } = run(cells[3]);
+    expect(out).toEqual(['the camera (amber) is 6.874 from the box, looking straight down its own −z axis (red)']);
+    expect(shown[0].groups).toEqual([...Array(6).fill(0), 1, 1, 1, 1, 1, ...Array(6).fill(4)]);
+    // The line of sight ends at the box's centre.
+    const tip = shown[0].verts.slice(-8).filter((v) => Math.hypot(v[0], v[1] - 0.5, v[2]) < 0.1);
+    expect(tip.length).toBe(4);
+  });
+
+  it('the challenge: each wrong distance is named', () => {
+    const at = (x) => checkFraming(`const distance = ${x}`).message;
+    expect(checkFraming(challenge.solutionCode).pass).toBe(true);
+    expect(checkFraming('const distance = 4.508').pass).toBe(true);
+    expect(run({ startCode: challenge.solutionCode }).out).toEqual(['stand 4.508219499267045 from the centre']);
+    expect(checkFraming(challenge.startCode).message).toMatch(/^Work out the distance/);
+    expect(at('1.732 / Math.tan(25 * Math.PI / 180) * 1.1')).toMatch(/uses tan/);
+    expect(at('1.732 / Math.sin(25 * Math.PI / 180)')).toMatch(/10% further back/);
+    expect(at('1.732 / Math.sin(fov * Math.PI / 180) * 1.1')).toMatch(/uses all 50°/);
+    expect(at('Math.hypot(2, 2, 2) / Math.sin(25 * Math.PI / 180) * 1.1')).toMatch(/twice too far/);
+    expect(at('1.732 / Math.sin(25) * 1.1')).toMatch(/radians/);
+    expect(at('3')).toMatch(/^At 3 the sphere's edge is 35\.3° from the line of sight/);
+    expect(at('alert(1)')).toMatch(/^Write the distance as a number/);
+    expect(at('Math.constructor')).toMatch(/^Write the distance as a number/);
+  });
+});
+
+describe('lesson 3.2: projection', () => {
+  const cells = lesson32.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('the pinhole: twice as far, half as tall', () => {
+    expect(run(cells[0]).out).toEqual(['a box 1 tall at distance 5 is 0.2 tall on the screen', 'a box 1 tall at distance 10 is 0.1 tall on the screen', 'a box 1 tall at distance 20 is 0.05 tall on the screen', 'fov 50°: the screen is 0.9326 tall at distance 1; f = 1 / tan(25°) = 2.1445']);
+  });
+
+  it('matrix, divide, pixel: the numbers MeshLab\'s trace and three.js give', () => {
+    expect(run(cells[1]).out).toEqual([
+      'P row 1: 1.2063, 0, 0, 0', 'P row 2: 0, 2.1445, 0, 0', 'P row 3: 0, 0, -1.001, -0.2001', 'P row 4: 0, 0, -1, 0',
+      'clip 0.942, -0.4872, 6.0981, 6.2919   (w = −z = the distance in front)',
+      'ndc 0.1497, -0.0774, 0.9692',
+      'pixel 735.8, 387.9',
+    ]);
+  });
+
+  it('orthographic keeps sizes; depth crowds towards 1 (example 3, challenge 3)', () => {
+    expect(run(cells[2]).out).toEqual(['perspective: 0.4289 at 5, 0.2145 at 10', 'orthographic: 0.3333 at 5, 0.3333 at 10', 'perspective depth: 0.1 → -1, 1 → 0.8009, 10 → 0.981, 100 → 0.999, 200 → 1']);
+  });
+
+  it('the frustum and the cube', () => {
+    const { out, shown } = run(cells[3]);
+    expect(out).toEqual(['after the divide the boxes are 0.8578, 0.5147, 0.3676 wide: the far ones are squeezed']);
+    expect(shown[0].faces).toHaveLength(132);
+    // The cube's corners are at ±1 (shifted 2.5 to the right).
+    const cube = shown[0].verts.slice(96, 192);
+    expect(Math.max(...cube.map((v) => v[0]))).toBeGreaterThan(3.5);
+    expect(Math.max(...cube.map((v) => v[0]))).toBeLessThan(3.6);
+    expect(Math.min(...cube.map((v) => v[0]))).toBeLessThan(1.5);
+    expect(Math.min(...cube.map((v) => v[0]))).toBeGreaterThan(1.4);
+  });
+
+  it('the challenge: each wrong step is named', () => {
+    const at = (x) => checkPixel(`const pixel = [${x}]`).message;
+    expect(checkPixel(challenge.solutionCode).pass).toBe(true);
+    expect(checkPixel('const pixel = [529.9, 235]').pass).toBe(true);
+    expect(run({ startCode: challenge.solutionCode }).out[0]).toMatch(/^pixel 529\.90\d*, 235\.04\d*/);
+    expect(checkPixel(challenge.startCode).message).toMatch(/^Work the pixel out/);
+    expect(at('573.2, 235.05')).toMatch(/aspect ratio/);
+    expect(at('919.6, 40.2')).toMatch(/no perspective divide/);
+    expect(at('529.9, 364.95')).toMatch(/upside down/);
+    expect(at('270.1, 364.95')).toMatch(/mirrored/);
+    expect(at('443.3, 278.35')).toMatch(/HALF the field of view/);
+    expect(at('100, 100')).toMatch(/^\(100, 100\) is not where/);
+    expect(at('window.x, 1')).toMatch(/^Write the pixel with numbers/);
+    expect(checkPixel('const f = 1.7320508, aspect = 4 / 3\nconst pixel = [(f / aspect / 4 + 1) * 400, (1 - f / 8) * 300]').pass).toBe(true);
+    expect(checkPixel('const aspect = 4 / 3\nconst pixel = [(1.7320508 / aspect / 4 + 1) * 400, (1 - 1.7320508 / 8) * 300]').pass).toBe(true);
+  });
+});
+
+describe('lesson 3.3: rasterization', () => {
+  const cells = lesson33.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [], fills = [];
+    const ctx = { fillRect: (...a) => fills.push(a), set fillStyle(v) { fills.push(v); } };
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')) }, document);
+    return { out, fills };
+  };
+
+  it('inside or out: 16 pixels for a triangle of area 14', () => {
+    expect(run(cells[0]).out).toEqual(['twice the area: 28', 'row 7: ........', 'row 6: ........', 'row 5: ...#....', 'row 4: ..###...', 'row 3: ..####..', 'row 2: ..#####.', 'row 1: .###....', 'row 0: ........', "16 pixels covered; the triangle's area is 14"]);
+  });
+
+  it('barycentric weights: the numbers of example 2', () => {
+    expect(run(cells[1]).out).toEqual(['weights at (3.5, 3.5): 0.2857, 0.2679, 0.4464; sum 1', 'w·corners = 3.5, 3.5', 'colour: 73, 68, 114', 'at A: 1, 0, 0; on BC midpoint: 0, 0.5, 0.5']);
+  });
+
+  it('the shared edge: only the top-left rule has no doubles and no gaps', () => {
+    expect(run(cells[2]).out).toEqual(['always count it: 8 pixels drawn twice, 0 gaps', 'never count it: 0 pixels drawn twice, 8 gaps', 'top-left rule: 0 pixels drawn twice, 0 gaps']);
+  });
+
+  it('the filled triangle', () => {
+    const { out, fills } = run(cells[3]);
+    expect(out).toEqual(['232 of 1024 pixels filled; red at A, green at B, blue at C']);
+    expect(fills.filter((f) => Array.isArray(f))).toHaveLength(233);   // the background, then each pixel
+  });
+
+  it('perspective-correct: a quarter of the way, not half (example 3)', () => {
+    expect(run(cells[4]).out).toEqual(['affine u = 0.5, perspective-correct u = 0.25', 'that pixel looks at depth 1.5, which is 0.25 of the way from the near end to the far end']);
+  });
+
+  it('the challenge: each wrong blend is named', () => {
+    const at = (x) => checkWeights(`const weights = [${x}]`).message;
+    expect(checkWeights(challenge.solutionCode).pass).toBe(true);
+    expect(checkWeights('const weights = [0.2857, 0.5179, 0.1964]').pass).toBe(true);
+    expect(checkWeights(challenge.startCode).message).toMatch(/^Work out the three edge functions/);
+    expect(at('8, 14.5, 5.5')).toMatch(/are the edge functions themselves/);
+    expect(at('8 / 14, 14.5 / 14, 5.5 / 14')).toMatch(/add up to 2/);
+    expect(at('12 / 28, 13 / 28, 3 / 28')).toMatch(/pixel's corner, \(4, 2\)/);
+    expect(at('14.5 / 28, 5.5 / 28, 8 / 28')).toMatch(/wrong places/);
+    expect(at('0.5, 0.5, 0.5')).toMatch(/adds up to 1\.5, not 1/);
+    expect(at('0.5, 0.25, 0.25')).toMatch(/not this pixel's blend/);
+    expect(at('a, b')).toMatch(/^Keep const weights/);
+  });
+});
+
+describe('lesson 3.4: the depth buffer', () => {
+  const cells = lesson34.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [], fills = [];
+    const ctx = { fillRect: (...a) => fills.push(a), set fillStyle(v) { fills.push(v); } };
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')) }, document);
+    return { out, fills };
+  };
+
+  it('the depth test: the same picture in either order', () => {
+    const { out } = run(cells[0]);
+    expect(out.slice(0, 2)).toEqual(['with the depth test, red first: 18 red, 45 blue; blue first: 18 red, 45 blue', 'no depth test, red first: 15 red; blue first: 36 red']);
+  });
+
+  it('uneven depth, and the wall and poster of example 2 and the MeshLab project', () => {
+    expect(run(cells[1]).out).toEqual([
+      'near 0.1, far 1000: 1 → 0.9000900, 10 → 0.9900990, 100 → 0.9990999',
+      'near 1, far 1000: 1 → 0.0000000, 10 → 0.9009009, 100 → 0.9909910',
+      'near 0.1: wall 16762114, poster 16762114 (the same: they fight)',
+      'near 1: wall 16626069, poster 16626067 (different: the poster wins)',
+    ]);
+  });
+
+  it('the resolution: near matters, far does not', () => {
+    expect(run(cells[2]).out).toEqual(['near 0.01: at 1 5.96e-6, at 10 5.96e-4, at 100 5.96e-2', 'near 0.1: at 1 5.96e-7, at 10 5.96e-5, at 100 5.96e-3', 'near 1: at 1 5.95e-8, at 10 5.95e-6, at 100 5.95e-4', 'far 100000, near 1, at 100: 5.96e-4']);
+  });
+
+  it('stripes at 8 bits, nearly clean at 16', () => {
+    expect(run(cells[3]).out).toEqual(['8 bits: orange wins 152 of the 2048 pixels on the left, where it is nearer, and 0 on the right']);
+    expect(run({ startCode: cells[3].startCode.replace('const bits = 8', 'const bits = 16') }).out).toEqual(['16 bits: orange wins 1991 of the 2048 pixels on the left, where it is nearer, and 0 on the right']);
+  });
+
+  it('polygon offset settles the ties', () => {
+    expect(run(cells[4]).out).toEqual(['no offset: 967 of 1000 pixels tie (the winner then depends on draw order and rounding)', 'offset by 4 steps: the decal wins 1000 of 1000']);
+  });
+
+  it('the challenge: too small fights, too big wastes', () => {
+    const at = (n) => checkNear(`const near = ${n}`).message;
+    expect(checkNear(challenge.solutionCode).pass).toBe(true);
+    expect(checkNear('const near = 0.62').pass).toBe(true);
+    expect(run({ startCode: challenge.solutionCode }).out).toEqual(['near 0.596: one step at 100 is 0.000999 (separated)']);
+    expect(checkNear(challenge.startCode).message).toMatch(/^At near 0\.01, one depth step at distance 100 is 0\.059604/);
+    expect(at('0.5')).toMatch(/still fight/);
+    expect(at('1')).toMatch(/^Near 1 works/);
+    expect(at('0')).toMatch(/above 0/);
+    expect(at('150')).toMatch(/not drawn at all/);
+    expect(at('x')).toMatch(/^Keep the line/);
+  });
+});
+
+describe('lesson 3.5: flat and smooth shading', () => {
+  const cells = lesson35.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('flat: the side and cap normals and areas MeshLab traces', () => {
+    expect(run(cells[0]).out).toEqual(['a side face: normal 0.9808, 0, 0.1951, area 0.7804', 'the bottom cap: normal 0, -1, 0, area 3.0615', 'flat shading uses 18 normals, one per face']);
+  });
+
+  it('smooth: the rim vertex by area and by angle, as in the MeshLab project', () => {
+    expect(run(cells[1]).out).toEqual(['vertex 0 is on faces 0, 2, 17', 'area-weighted: 0.4472, -0.8944, 0, tilted 63.4349° down from the side', 'angle-weighted: 0.7462, -0.6657, 0, tilted 41.7375° down from the side']);
+  });
+
+  it('the smear: N · L from 0.59 to 0', () => {
+    expect(run(cells[2]).out[2]).toBe('so across the side face the light fades from 0.5885 to 0 at the bottom rim: the dark smear');
+  });
+
+  it('auto smooth: two normals at the rim; 96, 32 and 64 vertices sent', () => {
+    expect(run(cells[3]).out).toEqual(['vertex 0 on the side face: 1, 0, 0; on the cap: 0, -1, 0', 'vertices sent to the GPU: flat 96, smooth 32, auto smooth 64']);
+  });
+
+  it('the picture: three copies with their normals', () => {
+    const { shown } = run(cells[4]);
+    expect(shown[0].verts).toHaveLength(96);
+    expect(shown[0].shading).toHaveLength(54);
+    // The middle copy's rim corner on a side face carries the smeared normal; the right copy's does not.
+    const side = 18 + 2, k = shown[0].faces[side].indexOf(32);
+    expect(shown[0].shading[side][k].map((x) => +x.toFixed(4) || 0)).toEqual([0.4472, -0.8944, 0]);
+    expect(shown[0].shading[36 + 2][k].map((x) => +x.toFixed(4) || 0)).toEqual([1, 0, 0]);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkCorner(`const normal = [${x}]`).message;
+    expect(checkCorner(challenge.solutionCode).pass).toBe(true);
+    expect(checkCorner('const normal = [-0.3333, -0.6667, -0.6667]').pass).toBe(true);
+    expect(checkCorner(challenge.startCode).message).toMatch(/^Weight each face/);
+    expect(at('-0.5774, -0.5774, -0.5774')).toMatch(/weights all three faces equally/);
+    expect(at('-1, -2, -2')).toMatch(/is the weighted sum, 3 long/);
+    expect(at('1 / 3, 2 / 3, 2 / 3')).toMatch(/points into the box/);
+    expect(at('-2 / 3, -1 / 3, -2 / 3')).toMatch(/areas on the wrong faces/);
+    expect(at('-0.5, -0.5, -0.5')).toMatch(/is 0\.866 long/);
+    expect(at('x')).toMatch(/^Keep const normal/);
+  });
+});
+
+describe('lesson 3.6: lines, outlines and overlays', () => {
+  const cells = lesson36.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], calls = [];
+    new Function('console', 'showOutline', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => calls.push(m));
+    return { out, calls };
+  };
+
+  it('screen-space width: the distance cancels (example 1)', () => {
+    expect(run(cells[0]).out).toEqual(['distance 2: a fixed push of 0.01 is 3.62 px; a push of 0.0035 × d is 2.53 px', 'distance 5: a fixed push of 0.01 is 1.45 px; a push of 0.0035 × d is 2.53 px', 'distance 20: a fixed push of 0.01 is 0.36 px; a push of 0.0035 × d is 2.53 px']);
+  });
+
+  it('the recess walls that are back faces, and their corners pushed towards the eye', () => {
+    expect(run(cells[1]).out).toEqual(['the outer walls: back, front, front, back; the panel: front', 'the recess walls: front, back, back, front', 'vertex 14: normal -0.1925, -0.1925, 0.9623, towards the eye 0.7291', 'vertex 15: normal 0.1925, -0.1925, 0.9623, towards the eye 0.8011']);
+  });
+
+  it('the stencil: 32 outline pixels without, 28 with', () => {
+    expect(run(cells[2]).out.slice(0, 2)).toEqual(['without the stencil: 32 outline pixels, 4 of them inside the body', 'with the stencil: 28 outline pixels, 0 of them inside the body']);
+  });
+
+  it('the picture is drawn from the same box', () => {
+    const { calls } = run(cells[3]);
+    expect(calls[0].faces).toHaveLength(14);
+    expect(calls[0].k).toBe(0.01);
+  });
+
+  it('MeshLab\'s viewport uses the same k as the lesson', async () => {
+    const { OUTLINE_THICKNESS } = await import('../../engines/mesh/core/camera');
+    expect(OUTLINE_THICKNESS).toBe(0.0035);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkThickness(`const k = ${x}`).message;
+    expect(checkThickness(challenge.solutionCode).pass).toBe(true);
+    expect(checkThickness('const k = 0.00259').pass).toBe(true);
+    expect(run({ startCode: challenge.solutionCode }).out[0]).toMatch(/^k = 0\.00259\d* gives 3\.00 pixels$/);
+    expect(checkThickness(challenge.startCode).message).toMatch(/^0\.0035 gives 4\.05 pixels/);
+    expect(at('3 / (1080 / Math.tan(25 * Math.PI / 180))')).toMatch(/H \/ 2 pixels, not H/);
+    expect(at('6 * Math.tan(50 * Math.PI / 180) / 1080')).toMatch(/HALF the field of view/);
+    expect(at('6 * Math.tan(25 * Math.PI / 180) / 1920')).toMatch(/use the height/);
+    expect(at('0.01')).toMatch(/gives 11\.58 pixels, not 3/);
+    expect(at('alert(1)')).toMatch(/^Write k as a number/);
+  });
+});
+
+describe('lesson 3.7: a camera you can place, and a still image', () => {
+  const cells = lesson37.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], calls = [];
+    new Function('console', 'showStills', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => calls.push(m));
+    return { out, calls };
+  };
+
+  it('look-at as a change of basis: the Rotation fields MeshLab shows', () => {
+    expect(run(cells[0]).out).toEqual(['right 0.8, 0, -0.6   up -0.198, 0.944, -0.264   back 0.566, 0.33, 0.755', 'rotation fields: -23.63°, 34.49°, 13.92°']);
+  });
+
+  it('tall and wide', () => {
+    expect(run(cells[1]).out).toEqual(['16:9: 50° tall, 79.3° wide', '1:1: 50° tall, 50.0° wide', '4:3: 50° tall, 63.7° wide', '2.39:1: 50° tall, 96.2° wide']);
+  });
+
+  it('the frame in the viewport (example 3)', () => {
+    expect(run(cells[2]).out).toEqual(['1280 × 720 render: frame 900.0 × 506.3, bars 0.0 left and right, 46.9 top and bottom; the view uses 57.9° tall', '1080 × 1080 render: frame 600.0 × 600.0, bars 150.0 left and right, 0.0 top and bottom; the view uses 50.0° tall']);
+  });
+
+  it('two stills from the same camera', () => {
+    expect(run(cells[3]).calls[0]).toEqual({ eye: [6, 4, 8], target: [0, 0.5, 0], fov: 50, sizes: [[320, 180], [180, 180]] });
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkWide(`const wide = ${x}`).message;
+    expect(checkWide(challenge.solutionCode).pass).toBe(true);
+    expect(checkWide('const wide = 65.3').pass).toBe(true);
+    expect(checkWide(challenge.startCode).message).toMatch(/^Work it out/);
+    expect(at('71.7')).toMatch(/multiplies the angle by 2\.39/);
+    expect(at('32.6')).toMatch(/is half the view/);
+    expect(at('2 * Math.atan(Math.tan(30 * Math.PI / 180) * 2.39) * 180 / Math.PI')).toMatch(/starts from tan 30/);
+    expect(at('2 * Math.atan(Math.tan(15 * Math.PI / 180) * 2.39)')).toMatch(/in radians/);
+    expect(at('40')).toMatch(/is not the wide angle/);
+    expect(at('fov * 2')).toMatch(/^Write the angle/);
+  });
+});
+
+describe('lesson 4.1: picking by ray', () => {
+  const cells = lesson41.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('a pixel becomes a ray: the same directions as MeshLab\'s rayFromPixel', async () => {
+    expect(run(cells[0]).out).toEqual(['pixel (639.5, 359.5): ndc 0, 0, direction 0, -0.1159, -0.9933', 'pixel (790, 300): ndc 0.2352, 0.1653, direction 0.1908, -0.0385, -0.9809']);
+    const { rayFromPixel } = await import('../../engines/mesh/core/pickRay');
+    const { Matrix4, Vector3 } = await import('three');
+    const m = new Matrix4().lookAt(new Vector3(0, 1.2, 6), new Vector3(0, 0.5, 0), new Vector3(0, 1, 0)).setPosition(0, 1.2, 6);
+    const ray = rayFromPixel(m.elements, { fov: 50, near: 0.1, far: 200 }, { width: 1280, height: 720 }, 790, 300);
+    expect(ray.dir.map((x) => +x.toFixed(4))).toEqual([0.1908, -0.0385, -0.9809]);
+  });
+
+  it('Möller–Trumbore on one triangle (and the same point from u and v)', () => {
+    expect(run(cells[1]).out).toEqual(['edge1 1, 1, 0, edge2 0, 1, 0, det 0.9933', 'u 0.5, v 0.175, t 4.5305; point 0, 0.675, 1.5', 'the same point from u and v: 0, 0.675, 1.5']);
+  });
+
+  it('every hit, and the nearest (example 2)', () => {
+    expect(run(cells[2]).out).toEqual(['centre: front face 4 at t = 5.5373; front face 5 at t = 4.5305', 'pixel (790, 300): back face 4 at t = 8.9716; back face 5 at t = 7.3404']);
+  });
+
+  it('the picture: the boxes, the ray and the first hit', () => {
+    const { out, shown } = run(cells[3]);
+    expect(out).toEqual(['the ray (red) first hits the front box at 0, 0.675, 1.5, t = 4.5305']);
+    expect(shown[0].groups).toEqual([...Array(6).fill(0), ...Array(6).fill(1), 4, 4, 4, 4, ...Array(6).fill(2)]);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkHit(`const hit = [${x}]`).message;
+    expect(checkHit(challenge.solutionCode).pass).toBe(true);
+    expect(checkHit('const hit = [4, 13 / 40, 11 / 20]').pass).toBe(true);
+    expect(checkHit(challenge.startCode).message).toMatch(/^Find t first/);
+    expect(at('-4, 0.325, 0.55')).toMatch(/behind the start/);
+    expect(at('4, 0.55, 0.325')).toMatch(/u and v are swapped/);
+    expect(at('4, 0.125, 0.55')).toMatch(/weight of a/);
+    expect(at('3, 0.3, 0.5')).toMatch(/does not reach the triangle's plane/);
+    expect(at('4, 0.3, 0.3')).toMatch(/^With t = 4 the hit is/);
+    expect(at('x, y')).toMatch(/^Keep const hit/);
+  });
+});
+
+describe('lesson 4.2: picking in screen space', () => {
+  const cells = lesson42.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')) }, document);
+    return out;
+  };
+
+  it('the corners on screen match MeshLab\'s projection', async () => {
+    const out = run(cells[0]);
+    expect(out[7]).toBe('v7 (1, 1, 1) → pixel (679.68, 306.76), depth 0.94957');
+    const { traceProjection } = await import('../../engines/mesh/core/camera');
+    const { Matrix4, Vector3 } = await import('three');
+    const m = new Matrix4().lookAt(new Vector3(3, 2.5, 4), new Vector3(0, 0, 0), new Vector3(0, 1, 0)).setPosition(3, 2.5, 4);
+    const t = traceProjection(m.elements, { fov: 50, near: 0.1, far: 200 }, { width: 1280, height: 720 }, [1, 1, 1]);
+    expect(t.pixel.map((x) => +x.toFixed(2))).toEqual([679.68, 306.76]);
+  });
+
+  it('the nearest vertex, and nothing beyond the radius', () => {
+    expect(run(cells[1])).toEqual(['pointer (686.68, 311.76): v7, 8.6 px away', '30 px further right: nothing within 12 px', 'nearest three: v7 8.6 px, v0 102.39 px, v2 152.73 px']);
+  });
+
+  it('distance to an edge, clamped', () => {
+    expect(run(cells[2])).toEqual(['beside the middle: t = 0.52, 5.26 px (picked)', 'beyond v7: t = 1, 37.26 px (too far)', 'far below: t = 0.6, 35.08 px (too far)']);
+  });
+
+  it('the picture picks v7', () => {
+    expect(run(cells[3])).toEqual(['picked v7 (red), 8.6 px from the pointer (orange, with its 12 px reach)']);
+  });
+
+  it('the notebook\'s rules are MeshLab\'s', async () => {
+    const { nearestPoint, pointSegment } = await import('../../engines/mesh/core/screenPick');
+    expect(nearestPoint([{ x: 200, y: 200, z: 0.98 }, { x: 205, y: 200, z: 0.95 }], 202.5, 200).index).toBe(1);
+    expect(pointSegment(108, 3, { x: 0, y: 0, z: 0 }, { x: 100, y: 0, z: 0 })).toEqual({ t: 1, d: Math.sqrt(73) });
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkSegment(`const answer = [${x}]`).message;
+    expect(checkSegment(challenge.solutionCode).pass).toBe(true);
+    expect(checkSegment('const answer = [0.6, 67.08]').pass).toBe(true);
+    expect(checkSegment(challenge.startCode).message).toMatch(/^Project the pointer/);
+    expect(at('134.16, 0')).toMatch(/not \|b − a\|²/);
+    expect(at('0, 150')).toMatch(/distance to a/);
+    expect(at('1, 111.8')).toMatch(/distance to b/);
+    expect(at('0.6, 60')).toMatch(/^t = 0\.6 is right/);
+    expect(at('0.4, 50')).toMatch(/is not where the closest point is/);
+    expect(at('p, q')).toMatch(/^Write t and d/);
+  });
+});
+
+describe('lesson 4.3: box and loop selection', () => {
+  const cells = lesson43.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('box select', () => {
+    expect(run(cells[0]).out).toEqual(['vertex select: v0, v2, v7', 'edge select: 0-2']);
+  });
+
+  it('a grid loop stops at the boundary', () => {
+    expect(run(cells[1]).out).toEqual(['loop through 6-7: vertices 5, 6, 7, 8, 9 (open)', 'edges at v6: 4, at v5: 3, at v0 (a corner): 2']);
+  });
+
+  it('sphere loops: the same counts as MeshLab\'s walk on its UV sphere', async () => {
+    expect(run(cells[2]).out).toEqual(['latitude loop: 12 edges, all the way round', 'longitude loop: 6 edges, open: rings 1 to 7, stopping before the poles', 'the north pole has 12 triangles round it: a pole, so the walk cannot go straight on through it']);
+    const { makePrimitive } = await import('../../engines/mesh/core/primitives');
+    const ball = makePrimitive('uvSphere', { radius: 1, segments: 12, rings: 8 });
+    const edges = [...ball.edges().values()], y = (v) => ball.verts[v][1];
+    const lat = edges.find((e) => Math.abs(y(e.a) - y(e.b)) < 1e-9 && Math.abs(y(e.a)) < 0.5);
+    const lon = edges.find((e) => Math.abs(y(e.a) - y(e.b)) > 1e-6 && Math.abs(y(e.a)) < 0.9 && Math.abs(y(e.b)) < 0.9);
+    expect(ball.edgeLoop(lat.a, lat.b)).toMatchObject({ closed: true });
+    expect(ball.edgeLoop(lat.a, lat.b).edges).toHaveLength(12);
+    expect(ball.edgeLoop(lon.a, lon.b)).toMatchObject({ closed: false });
+    expect(ball.edgeLoop(lon.a, lon.b).edges).toHaveLength(6);
+  });
+
+  it('the picture: the sphere and both loops', () => {
+    const { out, shown } = run(cells[3]);
+    expect(out).toEqual(['red: 12 edges, closed; blue: 6 edges, open at the poles']);
+    expect(shown[0].faces).toHaveLength(96 + 18 * 4);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkLoop(`const loop = [${x}]`).message;
+    expect(checkLoop(challenge.solutionCode).pass).toBe(true);
+    expect(checkLoop('const loop = [21, 16, 11, 6, 1]').pass).toBe(true);
+    expect(checkLoop(challenge.startCode).message).toMatch(/^That is just the start edge/);
+    expect(at('11, 16, 21')).toMatch(/only one way/);
+    expect(at('1, 6, 11, 16, 17')).toMatch(/turns a corner/);
+    expect(at('1, 6, 11, 16, 21, 26')).toMatch(/0 to 24/);
+    expect(at('0, 5')).toMatch(/is not the loop/);
+    expect(at('a')).toMatch(/^Keep const loop/);
+  });
+});
+
+describe('lesson 4.4: dragging with a gizmo', () => {
+  const cells = lesson44.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('along the X arrow: the 1.261 MeshLab\'s trace finds', () => {
+    expect(run(cells[0]).out).toEqual(['the box\'s origin is drawn at (640, 360)', 'grab: s = 0; after 120 px right: s = 1.261; move 1.261 along x']);
+  });
+
+  it('same pixels, different moves', () => {
+    expect(run(cells[1]).out).toEqual(['x arrow, box at the origin: 1.261', 'x arrow, box twice as far away: 2.522', 'z arrow, box at the origin: -1.797', 'y arrow, dragged 120 px up: 1.235']);
+  });
+
+  it('a plane drag, and snapping', () => {
+    expect(run(cells[2]).out).toEqual(['grab: the ground at (0, 0, 0)', '120 px right: the ground at (1.01, 0, -0.673)', 'and 60 px down: the ground at (1.59, 0, 0.54)']);
+    expect(run(cells[3]).out).toEqual(['move 1.261 → 1.25;  move 1.38 → 1.5', 'turn 37° → 30°;  turn 38° → 45°', 'scale 1.234 → 1.2']);
+  });
+
+  it('the notebook\'s closest point is MeshLab\'s', async () => {
+    const { closestOnAxis } = await import('../../engines/mesh/core/gizmoDrag');
+    expect(closestOnAxis([0, 0, 0], [1, 0, 0], { origin: [2, 3, 5], dir: [0.36, -0.48, -0.8] })).toBeCloseTo(4.25, 9);
+    expect(closestOnAxis([0, 0, 0], [0, 0, 1], { origin: [0, 0, 5], dir: [0, 0, -1] })).toBeNull();
+  });
+
+  it('the picture: the box, the ghost and the axis', () => {
+    const { out, shown } = run(cells[4]);
+    expect(out).toEqual(['blue: the box; amber: where the drag puts it, 1.261 along x; red: the axis it is held to']);
+    expect(shown[0].groups).toEqual([...Array(6).fill(0), ...Array(6).fill(1), ...Array(6).fill(4)]);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkClosest(`const s = ${x}`).message;
+    expect(checkClosest(challenge.solutionCode).pass).toBe(true);
+    expect(checkClosest(challenge.startCode).message).toMatch(/^Use s = /);
+    expect(at('2')).toMatch(/starting x/);
+    expect(at('-0.3456')).toMatch(/sign of c·d/);
+    expect(at('3.6992')).toMatch(/divide by a·c − b²/);
+    expect(at('5')).toMatch(/is not the closest point/);
+    expect(at('x')).toMatch(/^Keep the line/);
+  });
+});
+
+describe('lesson 4.5: the knife', () => {
+  const cells = lesson45.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('the plane and the corners\' signed distances', () => {
+    expect(run(cells[0]).out).toEqual(['n = (from − eye) × (to − eye) = (-6, -24, 0)', 'corner 1 (-1, -1, 1): d = 30  (one side)', 'corner 5 (1, -1, 1): d = 18  (one side)', 'corner 7 (1, 1, 1): d = -30  (the other side)', 'corner 3 (-1, 1, 1): d = -18  (the other side)']);
+  });
+
+  it('the crossings: t = 0.375, as MeshLab\'s knife finds on the same slab', async () => {
+    expect(run(cells[1]).out).toEqual(['edge 1–5: not crossed (both ends on one side)', 'edge 5–7: crossed at t = 0.375, the point (1, -0.25, 1)', 'edge 7–3: not crossed (both ends on one side)', 'edge 3–1: crossed at t = 0.375, the point (-1, 0.25, 1)']);
+    const { makePrimitive } = await import('../../engines/mesh/core/primitives');
+    const { knife, knifeFaces } = await import('../../engines/mesh/core/knife');
+    const slab = makePrimitive('cube', { size: 2 }), line = { eye: [0, 0, 6], from: [-2, 0.5, 0], to: [2, -0.5, 0] };
+    expect(knife(slab, line, knifeFaces(slab, line.eye))).toHaveLength(1);
+    const added = slab.verts.slice(8).map((v) => v.map((x) => +x.toFixed(4) || 0)).sort((a, b) => a[0] - b[0]);
+    expect(added).toEqual([[-1, 0.25, 1], [1, -0.25, 1]]);
+    expect(slab.stats()).toMatchObject({ closed: true, faces: 7 });
+  });
+
+  it('the split keeps the slab closed; the wedge; the picture', () => {
+    expect(run(cells[2]).out).toEqual(['front face [1, 5, 7, 3] becomes [8,7,3,9] and [9,1,5,8]', 'right side [4, 6, 7, 5] becomes [4, 6, 7, 8, 5]: still one face, now with 5 corners', '7 faces; every edge on two faces: true']);
+    expect(run(cells[3]).out).toEqual(['the crossing (1, -0.25, 1): inside the wedge true', 'short line: (1, -0.25, 1) inside false, (-1, 0.25, 1) inside false: nothing is cut']);
+    expect(run(cells[4]).shown[0].faces).toHaveLength(7);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkCrossing(`const crossing = [${x}]`).message;
+    expect(checkCrossing(challenge.solutionCode).pass).toBe(true);
+    expect(checkCrossing(challenge.startCode).message).toMatch(/^t = d\(a\)/);
+    expect(at('0.75, 1, 1.5, 0')).toMatch(/measures from b/);
+    expect(at('-1 / 3, 1, 0, 0')).toMatch(/is not the crossing/);
+    expect(at('0.25, 1, 0.25, 0')).toMatch(/^t = 0\.25 is right/);
+    expect(at('0.5, 1, 1, 0')).toMatch(/is not where the edge crosses/);
+    expect(at('x')).toMatch(/^Keep const crossing/);
+  });
+});
+
+describe('lesson 4.6: undo and redo', () => {
+  const cells = lesson46.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')) }, document);
+    return out;
+  };
+
+  it('snapshots: undo restores before, redo after', () => {
+    expect(run(cells[0])).toEqual(['move: [[0,0],[1,0],[1,2]]   undo [move]  redo []', 'add: [[0,0],[1,0],[1,2],[0,2]]   undo [move,add]  redo []', 'undo: [[0,0],[1,0],[1,2]]   undo [move]  redo [add]', 'undo: [[0,0],[1,0],[1,1]]   undo []  redo [add,move]', 'redo: [[0,0],[1,0],[1,2]]   undo [move]  redo [add]']);
+  });
+
+  it('commands are small; the numbers in the prose', () => {
+    expect(run(cells[1])).toEqual(['point 7 after the move: [7,2]', 'after undo: [7,0], the scene is as it was: true', 'stored for this one step: snapshots 15782 characters, command 7']);
+  });
+
+  it('a new change empties redo (example 2), and a drag is one step', () => {
+    expect(run(cells[2])).toEqual(['undo twice: [[0,0],[1,0],[1,1],[5,5]]   undo [A]  redo [C,B]', 'then D: [[9,9],[1,0],[1,1],[5,5]]   undo [A,D]  redo []', 'redo: [[9,9],[1,0],[1,1],[5,5]]   undo [A,D]  redo []']);
+    expect(run(cells[3])).toEqual(['after the drag: x = 1.50, undo steps: 1', 'one Ctrl+Z: x = 0']);
+    expect(run(cells[4])).toEqual(['before D: undo [A], redo [C, B] (B on top); after D: undo [A, D], redo empty']);
+  });
+
+  it('MeshLab\'s editor follows the same rules', async () => {
+    const { Editor } = await import('../../engines/mesh/core/Editor');
+    const { makePrimitive } = await import('../../engines/mesh/core/primitives');
+    const e = new Editor(), id = e.scene.add({ name: 'Box', mesh: makePrimitive('cube', { size: 1 }) }).id;
+    for (const v of [true, false, true]) e.setSmooth(id, v);
+    const n = e.undoStack.length;
+    e.undo(); e.undo();
+    expect([e.undoStack.length, e.redoStack.length]).toEqual([n - 2, 2]);
+    e.setSmooth(id, false);                    // a real change (it is smooth after the two undos)
+    expect(e.redoStack).toHaveLength(0);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (u, r) => checkStacks(`const undoStack = [${u}]\nconst redoStack = [${r}]`).message;
+    expect(checkStacks(challenge.solutionCode).pass).toBe(true);
+    expect(checkStacks(challenge.startCode).message).toMatch(/^Replay it step by step/);
+    expect(at("'A'", "'B'")).toMatch(/B is gone/);
+    expect(at("'C'", "'A'")).toMatch(/The order is the other way/);
+    expect(at("'A', 'C'", '')).toMatch(/only restores one step/);
+    expect(at("'D'", '')).toMatch(/is not what the sequence leaves/);
+    expect(checkStacks('const undoStack = 1').message).toMatch(/^Keep the two lines/);
+  });
+});
+
+describe('lesson 4.7: every click is code', () => {
+  const cells = lesson47.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')) }, document);
+    return out;
+  };
+
+  it('clicks become the same lines MeshLab logs', () => {
+    expect(run(cells[0])).toEqual(['1: scene.get("Box").smooth = true', '2: scene.get("Box").position.x = 1.5', '3: scene.get("Box").rotation.y = 0.785398']);
+  });
+
+  it('literals: the notebook\'s lit() writes what MeshLab\'s does', async () => {
+    expect(run(cells[1])).toEqual(['0.785398   0   2.5   [1, 0.333333, 0]', '{ name: "Cone", position: [0, 1, 0] }   "a \\"quoted\\" name"', 'largest error from trimming π/4: 1.6e-7']);
+    const { lit } = await import('../../engines/mesh/core/Editor');
+    expect([lit(Math.PI / 4), lit(1e-9), lit([1, 0.333333333, -0]), lit({ name: 'Cone', position: [0, 1, 0] })]).toEqual(['0.785398', '0', '[1, 0.333333, 0]', '{ name: "Cone", position: [0, 1, 0] }']);
+  });
+
+  it('replay rebuilds the scene; numbering goes wrong', () => {
+    expect(run(cells[2])).toEqual(['4 lines replayed; the same scene: true', 'the start was 95 characters; the log is 209']);
+    expect(run(cells[3])[0]).toBe('by number: Box (smooth), Cone: the wrong object was deleted and shaded');
+    expect(run(cells[4])).toEqual(['log: scene.get("Box").position.x = 1.5; scene.get("Box").rotation.z = 0.523599']);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkLine(`const line = '${x}'`).message;
+    expect(checkLine(challenge.solutionCode).pass).toBe(true);
+    expect(checkLine("const line = 'scene.get(\"Box\").rotation.y = 0.5235988'").pass).toBe(true);
+    expect(checkLine(challenge.startCode).message).toMatch(/^Write the line/);
+    expect(at('scene.get("Box").rotation.y = 30')).toMatch(/in degrees/);
+    expect(at('scene.objects[0].rotation.y = 0.523599')).toMatch(/Name the object/);
+    expect(at('scene.get("Box").rotation.x = 0.523599')).toMatch(/not x/);
+    expect(at('scene.get("Cube").rotation.y = 0.523599')).toMatch(/named "Box"/);
+    expect(at('scene.get("Box").rotation.y = 0.5')).toMatch(/radians is 28\.648°/);
+    expect(at('scene.get("Box").rotation = [0, 0.5, 0]')).toMatch(/one axis/);
+  });
+});
+
+describe('lesson 5.1: extrude', () => {
+  const cells = lesson51.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('the direction is area-weighted', () => {
+    expect(run(cells[0]).out).toEqual(['face 4: normal 0, 1, 0, area 1', 'face 7: normal 0, 1, 0, area 1', 'the region moves along n = 0, 1, 0', 'top + end, area-weighted: n = 0.4472, 0.8944, 0, 26.5651° from up']);
+  });
+
+  it('six copies, six border edges, one inner', () => {
+    const copy = run(cells[1]).out;
+    expect(copy.slice(0, 2)).toEqual(["corners on the region's faces: 8", 'new vertices: 6']);
+    expect(copy).toContain('v5 (-0.5, 0, -0.5) → v16 (-0.5, 0.5, -0.5)');
+    expect(run(cells[2]).out.slice(0, 2)).toEqual(['border edges (6): 5-6, 6-10, 5-9, 10-14, 13-14, 9-13', 'inner edges (1): 9-10']);
+  });
+
+  it('every wall faces out and V − E + F is unchanged', () => {
+    const out = run(cells[3]).out;
+    expect(out.filter((l) => l.startsWith('wall')).length).toBe(6);
+    expect(out.every((l) => !l.endsWith(', IN'))).toBe(true);
+    expect(out.slice(-2)).toEqual(['before: V 16, E 24, F 9, V − E + F = 1', 'after: V 22, E 36, F 15, V − E + F = 1']);
+  });
+
+  it('the picture: grid, caps and walls, and the tilted smooth normal', () => {
+    const { out, shown } = run(cells[4]);
+    expect(out).toEqual(["corner v16: smooth normal -0.4082, 0.8165, -0.4082, 35.2644° off the cap's (0, 1, 0)"]);
+    expect(shown).toHaveLength(1);
+    const { faces, groups, shading } = shown[0];
+    expect(faces).toHaveLength(15);
+    expect([0, 1, 2].map((g) => groups.filter((x) => x === g).length)).toEqual([7, 2, 6]);
+    expect(shading).toHaveLength(15);
+  });
+
+  it('the engine extrudes the same way', async () => {
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const verts = [], faces = [];
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) verts.push([i - 1.5, 0, j - 1.5]);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) faces.push([i * 4 + j, i * 4 + j + 1, (i + 1) * 4 + j + 1, (i + 1) * 4 + j]);
+    const m = new EditMesh(verts, faces).extrudeFaces([4, 7], 0.5);
+    expect(m.verts).toHaveLength(22);
+    expect(m.faces).toHaveLength(15);
+    expect(m.faces.slice(9)).toEqual([[5, 6, 17, 16], [6, 10, 18, 17], [9, 5, 16, 19], [10, 14, 20, 18], [14, 13, 21, 20], [13, 9, 19, 21]]);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (v, w, i) => checkBlock(`const answer = { verts: ${v}, walls: ${w}, inner: ${i} }`);
+    expect(checkBlock(challenge.solutionCode).pass).toBe(true);
+    expect(checkBlock(challenge.startCode).pass).toBe(false);
+    expect(at(16, 8, 4).message).toMatch(/copied once/);
+    expect(at(9, 16, 4).message).toMatch(/gets no wall/);
+    expect(at(9, 12, 4).message).toMatch(/distinct edges/);
+    expect(at(9, 8, 8).message).toMatch(/so 8 is not/);
+    expect(checkBlock('const answer = { verts: 9 }').message).toMatch(/all three/);
+  });
+});
+
+describe('lesson 5.2: inset', () => {
+  const cells = lesson52.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('a fraction gives an uneven frame; edges move along normal × edge', () => {
+    expect(run(cells[0]).out.at(-1)).toBe('frame at the ends (x): 0.25, along the sides (z): 0.125');
+    expect(run(cells[1]).out).toContain('edge -1, 0, -0.5 → -1, 0, 0.5: inward 1, 0, 0');
+    expect(run(cells[1]).out.at(-1)).toBe('the corner -1, 0, -0.5 moves to -0.8, 0, -0.3: 0.2 from both edges');
+  });
+
+  it('the mitre keeps both edges t away, except where capped', () => {
+    expect(run(cells[2]).out).toEqual([
+      '90°: moves 0.2828, from the two edges 0.2 and 0.2',
+      '60°: moves 0.4, from the two edges 0.2 and 0.2',
+      '120°: moves 0.2309, from the two edges 0.2 and 0.2',
+      '270°: moves 0.2828, from the two edges 0.2 and 0.2',
+      '20°: moves 1 (capped), from the two edges 0.1736 and 0.1736',
+    ]);
+  });
+
+  it('the L: 8 outline edges, every new edge 0.2 away, as the engine does it', async () => {
+    const out = run(cells[3]).out;
+    expect(out[0]).toBe('outline edges (8): 0→1, 3→0, 1→2, 2→5, 5→4, 4→7, 7→6, 6→3');
+    expect(out).toContain('v4 1, 0, 1 moves 0.2828 to 0.8, 0, 0.8');
+    expect(out.slice(-2)).toEqual(['distance of each new edge from its old one: 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2', 'faces: 3 → 11 (8 bridge quads)']);
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { insetRegion } = await import('../../engines/mesh/core/modelling');
+    const m = new EditMesh([[0, 0, 0], [0, 0, 1], [0, 0, 2], [1, 0, 0], [1, 0, 1], [1, 0, 2], [2, 0, 0], [2, 0, 1]], [[0, 1, 4, 3], [1, 2, 5, 4], [3, 4, 7, 6]]);
+    expect(insetRegion(m, [0, 1, 2], 0.2)).toHaveLength(8);
+    const near = (a, b) => a.every((x, i) => Math.abs(x - b[i]) < 1e-9);
+    for (const p of [[0.2, 0, 0.2], [1, 0, 0.2], [0.8, 0, 0.8], [1.8, 0, 0.2]]) expect(m.verts.some((v) => near(v, p))).toBe(true);
+  });
+
+  it('the picture: both kinds of inset', () => {
+    const { shown } = run(cells[4]);
+    expect(shown).toHaveLength(1);
+    const { faces, groups } = shown[0];
+    expect([1, 2, 3].map((g) => groups.filter((x) => x === g).length)).toEqual([4, 8, 4]);
+    expect(faces).toHaveLength(16);
+  });
+
+  it('the challenge: each slip is named, and only arithmetic is run', () => {
+    const at = (x) => checkCorner120(`const distance = ${x}`);
+    expect(checkCorner120(challenge.solutionCode).pass).toBe(true);
+    expect(at('0.11547').pass).toBe(true);
+    expect(checkCorner120(challenge.startCode).pass).toBe(false);
+    expect(at('0.1').message).toMatch(/straight run/);
+    expect(at('0.1 * Math.sin(Math.PI / 3)').message).toMatch(/Divide by/);
+    expect(at('0.2').message).toMatch(/cos 60/);
+    expect(at('0.1 * Math.SQRT2').message).toMatch(/90° corner/);
+    expect(at('0.1 / Math.sin(60)').message).toMatch(/radians/);
+    expect(at('globalThis.x = 1').message).toMatch(/arithmetic/);
+  });
+});
+
+describe('lesson 5.3: edge rings and loop cuts', () => {
+  const cells = lesson53.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('the opposite edge, and two rings on the tube', () => {
+    expect(run(cells[0]).out[1]).toBe('out by [1, 9]: 1 is next to 0, 9 is next to 8');
+    expect(run(cells[1]).out).toEqual([
+      'from [0, 8]: 8 quads, closed; edges [0,8] [1,9] [2,10] [3,11] [4,12] [5,13] [6,14] [7,15]',
+      'from [0, 1]: 1 quad, open; stops at face 1 (8 corners) and face 0 (8 corners)',
+    ]);
+  });
+
+  it('orientation keeps the cut level; winding order makes it jump', () => {
+    expect(run(cells[2]).out).toEqual([
+      'oriented, first corner on the same side each time: heights -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5',
+      "in each quad's winding order: heights -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5",
+    ]);
+  });
+
+  it('the split keeps V − E + F, and the caps gain a corner', () => {
+    expect(run(cells[3]).out).toEqual([
+      'before: V 16, E 24, F 10, V − E + F = 2',
+      'round the middle: V 24, E 40, F 18, V − E + F = 2',
+      'across the side:  V 27, E 45, F 20, V − E + F = 2',
+      'the caps now have 9 and 9 corners',
+    ]);
+    const { out, shown } = run(cells[4]);
+    expect(out).toEqual(["20 faces: 14 amber, 4 green (the second cut split 2 of the first cut's 16 halves), 2 caps"]);
+    expect(shown[0].faces).toHaveLength(20);
+  });
+
+  it('the engine cuts the same way', async () => {
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const n = 8, verts = [], faces = [];
+    for (const y of [-1, 1]) for (let k = 0; k < n; k++) verts.push([Math.cos(2 * Math.PI * k / n), y, Math.sin(2 * Math.PI * k / n)]);
+    faces.push([...Array(n).keys()].map((k) => n + k), [...Array(n).keys()].map((k) => (n - k) % n));
+    for (let k = 0; k < n; k++) faces.push([(k + 1) % n, k, n + k, n + (k + 1) % n]);
+    const m = new EditMesh(verts, faces);
+    expect(m.edgeRing(0, 8).faces).toHaveLength(8);
+    m.loopCut(0, 8, 0.5).loopCut(16, 17, 0.5);
+    expect([m.verts.length, m.faces.length]).toEqual([27, 20]);
+    expect(m.faces.filter((f) => f.length > 4).map((f) => f.length)).toEqual([9, 9]);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (a, b, c) => checkTwoCuts(`const answer = { first: ${a}, second: ${b}, cap: ${c} }`).message;
+    expect(checkTwoCuts(challenge.solutionCode).pass).toBe(true);
+    expect(checkTwoCuts(challenge.startCode).pass).toBe(false);
+    expect(at(24, 2, 13)).toMatch(/after the first cut/);
+    expect(at(12, 1, 13)).toMatch(/two rows/);
+    expect(at(12, 12, 13)).toMatch(/does not go round/);
+    expect(at(12, 2, 12)).toMatch(/outline/);
+    expect(at(12, 2, 14)).toMatch(/one vertex, not two/);
+  });
+});
+
+describe('lesson 5.4: bevel', () => {
+  const cells = lesson54.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('slides, the profile and its bulge', () => {
+    expect(run(cells[0]).out.slice(0, 2)).toEqual(['top face:   -1, 1, 0.7', 'front face: -1, 0.7, 1']);
+    const prof = run(cells[1]).out;
+    expect(prof[0]).toBe('B(0.5) = 0.925, 0.925');
+    expect(prof[2]).toBe('2 segments: points at distance 0.3, 0.3182, 0.3 from the centre (a circle: all 0.3)');
+  });
+
+  it('the strip: counts, end faces and normals', () => {
+    expect(run(cells[2]).out).toEqual([
+      '1 segment: V 10, E 15, F 7, V − E + F = 2; the end faces have 5 corners',
+      '   strip normals, degrees from up: 45',
+      '2 segments: V 12, E 18, F 8, V − E + F = 2; the end faces have 6 corners',
+      '   strip normals, degrees from up: 18.4349, 71.5651',
+      '4 segments: V 16, E 24, F 10, V − E + F = 2; the end faces have 8 corners',
+      '   strip normals, degrees from up: 8.1301, 30.9638, 59.0362, 81.8699',
+    ]);
+  });
+
+  it('the corner patch and the highlight', () => {
+    expect(run(cells[3]).out.at(-1)).toBe('2 segments: a 6-sided patch; between top and front, 0.85, 0.925, 0.925');
+    const { out, shown } = run(cells[4]);
+    expect(out).toEqual(['brightness: top 0.8305, strips 0.8926, 0.9685, 0.8545, 0.6107, front 0.4983']);
+    expect(Math.max(...shown[0].values)).toBeCloseTo(0.9685, 4);
+  });
+
+  it('the engine agrees: one edge in 3 segments, and every edge in 1', async () => {
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { bevelEdges } = await import('../../engines/mesh/core/modelling');
+    const cube = () => new EditMesh(
+      [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]],
+      [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [2, 3, 7, 6], [0, 4, 7, 3], [1, 2, 6, 5]],
+    );
+    const one = cube();
+    bevelEdges(one, [[6, 7]], 0.3, 3);
+    expect(one.faces).toHaveLength(9);
+    expect(one.faces.filter((f) => f.length === 7)).toHaveLength(2);
+    const all = cube();
+    bevelEdges(all, [...all.edges().values()].map((e) => [e.a, e.b]), 0.3, 1);
+    expect([all.verts.length, all.edges().size, all.faces.length]).toEqual([24, 48, 26]);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (f, c) => checkSegments(`const answer = { faces: ${f}, endCorners: ${c} }`).message;
+    expect(checkSegments(challenge.solutionCode).pass).toBe(true);
+    expect(checkSegments(challenge.startCode).pass).toBe(false);
+    expect(at(7, 7)).toMatch(/one segment/);
+    expect(at(8, 7)).toMatch(/3 strip faces/);
+    expect(at(9, 4)).toMatch(/cut off/);
+    expect(at(9, 5)).toMatch(/4 points/);
+    expect(at(9, 6)).toMatch(/one point more/);
+  });
+});
+
+describe('lesson 5.5: dissolve and delete', () => {
+  const cells = lesson55.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('dissolving an edge and vertices keeps V − E + F', () => {
+    expect(run(cells[0]).out).toEqual([
+      'before: V 6, E 7, F 2, V − E + F = 1, open edges 6',
+      '1 shared edge goes; the outline [0, 3, 4, 5, 2, 1] is one face with 6 corners',
+      'after:  V 6, E 6, F 1, V − E + F = 1, open edges 6',
+    ]);
+    expect(run(cells[1]).out[1]).toBe("the 2 × 2 grid's middle vertex 4 dissolved: one face [0, 1, 2, 5, 8, 7, 6, 3], 8 corners, 4 of them on straight sides");
+  });
+
+  it('delete opens the cube; dissolve keeps it closed but bent', () => {
+    expect(run(cells[2]).out).toEqual([
+      'cube:               V 8, E 12, F 6, V − E + F = 2, open edges 0',
+      'top deleted:        V 8, E 12, F 5, V − E + F = 1, open edges 4',
+      'top + front merged: V 8, E 11, F 5, V − E + F = 2, open edges 0',
+      'its corners are up to 0.9428 off its own plane: bent, not flat',
+    ]);
+  });
+
+  it('fans from corners 0 and 3 only; ear clipping matches the engine', async () => {
+    const out = run(cells[3]).out;
+    expect(out.filter((l) => l.endsWith('covers the L exactly')).map((l) => l.split(':')[0])).toEqual(['fan from corner 0', 'fan from corner 3']);
+    expect(out.at(-1)).toBe('ear clipping: [0, 1, 2] [0, 2, 3] [5, 0, 3] [3, 4, 5], areas 0.5, 1, 0.5, 1');
+    const { faceTriangles } = await import('../../engines/mesh/core/triangulate');
+    const L = [[1, 0, 1], [2, 0, 1], [2, 0, 0], [0, 0, 0], [0, 0, 2], [1, 0, 2]];
+    expect(faceTriangles(L, [0, 1, 2, 3, 4, 5])).toEqual([[0, 1, 2], [0, 2, 3], [5, 0, 3], [3, 4, 5]]);
+    expect(run(cells[4]).shown[0].faces).toHaveLength(8);
+  });
+
+  it('the engine: dissolving a 3 × 3 grid gives 12 corners', async () => {
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { dissolveFaces } = await import('../../engines/mesh/core/modelling');
+    const verts = [], faces = [];
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) verts.push([i, 0, j]);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) faces.push([i * 4 + j, i * 4 + j + 1, (i + 1) * 4 + j + 1, (i + 1) * 4 + j]);
+    const m = new EditMesh(verts, faces);
+    expect(dissolveFaces(m, [...Array(9).keys()])).toBe(1);
+    expect(m.faces.map((f) => f.length)).toEqual([12]);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (c, a) => checkGridDissolve(`const answer = { corners: ${c}, after: ${a} }`).message;
+    expect(checkGridDissolve(challenge.solutionCode).pass).toBe(true);
+    expect(checkGridDissolve(challenge.startCode).pass).toBe(false);
+    expect(at(16, 4)).toMatch(/inside it/);
+    expect(at(4, 4)).toMatch(/middle of the sides/);
+    expect(at(9, 4)).toMatch(/number of faces/);
+    expect(at(12, 12)).toMatch(/8 of the 12/);
+  });
+});
+
+describe('lesson 5.6: merge and smooth vertices', () => {
+  const cells = lesson56.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('merge at centre, as the engine does it', async () => {
+    expect(run(cells[0]).out).toEqual(['the four corners meet at 1.5, 0, 1.5', 'faces: 9 → 8; corner counts 4, 3, 4, 3, 3, 4, 3, 4']);
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const verts = [], faces = [];
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) verts.push([i, 0, j]);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) faces.push([i * 4 + j, i * 4 + j + 1, (i + 1) * 4 + j + 1, (i + 1) * 4 + j]);
+    const m = new EditMesh(verts, faces).mergeVerts([5, 6, 10, 9]);
+    expect(m.faces.map((f) => f.length)).toEqual([4, 3, 4, 3, 3, 4, 3, 4]);
+    expect(m.verts).toHaveLength(13);
+  });
+
+  it('a step, the ring, and Taubin', () => {
+    expect(run(cells[1]).out.slice(1)).toEqual(['λ = 0.25: x + λ (x̄ − x) = 0, 0.225, 0', 'λ = 0.5: x + λ (x̄ − x) = 0, 0.15, 0', 'λ = 1: x + λ (x̄ − x) = 0, 0, 0']);
+    const ring = run(cells[2]).out;
+    expect(ring.slice(0, 2)).toEqual(['step 0: mean radius 1, zigzag 0.1', 'step 1: mean radius 0.9619, zigzag 0.0038']);
+    expect(ring).toContain('step 10: mean radius 0.6784, zigzag 0');
+    expect(ring.at(-1)).toBe('8 waves round the ring: × 0 per step');
+    expect(run(cells[3]).out).toEqual(['plain, 10 steps: mean radius 0.6784, zigzag 0', 'Taubin, 10 pairs: mean radius 1.0075, zigzag 0', 'per pair: the circle × 1.0007, the zigzag × 0']);
+  });
+
+  it('the picture matches MeshLab\'s project: 0.15 → 0.0375', () => {
+    const { out, shown } = run(cells[4]);
+    expect(out).toEqual(['largest bump: 0.15 before, 0.0375 after one step']);
+    expect(shown[0].faces).toHaveLength(144);
+  });
+
+  it('the challenge: each slip is named, and only arithmetic is run', () => {
+    const at = (x) => checkShrink(`const radius = ${x}`);
+    expect(checkShrink(challenge.solutionCode).pass).toBe(true);
+    expect(at('0.96194').pass).toBe(true);
+    expect(checkShrink(challenge.startCode).pass).toBe(false);
+    expect(at('1').message).toMatch(/does shrink/);
+    expect(at('Math.cos(Math.PI / 8)').message).toMatch(/λ = 1/);
+    expect(at('1 - 0.5 * (1 - Math.cos(Math.PI / 16))').message).toMatch(/cos 11.25/);
+    expect(at('1 - 0.5 * (1 - Math.cos(22.5))').message).toMatch(/radians/);
+    expect(at('fetch(1)').message).toMatch(/arithmetic/);
+  });
+});
+
+describe('lesson 5.7: mirror and modifiers', () => {
+  const cells = lesson57.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('reflections and winding', () => {
+    expect(run(cells[0]).out).toEqual(['R (0.7, 0.2, -0.4) = (-0.7, 0.2, -0.4), det R = -1', 'in the plane x + y = 0: (1, 0, 0) → (0, -1, 0), det = -1', 'twice: (0.7, 0.2, -0.4) → (0.7, 0.2, -0.4)']);
+    expect(run(cells[1]).out.slice(1)).toEqual(['reflected, same order: (0, 0, -1): facing in, the wrong way', 'reflected, order reversed: (0, 0, 1): facing out']);
+  });
+
+  it('sharing the plane, the stack, and the engine\'s counts', async () => {
+    expect(run(cells[2]).out).toEqual([
+      'the cage:              V 8, E 12, F 5, V − E + F = 1, open edges 4',
+      'mirrored, no sharing:  V 16, E 24, F 10, V − E + F = 2, open edges 8',
+      'mirrored, shared:      V 12, E 20, F 10, V − E + F = 2, open edges 0',
+      'one vertex 0.01 off:   V 13, E 22, F 10, V − E + F = 1, open edges 4',
+    ]);
+    expect(run(cells[3]).out.every((l) => l.includes('true'))).toBe(true);
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { mirror } = await import('../../engines/mesh/core/modifiers');
+    const cage = new EditMesh([[0, -1, -1], [1, -1, -1], [1, 1, -1], [0, 1, -1], [0, -1, 1], [1, -1, 1], [1, 1, 1], [0, 1, 1]], [[1, 2, 6, 5], [0, 1, 5, 4], [2, 3, 7, 6], [0, 3, 2, 1], [4, 5, 6, 7]]);
+    const s = mirror(cage).stats();
+    expect([s.verts, s.edges, s.faces, s.closed]).toEqual([12, 20, 10, true]);
+    expect(s.volume).toBeCloseTo(8, 9); // a 2 × 2 × 2 box, faces outward
+  });
+
+  it('the order of the stack matters: the seam\'s top lands at 1.089 or 0.938', async () => {
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { evaluate } = await import('../../engines/mesh/core/modifiers');
+    const half = () => new EditMesh([[0, -1, -1], [1, -1, -1], [1.5, 1.5, -1], [0, 1, -1], [0, -1, 1], [1, -1, 1], [1.5, 1.5, 1], [0, 1, 1]], [[1, 2, 6, 5], [0, 1, 5, 4], [2, 3, 7, 6], [0, 3, 2, 1], [4, 5, 6, 7]]);
+    const mir = { type: 'mirror', axis: 'x', merge: 0.001, clip: true, enabled: true }, sub = { type: 'subsurf', levels: 2, enabled: true };
+    const top = (m) => +Math.max(...m.verts.filter((v) => Math.abs(v[0]) < 1e-6).map((v) => v[1])).toFixed(3);
+    expect(top(evaluate(half(), [mir, sub]))).toBe(1.089);
+    expect(top(evaluate(half(), [sub, mir]))).toBe(0.938);
+  });
+
+  it('the picture: reversed on the left, inverted on the right', () => {
+    expect(run(cells[4]).shown[0].faces).toHaveLength(20);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (v, f) => checkMirrorCounts(`const answer = { verts: ${v}, faces: ${f} }`).message;
+    expect(checkMirrorCounts(challenge.solutionCode).pass).toBe(true);
+    expect(checkMirrorCounts(challenge.startCode).pass).toBe(false);
+    expect(at(80, 72)).toMatch(/shared/);
+    expect(at(68, 72)).toMatch(/once/);
+    expect(at(34, 72)).toMatch(/only the copies/);
+    expect(at(74, 36)).toMatch(/double/);
+  });
+});
+
+describe('lesson 5.8: box modelling a character', () => {
+  const cells = lesson58.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('the plan predicts every step MeshLab logs', () => {
+    const out = run(cells[0]).out;
+    expect(out.slice(1).every((l) => l.endsWith('(MeshLab: the same)'))).toBe(true);
+    expect(out.at(-1)).toMatch(/→ 38, 32/);
+    expect(run(cells[1]).out.slice(0, 3)).toEqual(['mirrored: 66 vertices, 128 edges, 64 faces', 'subdivided ×1: 258 vertices, 512 edges, 256 faces, V − E + F = 2', 'subdivided ×2: 1026 vertices, 2048 edges, 1024 faces, V − E + F = 2']);
+  });
+
+  it('silhouettes: the cube and the sphere, as the engine finds them', async () => {
+    expect(run(cells[2]).out).toEqual(['in front, (0, 0, 5): 1 front faces, 4 silhouette edges: 4-5, 5-6, 6-7, 4-7', 'a corner, (5, 4, 3): 3 front faces, 6 silhouette edges: 2-3, 1-2, 4-5, 4-7, 1-5, 3-7']);
+    expect(run(cells[3]).out[0]).toBe('eye (0,0,5): 36 of 128 faces face it, 24 silhouette edges');
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { traceSilhouette } = await import('../../engines/mesh/core/silhouette');
+    const cube = new EditMesh([[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]], [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [2, 3, 7, 6], [0, 4, 7, 3], [1, 2, 6, 5]]);
+    const r = traceSilhouette(cube, [5, 4, 3]);
+    expect([r.front.length, r.edges.length]).toEqual([3, 6]);
+    expect(run(cells[4]).shown[0].groups.filter((g) => g === 1)).toHaveLength(36);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (v, f) => checkCage(`const answer = { verts: ${v}, faces: ${f} }`).message;
+    expect(checkCage(challenge.solutionCode).pass).toBe(true);
+    expect(checkCage(challenge.startCode).pass).toBe(false);
+    expect(at(38, 32)).toMatch(/original counts/);
+    expect(at(46, 42)).toMatch(/mirror plane/);
+    expect(at(46, 44)).toMatch(/walls only/);
+  });
+});
+
+describe('lesson 5.9: clean topology', () => {
+  const cells = lesson59.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('valence, the budget, and n-gons becoming poles', () => {
+    expect(run(cells[0]).out).toEqual(['4 × 4 grid, inside vertices: 9 × 4', 'cube: 8 × 3']);
+    expect(run(cells[1]).out).toEqual([
+      'cube: 8 × 3; Σ (4 − valence) = 8, 4χ = 8',
+      'cube subdivided ×1: 8 × 3, 18 × 4; Σ (4 − valence) = 8, 4χ = 8',
+      'cube subdivided ×2: 8 × 3, 90 × 4; Σ (4 − valence) = 8, 4χ = 8',
+      'torus: 24 × 4; Σ (4 − valence) = 0, 4χ = 0',
+    ]);
+    expect(run(cells[2]).out).toEqual(['prism: 6 × 3 (corners)', 'subdivided once: 8 × 3, 12 × 4, all quads now', 'pentagonal prism: 10 × 3', 'subdivided once: 10 × 3, 20 × 4, 2 × 5; Σ (4 − valence) = 8']);
+  });
+
+  it('the engine agrees: the ball MeshLab builds has the same 8 × 3, 90 × 4', async () => {
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { catmullClark } = await import('../../engines/mesh/core/subdivision');
+    const { traceValence } = await import('../../engines/mesh/core/valence');
+    let m = new EditMesh([[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]], [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [2, 3, 7, 6], [0, 4, 7, 3], [1, 2, 6, 5]]);
+    m = catmullClark(catmullClark(m));
+    const r = traceValence(m);
+    expect(r.inside).toEqual({ 3: 8, 4: 90 });
+    expect(r.budget).toEqual({ sum: 8, fourChi: 8 });
+  });
+
+  it('the picture: a cube-sphere with 8 poles', () => {
+    const { out, shown } = run(cells[4]);
+    expect(out).toEqual(['218 vertices: 8 × 3, 210 × 4; 8 poles, each touching 3 amber faces']);
+    expect(shown[0].groups.filter((g) => g === 1)).toHaveLength(24);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (n) => checkThrees(`const threes = ${n}`).message;
+    expect(checkThrees(challenge.solutionCode).pass).toBe(true);
+    expect(checkThrees(challenge.startCode).pass).toBe(false);
+    expect(at(8)).toMatch(/no 5-poles/);
+    expect(at(2)).toMatch(/against the budget/);
+    expect(at(6)).toMatch(/torus/);
   });
 });

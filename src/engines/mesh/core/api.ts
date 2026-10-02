@@ -15,13 +15,18 @@ import { EditMesh, type Vec3 } from './EditMesh';
 import type { Editor, ScriptResult } from './Editor';
 import { Scene, type SceneJSON, type SceneObject } from './Scene';
 import { makePrimitive, type PrimitiveParams, type PrimitiveType } from './primitives';
-import { defaultModifier, evaluate, onMirrorPlane, type Modifier } from './modifiers';
+import { defaultModifier, evaluate, mirror, onMirrorPlane, type Modifier } from './modifiers';
 import { catmullClark } from './subdivision';
 import { Trace } from './trace';
 import { exportOBJ, parseOBJ } from './formats';
-import { traceDecompose, traceDeterminant, traceTransform, traceWorld } from './transformTrace';
+import { traceExpr } from './expr';
+import { traceAxes, traceDecompose, traceEuler, traceDeterminant, traceTransform, traceWorld } from './transformTrace';
 import { Recorder, brief, instrument, type Recording } from './recorder';
 import { gaussianCurvature, heatGeodesic, meanCurvature, operators, smooth as smoothMesh } from './geometry';
+import { traceVertexNormal } from './normals';
+import { rayFromPixel, tracePick } from './pickRay';
+import { traceScreenPick } from './screenPick';
+import { traceAxisDrag } from './gizmoDrag';
 import type { FieldSpec } from './fields';
 import { CHANNELS, INTERPS, cloneAnimation, hasKeys, removeBoneKey, removeKey, setBoneKey, setKey, transformAt, type Interp } from './animation';
 import { boneLength, limitWeights, orderBones, posedEnds, type Bone } from './armature';
@@ -30,9 +35,11 @@ import { BRUSHES, DEFAULT_PAINT, dab, neighbourLists, type PaintSettings } from 
 import { angleDistortion, planarUV, sharpEdges, unwrap as unwrapMesh, uvFits } from './uv';
 import { bevelEdges, dissolveEdges, dissolveFaces, dissolveVerts, insetRegion } from './modelling';
 import { SHADER_MODELS, TEXTURES, type ShaderModel, type TextureName } from './shading';
-import { DEFAULT_CAMERA, lookAtRotation } from './camera';
+import { DEFAULT_CAMERA, lookAtRotation, traceDepth, traceLookAt, traceOutline, traceProjection, traceView } from './camera';
 import { knife as knifeCut, knifeFaces } from './knife';
-import { Quaternion } from 'three';
+import { Quaternion, Vector3 } from 'three';
+import { traceSilhouette } from './silhouette';
+import { traceValence } from './valence';
 
 type Vec3Handle = { x: number; y: number; z: number; set(x: number, y: number, z: number): Vec3Handle; toArray(): Vec3 };
 
@@ -114,6 +121,8 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       edgeTable: () => m().edgeTable(trace('Edge table', o)),
       /** The pieces: faces joined by shared edges, by breadth-first search (traced with Record traces on). Each is a list of face numbers. */
       pieces: () => m().pieces(trace('Pieces', o)),
+      /** The edge loop through edge (a, b): straight on through four-edge vertices, stopping at poles and n-gons (traced with Record traces on). */
+      loop: (a: number, b: number) => m().edgeLoop(Number(a), Number(b), trace('Edge loop', o)),
       /** V, E, F, χ = V − E + F, pieces, boundary loops and genus (traced with Record traces on). */
       topology: () => m().topology(trace('Euler characteristic', o)),
       /** The angle at corner b between the edges to a and c, with the vectors, dot and cross products (traced with Record traces on). */
@@ -141,6 +150,8 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       inset(faces: number[], amount = 0.25) { m().insetFaces(faces, amount, trace('Inset', o)); return api; },
       loopCut(a: number, b: number, t = 0.5) { m().loopCut(a, b, t, trace('Loop cut', o)); return api; },
       split(faces?: number[]) { m().subdivideFaces(faces); return api; },
+      /** Valence at every vertex, poles, face kinds and the pole budget (traced with Record traces on). */
+      valence: () => { const r = traceValence(m(), trace('Trace clean topology', o)); return { inside: r.inside, poles: r.poles, tris: r.tris, quads: r.quads, ngons: r.ngons, budget: r.budget }; },
       subdivide(levels = 1) { for (let i = 0; i < levels; i++) o.mesh = catmullClark(m(), i === 0 ? trace('Catmull–Clark', o) : undefined); return api; },
       delete(what: { faces?: number[]; verts?: number[]; edges?: [number, number][] }) {
         if (what.faces) m().deleteFaces(what.faces);
@@ -167,6 +178,8 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       // Geometry processing: one number per vertex, as a plain array.
       curvature(kind: 'mean' | 'gaussian' = 'mean') { return Array.from(kind === 'gaussian' ? gaussianCurvature(m()) : meanCurvature(m())); },
       geodesic(from: number | number[]) { return Array.from(heatGeodesic(m(), Array.isArray(from) ? from : [from], trace('Heat method', o))); },
+      /** How vertex v's smooth normal is built: faces, weights (area or angle), the average; auto smooth splits (traced with Record traces on). */
+      vertexNormal(v: number, opts: { weight?: 'area' | 'angle'; sharp?: number | null } = {}) { return traceVertexNormal(m(), Number(v), { weight: opts.weight ?? 'area', sharp: opts.sharp === undefined ? o.autoSmooth ?? null : opts.sharp }, trace('Trace the vertex normal', o)); },
       smooth(opts: { verts?: number[]; iterations?: number; lambda?: number; method?: 'uniform' | 'cotan' } = {}) { smoothMesh(m(), { iterations: opts.iterations ?? 5, lambda: opts.lambda ?? 0.5, method: opts.method ?? 'uniform', only: opts.verts }, trace('Smooth', o)); return api; },
       /** The cotan Laplacian as rows of [neighbour, weight] pairs, and each vertex's area (mass). */
       laplacian() { const { C, mass } = operators(m()); return { rows: C.rows.map((r) => [...r.entries()]), mass: Array.from(mass) }; },
@@ -250,14 +263,36 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       get scale() { return scl; }, set scale(v: ArrayLike<number> | Vec3Handle) { assign(o.scale, v); },
       get visible() { return o.visible; }, set visible(v: boolean) { o.visible = !!v; },
       get smooth() { return o.smooth; }, set smooth(v: boolean) { o.smooth = !!v; },
+      /** Auto smooth in degrees: smooth shading that keeps sharper edges hard (null: smooth everywhere). Setting it turns smooth on. */
+      get autoSmooth() { return o.autoSmooth ?? null; }, set autoSmooth(v: number | null) { if (v !== null && !(Number(v) >= 0 && Number(v) <= 180)) throw new Error('autoSmooth: 0 to 180 degrees, or null'); o.autoSmooth = v === null ? null : Number(v); o.smooth = true; },
       /** How the object's matrix M = T·R·S moves its vertices (traced with Record traces on): M, and each vertex where it is drawn. */
       traceTransform() { return traceTransform(o, trace('Trace the transform', o)); },
       /** Take the object's world matrix apart into position, scale and rotation, and measure any shear (traced with Record traces on). */
       decompose() { return traceDecompose(scene().worldMatrix(o).elements, trace('Decompose the matrix', o)); },
-      /** The determinant of the object's world matrix, worked out, and the volume its mesh fills in the world (traced with Record traces on). */
       /** How the world matrix is built up the parent chain, and where each origin lands (traced with Record traces on). */
       traceWorld() { return traceWorld(scene(), o, trace('Trace the world matrix', o)); },
+      /** The object's own axes (unit vectors) and scales, read from its world matrix, and a world point in its own coordinates (default the world origin; traced with Record traces on). */
+      traceAxes(point: ArrayLike<number> | Vec3Handle = [0, 0, 0]) { return traceAxes(scene().worldMatrix(o).elements, vec(point), trace('Trace the local axes', o)); },
+      /** The object's Euler angles (XYZ order) built into a matrix and decoded back, and whether they are in gimbal lock (traced with Record traces on). */
+      traceEuler() { return traceEuler(o.rotation, trace('Trace the Euler angles', o)); },
+      /** The determinant of the object's world matrix, worked out, and the volume its mesh fills in the world (traced with Record traces on). */
       determinant() { return traceDeterminant(scene().worldMatrix(o).elements, o.mesh?.stats().closed ? o.mesh.volume() : null, trace('Determinant', o)); },
+      /** A camera's view matrix (the inverse of its world matrix) and where a world point lands in its camera space (traced with Record traces on). */
+      traceView(point: ArrayLike<number> | Vec3Handle = [0, 0, 0]) { if (o.kind !== 'camera') throw new Error(`${o.name} is not a camera`); return traceView(scene().worldMatrix(o).elements, vec(point), trace('Trace the view matrix', o)); },
+      /** How a world point reaches a camera's image: camera space, clip space, the divide, and the pixel on the render size (traced with Record traces on). */
+      traceProjection(point: ArrayLike<number> | Vec3Handle = [0, 0, 0]) { if (!o.camera) throw new Error(`${o.name} is not a camera`); return traceProjection(scene().worldMatrix(o).elements, o.camera, editor.renderSize, vec(point), trace('Trace the projection', o)); },
+      /** Two world points through this camera's depth buffer: their depths, the stored 24-bit numbers, and whether they fight (traced with Record traces on). */
+      traceDepth(a: ArrayLike<number> | Vec3Handle, b: ArrayLike<number> | Vec3Handle, bits = 24) { if (!o.camera) throw new Error(`${o.name} is not a camera`); return traceDepth(scene().worldMatrix(o).elements, o.camera, vec(a), vec(b), Number(bits), trace('Trace the depth buffer', o)); },
+      /** How wide the selection outline of something at a world point is on this camera's image (traced with Record traces on). */
+      traceOutline(point: ArrayLike<number> | Vec3Handle = [0, 0, 0]) { if (!o.camera) throw new Error(`${o.name} is not a camera`); return traceOutline(scene().worldMatrix(o).elements, o.camera, editor.renderSize, vec(point), undefined, trace('Trace the outline width', o)); },
+      /** Look-at worked out for this object at a world point: forward, right, up, the change of basis and the Euler angles (traced with Record traces on; does not turn the object). */
+      traceLookAt(point: ArrayLike<number> | Vec3Handle) { const w = scene().worldMatrix(o).elements; return traceLookAt([w[12], w[13], w[14]], vec(point), trace('Trace look-at', o)); },
+      /** The ray through pixel (px, py) of this camera's render image, tested against every mesh: the nearest hit (traced with Record traces on). */
+      tracePick(px: number, py: number) { if (!o.camera) throw new Error(`${o.name} is not a camera`); const ray = rayFromPixel(scene().worldMatrix(o).elements, o.camera, editor.renderSize, Number(px), Number(py)); return { ray, hit: tracePick(ray, editor.pickables(), trace('Trace picking', o)) }; },
+      /** The vertex (kind 'vert') or edge ('edge') of a mesh nearest pixel (px, py) on this camera's image, picked in screen space (traced with Record traces on). */
+      tracePickNear(target: { id: string }, px: number, py: number, kind: 'vert' | 'edge' = 'vert') { const t = scene().get(target.id); if (!o.camera) throw new Error(`${o.name} is not a camera`); if (!t?.mesh) throw new Error('tracePickNear: the target has no mesh'); const edges = [...t.mesh.edges().values()].map((e) => [e.a, e.b] as [number, number]); return traceScreenPick(kind, editor.screenPointsOf(t, o), edges, Number(px), Number(py), trace('Trace screen picking', t)); },
+      /** Drag a target's axis arrow on this camera's image: from the target's pixel, dx and dy pixels further; the move along the axis, snapped if snap is given (traced with Record traces on). */
+      traceDrag(target: { id: string }, axis: 'x' | 'y' | 'z', dx: number, dy = 0, snap: number | null = null) { const t = scene().get(target.id); if (!o.camera) throw new Error(`${o.name} is not a camera`); if (!t) throw new Error('traceDrag: no such object'); const w = scene().worldMatrix(t).elements, origin: Vec3 = [w[12], w[13], w[14]], cw = scene().worldMatrix(o).elements; const at = traceProjection(cw, o.camera, editor.renderSize, origin).pixel; const u: Vec3 = [0, 0, 0]; u['xyz'.indexOf(axis)] = 1; const ray = (px: number, py: number) => rayFromPixel(cw, o.camera!, editor.renderSize, px - 0.5, py - 0.5); return traceAxisDrag(origin, u, ray(at[0], at[1]), ray(at[0] + Number(dx), at[1] + Number(dy)), snap, trace('Trace a gizmo drag', t)); },
       /** Turn to face a point (world coordinates): a camera or light looks at it along its −z axis. */
       lookAt(target: ArrayLike<number> | Vec3Handle) {
         const world = scene().worldMatrix(o), eye = [world.elements[12], world.elements[13], world.elements[14]] as Vec3;
@@ -268,6 +303,11 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       /** A camera's vertical field of view in degrees (null for other objects). */
       get fov() { return o.camera?.fov ?? null; },
       set fov(v: number | null) { if (!o.camera) throw new Error(`${o.name} is not a camera`); if (v === null || !(v > 1 && v < 179)) throw new Error('fov: between 1 and 179 degrees'); o.camera.fov = Number(v); },
+      /** A camera's near and far planes: nothing nearer or further is drawn (and depth precision depends mostly on near). */
+      get near() { return o.camera?.near ?? null; },
+      set near(v: number | null) { if (!o.camera) throw new Error(`${o.name} is not a camera`); if (v === null || !(v > 0 && v < o.camera.far)) throw new Error('near: above 0 and less than far'); o.camera.near = Number(v); },
+      get far() { return o.camera?.far ?? null; },
+      set far(v: number | null) { if (!o.camera) throw new Error(`${o.name} is not a camera`); if (v === null || !(v > o.camera.near)) throw new Error('far: more than near'); o.camera.far = Number(v); },
       material: {
         get color() { return o.material.color; }, set color(v: string) { o.material.color = String(v); },
         get roughness() { return o.material.roughness; }, set roughness(v: number) { o.material.roughness = v; },
@@ -298,6 +338,22 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
         remove(i: number) { o.modifiers.splice(i, 1); return h; },
         apply() { if (o.mesh) o.mesh = evaluate(o.mesh, o.modifiers); o.modifiers = []; return h; },
         get list() { return o.modifiers.map((m) => ({ ...m })); },
+      },
+      /** Trace this object's silhouette (modifiers applied) from the scene camera, with Record traces on. Returns the counts. */
+      traceSilhouette() {
+        const cam = scene().activeCamera ? scene().get(scene().activeCamera!) : undefined;
+        if (!o.mesh || !cam) throw new Error('traceSilhouette needs a mesh and a scene camera');
+        const c = scene().worldMatrix(cam).elements;
+        const local = new Vector3(c[12], c[13], c[14]).applyMatrix4(scene().worldMatrix(o).clone().invert());
+        const shown = evaluatedMesh(scene(), o);
+        const r = traceSilhouette(shown, [local.x, local.y, local.z], trace('Trace the silhouette', o));
+        return { faces: shown.faces.length, front: r.front.length, edges: r.edges.length };
+      },
+      /** Trace the first enabled mirror modifier on the cage (with Record traces on). Returns the mirrored mesh's stats. */
+      traceMirror() {
+        const mod = o.modifiers.find((m) => m.type === 'mirror' && m.enabled);
+        if (!o.mesh || !mod || mod.type !== 'mirror') throw new Error(`${o.name} has no mirror modifier switched on`);
+        return mirror(o.mesh, mod.axis, mod.merge, trace('Trace the mirror modifier', o)).stats();
       },
       delete() { scene().remove(o.id); },
       duplicate() { return objHandle(editor.duplicateOne(o)); },
@@ -451,7 +507,13 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
   };
 
   const console = { log: (...a: unknown[]) => print(a.map(show).join(' ')), warn: (...a: unknown[]) => print(a.map(show).join(' ')), error: (...a: unknown[]) => print(a.map(show).join(' ')) };
-  return { scene: sceneApi, log: console.log, print: console.log, console };
+  /** Parse a number the way the Inspector's fields do ("pi/4", "2*1.5"); throws with the position if it cannot. Traced with Record traces on. */
+  const parse = (text: string) => {
+    const r = traceExpr(String(text), trace('Parse a number'));
+    if (r.value === null) throw new Error(`parse: ${r.error} (at character ${r.at + 1})`);
+    return r.value;
+  };
+  return { scene: sceneApi, log: console.log, print: console.log, console, parse };
 }
 
 function show(x: unknown): string {
@@ -507,8 +569,8 @@ export function runScript(editor: Editor, code: string, label = 'Run script', op
       try { src = instrument(code); }
       catch (e) { const m = e instanceof Error ? e.message : String(e); throw new Error(`Syntax error: ${m}`); }
     }
-    const fn = new Function('scene', 'log', 'print', 'console', '__step', `"use strict";\n${src}`);
-    const r = fn(api.scene, api.log, api.print, api.console, step);
+    const fn = new Function('scene', 'log', 'print', 'console', 'parse', '__step', `"use strict";\n${src}`);
+    const r = fn(api.scene, api.log, api.print, api.console, api.parse, step);
     if (r !== undefined) output.push(show(r));
     rec?.end();
     finishScript(editor, before, label, code);

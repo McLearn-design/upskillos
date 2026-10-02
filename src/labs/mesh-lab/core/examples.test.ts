@@ -86,6 +86,11 @@ describe('number-field expressions', () => {
     expect(evalExpr('1e-3')).toBe(0.001);
     expect(evalExpr('2^3^2')).toBe(512);
     for (const bad of ['', 'alert(1)', '1+', 'x', '(1', 'constructor']) expect(evalExpr(bad)).toBeNull();
+    // Spaces separate tokens: two numbers side by side are an error, not one number.
+    for (const bad of ['1 2', '1 .5', 'si n(1)', '2 e3', '1/0', '   ']) expect(evalExpr(bad)).toBeNull();
+    expect(evalExpr(' 2 * ( 1 + 1 ) ')).toBe(4);
+    expect(evalExpr('1e3 + 1E-3')).toBe(1000.001);
+    expect(evalExpr('--2')).toBe(2);
   });
 });
 

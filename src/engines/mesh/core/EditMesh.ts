@@ -33,6 +33,7 @@
 // else is a cache, rebuilt when they change.
 
 import { Trace, fmt, fmtV, type TraceStep } from './trace';
+import { faceTriangles } from './triangulate';
 
 export type Vec3 = [number, number, number];
 
@@ -712,7 +713,7 @@ export class EditMesh {
       const border: [number, number][] = [], inner: [number, number][] = [];
       for (const [key, c] of useCount) { const [a, b] = key.split('-').map(Number); (c === 1 ? border : inner).push([a, b]); }
       trace.step({
-        phase: 'Border edges', label: `${border.length} border edges, ${inner.length} inner edges`,
+        phase: 'Border edges', label: `${border.length} border edge${border.length === 1 ? '' : 's'}, ${inner.length} inner edge${inner.length === 1 ? '' : 's'}`,
         detail: 'An edge used by exactly one selected face is on the border of the region and gets a wall. An edge shared by two selected faces is inside the region and does not.',
         edges: border, values: [['border', String(border.length)], ['inside', String(inner.length)]],
       });
@@ -918,30 +919,35 @@ export class EditMesh {
     if (vertIdxs.length < 2) return this;
     const target = vertIdxs[0];
     const pos: Vec3 = at ?? vertIdxs.reduce<Vec3>((s, v) => add3(s, this.verts[v]), [0, 0, 0]).map((x) => x / vertIdxs.length) as Vec3;
-    trace?.step({ phase: 'Merge', label: `${vertIdxs.length} vertices → one at ${fmtV(pos)}`, verts: vertIdxs, points: [{ p: pos, label: 'merged', color: '#f59e0b' }], detail: 'The centroid is the average of the merged positions.' }, this);
+    trace?.step({
+      phase: 'Merge', label: `${vertIdxs.length} vertices → one at ${fmtV(pos)}`, verts: vertIdxs, points: [{ p: pos, label: 'merged', color: '#f59e0b' }],
+      detail: at ? 'The vertices meet at the given point.' : 'At centre: the merged vertex goes to the centroid, the average of the merged positions.',
+      quiz: at ? undefined : { prompt: `${vertIdxs.length} vertices at ${vertIdxs.slice(0, 4).map((v) => fmtV(this.verts[v])).join(', ')}${vertIdxs.length > 4 ? ', …' : ''} merge at their centre. Where is it?`, answer: pos, labels: ['x', 'y', 'z'], rule: 'The centroid: add the positions and divide by how many there are.' },
+    }, this);
     const into = new Set(vertIdxs);
     this.verts[target] = pos;
+    const before = this.faces.length;
+    let shrunk = 0;
     this.faces = this.faces
-      .map((f) => f.map((v) => (into.has(v) ? target : v)).filter((v, i, arr) => v !== arr[(i + 1) % arr.length]))
+      .map((f) => { const g = f.map((v) => (into.has(v) ? target : v)).filter((v, i, arr) => v !== arr[(i + 1) % arr.length]); if (g.length < f.length && g.length >= 3) shrunk++; return g; })
       .filter((f) => f.length >= 3 && new Set(f).size === f.length);
     this.removeVerts(vertIdxs.slice(1));
-    trace?.step({ phase: 'Merge', label: `${this.faces.length} faces remain`, verts: [target] }, this);
+    trace?.step({
+      phase: 'Merge', label: `${this.faces.length} faces remain: ${shrunk} lost corners, ${before - this.faces.length} collapsed and went`, verts: [target],
+      detail: 'In every face the merged vertices become one, and repeats next to each other are dropped. A face left with fewer than three corners has no area: it goes.',
+    }, this);
     return this;
   }
 
-  /**
-   * The ring of quads crossed by walking from an edge to the opposite edge of
-   * each quad in turn. Returns the edges crossed, each oriented so that its
-   * first vertex is on the same side of the ring, and the quads in order.
-   */
   /**
    * The edge loop through the edge (a, b), as Blender's Alt+click finds it. At a vertex
    * with four edges, go straight on: take the one edge that shares no face with the
    * edge you arrived along. Along a boundary, a vertex with three edges continues to
    * the next boundary edge. A pole (any other count) or a triangle or n-gon stops the
-   * walk, which then runs the other way from (a, b).
+   * walk, which then runs the other way from (a, b). With a trace, each vertex reached is a step: how many edges
+   * meet there and which way the walk goes on (Predict questions on the first vertex reached and on the length).
    */
-  edgeLoop(a: number, b: number): { edges: [number, number][]; closed: boolean } {
+  edgeLoop(a: number, b: number, trace?: Trace): { edges: [number, number][]; closed: boolean } {
     const map = this.edges(), startKey = EditMesh.edgeKey(a, b);
     if (!map.has(startKey)) return { edges: [], closed: false };
     const around = new Map<number, EdgeInfo[]>();
@@ -956,32 +962,50 @@ export class EditMesh {
         let next: EdgeInfo[] = [];
         if (came.faces.length === 2 && inc.length === 4 && quads) next = inc.filter((e) => e !== came && !e.faces.some((f) => came.faces.includes(f)));
         else if (came.faces.length === 1 && inc.length === 3 && quads) next = inc.filter((e) => e !== came && e.faces.length === 1);
-        if (next.length !== 1) return { out, closed: false };
+        const why = !quads ? 'a triangle or n-gon meets it: stop' : came.faces.length === 2 ? (inc.length === 4 ? 'four edges: go straight on, along the one edge that shares no face with the edge just walked' : `${inc.length} edges (a pole): there is no straight on, stop`) : (inc.length === 3 ? 'on the boundary with three edges: follow the boundary' : 'on the boundary, not three edges: stop');
+        if (next.length !== 1) { trace?.step({ phase: 'Walk', label: `v${cur}: ${why}`, detail: 'A loop runs straight through vertices where four quads meet. Anywhere else there is no single "straight on", so the loop ends there.', verts: [cur] }); return { out, closed: false }; }
         const key = EditMesh.edgeKey(next[0].a, next[0].b);
+        const n0 = next[0].a === cur ? next[0].b : next[0].a;
+        trace?.step({
+          phase: 'Walk', label: `v${cur}: ${why} → v${n0}`, detail: 'At a vertex with four edges, two of them are the sides of the quads the incoming edge belongs to; the fourth, sharing no face with it, is straight on.', verts: [cur, n0], edges: [[cur, n0]],
+          quiz: out.length === 0 && from === a && trace.steps.length === 1 ? { prompt: `The loop arrives at v${cur} along the edge from v${prev}. Which vertex does it go on to (its number)?`, answer: [n0], labels: ['vertex'], rule: 'Take the edge at this vertex that shares no face with the edge you arrived along.', tolerance: 0 } : undefined,
+        });
         if (key === startKey) return { out, closed: true };
         if (seen.has(key)) return { out, closed: false };
         seen.add(key);
-        const n = next[0].a === cur ? next[0].b : next[0].a;
+        const n = n0;
         out.push([cur, n]);
         prev = cur; cur = n;
       }
     };
+    trace?.step({ phase: 'Start', label: `Start at the edge v${a}–v${b}, and walk on from v${b}`, detail: 'An edge loop is the line of edges that runs straight on through the mesh, like a line of latitude on a globe.', verts: [a, b], edges: [[a, b]] });
     const fwd = walk(a, b);
-    if (fwd.closed) return { edges: [[a, b], ...fwd.out], closed: true };
+    const done = (edges: [number, number][], closed: boolean) => {
+      trace?.step({ phase: 'Loop', label: `${edges.length} edges${closed ? ', all the way round' : ', open at both ends'}`, detail: closed ? 'The walk came back to the edge it started from.' : 'The walk stopped one way, so it was run the other way from the start edge too.', edges, verts: [...new Set(edges.flat())], quiz: { prompt: 'How many edges does the whole loop have?', answer: [edges.length], labels: ['edges'], rule: 'Count every edge walked, both ways from the start, including the start edge.', tolerance: 0 } });
+      return { edges, closed };
+    };
+    if (fwd.closed) return done([[a, b], ...fwd.out], true);
+    trace?.step({ phase: 'Back', label: `Now the other way, from v${a}`, detail: 'The loop did not close, so it may also run on beyond the start edge\'s other end.', verts: [a] });
     const back = walk(b, a);
-    return { edges: [...back.out.map(([x, y]) => [y, x] as [number, number]).reverse(), [a, b], ...fwd.out], closed: false };
+    return done([...back.out.map(([x, y]) => [y, x] as [number, number]).reverse(), [a, b], ...fwd.out], false);
   }
 
-  edgeRing(a: number, b: number): { edges: [number, number][]; faces: number[]; closed: boolean } {
+  /**
+   * The ring of quads crossed by walking from an edge to the opposite edge of
+   * each quad in turn. Returns the edges crossed, each oriented so that its
+   * first vertex is on the same side of the ring, and the quads in order.
+   */
+  edgeRing(a: number, b: number, trace?: Trace): { edges: [number, number][]; faces: number[]; closed: boolean } {
     const map = this.edges();
     const start = map.get(EditMesh.edgeKey(a, b));
     if (!start) return { edges: [], faces: [], closed: false };
     const startKey = EditMesh.edgeKey(a, b);
     const seen = new Set<number>();
+    let asked = false;
     // Walk from the starting edge through `face`, quad by quad. In a quad the
     // opposite edge joins the two corners not on the current edge; the corner
     // next to cur[0] stays on cur[0]'s side, which keeps the ring oriented.
-    const walk = (face: number | undefined) => {
+    const walk = (face: number | undefined, dir: string) => {
       const out: { e: [number, number]; f: number }[] = [];
       let cur: [number, number] = [a, b];
       let closed = false;
@@ -991,20 +1015,36 @@ export class EditMesh {
         seen.add(face);
         const opp: [number, number] = [nextTo(cur[0], cur[1]), nextTo(cur[1], cur[0])];
         const key = EditMesh.edgeKey(opp[0], opp[1]);
+        if (trace && trace.detailed(1)) {
+          const ask = !asked; asked = true;
+          trace.step({
+            phase: 'Walk the ring', label: `${dir}: quad ${face} [${ring.join(', ')}], in by [${cur[0]}, ${cur[1]}], out by [${opp[0]}, ${opp[1]}]`,
+            detail: `The opposite edge joins the two corners not on the edge you came in by. ${opp[0]} is the corner next to ${cur[0]}, so it stays on ${cur[0]}'s side: that keeps the ring oriented, and the cut parallel.`,
+            faces: [face], edges: [cur, opp],
+            quiz: ask ? { prompt: `You enter quad ${face} = [${ring.join(', ')}] across edge [${cur[0]}, ${cur[1]}]. Which edge do you leave by? Give first the corner beside ${cur[0]}, then the one beside ${cur[1]}.`, answer: opp, labels: [`beside ${cur[0]}`, `beside ${cur[1]}`], rule: 'In a quad, the opposite edge is the one sharing no corner with the edge you came in by; each of its corners is the neighbour of one of yours.', tolerance: 0 } : undefined,
+          });
+        }
         if (key === startKey) { out.push({ e: opp, f: face }); closed = true; break; }
         out.push({ e: opp, f: face });
         const others = map.get(key)!.faces.filter((f) => f !== face);
         face = others.length === 1 ? others[0] : undefined;
         cur = opp;
       }
+      if (trace && !closed) {
+        const why = face === undefined ? `edge [${cur[0]}, ${cur[1]}] is on the mesh's open edge: no face beyond it`
+          : seen.has(face) ? `face ${face} was already crossed`
+          : `face ${face} has ${this.faces[face].length} corners, not 4: it has no single opposite edge`;
+        trace.step({ phase: 'Walk the ring', label: `${dir}: stop, ${why}`, detail: 'A ring runs through quads only. It stops at a triangle, an n-gon or the open edge of the mesh.', edges: [cur], faces: face !== undefined ? [face] : [] });
+      }
       return { out, closed };
     };
     // More than two faces on the start edge: follow only the first.
-    const fwd = walk(start.faces[0]);
+    const fwd = walk(start.faces[0], 'Forward');
     if (fwd.closed) {
+      trace?.step({ phase: 'Walk the ring', label: `Back at [${a}, ${b}]: a closed ring of ${fwd.out.length} quads`, detail: 'The walk returned to the edge it started from, so the ring goes all the way round.', edges: [[a, b]] });
       return { edges: [[a, b], ...fwd.out.slice(0, -1).map((o) => o.e)], faces: fwd.out.map((o) => o.f), closed: true };
     }
-    const back = start.faces.length === 2 ? walk(start.faces[1]) : { out: [], closed: false };
+    const back = start.faces.length === 2 ? walk(start.faces[1], 'Back') : { out: [], closed: false };
     return {
       edges: [...back.out.map((o) => o.e).reverse(), [a, b], ...fwd.out.map((o) => o.e)],
       faces: [...back.out.map((o) => o.f).reverse(), ...fwd.out.map((o) => o.f)],
@@ -1019,7 +1059,7 @@ export class EditMesh {
    * stays connected.
    */
   loopCut(a: number, b: number, t = 0.5, trace?: Trace): this {
-    const ring = this.edgeRing(a, b);
+    const ring = this.edgeRing(a, b, trace);
     if (!ring.faces.length) return this;
     trace?.step({
       phase: 'Find the ring', label: `${ring.faces.length} quads, ${ring.closed ? 'closed loop' : 'open strip'}`,
@@ -1036,6 +1076,7 @@ export class EditMesh {
     trace?.step({
       phase: 'New vertices', label: `${ring.edges.length} vertices at t = ${fmt(t)} along each ring edge`,
       detail: 'p + t·(q − p), with p on the same side of the ring every time so the cut runs parallel.',
+      quiz: (() => { const [p, q] = ring.edges[0]; return { prompt: `Ring edge [${p}, ${q}] runs from ${fmtV(this.verts[p])} to ${fmtV(this.verts[q])}. Where is its new vertex at t = ${fmt(t)}?`, answer: this.verts[mid.get(`${p}>${q}`)!], labels: ['x', 'y', 'z'], rule: 'p + t·(q − p): the fraction t of the way from the ring edge\'s first corner to its second.' }; })(),
       points: ring.edges.slice(0, 80).map(([p, q]) => ({ p: this.verts[mid.get(`${p}>${q}`)!], color: '#f59e0b' })),
     }, this);
     const ringFaces = new Set(ring.faces);
@@ -1142,9 +1183,9 @@ export class EditMesh {
   // ── handing over to the renderer ────────────────────────────────────────
 
   /**
-   * Fan-triangulate for display. Correct for convex rings, which covers
-   * everything this creates; a concave n-gon needs ear clipping and is a
-   * separate job.
+   * Triangulate for display: a fan for convex faces, ear clipping for concave
+   * ones (core/triangulate.ts), so an L-shaped n-gon from a dissolve draws
+   * without covering its notch.
    *
    * `faceIndex` maps each output triangle back to the face it came from, so a
    * click on a triangle can select the quad the user actually sees.
@@ -1153,8 +1194,8 @@ export class EditMesh {
     const indices: number[] = [];
     const faceIndex: number[] = [];
     this.faces.forEach((f, fi) => {
-      for (let i = 1; i + 1 < f.length; i++) {
-        indices.push(f[0], f[i], f[i + 1]);
+      for (const [a, b, c] of faceTriangles(this.verts, f)) {
+        indices.push(f[a], f[b], f[c]);
         faceIndex.push(fi);
       }
     });

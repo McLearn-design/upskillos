@@ -5,6 +5,7 @@
 // one step. `setup` says what to show once it is built (what to select, which
 // frame, which panel), and `guide` lists things to look at and try.
 
+import { Euler, Vector3 } from 'three';
 import type { Editor } from '../../../engines/mesh/core/Editor';
 import { EditMesh, type Vec3 } from '../../../engines/mesh/core/EditMesh';
 import { runScript } from '../../../engines/mesh/core/api';
@@ -42,6 +43,8 @@ export interface StartState {
   field: string | null;
   /** How long the GUI → code log was: steps look only at what you did after. */
   log: number;
+  /** How many steps the undo stack held. */
+  undo: number;
 }
 
 /**
@@ -65,7 +68,7 @@ export function startState(e: Editor): StartState {
     position: [...o.position] as Vec3, rotation: [...o.rotation] as Vec3, scale: [...o.scale] as Vec3,
     verts: o.mesh ? o.mesh.verts.map((v) => [...v] as Vec3) : null, bones: o.bones?.length ?? 0, glsl: o.material?.glsl,
   }]));
-  return { obj: (n) => objs.get(n), field: e.field ? JSON.stringify(e.field.spec) : null, log: e.log.length };
+  return { obj: (n) => objs.get(n), field: e.field ? JSON.stringify(e.field.spec) : null, log: e.log.length, undo: e.undoStack.length };
 }
 
 // What guide checks ask.
@@ -78,6 +81,14 @@ const moved = (e: Editor, s: StartState, name: string) => {
   const o = e.scene.get(name), was = s.obj(name);
   const same = (a: Vec3, b: Vec3) => a.every((x, i) => Math.abs(x - b[i]) < 1e-6);
   return !!o && !!was && !(same(o.position, was.position) && same(o.rotation, was.rotation) && same(o.scale, was.scale));
+};
+/** The object moved along its own x axis since the project opened (and did not turn or stretch). */
+const alongLocalX = (e: Editor, s: StartState, name: string) => {
+  const o = e.scene.get(name), was = s.obj(name);
+  if (!o || !was || o.rotation.some((x, i) => Math.abs(x - was.rotation[i]) > 1e-6)) return false;
+  const d = o.position.map((x, i) => x - was.position[i]), len = Math.hypot(...d);
+  const ax = new Vector3(1, 0, 0).applyEuler(new Euler(...o.rotation, 'XYZ'));
+  return len > 0.05 && Math.abs(Math.abs(d[0] * ax.x + d[1] * ax.y + d[2] * ax.z) - len) < 1e-3 * len;
 };
 /** The heat map of this kind is showing on this object. */
 const showing = (e: Editor, name: string, kind: string) => !!e.field && e.scene.get(e.field.objectId)?.name === name && e.field.spec.kind === kind;
@@ -571,6 +582,688 @@ const hand = scene.add.cube({ name: 'Hand', size: 0.3, parent: elbow, position: 
 // How the hand's world matrix is built. With Record traces on, the trace walks the chain and asks you to predict.
 const w = hand.traceWorld()
 w.chain.forEach((name, i) => log(name + "'s origin in the world:", w.origins[i].map(f).join(', ')))`,
+  },
+  {
+    id: 'local-and-global-axes',
+    title: 'Local and global axes',
+    icon: '🧭',
+    group: 'Learning',
+    desc: 'A crate turned 30° and stretched along its own z. The script reads its own axes off the columns of its matrix, with questions to predict, and finds a world point in the crate’s coordinates; then you drag it along its own axis and along the world’s.',
+    lang: 'js',
+    setup: { select: 'Crate', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Select Crate. Its matrix’s first three columns are where its own x, y and z axes point in the world; the small red, green and blue lines on it are those axes. The z column is 1.5 long: the scale along z.',
+      'In the Algorithm trace, press Play. It asks which way the local x arrow points (the x column divided by its length), then where the world point (3, 0, 2) is in the crate’s own coordinates.',
+      step('With the toolbar on Local axes, press Move and drag the gizmo’s red arrow: the crate slides along its own x, (0.866, 0, −0.5), not the world’s.', (e, s) => alongLocalX(e, s, 'Crate')),
+      step('Click Local axes to switch to World axes and drag the red arrow again: now it slides along (1, 0, 0). Then turn the crate (Rotation Y) and use Object › Trace the local axes to read its new axes.', (e, s) => { const o = e.scene.get('Crate'), was = s.obj('Crate'); return !!o && !!was && Math.abs(o.rotation[1] - was.rotation[1]) > 1e-6 && e.trace?.op === 'Trace the local axes'; }),
+    ],
+    code: `const f = (v) => v.map((x) => +x.toFixed(3)).join(', ')
+
+// A crate at (1, 0, 2), turned 30° about y and stretched 1.5 times along its own z.
+const crate = scene.add.cube({ name: 'Crate', size: 1, position: [1, 0.5, 2], rotation: [0, Math.PI / 6, 0], scale: [1, 1, 1.5] })
+crate.material.color = '#c08850'
+
+// Its own axes, read off its matrix. With Record traces on, the trace asks you to predict them.
+const a = crate.traceAxes([3, 0.5, 2])
+log('local x', f(a.axes[0]), '  local y', f(a.axes[1]), '  local z', f(a.axes[2]))
+log('scales', f(a.lengths))
+log('world point (3, 0.5, 2) in the crate\\'s coordinates:', f(a.local))`,
+  },
+  {
+    id: 'gimbal-lock',
+    title: 'Euler angles and gimbal lock',
+    icon: '🛩️',
+    group: 'Learning',
+    desc: 'A gimbal of three rings, X outside, then Y, then Z, carrying a jet, and a second jet turned by the same three Euler angles. At Y = 90° the X and Z rings line up: the trace shows two angles collapse into one.',
+    lang: 'js',
+    setup: { select: 'Jet (Euler)', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'On the left, each ring turns everything inside it: X gimbal, then Y, then Z, so the jet in the middle is turned by Rx·Ry·Rz. On the right, "Jet (Euler)" has Rotation (20, 90, 10): the same three angles in one object, and it points the same way.',
+      'In the Algorithm trace, press Play. It builds Rx·Ry·Rz, asks for the top-right entry (sin y), then decodes the matrix back to angles: not (20, 90, 10) but (30, 90, 0).',
+      step('Select "Jet (Euler)" and set Rotation X to 30 and Z to 0: the jet does not move at all. At Y = 90 only X + Z counts. On the left, the red X ring and the blue Z ring lie in one plane.', (e) => { const o = e.scene.get('Jet (Euler)'); return !!o && Math.abs(o.rotation[0] - Math.PI / 6) < 1e-6 && Math.abs(o.rotation[1] - Math.PI / 2) < 1e-6 && Math.abs(o.rotation[2]) < 1e-6; }),
+      step('Set its Rotation Y to 45, then use Object › Trace the Euler angles: no lock now, and X and Z turn it in different ways again.', (e) => { const o = e.scene.get('Jet (Euler)'); return !!o && Math.abs(o.rotation[1] - Math.PI / 4) < 1e-6 && e.trace?.op === 'Trace the Euler angles' && e.activeObject?.name === 'Jet (Euler)'; }),
+    ],
+    code: `const d = Math.PI / 180
+const angles = [20, 90, 10]                                 // x, y, z in degrees (XYZ order)
+
+// A jet: a body, wings and a tail fin, pointing along its own +z.
+function jet(name, opts) {
+  const j = scene.add.empty({ name, ...opts })
+  scene.add.cube({ name: name + ' body', size: 1, parent: j, scale: [0.25, 0.15, 1.1] }).material.color = '#d0d4dc'
+  scene.add.cube({ name: name + ' wings', size: 1, parent: j, position: [0, 0, 0.1], scale: [1.2, 0.04, 0.3] }).material.color = '#d0d4dc'
+  scene.add.cube({ name: name + ' fin', size: 1, parent: j, position: [0, 0.15, -0.45], scale: [0.04, 0.3, 0.2] }).material.color = '#e5484d'
+  return j
+}
+
+// A gimbal: each ring is a child of the one outside it, so its turn is applied inside the others: Rx·Ry·Rz.
+const gx = scene.add.empty({ name: 'X gimbal', position: [-2.5, 1.6, 0], rotation: [angles[0] * d, 0, 0] })
+scene.add.torus({ name: 'X ring', parent: gx, radius: 1.5, tube: 0.04, rotation: [0, 0, 90 * d] }).material.color = '#e5484d'
+const gy = scene.add.empty({ name: 'Y gimbal', parent: gx, rotation: [0, angles[1] * d, 0] })
+scene.add.torus({ name: 'Y ring', parent: gy, radius: 1.3, tube: 0.04 }).material.color = '#30a46c'
+const gz = scene.add.empty({ name: 'Z gimbal', parent: gy, rotation: [0, 0, angles[2] * d] })
+scene.add.torus({ name: 'Z ring', parent: gz, radius: 1.1, tube: 0.04, rotation: [90 * d, 0, 0] }).material.color = '#3e63dd'
+jet('Jet in the gimbal', { parent: gz })
+
+// The same three angles on one object. With Record traces on, the trace builds the matrix and decodes it.
+const solo = jet('Jet (Euler)', { position: [2.5, 1.6, 0], rotation: angles.map((a) => a * d) })
+const t = solo.traceEuler()
+log('decoded:', t.decoded.join(', '), t.locked ? '(gimbal lock)' : '')`,
+  },
+  {
+    id: 'numbers-you-can-type',
+    title: 'Numbers you can type',
+    icon: '🔢',
+    group: 'Learning',
+    desc: 'Every number field in MeshLab reads arithmetic: 90/4, pi/2, 2*1.5. The script parses some with the same parser, and traces "2 + 3 * 4" rule by rule, with questions to predict; then you type expressions into the Inspector.',
+    lang: 'js',
+    setup: { select: 'Box', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'In the Algorithm trace, press Play. The parser reads 2, 3 and 4, then does 3 * 4 before the + : a product sits inside a sum, so it is finished first. Predict the first result and the whole value.',
+      step('Select Box and type 90/4 into Rotation Y, then press Enter: the field shows 22.5. The Inspector ran the same parser on your text.', (e) => { const o = e.scene.get('Box'); return !!o && Math.abs(o.rotation[1] - Math.PI / 8) < 1e-9; }),
+      'Type 1 2 (with a space) into Position X: the field turns red and keeps its old value. A space separates two numbers, and the grammar has no rule for a number followed by a number. Press Escape.',
+      'Script tab: change "2 + 3 * 4" on the last line to "-2^2" or "2^3^2", and run it (Record traces stays on) to trace a different expression.',
+    ],
+    code: `const f = (x) => +x.toFixed(4)
+
+// The Inspector's fields and parse() share one parser.
+const box = scene.add.cube({ name: 'Box', size: parse('2 * 0.75') })
+log('2 * 0.75 =', parse('2 * 0.75'), '  pi/4 =', f(parse('pi/4')), '  -2^2 =', parse('-2^2'), '  2^3^2 =', parse('2^3^2'))
+
+// Text the grammar cannot read: parse() says where it stopped.
+for (const bad of ['1 2', '(1 + 2', '2 +']) {
+  try { parse(bad) } catch (e) { log(JSON.stringify(bad), '→', e.message) }
+}
+
+// With Record traces on, the last parse is traced rule by rule.
+log('2 + 3 * 4 =', parse('2 + 3 * 4'))`,
+  },
+  {
+    id: 'cameras',
+    title: 'Cameras',
+    icon: '🎥',
+    group: 'Learning',
+    desc: 'A camera aimed at a box with lookAt. The script traces its view matrix, the inverse of its world matrix, and finds the box in camera space, with questions to predict; then you look through it, move it, and frame things.',
+    lang: 'js',
+    setup: { select: 'Camera', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Camera is the pyramid: it stands at (4, 3, 5) and was turned with lookAt so its −z axis points at the box. Its view matrix is the inverse of its world matrix: it moves the whole world so the eye sits at the origin, looking down −z.',
+      'In the Algorithm trace, press Play. Predict which way the camera looks (minus its z column), then where the box’s centre lands in camera space: straight ahead means x = y = 0.',
+      step('Move the camera and trace it: press 0 to look through it and 0 again to come back, then select Camera, move it (type a new Position), and use Object › Trace the view matrix (camera): the box’s camera-space position changes.', (e, s) => moved(e, s, 'Camera') && e.trace?.op === 'Trace the view matrix' && e.activeObject?.name === 'Camera'),
+      'Left-drag orbits the viewport’s own camera round its target, right-drag pans it, the wheel zooms. View › Frame selected (.) puts the selection’s bounding sphere just inside the view, at distance radius / sin(fov / 2) × 1.1.',
+    ],
+    code: `const f = (v) => v.map((x) => +x.toFixed(3)).join(', ')
+
+const box = scene.add.cube({ name: 'Box', size: 1, position: [0, 0.5, 0] })
+box.material.color = '#4f8fd9'
+// A camera at (4, 3, 5), turned so its −z axis points at the box's centre.
+const cam = scene.add.camera({ name: 'Camera', position: [4, 3, 5], lookAt: [0, 0.5, 0] })
+
+// A point behind the camera has z > 0 in camera space.
+log('(0, 0, 10) in camera space:', f(cam.traceView([0, 0, 10]).camera), '(z > 0: behind)')
+// With Record traces on, the last call is traced step by step.
+const v = cam.traceView([0, 0.5, 0])
+log('looking along', f(v.forward))
+log("the box's centre in camera space:", f(v.camera))`,
+  },
+  {
+    id: 'projection',
+    title: 'Projection',
+    icon: '🖼️',
+    group: 'Learning',
+    desc: 'Two equal boxes, one near the camera and one far: the far one is drawn smaller. The script traces how a point becomes a pixel, camera space to clip space to the divide by w, with questions to predict; then you change the field of view and switch to orthographic.',
+    lang: 'js',
+    setup: { select: 'Camera', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Both boxes are 1 tall. On the camera’s 1280 × 720 image the near one is 104.7 pixels tall and the far one, 2.4 times as far away, 48.3: the divide by w shrinks things with distance. (Not exactly 2.4 times: the camera looks down steeply at the near box, which tilts its height away a little.)',
+      'In the Algorithm trace, press Play. The point (1, 0.5, 0) goes into camera space, through the projection matrix into clip space, and is divided by w. Predict the normalised coordinates, then the pixel.',
+      step('Select Camera and set its Field of view to 30 in the Inspector, then use Object › Trace the projection (camera): a narrower view makes everything bigger on the image, so the box’s pixel moves away from the centre.', (e) => { const c = e.scene.get('Camera'); return !!c?.camera && Math.abs(c.camera.fov - 30) < 1e-9 && e.trace?.op === 'Trace the projection'; }),
+      'Press 5 (View › Orthographic / perspective): the viewport stops shrinking things with distance, and the two boxes look the same size. Front, Right and Top (View menu) switch to orthographic by themselves; Perspective switches back.',
+    ],
+    code: `const f = (v) => v.map((x) => +x.toFixed(2)).join(', ')
+
+scene.add.cube({ name: 'Near box', size: 1, position: [0, 0.5, 0] }).material.color = '#4f8fd9'
+scene.add.cube({ name: 'Far box', size: 1, position: [-6, 0.5, -8] }).material.color = '#f59e0b'
+const cam = scene.add.camera({ name: 'Camera', position: [4, 3, 5], lookAt: [0, 0.5, 0], fov: 50 })
+
+// How tall is each box on the image? Project its bottom and top centre.
+for (const [name, x, z] of [['Near box', 0, 0], ['Far box', -6, -8]]) {
+  const lo = cam.traceProjection([x, 0, z]).pixel, hi = cam.traceProjection([x, 1, z]).pixel
+  log(name + ': ' + (lo[1] - hi[1]).toFixed(1) + ' pixels tall')
+}
+// With Record traces on, the last call is traced step by step.
+const t = cam.traceProjection([1, 0.5, 0])
+log('(1, 0.5, 0): clip', f(t.clip), ' ndc', f(t.ndc), ' pixel', f(t.pixel))`,
+  },
+  {
+    id: 'depth-buffer',
+    title: 'The depth buffer',
+    icon: '🧱',
+    group: 'Learning',
+    desc: 'A poster 0.001 in front of a wall, 100 away, seen by a camera whose near plane is 0.01: the depth buffer cannot tell them apart and they fight. The script traces both through the depth buffer, with questions to predict; then you move the near plane out and the fighting stops.',
+    lang: 'js',
+    setup: { select: 'Camera', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Press 0 to look through the camera (0 again to come back). The orange poster is only 0.001 in front of the grey wall, 100 away: in places the wall shows through it in streaks. That is z-fighting.',
+      'In the Algorithm trace, press Play. Both points get almost the same depth; a 24-bit buffer stores the same whole number for each. Predict the wall\u2019s depth, then how far apart two surfaces must be at that distance to be told apart.',
+      step('Select Camera and set Near to 1 (Inspector \u203a Near, far), then use Object \u203a Trace the depth buffer (camera): the stored numbers now differ. Look through it again: the poster is clean.', (e) => { const c = e.scene.get('Camera'); return !!c?.camera && Math.abs(c.camera.near - 1) < 1e-9 && e.trace?.op === 'Trace the depth buffer'; }),
+      'X-ray (toolbar) draws faces see-through and stops them writing depth, so everything behind shows. Wire draws edges over faces; MeshLab pushes the faces back a little in depth (polygon offset) so their own edges never fight them.',
+    ],
+    code: `const d = Math.PI / 180
+
+// A wall 100 in front of the camera, and a poster 0.001 in front of the wall. Both face the camera.
+scene.add.plane({ name: 'Wall', size: 20, position: [0, 1, -90], rotation: [90 * d, 0, 0] }).material.color = '#9aa4b2'
+scene.add.plane({ name: 'Poster', size: 6, position: [0, 1, -89.999], rotation: [90 * d, 0, 0] }).material.color = '#f59e0b'
+const cam = scene.add.camera({ name: 'Camera', position: [0, 1, 10], lookAt: [0, 1, -90], near: 0.01, far: 1000 })
+
+// With Record traces on, this is traced step by step.
+const t = cam.traceDepth([0, 1, -90], [0, 1, -89.999])
+log('near 0.01: depths', t.depth.map((x) => x.toFixed(9)).join(', '), ' stored', t.stored.join(', '), t.fight ? ' (they fight)' : '')
+log('one depth step at 100 is', t.resolution.toFixed(4), 'long; the poster is 0.001 in front')`,
+  },
+  {
+    id: 'flat-and-smooth',
+    title: 'Flat and smooth shading',
+    icon: '🥫',
+    group: 'Learning',
+    desc: 'Three equal cylinders: shaded flat, smooth, and auto smooth. Smooth shading averages the faces round each vertex, so the big cap drags the rim normals down and the rims smear. The script traces one rim vertex’s normal, with questions to predict; then you auto-smooth it.',
+    lang: 'js',
+    setup: { select: 'Smooth', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Left: Flat, one normal per face, so the 16 sides show as facets. Middle: Smooth, one normal per vertex, so the sides blend, but the rims are smeared dark. Right: Auto smooth 30°, sides blended and rims crisp.',
+      'In the Algorithm trace, press Play. Vertex 0 on the bottom rim touches the cap (area 3.06) and two side faces (0.78 each). Predict the cap’s weight, then the averaged normal: the cap pulls it 63° down.',
+      step('Select Smooth and use Object › Shade auto smooth (30°): its rims become as crisp as the right-hand one.', (e) => e.scene.get('Smooth')?.autoSmooth === 30),
+      step('Tab into edit mode on Smooth, press 1 for vertex select, click a rim vertex, and use Mesh › Trace the vertex normal (one vertex): with auto smooth on, that vertex now has 2 normals, one for the sides and one for the cap.', (e) => e.trace?.op === 'Trace the vertex normal' && e.trace.steps.some((x) => x.phase === 'Auto smooth' && x.label.includes('2 different normals'))),
+    ],
+    code: `const f = (v) => v.map((x) => +x.toFixed(4)).join(', ')
+
+const flat = scene.add.cylinder({ name: 'Flat', radius: 1, height: 2, segments: 16, position: [-3, 1, 0] })
+const smooth = scene.add.cylinder({ name: 'Smooth', radius: 1, height: 2, segments: 16, position: [0, 1, 0] })
+const auto = scene.add.cylinder({ name: 'Auto smooth', radius: 1, height: 2, segments: 16, position: [3, 1, 0] })
+smooth.smooth = true
+auto.autoSmooth = 30
+
+// Vertex 0 is on the bottom rim. Its normal weighted by angle, then by area (traced with Record traces on).
+log('angle-weighted normal:', f(smooth.mesh.vertexNormal(0, { weight: 'angle' }).normal))
+const t = smooth.mesh.vertexNormal(0)
+log('faces round vertex 0:', t.faces.join(', '), '  areas', f(t.weights), '  area-weighted normal', f(t.normal))`,
+  },
+  {
+    id: 'outlines',
+    title: 'Lines, outlines and overlays',
+    icon: '🖍️',
+    group: 'Learning',
+    desc: 'A box with a recessed panel, selected, so its orange outline shows. The outline is the mesh pushed out along its normals by a fraction of its distance (constant on screen), drawn back faces only, and kept outside the body by the stencil. The script traces its width on the camera’s image, with a question to predict; then you switch the stencil off and see the panel’s creases.',
+    lang: 'js',
+    setup: { select: 'Block', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The orange outline round the selected block is the same width on screen however far away it is: zoom in and out to see. It is a copy of the mesh, pushed out by 0.0035 × its distance from the eye and drawn back faces only.',
+      'In the Algorithm trace, press Play: the push, then the width on the camera’s 720-pixel image. Predict the pixels: the distance cancels.',
+      'View › Outline stencil on / off: with the stencil off, thin orange lines appear round the recessed panel, inside the box. There the hull’s hidden inner walls, pushed out along normals averaged with the panel, come in front of it. Switch it back on: the body’s pixels are marked in the stencil buffer and the outline is drawn only outside them.',
+      step('Select Camera, set its Field of view to 25, and use Object › Trace the outline width (camera): a narrower view magnifies everything, so the same outline is about twice as many pixels wide.', (e) => { const c = e.scene.get('Camera'); return !!c?.camera && Math.abs(c.camera.fov - 25) < 1e-9 && e.trace?.op === 'Trace the outline width'; }),
+    ],
+    code: `// A box with a recessed panel on its front: the panel's edges are concave creases, where an inverted hull
+// alone goes wrong. Back corners 0-3, front rim 4-7, the panel's rim 8-11, the sunk panel 12-15.
+const sq = (s, z) => [[-s, -s, z], [s, -s, z], [s, s, z], [-s, s, z]]
+const verts = [...sq(0.5, -0.5), ...sq(0.5, 0.5), ...sq(0.3, 0.5), ...sq(0.3, 0.38)].map(([x, y, z]) => [x, y + 0.5, z])
+const faces = [[3, 2, 1, 0], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7],
+  [4, 5, 9, 8], [5, 6, 10, 9], [6, 7, 11, 10], [7, 4, 8, 11],
+  [8, 9, 13, 12], [9, 10, 14, 13], [10, 11, 15, 14], [11, 8, 12, 15], [12, 13, 14, 15]]
+const block = scene.add.mesh({ name: 'Block', verts, faces })
+block.material.color = '#8fa3b8'
+const cam = scene.add.camera({ name: 'Camera', position: [1.5, 2, 4], lookAt: [0, 0.5, 0] })
+
+// With Record traces on, this is traced step by step.
+const t = cam.traceOutline([0, 0, 0])
+log('the block is ' + t.distance.toFixed(3) + ' away; the hull is pushed out ' + t.push.toFixed(5) + '; the outline is ' + t.pixels.toFixed(2) + ' pixels wide')`,
+  },
+  {
+    id: 'camera-and-still',
+    title: 'A camera you can place, and a still image',
+    icon: '📷',
+    group: 'Learning',
+    desc: 'A scene camera aimed at a box with look-at. The script traces the aiming: forward, right and up, the rotation with those as columns, and its Euler angles, with questions to predict. Then you change the render size, look through the camera and render a still.',
+    lang: 'js',
+    setup: { select: 'Camera', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Camera is an object like any other: Position (6, 4, 8), and a Rotation that look-at worked out so its −z axis points at the box. The Inspector shows its field of view: 50° tall, 79.3° wide for a 16:9 render.',
+      'In the Algorithm trace, press Play: forward, then right and up, then the rotation with them as columns, decoded into the Rotation fields. Predict forward, then the Y rotation.',
+      step('In the Inspector, set Render size to 1080 × 1080 (square), then press 0 to look through the camera: the frame becomes square and the wide angle drops to 50°. Press 0 again to come back.', (e) => e.renderSize.width === e.renderSize.height),
+      'View › Render still (PNG) renders what the camera sees at the render size, off screen, with the grid, outlines and gizmos hidden, and saves it. For a camera that flies, see the island fly-through project.',
+    ],
+    code: `const f = (v) => v.map((x) => +x.toFixed(4)).join(', ')
+
+// The box first: Object › Trace look-at aims the camera at the first mesh.
+scene.add.cube({ name: 'Box', size: 1, position: [0, 0.5, 0] }).material.color = '#4f8fd9'
+scene.add.plane({ name: 'Ground', size: 12 }).material.color = '#556070'
+scene.add.uvSphere({ name: 'Ball', radius: 0.6, position: [2, 0.6, -1] }).material.color = '#f59e0b'
+const cam = scene.add.camera({ name: 'Camera', position: [6, 4, 8], fov: 50 })
+
+// With Record traces on, look-at is traced step by step; then the camera is turned to match.
+const t = cam.traceLookAt([0, 0.5, 0])
+cam.lookAt([0, 0.5, 0])
+log('right', f(t.right), '  up', f(t.up), '  back', f(t.back))
+log('rotation fields:', t.rotationDeg.map((a) => a.toFixed(2)).join('°, ') + '°')
+log('field of view: 50° tall, ' + (2 * Math.atan(Math.tan(25 * Math.PI / 180) * 16 / 9) * 180 / Math.PI).toFixed(1) + '° wide at 16:9')`,
+  },
+  {
+    id: 'picking',
+    title: 'Picking by ray',
+    icon: '🎯',
+    group: 'Learning',
+    desc: 'Two boxes, one partly behind the other, and a camera. The script sends the ray through the centre of the camera’s image and tests it against every triangle (Möller–Trumbore), with questions to predict; the nearest hit is what a click there selects.',
+    lang: 'js',
+    setup: { select: 'Camera', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'A click is a ray: from the eye, through the pixel, into the scene. Every triangle it crosses is a hit; the nearest one in front of the eye is the surface you clicked.',
+      'In the Algorithm trace, press Play: the ray, the triangles tested per object, then Möller–Trumbore on the nearest hit. Predict how far along the ray it is, then the point.',
+      step('Click the back box where it shows to the right of the front one: the ray through that pixel misses the front box and hits the back one, so the back box is selected.', (e) => e.activeObject?.name === 'Back box'),
+      'Press 0 to look through the camera: the centre of the frame is the pixel the script traced, on the front box.',
+    ],
+    code: `const f = (v) => v.map((x) => +x.toFixed(3)).join(', ')
+
+scene.add.cube({ name: 'Front box', size: 1, position: [0, 0.5, 1] }).material.color = '#4f8fd9'
+scene.add.cube({ name: 'Back box', size: 1.6, position: [1, 0.8, -2] }).material.color = '#f59e0b'
+const cam = scene.add.camera({ name: 'Camera', position: [0, 1.2, 6], lookAt: [0, 0.5, 0] })
+
+// A pixel right of centre: only the back box is there.
+const side = cam.tracePick(790, 300)
+log('pixel (790, 300) hits', side.hit ? side.hit.name : 'nothing')
+// With Record traces on, the last pick is traced: the centre pixel of the 1280 × 720 image.
+const p = cam.tracePick(639.5, 359.5)
+log('ray from', f(p.ray.origin), 'along', f(p.ray.dir))
+log('centre pixel hits', p.hit.name, 'face', p.hit.face, 'at t =', p.hit.t.toFixed(3), 'point', f(p.hit.point))`,
+  },
+  {
+    id: 'screen-picking',
+    title: 'Picking in screen space',
+    icon: '🖱️',
+    group: 'Learning',
+    desc: 'A block seen by a camera. Vertices and edges are too thin to hit with a ray, so they are picked by distance on the screen: the script projects every vertex to the camera’s image and picks the nearest to a pointer, with questions to predict.',
+    lang: 'js',
+    setup: { select: 'Block', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'A ray almost never passes exactly through a vertex or along an edge. So in vertex select (1) a click picks the vertex nearest the pointer on screen, within 12 pixels; in edge select (2), the edge whose segment on screen passes nearest, within 10.',
+      'In the Algorithm trace, press Play: every vertex projected to the camera’s image, the nearest few with their distances, and the pick. Predict the distance to the nearest vertex.',
+      step('Tab into edit mode on Block, press 1 for vertex select, and click a corner: the nearest vertex on screen is selected.', (e) => e.mode === 'edit' && e.editObject?.name === 'Block' && e.selectMode === 'vert' && e.selectedVerts().length === 1),
+      'MeshLab picks by screen distance only: a vertex hidden behind the block can be picked if it is nearest on screen. Blender in solid mode picks only visible ones unless X-ray is on.',
+    ],
+    code: `const f = (v) => v.map((x) => +x.toFixed(2)).join(', ')
+
+const block = scene.add.cube({ name: 'Block', size: 2 })
+const cam = scene.add.camera({ name: 'Camera', position: [3, 2.5, 4], lookAt: [0, 0, 0] })
+
+// Where the corner (1, 1, 1) lands on the camera's 1280 × 720 image, and a pointer 7 px right of it and 5 px down.
+const corner = cam.traceProjection([1, 1, 1]).pixel
+const px = corner[0] + 7, py = corner[1] + 5
+const e = cam.tracePickNear(block, px, py, 'edge')
+log('corner at', f(corner), '; pointer at', f([px, py]))
+log('nearest edge:', e.key, e.d.toFixed(2), 'px away, at t =', e.t.toFixed(3))
+// With Record traces on, the vertex pick is traced step by step.
+const v = cam.tracePickNear(block, px, py, 'vert')
+log('nearest vertex:', v.index, v.d.toFixed(2), 'px away')`,
+  },
+  {
+    id: 'loops',
+    title: 'Box and loop selection',
+    icon: '➰',
+    group: 'Learning',
+    desc: 'A UV sphere: its latitude lines are edge loops that go all the way round; its longitude lines stop at the poles. The script walks both, traced vertex by vertex with questions to predict; then you box-select and Alt+click loops yourself.',
+    lang: 'js',
+    setup: { select: 'Ball', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'An edge loop runs straight on through the mesh: at every vertex where four edges meet, it takes the one that shares no face with the edge it came along. It stops at a pole (more or fewer than four edges) or at a triangle or n-gon.',
+      'In the Algorithm trace, press Play: the walk round a line of latitude. Predict the first vertex it goes on to, then how many edges the loop has.',
+      step('Tab into edit mode on Ball, press 1, and Alt+click an edge on the equator: the whole ring of vertices round the ball is selected.', (e) => e.mode === 'edit' && e.editObject?.name === 'Ball' && e.selectedVerts().length >= 12),
+      'Press B and drag a rectangle: every vertex drawn inside it is selected (in face select, every face whose centre is inside). Like click picking, box select works on the screen.',
+    ],
+    code: `const ball = scene.add.uvSphere({ name: 'Ball', radius: 1, segments: 12, rings: 8 })
+const v = ball.mesh.verts, E = ball.mesh.edges
+// An edge along a line of longitude (its ends at different heights, away from the poles)...
+const lon = E.find((e) => Math.abs(v[e.a].y - v[e.b].y) > 1e-6 && Math.abs(v[e.a].y) < 0.9 && Math.abs(v[e.b].y) < 0.9)
+const l = ball.mesh.loop(lon.a, lon.b)
+log('a longitude loop:', l.edges.length, 'edges,', l.closed ? 'all the way round' : 'open: it stops next to the poles')
+// ...and one along a line of latitude (both ends at the same height). With Record traces on, this walk is traced.
+const lat = E.find((e) => Math.abs(v[e.a].y - v[e.b].y) < 1e-9 && Math.abs(v[e.a].y) < 0.5)
+const t = ball.mesh.loop(lat.a, lat.b)
+log('a latitude loop:', t.edges.length, 'edges,', t.closed ? 'all the way round' : 'open')`,
+  },
+  {
+    id: 'gizmo-drag',
+    title: 'Dragging with a gizmo',
+    icon: '↔️',
+    group: 'Learning',
+    desc: 'A box and a camera. Dragging the gizmo’s X arrow 120 pixels to the right: the script finds where each mouse position’s ray passes closest to the axis, and the move between them, snapped, with questions to predict. The same 120 pixels along z moves a different amount.',
+    lang: 'js',
+    setup: { select: 'Box', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The mouse moves on a flat screen; the box may only move along one 3D line. At each mouse position the pick ray (lesson 4.1) passes closest to that line at one point: that is where the mouse is, along the axis.',
+      'In the Algorithm trace, press Play: the axis, the grab, the drag, then the snap. Predict the move, then what Snap makes of it.',
+      step('Press Move, then drag the gizmo’s red arrow: the box slides along x only. Its Y and Z stay exactly as they were.', (e, s) => { const o = e.scene.get('Box'), w = s.obj('Box'); return !!o && !!w && Math.abs(o.position[0] - w.position[0]) > 1e-6 && Math.abs(o.position[1] - w.position[1]) < 1e-9 && Math.abs(o.position[2] - w.position[2]) < 1e-9; }),
+      'Turn on Snap (toolbar) and drag again: the move jumps in steps of 0.25. Rotate snaps to 15°, scale to 0.1.',
+    ],
+    code: `const box = scene.add.cube({ name: 'Box', size: 1 })
+box.material.color = '#4f8fd9'
+const cam = scene.add.camera({ name: 'Camera', position: [4, 3, 6], lookAt: [0, 0, 0] })
+
+// The same 120-pixel drag to the right, on the z arrow: here the z axis is seen end-on more steeply, so
+// 120 pixels covers more of it; and to the right on screen is towards −z, so the move is negative.
+const z = cam.traceDrag(box, 'z', 120, 0)
+log('120 px right on the z arrow moves the box', z.move.toFixed(3), 'along z')
+// With Record traces on, the x arrow's drag is traced: snapped to 0.25.
+const x = cam.traceDrag(box, 'x', 120, 0, 0.25)
+log('120 px right on the x arrow: grab at s =', x.s0.toFixed(3), ', now s =', x.s1.toFixed(3), ', move', x.move.toFixed(3), ', snapped', x.snapped)`,
+  },
+  {
+    id: 'knife-cut',
+    title: 'The knife',
+    icon: '🔪',
+    group: 'Learning',
+    desc: 'Two slabs and a slanted knife line. A line on the screen is a plane through the eye: the script cuts one slab with it (front faces only) and the other straight through, traced with questions to predict.',
+    lang: 'js',
+    setup: { select: 'Slab', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'A line drawn on the screen is not a line in the scene: everything that lands on it lies on one plane, through the eye and the line’s two ends. The knife cuts where that plane meets the faces.',
+      'In the Algorithm trace, press Play: the plane, where each face is crossed, then the split. Predict how far along its edge the first crossing is, then how many faces are cut.',
+      step('Tab into edit mode on Slab, press K, and drag a line across it: the faces facing you are cut along the line, and the new edges are selected.', (e, s) => did(e, s, 'Knife')),
+      'Turn on X-ray before cutting and the knife goes through to the back faces too (the second slab was cut that way). New vertices on an edge are shared by the faces on both sides, so no crack opens.',
+    ],
+    code: `// Two slabs, the same knife line: the eye, and a point on each end's ray (what the knife records).
+const line = { eye: [0, 0, 6], from: [-2, 0.5, 0], to: [2, -0.5, 0] }
+const through = scene.add.cube({ name: 'Cut through', size: 2, position: [0, 0, -3] })
+through.mesh.knife({ ...line, eye: [0, 0, 9], through: true })
+log('cut through (X-ray):', through.mesh.faces.length, 'faces, closed:', through.mesh.stats().closed)
+const slab = scene.add.cube({ name: 'Slab', size: 2 })
+// With Record traces on, this cut is traced step by step.
+const cut = slab.mesh.knife(line)
+log('front faces only:', cut.length, 'face cut,', slab.mesh.faces.length, 'faces, closed:', slab.mesh.stats().closed)`,
+  },
+  {
+    id: 'undo-redo',
+    title: 'Undo and redo',
+    icon: '↩️',
+    group: 'Learning',
+    desc: 'A box to change. Every change is stored as a pair of whole-scene snapshots, before and after; undo restores one, redo the other, and a new change clears what could be redone. Make a few changes, then trace the stacks with questions to predict.',
+    lang: 'js',
+    setup: { select: 'Box', trace: true, predict: true, view: 'all' },
+    guide: [
+      'Every change in MeshLab, from the menus, the Inspector, the gizmo or a script, goes through one path: snapshot the scene, change it, snapshot again, push the pair onto the undo stack.',
+      step('Make three changes to Box: for example Shade smooth, then a move, then a new Rotation value.', (e, s) => e.undoStack.length >= s.undo + 3),
+      step('Use Edit › Trace the undo stack and press Play: predict how many steps are left after two undos, and how many can be redone after a new change.', (e) => e.trace?.op === 'Undo stack' && e.undoStack.length >= 3),
+      'Press Ctrl+Z twice, then move the box: the two undone steps are gone from the redo stack, so Ctrl+Shift+Z does nothing.',
+      'A gizmo drag is one step however many mouse moves it took: the snapshot is taken when the drag starts and pushed when it ends.',
+    ],
+    code: `const box = scene.add.cube({ name: 'Box', size: 1, position: [0, 0.5, 0] })
+box.material.color = '#4f8fd9'
+log('A box to change. The whole script is one undo step.')`,
+  },
+  {
+    id: 'every-click',
+    title: 'Every click is code',
+    icon: '📜',
+    group: 'Learning',
+    desc: 'A box to change through the interface. Every change is logged as the script line that would make it; replaying the log on the starting scene rebuilds yours exactly. Make changes, read the log, then trace the replay with a question to predict.',
+    lang: 'js',
+    setup: { select: 'Box', trace: true, predict: true, view: 'all' },
+    guide: [
+      'Open the GUI → code tab: it holds the script that built the box. Every change you make with the menus, the Inspector or the gizmo will be added as a script line.',
+      step('Change Box three ways: Shade smooth, a new Position X in the Inspector, and a new Rotation Y. Each appears in the log; the rotation is written in radians.', (e, s) => e.log.length >= s.log + 3),
+      step('Use Script › Trace the GUI → code log (replay it) and press Play: predict how many lines it runs. The replayed scene must match yours.', (e) => e.trace?.op === 'Replay the log' && e.trace.steps.some((x) => x.phase === 'Compare' && x.label.startsWith('The replayed scene matches'))),
+      'Undo a change: its line leaves the log too, because the log is the program for the scene you have now.',
+    ],
+    code: `const box = scene.add.cube({ name: 'Box', size: 1, position: [0, 0.5, 0] })
+box.material.color = '#4f8fd9'
+log('A box to change. This script is logged as one entry; each change you make in the interface adds a line.')`,
+  },
+  {
+    id: 'extrude',
+    title: 'Extrude',
+    icon: '⬆️',
+    group: 'Learning',
+    desc: 'A flat 3 × 3 grid. The script extrudes two of its middle faces upward together: the average normal, a copy of every vertex, walls on the border edges only. Traced, with a question to predict. Then extrude faces yourself.',
+    lang: 'js',
+    setup: { select: 'Grid', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Two neighbouring faces in the middle of the grid were extruded together, 0.5 up. Tab into edit mode to see the new walls: there is no wall between the two faces, only round the outside of the pair.',
+      'In the Algorithm trace, press Play: each face’s normal and area, the average direction, the copied vertices (predict where one goes), the border edges, the walls.',
+      step('Tab into edit mode on Grid, press 3 for face select, click a corner face of the grid and press E: it rises with four new walls.', (e, s) => did(e, s, 'Extrude')),
+      'The walls are shaded by their own normals, at right angles to the face that moved. With the whole region selected, E moves every selected face along one shared direction.',
+    ],
+    code: `const grid = scene.add.grid({ name: 'Grid', size: 3, subdivisions: 3 })
+grid.material.color = '#8fa3b8'
+// The two middle faces of the middle row: centres at x = 0 and x = 1, z = 0.
+const pair = grid.mesh.faces.where((f) => Math.abs(f.center[2]) < 0.1 && f.center[0] > -0.1)
+log('faces', pair.join(', '), 'extruded together')
+const before = grid.mesh.stats()
+// With Record traces on, the extrude is traced step by step.
+grid.mesh.extrude(pair, 0.5)
+const after = grid.mesh.stats()
+log('vertices', before.verts, '→', after.verts, '; faces', before.faces, '→', after.faces)`,
+  },
+  {
+    id: 'inset',
+    title: 'Inset',
+    icon: '🔲',
+    group: 'Learning',
+    desc: 'A 4 × 4 grid. An L of three faces is inset as one region by 0.2: the outline moves in, mitred at its corners so the frame is 0.2 wide all round. A corner face is inset on its own by a fraction, for comparison. Traced, with a question to predict.',
+    lang: 'js',
+    setup: { select: 'Grid', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Tab into edit mode: the L of three faces has a frame 0.2 wide all round, even at the inside corner of the L. The single face in the corner has a frame too, made a different way.',
+      'In the Algorithm trace, press Play: the outline, then each outline vertex: straight ones move 0.2, corners move further (0.2 / sin(φ/2)). Predict where the first corner goes.',
+      step('Select one face of the grid (3 for face select, click it) and press I: a region inset by 0.1. Change Thickness in the Adjust panel.', (e, s) => did(e, s, 'Inset')),
+      'Mesh › Inset individual faces insets each selected face on its own, by a fraction of the way to its centre: on a long face, the frame is wider at the ends than along the sides.',
+    ],
+    code: `const grid = scene.add.grid({ name: 'Grid', size: 4, subdivisions: 4 })
+grid.material.color = '#8fa3b8'
+const at = (x, z) => grid.mesh.faces.where((f) => Math.abs(f.center[0] - x) < 0.1 && Math.abs(f.center[2] - z) < 0.1)[0]
+// One face on its own: each corner a quarter of the way to the face's centre.
+grid.mesh.inset([at(1.5, 1.5)], 0.25)
+// Three faces as one region, an L: its outline moves in 0.2, mitred at the corners.
+const L = [at(-0.5, -0.5), at(0.5, -0.5), at(-0.5, 0.5)]
+log('the L is faces', L.join(', '))
+grid.mesh.insetRegion(L, 0.2)
+log('faces now:', grid.mesh.stats().faces)`,
+  },
+  {
+    id: 'loop-cuts',
+    title: 'Edge rings and loop cuts',
+    icon: '➰',
+    group: 'Learning',
+    desc: 'An 8-sided tube. A loop cut through one of its upright edges walks the ring of quads round the tube, crossing each to its opposite edge, and splits every one: a new loop round the middle. Traced, with questions to predict.',
+    lang: 'js',
+    setup: { select: 'Tube', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Tab into edit mode: a new ring of edges runs round the middle of the tube. It was made by one loop cut through an upright side edge.',
+      'In the Algorithm trace, press Play: the walk enters each quad by one edge and leaves by the opposite one (predict which), comes back to where it started, then puts a vertex half way along each upright edge.',
+      step('Select one of the new horizontal edges (2 for edge select, click it) and press Ctrl+R: that ring runs up the side and stops at the cap, an 8-sided face with no opposite edge.', (e, s) => did(e, s, 'Loop cut')),
+      'Change Position in the Adjust panel: every new vertex moves the same fraction along its edge, so the cut stays parallel to the ring.',
+    ],
+    code: `const tube = scene.add.cylinder({ name: 'Tube', segments: 8, radius: 1, height: 2 })
+tube.material.color = '#8fa3b8'
+const m = tube.mesh
+// An upright side edge: its two ends are at different heights.
+const side = m.edges.find((e) => Math.abs(m.verts[e.a].y - m.verts[e.b].y) > 1)
+log('cutting through edge', side.a, '–', side.b)
+const before = m.stats()
+m.loopCut(side.a, side.b, 0.5)
+const after = m.stats()
+log('faces', before.faces, '→', after.faces, '; vertices', before.verts, '→', after.verts)`,
+  },
+  {
+    id: 'bevel',
+    title: 'Bevel',
+    icon: '🔷',
+    group: 'Learning',
+    desc: 'A cube with the three edges at one corner bevelled by 0.3 in two segments: corners slide along their edges, each edge becomes a curved strip, and a patch fills the corner where the three meet. Traced, with questions to predict.',
+    lang: 'js',
+    setup: { select: 'Block', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Look at the near top corner: three rounded strips meet in a small curved patch. Tab into edit mode to see the strips’ two rows of faces.',
+      'In the Algorithm trace, press Play: the width, the first corner sliding along its edge (predict where), the curve between two slid points (predict its middle point), what replaces each face corner, the strips and the patch.',
+      step('Select one edge of the cube (2 for edge select, click it) and press Ctrl+B; change Width and Segments in the Adjust panel.', (e, s) => did(e, s, 'Bevel')),
+      'Turn Smooth shading on (Object › Shade smooth): the bevelled edges catch the light as a soft band; the edges left sharp still shade as a hard line.',
+    ],
+    code: `const block = scene.add.cube({ name: 'Block', size: 2 })
+block.material.color = '#8fa3b8'
+const m = block.mesh
+// The corner nearest (1, 1, 1), and the three edges that meet there.
+const c = m.verts.findIndex((v) => v.x > 0 && v.y > 0 && v.z > 0)
+const three = m.edges.filter((e) => e.a === c || e.b === c).map((e) => [e.a, e.b])
+log('bevelling', three.length, 'edges at vertex', c)
+const before = m.stats()
+m.bevel(three, 0.3, 2)
+const after = m.stats()
+log('faces', before.faces, '→', after.faces, '; vertices', before.verts, '→', after.verts)`,
+  },
+  {
+    id: 'dissolve',
+    title: 'Dissolve and delete',
+    icon: '🫧',
+    group: 'Learning',
+    desc: 'A 5 × 5 grid. An L of three faces is dissolved into one face (the shared edges go, the outline stays), drawn by ear clipping because it is concave; another face is deleted instead, leaving a hole. Traced, with a question to predict.',
+    lang: 'js',
+    setup: { select: 'Grid', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Tab into edit mode: the L is one 8-sided face now (6 corners, and 2 vertices in the middle of its long sides). Another face was deleted: there is a hole, and the open edges went from 20 (the grid’s border) to 24.',
+      'In the Algorithm trace, press Play: the 2 shared edges go, the 8 outline edges stay, and the outline is walked into one face. Predict the vertex after the first.',
+      step('Select the L (3 for face select, click it) and use Mesh › Trace drawing the face: it is concave, so it is cut by ear clipping, not a fan.', (e) => e.trace?.op === 'Trace drawing the face'),
+      step('Select two neighbouring faces of the grid and press Ctrl+X: dissolve merges them. Then X deletes a face: compare the open-edge count.', (e, s) => did(e, s, 'Dissolve')),
+    ],
+    code: `const grid = scene.add.grid({ name: 'Grid', size: 5, subdivisions: 5 })
+grid.material.color = '#8fa3b8'
+const at = (x, z) => grid.mesh.faces.where((f) => Math.abs(f.center[0] - x) < 0.1 && Math.abs(f.center[2] - z) < 0.1)[0]
+log('open edges', grid.mesh.stats().boundaryEdges)
+// Delete a face: it goes, and leaves a hole.
+grid.mesh.delete({ faces: [at(1, 1)] })
+log('after delete: faces', grid.mesh.stats().faces, '; open edges', grid.mesh.stats().boundaryEdges)
+// Dissolve an L of three faces: one face with the same outline, and no hole.
+const L = [at(-1, -1), at(0, -1), at(-1, 0)]
+grid.mesh.dissolve({ faces: L })
+log('after dissolve: faces', grid.mesh.stats().faces, '; open edges', grid.mesh.stats().boundaryEdges)`,
+  },
+  {
+    id: 'merge-smooth',
+    title: 'Merge and smooth vertices',
+    icon: '🫓',
+    group: 'Learning',
+    desc: 'A grid whose inner vertices were pushed up and down in a checkerboard, then smoothed once with λ = 0.5: each vertex steps half way to its neighbours’ average, and the bumps all but vanish in one step. Traced, with a question to predict. Then merge vertices at their centre.',
+    lang: 'js',
+    setup: { select: 'Grid', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The grid was a checkerboard of bumps 0.15 up and down. One smoothing step left it nearly flat: a raised vertex’s neighbours are all lowered, so their average is as far below as it was above.',
+      'In the Algorithm trace, press Play: the vertex that moves most, its neighbours’ average, and where it goes (predict it). The heat map shows how far each vertex moved.',
+      step('Tab into edit mode, select the four corners of one face (1 for vertex select, Shift+click) and press M: they merge at their centre, and the faces round them lose corners.', (e, s) => did(e, s, 'Merge at centre')),
+      step('Select all (A) and use Mesh › Smooth vertices: the open border stays put while the inside relaxes.', (e, s) => did(e, s, 'Smooth vertices')),
+    ],
+    code: `const grid = scene.add.grid({ name: 'Grid', size: 3, subdivisions: 6 })
+grid.material.color = '#8fa3b8'
+const m = grid.mesh
+// The inner vertices (not on the border), pushed 0.15 up or down in a checkerboard.
+const inner = m.verts.filter((v) => Math.abs(v.x) < 1.4 && Math.abs(v.z) < 1.4).map((v) => v.index)
+for (const i of inner) {
+  const k = Math.round((m.verts[i].x + 1.5) / 0.5) + Math.round((m.verts[i].z + 1.5) / 0.5)
+  m.translate([i], [0, k % 2 ? 0.15 : -0.15, 0])
+}
+const bump = () => Math.max(...inner.map((i) => Math.abs(m.verts[i].y))).toFixed(4)
+log('largest bump before:', bump())
+m.smooth({ verts: inner, iterations: 1, lambda: 0.5 })
+log('after one step:', bump())`,
+  },
+  {
+    id: 'mirror',
+    title: 'Mirror and modifiers',
+    icon: '🪞',
+    group: 'Learning',
+    desc: 'Half a box, open on the x = 0 plane, with a mirror modifier: the other half is computed, not stored. The front face was extruded with clipping on, so no wall was built on the mirror plane. Traced: the reflection, the shared vertices and the reversed winding.',
+    lang: 'js',
+    setup: { select: 'Half', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Tab into edit mode: you edit only the half on the +x side (the cage); the other half is drawn from it. Move a vertex and its mirror image moves too.',
+      'In the Algorithm trace, press Play: the vertices on the plane are shared, the rest reflected (predict one), and every mirrored face has its corners reversed so it still faces out.',
+      step('In the Inspector, switch the mirror modifier off and on: the cage stays the same; only what is drawn changes.', (e, s) => did(e, s, 'Modifier setting')),
+      step('Object › Apply modifiers: the mirrored half becomes real geometry you can edit on its own; the modifier is gone.', (e, s) => did(e, s, 'Apply modifiers')),
+    ],
+    code: `const half = scene.add.cube({ name: 'Half', size: 2 })
+half.material.color = '#8fa3b8'
+const m = half.mesh
+// Squash the cube to its +x half: the vertices at x = -1 move to x = 0, and the face there goes.
+m.translate(m.verts.filter((v) => v.x < 0).map((v) => v.index), [1, 0, 0])
+m.delete({ faces: m.faces.where((f) => f.normal[0] < -0.5) })
+half.modifiers.add('mirror', { axis: 'x' })
+// The front face touches the mirror plane; with clipping on, extrude builds no wall on the plane.
+m.extrude(m.faces.where((f) => f.normal[2] > 0.5), 0.6)
+log('cage:', m.stats().verts, 'vertices,', m.stats().faces, 'faces')
+const shown = half.traceMirror()
+log('drawn:', shown.verts, 'vertices,', shown.faces, 'faces; closed:', shown.closed)`,
+  },
+  {
+    id: 'box-character',
+    title: 'Box modelling a character',
+    icon: '🧍',
+    group: 'Learning',
+    desc: 'The character built one operation at a time from half a box: a mirror, two loop cuts, an arm, a leg, a neck and head, then subdivision. The log counts the cage after every step; a camera in front traces the silhouette.',
+    lang: 'js',
+    setup: { select: 'Character', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Read the log: every step is one operation on the cage, and the cage stays small (under 40 faces) while the mirror and subdivision make the body.',
+      'In the Algorithm trace, press Play: which faces face the camera (predict one), then the silhouette edges, where the outline of the body is drawn.',
+      step('In the Inspector, turn the subdivision modifier off: the blocky cage is what the steps built; the smooth body is computed from it.', (e, s) => did(e, s, 'Modifier setting')),
+      step('Tab into edit mode on the character, select the faces at the end of an arm (3 for face select) and press E: a longer arm, in one operation.', (e, s) => did(e, s, 'Extrude')),
+    ],
+    code: `const body = scene.add.cube({ name: 'Character', size: 1 })
+body.material.color = '#d9a47a'
+const m = body.mesh
+const count = (what) => log(what + ':', m.stats().verts, 'vertices,', m.stats().faces, 'faces')
+// 1. Half a torso, x from 0 to 0.6, open on the mirror plane.
+for (const v of m.vertices) { v.x = v.x < 0 ? 0 : 0.6; v.y = v.y < 0 ? 0 : 1.2; v.z *= 0.6 }
+m.delete({ faces: m.faces.facing([-1, 0, 0]) })
+body.modifiers.add('mirror', { axis: 'x' })
+count('1. half a torso')
+// 2. Loop cuts: one down the middle of the half (the leg), one round the chest (the arm).
+m.loopCut(m.nearest([0, 0, -0.3]), m.nearest([0.6, 0, -0.3]), 0.5)
+m.loopCut(m.nearest([0.6, 0, 0.3]), m.nearest([0.6, 1.2, 0.3]), 0.75)
+count('2. two loop cuts')
+// 3. The arm: the upper part of the side, out twice.
+const shoulder = m.faces.where((f) => f.normal[0] > 0.9 && f.center[1] > 0.9)
+m.extrude(shoulder, 0.55).extrude(shoulder, 0.5)
+count('3. an arm')
+// 4. The leg: the outer half of the bottom, straight down.
+m.extrude(m.faces.where((f) => f.normal[1] < -0.9 && f.center[0] > 0.3 && f.center[1] < 0.01), 1.1)
+count('4. a leg')
+// 5. Neck and head: the inner half of the top, out twice.
+const top = m.faces.where((f) => f.normal[1] > 0.9 && f.center[0] < 0.3)
+m.extrude(top, 0.12).extrude(top, 0.5)
+count('5. neck and head')
+// 6. Smooth it; stand it up; look at it from the front.
+body.modifiers.add('subsurf', { levels: 2 })
+body.position.set(0, 1.1, 0)
+scene.add.camera({ name: 'Front', position: [0, 1.6, 7], lookAt: [0, 1.6, 0] })
+const s = body.evaluatedStats()
+log('6. drawn: mirrored and subdivided,', s.verts, 'vertices,', s.faces, 'faces; closed:', s.closed)
+const sil = body.traceSilhouette()
+log('from the front:', sil.front, 'of', sil.faces, 'faces face the camera;', sil.edges, 'silhouette edges')`,
+  },
+  {
+    id: 'clean-topology',
+    title: 'Clean topology',
+    icon: '🕸️',
+    group: 'Learning',
+    desc: 'Three shapes, measured: a ball made of quads (a cube subdivided twice), a UV sphere and a torus. Valence at every vertex, the poles, the face kinds, and the pole budget Σ (4 − valence) = 4χ that decides how many poles a shape must have. Traced, with a question to predict.',
+    lang: 'js',
+    setup: { select: 'Quad ball', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The quad ball has exactly eight vertices with 3 edges (the cube’s old corners) and every other inside vertex has 4. The torus has none at all. The UV sphere has two vertices with 32 edges, at its poles, ringed by triangles.',
+      'In the Algorithm trace, press Play: the valence heat map (predict a pole’s valence), the face kinds, and the pole budget: Σ (4 − valence) = 8 for anything shaped like a sphere.',
+      step('Select the UV sphere and use Object › Trace clean topology: its poles are 32-poles, and the budget does not apply because it has triangles.', (e) => e.trace?.op === 'Trace clean topology' && e.activeObject?.name === 'UV sphere'),
+      step('Select the torus and trace it: no poles, and 4χ = 0.', (e) => e.trace?.op === 'Trace clean topology' && e.activeObject?.name === 'Torus'),
+    ],
+    code: `const torus = scene.add.torus({ name: 'Torus', position: [3.2, 0, 0] })
+const uv = scene.add.uvSphere({ name: 'UV sphere', position: [-3.2, 0, 0] })
+const ball = scene.add.cube({ name: 'Quad ball', size: 2 })
+ball.mesh.subdivide(2)
+for (const [o, c] of [[torus, '#9aa7b8'], [uv, '#9aa7b8'], [ball, '#d9a47a']]) o.material.color = c
+const show = (o) => { const r = o.mesh.valence(); log(o.name + ':', JSON.stringify(r.inside), '·', r.poles, 'poles ·', r.quads, 'quads,', r.tris, 'triangles' + (r.budget ? ' · budget ' + r.budget.sum + ' = 4χ = ' + r.budget.fourChi : '')) }
+show(torus); show(uv); show(ball)`,
   },
   {
     id: 'island',

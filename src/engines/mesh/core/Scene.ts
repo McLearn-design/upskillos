@@ -44,6 +44,8 @@ export interface SceneObject {
   modifiers: Modifier[];
   /** Smooth shading (averaged vertex normals) instead of flat faces. */
   smooth: boolean;
+  /** Auto smooth (degrees): with smooth shading, keep edges sharper than this hard. Unset: smooth everywhere. */
+  autoSmooth?: number | null;
   light?: { type: 'point' | 'sun'; intensity: number; color: string };
   /** A camera's lens: field of view and clipping distances. */
   camera?: CameraSettings;
@@ -111,6 +113,7 @@ export class Scene {
       material: init.material ?? { color: '#b8c0cc', roughness: 0.5, metalness: 0 },
       modifiers: init.modifiers ?? [],
       smooth: init.smooth ?? false,
+      autoSmooth: init.autoSmooth ?? undefined,
       light: init.light,
       camera: init.camera ? { ...init.camera } : undefined,
       anim: cloneAnimation(init.anim),
