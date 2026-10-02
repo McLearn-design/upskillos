@@ -1,5 +1,6 @@
 import { Component } from 'react'
 import { Link } from 'react-router-dom'
+import { isStaleChunkError, reloadForNewVersion } from '../../utils/staleChunk.js'
 
 export default class LabErrorBoundary extends Component {
   constructor(props) {
@@ -12,6 +13,8 @@ export default class LabErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
+    // A page opened before a deploy can no longer load this screen's code.
+    if (isStaleChunkError(error) && reloadForNewVersion()) return
     console.error(`[${this.props.label ?? 'Lab'}] render error:`, error, info.componentStack)
   }
 

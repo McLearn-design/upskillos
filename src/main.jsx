@@ -4,6 +4,7 @@ import App from "./App.jsx";
 import "./styles/index.css";
 import "./styles/proof.css";
 import "./utils/configureMonaco.js";
+import { reloadForNewVersion } from "./utils/staleChunk.js";
 
 // Apply saved theme before first paint (avoids flash)
 const saved = localStorage.getItem("oc-theme");
@@ -71,6 +72,12 @@ if ("serviceWorker" in navigator) {
     })
     .catch(() => {});
 }
+
+// A deploy removes the old build's lazy-loaded files. If this page still runs
+// the old build, loading one fails; reload once to pick up the new build.
+window.addEventListener("vite:preloadError", (event) => {
+  if (reloadForNewVersion()) event.preventDefault();
+});
 
 // Poll version.json every 60 s — catches new deploys while the page stays open.
 // The build emits a fresh hash each time, so any deploy triggers the banner

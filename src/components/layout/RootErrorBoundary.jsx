@@ -1,5 +1,6 @@
 import { Component, useState } from 'react'
 import { useReportBug } from '../../hooks/useReportBug.js'
+import { isStaleChunkError, reloadForNewVersion } from '../../utils/staleChunk.js'
 
 // Wraps the whole route tree in App.jsx. Before this, a crash anywhere in a
 // page component (not caught by one of the narrower boundaries like
@@ -17,6 +18,8 @@ export default class RootErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
+    // A page opened before a deploy can no longer load this screen's code.
+    if (isStaleChunkError(error) && reloadForNewVersion()) return
     this.setState({ info })
     console.error('[RootErrorBoundary]', error, info.componentStack)
   }
@@ -38,6 +41,19 @@ export default class RootErrorBoundary extends Component {
 function ErrorFallback({ error, componentStack, onReset }) {
   const { submit, submitting, canSubmit } = useReportBug()
   const [reportStatus, setReportStatus] = useState('idle') // idle | done | error
+
+  if (isStaleChunkError(error)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-white dark:bg-slate-950">
+        <div className="max-w-md w-full text-center">
+          <p className="text-4xl mb-4">🔄</p>
+          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">A new version of UpSkillOS is available</h1>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">This page was opened before the update, so it cannot load the next screen. Reloading brings you back here on the new version.</p>
+          <button onClick={() => window.location.reload()} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold">Reload</button>
+        </div>
+      </div>
+    )
+  }
 
   const report = async () => {
     try {
