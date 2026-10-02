@@ -198,14 +198,36 @@ import wpfLevel5 from './content/wpf-mastery/level-5.md?raw'
 import wpfLevel6 from './content/wpf-mastery/level-6.md?raw'
 import wpfLevel7 from './content/wpf-mastery/level-7.md?raw'
 import wpfLevel8 from './content/wpf-mastery/level-8.md?raw'
+import wpfLevel9 from './content/wpf-mastery/level-9.md?raw'
+import wpfLevel10 from './content/wpf-mastery/level-10.md?raw'
+import wpfLevel11 from './content/wpf-mastery/level-11.md?raw'
+import wpfLevel12 from './content/wpf-mastery/level-12.md?raw'
 import wpfLevel13 from './content/wpf-mastery/level-13.md?raw'
 import wpfLevel14 from './content/wpf-mastery/level-14.md?raw'
+import wpfLevel15 from './content/wpf-mastery/level-15.md?raw'
+import wpfLevel16 from './content/wpf-mastery/level-16.md?raw'
 import wpfLevel17 from './content/wpf-mastery/level-17.md?raw'
+import wpfLevel18 from './content/wpf-mastery/level-18.md?raw'
+import wpfLevel19 from './content/wpf-mastery/level-19.md?raw'
 import wpfLevel20 from './content/wpf-mastery/level-20.md?raw'
 import wpfLevel21 from './content/wpf-mastery/level-21.md?raw'
+import wpfLevel22 from './content/wpf-mastery/level-22.md?raw'
+import wpfLevel23 from './content/wpf-mastery/level-23.md?raw'
+import wpfLevel24 from './content/wpf-mastery/level-24.md?raw'
+import wpfLevel25 from './content/wpf-mastery/level-25.md?raw'
 import wpfLevel26 from './content/wpf-mastery/level-26.md?raw'
 import wpfLevel27 from './content/wpf-mastery/level-27.md?raw'
 import wpfLevel28 from './content/wpf-mastery/level-28.md?raw'
+import wpfLevel29 from './content/wpf-mastery/level-29.md?raw'
+import wpfLevel30 from './content/wpf-mastery/level-30.md?raw'
+import wpfLevel31 from './content/wpf-mastery/level-31.md?raw'
+import wpfLevel32 from './content/wpf-mastery/level-32.md?raw'
+import wpfLevel33 from './content/wpf-mastery/level-33.md?raw'
+import wpfLevel34 from './content/wpf-mastery/level-34.md?raw'
+import wpfLevel35 from './content/wpf-mastery/level-35.md?raw'
+import wpfLevel36 from './content/wpf-mastery/level-36.md?raw'
+import wpfLevel37 from './content/wpf-mastery/level-37.md?raw'
+import wpfLevel38 from './content/wpf-mastery/level-38.md?raw'
 
 import javaLevel0 from './content/java-fundamentals/level-0.md?raw'
 import javaLevel1 from './content/java-fundamentals/level-1.md?raw'
@@ -672,14 +694,36 @@ const LESSON_FILES: Record<string, string> = {
   'wpf-mastery/level-6.md': wpfLevel6,
   'wpf-mastery/level-7.md': wpfLevel7,
   'wpf-mastery/level-8.md': wpfLevel8,
+  'wpf-mastery/level-9.md': wpfLevel9,
+  'wpf-mastery/level-10.md': wpfLevel10,
+  'wpf-mastery/level-11.md': wpfLevel11,
+  'wpf-mastery/level-12.md': wpfLevel12,
   'wpf-mastery/level-13.md': wpfLevel13,
   'wpf-mastery/level-14.md': wpfLevel14,
+  'wpf-mastery/level-15.md': wpfLevel15,
+  'wpf-mastery/level-16.md': wpfLevel16,
   'wpf-mastery/level-17.md': wpfLevel17,
+  'wpf-mastery/level-18.md': wpfLevel18,
+  'wpf-mastery/level-19.md': wpfLevel19,
   'wpf-mastery/level-20.md': wpfLevel20,
   'wpf-mastery/level-21.md': wpfLevel21,
+  'wpf-mastery/level-22.md': wpfLevel22,
+  'wpf-mastery/level-23.md': wpfLevel23,
+  'wpf-mastery/level-24.md': wpfLevel24,
+  'wpf-mastery/level-25.md': wpfLevel25,
   'wpf-mastery/level-26.md': wpfLevel26,
   'wpf-mastery/level-27.md': wpfLevel27,
   'wpf-mastery/level-28.md': wpfLevel28,
+  'wpf-mastery/level-29.md': wpfLevel29,
+  'wpf-mastery/level-30.md': wpfLevel30,
+  'wpf-mastery/level-31.md': wpfLevel31,
+  'wpf-mastery/level-32.md': wpfLevel32,
+  'wpf-mastery/level-33.md': wpfLevel33,
+  'wpf-mastery/level-34.md': wpfLevel34,
+  'wpf-mastery/level-35.md': wpfLevel35,
+  'wpf-mastery/level-36.md': wpfLevel36,
+  'wpf-mastery/level-37.md': wpfLevel37,
+  'wpf-mastery/level-38.md': wpfLevel38,
   'java-fundamentals/level-0.md': javaLevel0,
   'java-fundamentals/level-1.md': javaLevel1,
   'java-fundamentals/level-2.md': javaLevel2,

@@ -13,7 +13,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseLesson } from './parser'
-import { inspectProject, launchProject, runProjectTests } from './projectRunner'
+import { generatesXunitMain, inspectProject, launchProject, runProjectTests } from './projectRunner'
 import solutions from './__fixtures__/wpf-mastery-solutions.json'
 
 const require = createRequire(import.meta.url)
@@ -87,7 +87,8 @@ describe.skipIf(!runtime)('WPF & .NET Mastery lessons on the real .NET SDK', () 
       }
 
       it(`${id}: ${step.title}: the example builds${project.kind === 'console' ? ' and runs' : ''}`, async () => {
-        const runs = project.kind === 'console' && project.files.some(f => f.path === 'Program.cs')
+        const runs = project.kind === 'console'
+          && (project.files.some(f => f.path === 'Program.cs') || generatesXunitMain(project.files.map(f => ({ path: f.path, content: f.code }))))
         const result = runs ? await launchProject(project, {}) : await inspectProject(project, {})
         const errors = result.lines.filter(l => l.kind === 'error').map(l => l.text)
         const expected = EXPECTED_ERRORS[file]?.[step.title]

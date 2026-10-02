@@ -9,7 +9,7 @@ lang: csharp
 
 WPF (Windows Presentation Foundation) is the .NET framework for building Windows desktop applications: real windows, with buttons, text boxes, lists and layouts, drawn by your graphics card. Every example in this series is a real WPF project that builds on your own .NET SDK. Press **Launch app** and a real window opens. By the end of this lesson you will be able to describe a window in XAML, arrange controls in it, give them names, and run C# code when a button is clicked.
 
-These lessons need the UpSkillOS desktop app, because a browser cannot open a Windows window. They assume C# Fundamentals (classes, properties, interfaces, lambdas) and the first lessons of this series, which explain how a .NET project is put together. C# events (C# Fundamentals level 20) come back here as the way a button tells your code it was clicked.
+Running the examples needs the UpSkillOS desktop app, because a browser cannot open a Windows window. On the website you can still read every step and type the code along in Visual Studio or another editor with the .NET SDK. They assume C# Fundamentals (classes, properties, interfaces, lambdas) and the first lessons of this series, which explain how a .NET project is put together. C# events (C# Fundamentals level 20) come back here as the way a button tells your code it was clicked.
 
 ## A Window Is a Tree of Objects, Written in XAML
 
@@ -50,7 +50,7 @@ public partial class MainWindow : Window
 }
 ```
 
-**CS lens:** A WPF window is a tree data structure, the **visual tree**: `Window` is the root, and each element's children are the elements inside it. Rendering, layout and input all walk this tree. XAML is a serialization format for it: a text form of an object graph that the build turns back into objects, the same idea as JSON describing data objects.
+**CS lens:** A WPF window is a tree data structure: `Window` is the root, and each element's children are the elements inside it. Rendering, layout and input all walk a tree like this one (level 9 shows there are really two: the tree you write, and a larger one WPF builds to draw it). XAML is a serialization format for it: a text form of an object graph that the build turns back into objects, the same idea as JSON describing data objects.
 
 **SE lens:** Splitting the window into XAML (what it looks like) and C# (what it does) lets each be read and changed without wading through the other, and lets design tools edit the XAML. Anything XAML can do, C# can also do, but a window built entirely in C# hides its structure in a long sequence of `new` and `Add` calls.
 

@@ -133,7 +133,9 @@ public static class Ui
 
     // The colour of a brush property (Background, Foreground, BorderBrush, Fill...) of a named
     // element, as "#AARRGGBB", or the brush's type name when it isn't a solid colour: for
-    // lessons on resources, styles and themes.
+    // lessons on resources, styles and themes. The bytes are formatted here rather than with
+    // Color.ToString(), which prints an animated colour as "sc#1, 0.02, ..." (measured after a
+    // visual state's ColorAnimation).
     public static string Color(Window window, string name, string property = "Background")
     {
         Flush();
@@ -141,7 +143,9 @@ public static class Ui
         var info = element.GetType().GetProperty(property)
             ?? throw new Exception(element.GetType().Name + " \"" + name + "\" has no property " + property + ".");
         var value = info.GetValue(element);
-        return value is System.Windows.Media.SolidColorBrush solid ? solid.Color.ToString() : value?.GetType().Name ?? "null";
+        if (value is not System.Windows.Media.SolidColorBrush solid) return value?.GetType().Name ?? "null";
+        var c = solid.Color;
+        return "#" + c.A.ToString("X2") + c.R.ToString("X2") + c.G.ToString("X2") + c.B.ToString("X2");
     }
 
     // Resizes the window and lets layout run, as dragging its edge would.
