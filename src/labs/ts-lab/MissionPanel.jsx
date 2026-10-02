@@ -208,7 +208,7 @@ export default function MissionPanel({ lesson, lessonIdx, lessons, isDark, onSel
       {/* Top bar */}
       <div style={{ padding: '8px 12px', borderBottom: `1px solid ${border}`, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: muted, cursor: 'pointer', fontSize: 11, padding: '2px 4px', fontFamily: 'system-ui' }}>
-          ← Labs
+          ✕ Close
         </button>
         <span style={{ color: muted, fontSize: 11 }}>·</span>
         <span style={{ fontSize: 11, fontWeight: 700, color: accent, fontFamily: 'system-ui' }}>OpenSocial</span>

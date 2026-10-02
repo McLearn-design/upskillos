@@ -25,7 +25,7 @@ function SeriesList({ onSelect, onBack, ui }) {
           onClick={onBack}
           className={`text-xs ${ui.txt2} ${ui.hoverTx} transition-colors`}
         >
-          ← Labs
+          ✕ Close
         </button>
         <span className={`${ui.txt2} text-xs`}>·</span>
         <span className={`text-xs font-semibold ${ui.primary}`}>Vue Studio</span>

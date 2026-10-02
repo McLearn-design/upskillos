@@ -42,7 +42,7 @@ export default function DecompLab({ onBack, onClose }) {
             onClick={close}
             className="px-2.5 py-1 rounded-md text-[10px] font-mono tracking-wide border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors flex-shrink-0"
           >
-            ← Labs
+            ✕ Close
           </button>
         )}
         <span className={`text-[13px] font-black tracking-wide bg-gradient-to-r ${meta.header} bg-clip-text text-transparent flex-shrink-0`}>

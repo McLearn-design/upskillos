@@ -65,7 +65,7 @@ export default function LessonCatalog({ lessons, onSelect, onBack }: Props) {
       <div className={styles.toolbar}>
         {onBack && (
           <button className={styles.backBtn} onClick={onBack} title="Back to Labs">
-            ← Labs
+            ✕ Close
           </button>
         )}
         <span className={styles.toolbarLogo}>HTML Lab Lessons</span>

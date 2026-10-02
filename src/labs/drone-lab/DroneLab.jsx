@@ -1437,7 +1437,7 @@ export default function DroneLab({ onBack }) {
       {/* ── Header ── */}
       <div className="bg-white/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-white/5 px-6 py-4 flex items-center gap-4 shrink-0 shadow-sm z-10 backdrop-blur-md transition-colors duration-500">
         <button onClick={onBack} className="bg-transparent border-none text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white cursor-pointer text-[11px] tracking-widest font-sans font-bold px-0 transition-colors uppercase">
-          ← Labs
+          ✕ Close
         </button>
         <div className="w-px h-6 bg-slate-200 dark:bg-slate-700/50"/>
         <div className="w-10 h-10 rounded-xl flex items-center justify-center text-[22px] shrink-0 shadow-inner" style={{ background: lesson.accent + '22' }}>

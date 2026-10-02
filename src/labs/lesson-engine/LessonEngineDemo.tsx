@@ -12,7 +12,7 @@ export default function LessonEngineDemo({ onBack }: Props) {
       <header className={styles.topBar}>
         {onBack && (
           <button type="button" className={styles.backBtn} onClick={onBack}>
-            ← Labs
+            ✕ Close
           </button>
         )}
         <span className={styles.title}>Lesson Engine</span>

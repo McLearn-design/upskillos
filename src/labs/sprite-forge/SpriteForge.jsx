@@ -275,7 +275,7 @@ export default function SpriteForge({ onBack }) {
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-800">
         {onBack && (
           <button type="button" onClick={onBack} className={headerBtn} title="Back to labs">
-            ← Labs
+            ✕ Close
           </button>
         )}
         <span className="text-sm">🧿</span>

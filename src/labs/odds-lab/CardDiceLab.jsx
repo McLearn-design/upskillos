@@ -706,7 +706,7 @@ export default function CardDiceLab({ fullPage = false, onBack }) {
             </div>
             <div className="flex flex-wrap gap-2">
               {onBack && (
-                <button onClick={onBack} className="rounded-[8px] border border-white/10 px-3 py-2 text-sm font-bold text-slate-200">Labs</button>
+                <button onClick={onBack} className="rounded-[8px] border border-white/10 px-3 py-2 text-sm font-bold text-slate-200">✕ Close</button>
               )}
               <button
                 onClick={() => setStatsOn((v) => !v)}

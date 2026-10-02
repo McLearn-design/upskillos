@@ -10,7 +10,7 @@ export default function Transport({
     <div className={styles.transport}>
       {onBack && (
         <button className={styles.tbBtn} onClick={onBack} title="Back to Labs">
-          ← Labs
+          ✕ Close
         </button>
       )}
       <span className={styles.logo}>🎵 Music Lab</span>

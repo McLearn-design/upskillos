@@ -1389,7 +1389,7 @@ export default function MatrixLab({ onBack }) {
       <div style={{ height:44, background:"#252525", borderBottom:"1px solid #333", display:"flex", alignItems:"center", padding:"0 16px", flexShrink:0, gap:12 }}>
         {onBack && (
           <button onClick={onBack} style={{ height:26, padding:"0 12px", borderRadius:5, background:"transparent", border:"1px solid #333", color:"#888", fontSize:11, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
-            ← Labs
+            ✕ Close
           </button>
         )}
         <div style={{ fontSize:13, fontWeight:600, color:"#b0b0b0", letterSpacing:0.2 }}>

@@ -768,7 +768,7 @@ export default function ImageLab({ onBack, onClose }) {
       <div className="flex h-full min-h-0 flex-col">
         <header className={`flex h-12 shrink-0 items-center gap-3 border-b px-3 ${ui.border ?? 'border-slate-200 dark:border-white/10'} ${ui.bg1 ?? 'bg-slate-50 dark:bg-slate-900'}`}>
           {close && (
-            <Button onClick={close} className="shrink-0">Labs</Button>
+            <Button onClick={close} className="shrink-0">✕ Close</Button>
           )}
           <div className="flex items-center gap-2 font-black tracking-wide">
             <FileImage className="h-4 w-4 text-cyan-500" />
