@@ -76,9 +76,9 @@ Each row gives the lesson title, then the four strands:
 | # | Lesson | Maths | Algorithm | Graphics | MeshLab |
 |---|---|---|---|---|---|
 | 1 ✓ | A mesh is two lists | Vertex list, face list, degree, slot counting | Reading faces back as points; validating lists | Fan triangulation for drawing | Edit mode, G on a vertex; P: two-lists |
-| 2 | Winding and normals | Cross product, right-hand rule, face normal, area | Newell's normal for n-gons | Back-face culling; Flip normals | Normals overlay, Mesh › Flip normals |
-| 3 | Edges and neighbours | Edges from faces; manifold and boundary edges | Edge table as a hash map, O(F); neighbour lists | Drawing the wireframe (edge lines) | Wire overlay, status-bar counts |
-| 4 | Connected pieces | Graphs, components | Breadth-first search on the face graph | Selection highlighting | Edit › Select linked |
+| 2 ✓ | Winding and normals | Cross product, right-hand rule, face normal, area | Newell's normal for n-gons | Back-face culling; Flip normals | Normals overlay, Mesh › Flip normals (traced); P: winding-and-normals, C: fix-the-normals |
+| 3 ✓ | Edges and neighbours | Edges from faces; manifold and boundary edges | Edge table as a hash map, O(F); neighbour lists | Drawing the wireframe (edge lines) | Wire overlay, status-bar counts (edges, open edges), Edit › Select non-manifold (traced edge table); P: edges-and-neighbours, C: remove-the-fin |
+| 4 ✓ | Connected pieces | Graphs, components | Breadth-first search on the face graph | Selection highlighting | Edit › Select linked (face select: traced BFS across shared edges); P: connected-pieces, C: remove-the-floaters |
 | 5 | Euler's formula | V − E + F = 2; genus | Counting from the edge table | Why holes change shading seams | P: curvature-gallery (torus χ = 0) |
 | 6 | Welding, cleaning and filling holes | Equality with a tolerance; boundary loops | Spatial hashing to merge close points; compacting indices; filling a hole with consistent winding | Cracks and double edges on screen | Merge at centre, F Fill; C: close-the-box |
 | 7 | Files: OBJ and glTF | Index bases (1 in OBJ); buffers | Parsing OBJ; writing glTF buffers | What glTF hands the GPU | File › Import / Export OBJ / GLB (link: Mesh Engine 1.4) |
@@ -310,7 +310,10 @@ courses and never change once published.
 
 | Lesson | File | State |
 |---|---|---|
-| 1.1 A mesh is two lists | `src/courses/modelling-geometry/1-meshes-as-data/001-vertices-and-faces.js` | Built; checked in the browser. Gets a part 3 once lesson 1.2 fixes the pattern |
+| 1.1 A mesh is two lists | `src/courses/modelling-geometry/1-meshes-as-data/001-vertices-and-faces.js` | Built; checked in the browser. Gets a part 3 once lesson 1.2 fixes the pattern. **Open:** its `semantics` symbols are written `$…$`, but the semantics list passes the symbol straight to KaTeX, so 6 show as errors (`$v_i$`, `$n$`, `$f = …$`, `$|f|$`, `$\deg(v)$`, `$M = (V, F)$`); drop the dollars and put words in `\text{…}`. Left for the user, who reviews old lesson files |
+| 1.2 Winding and normals | `src/courses/modelling-geometry/1-meshes-as-data/002-winding-and-normals.js` | Built; checked in the browser (cells, pictures, graded check, both MeshLab links). Notebook pictures use `notebookScene.js` (`withPicture`); notebook cell text does not render `$…$` maths, so cells use plain numbers |
+| 1.3 Edges and neighbours | `src/courses/modelling-geometry/1-meshes-as-data/003-edges-and-neighbours.js` | Built; checked in the browser. MeshLab gained a traced edge-table build (`EditMesh.edgeTable`, `mesh.edgeTable()` in scripts), Edit › Select non-manifold (Shift+Ctrl+Alt+M) and edge counts in the status bar. Notebook checks share `faceList.js` (`readFaces`, `edgeTable`) |
+| 1.4 Connected pieces | `src/courses/modelling-geometry/1-meshes-as-data/004-connected-pieces.js` | Built; checked in the browser. MeshLab gained `EditMesh.pieces` (traced breadth-first search; `mesh.pieces()` in scripts); Select linked in face select now follows shared edges (it used to follow shared vertices, as vertex and edge select still do). The notebook picture helper colours faces by piece (`groups`) |
 
 ## Size
 

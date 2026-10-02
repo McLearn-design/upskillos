@@ -6,7 +6,7 @@
 // frame, which panel), and `guide` lists things to look at and try.
 
 import type { Editor } from '../../../engines/mesh/core/Editor';
-import type { Vec3 } from '../../../engines/mesh/core/EditMesh';
+import { EditMesh, type Vec3 } from '../../../engines/mesh/core/EditMesh';
 import { runScript } from '../../../engines/mesh/core/api';
 import { CHARACTER, EXAMPLES } from './examples';
 import { runPython, type PyodideLike } from '../../../engines/mesh/core/python';
@@ -50,6 +50,13 @@ export interface StartState {
 export type GuideStep = string | { text: string; done: (e: Editor, start: StartState) => boolean };
 export const stepText = (g: GuideStep): string => (typeof g === 'string' ? g : g.text);
 const step = (text: string, done: (e: Editor, start: StartState) => boolean): GuideStep => ({ text, done });
+
+/** Whether face i of a closed, roughly convex mesh points away from its centre: its normal is outward. */
+function pointsOut(m: { verts: Vec3[]; faceNormal(i: number): Vec3; faceCenter(i: number): Vec3 }, i: number): boolean {
+  const c = m.verts.reduce<Vec3>((a, v) => [a[0] + v[0] / m.verts.length, a[1] + v[1] / m.verts.length, a[2] + v[2] / m.verts.length], [0, 0, 0]);
+  const n = m.faceNormal(i), p = m.faceCenter(i);
+  return n[0] * (p[0] - c[0]) + n[1] * (p[1] - c[1]) + n[2] * (p[2] - c[2]) > 0;
+}
 
 /** Record the scene as it is now, for guide steps to compare against. */
 export function startState(e: Editor): StartState {
@@ -207,6 +214,151 @@ log('Separate faces:', copies.length, 'vertices,', ownFaces.length, 'faces:', JS
   },
 
   // ── Modelling ───────────────────────────────────────────────────────────
+  {
+    id: 'winding-and-normals',
+    title: 'Winding and normals',
+    icon: '🧭',
+    group: 'Learning',
+    desc: 'A pyramid typed in as two lists, with two sides listed the wrong way round so they face inwards. The script turns one back with Record traces on, so you can predict its new normal; you turn the other yourself.',
+    lang: 'js',
+    setup: { select: 'Pyramid', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Turn on Normals in the toolbar: a short line rises from each face along its normal. One side still points into the pyramid.',
+      'In the Algorithm trace, press Play: it stops at the 🎯 question. Face 2\u2019s corners were listed 1, 2, 4; the flip lists them 4, 2, 1. Predict its new normal, then check it.',
+      step('Fix the last one: Tab for edit mode, press 3 for face select, click the side whose normal points in, and use Mesh › Flip normals.', (e) => { const m = e.scene.get('Pyramid')?.mesh; return !!m && m.faces.every((_, i) => pointsOut(m, i)); }),
+      'Open GUI → code: your fix is one mesh.flip([3]) line. It changes the order of face 3\u2019s corners and nothing else: no vertex moves.',
+    ],
+    code: `// A square pyramid as two lists. Faces 2 and 3 are listed the wrong way round.
+const vertices = [
+  [-1, 0, -1],   // vertex 0
+  [ 1, 0, -1],   // vertex 1
+  [ 1, 0,  1],   // vertex 2
+  [-1, 0,  1],   // vertex 3
+  [ 0, 1.5, 0],  // vertex 4: the tip
+]
+const faces = [
+  [0, 1, 2, 3],  // face 0: the base, anticlockwise seen from below, so its normal points down, out
+  [1, 0, 4],     // face 1: anticlockwise seen from outside
+  [1, 2, 4],     // face 2: clockwise seen from outside: its normal points in
+  [3, 4, 2],     // face 3: clockwise too
+  [0, 3, 4],     // face 4
+]
+const p = scene.add.mesh({ name: 'Pyramid', verts: vertices, faces })
+
+// Each face's normal, by Newell's method: the right-hand rule round its corners, in order.
+for (const f of p.mesh.faces) log('face', f.index, 'normal', f.normal.map((x) => +x.toFixed(2)).join(', '))
+
+// Turn face 2 round, with Record traces on: the Algorithm trace asks you to predict its new normal.
+p.mesh.flip([2])`,
+  },
+  {
+    id: 'edges-and-neighbours',
+    title: 'Edges and neighbours',
+    icon: '🕸️',
+    group: 'Learning',
+    desc: 'A box with no lid, typed in as two lists. The script lists its edge table, then builds it again with Record traces on, so you can predict the lookups; you find its open edges with Select non-manifold.',
+    lang: 'js',
+    setup: { select: 'Open box', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Turn on Wire in the toolbar: it draws one line per entry in the edge table, 12 of them. The status bar counts them too: 12 edges, and 4 open edges.',
+      'In the Algorithm trace, press Play. Faces 0 and 1 share no edge, so every key they file is new. Face 2\u2019s second edge is the first key already there: predict how many faces it has then, and how many edges the table holds.',
+      step('Find the rim: Edit › Select non-manifold (Shift+Ctrl+Alt+M) selects every edge that is not on exactly two faces. Here that is the four open edges round the top.', (e) => {
+        const m = e.scene.get('Open box')?.mesh;
+        if (!m || e.mode !== 'edit' || e.selectMode !== 'edge') return false;
+        const want = m.boundaryEdges().map((x) => EditMesh.edgeKey(x.a, x.b)).sort();
+        return want.length === 4 && e.selectedEdges().map(([a, b]) => EditMesh.edgeKey(a, b)).sort().join() === want.join();
+      }),
+      'Press 3 for face select and click a side: its neighbours are the faces across its four edges. The bottom has four; each side has three, because one of its edges is on the rim.',
+    ],
+    code: `// A box with no lid, as two lists: vertex i is at (i % 2, ⌊i / 2⌋ % 2, ⌊i / 4⌋).
+const vertices = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]]
+const faces = [
+  [0, 4, 6, 2],  // face 0: the side at x = 0
+  [1, 3, 7, 5],  // face 1: the side at x = 1
+  [0, 1, 5, 4],  // face 2: the bottom, y = 0
+  [0, 2, 3, 1],  // face 3: the side at z = 0
+  [4, 5, 7, 6],  // face 4: the side at z = 1 (no face at y = 1: the lid is missing)
+]
+const box = scene.add.mesh({ name: 'Open box', verts: vertices, faces, position: [-0.5, 0, -0.5] })
+
+// The edge table: one entry per edge, filed under its two vertex numbers smallest first, with the faces on it.
+for (const e of box.mesh.edges) log(\`edge \${e.a}-\${e.b}: faces \${e.faces.join(', ')}\`)
+
+// Build it again with Record traces on: the Algorithm trace shows every lookup and asks you to predict.
+const t = box.mesh.edgeTable()
+log(t.edges, 'edges,', t.open.length, 'open:', t.open.map(([a, b]) => \`\${a}-\${b}\`).join(', '))`,
+  },
+  {
+    id: 'connected-pieces',
+    title: 'Connected pieces',
+    icon: '🧩',
+    group: 'Learning',
+    desc: 'Three blocks in one mesh: two touch at a single corner, one stands apart. The script finds the pieces by breadth-first search with Record traces on, so you can predict the queue; Select linked shows the difference between sharing an edge and sharing a corner.',
+    lang: 'js',
+    setup: { select: 'Blocks', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'In the Algorithm trace, press Play. The first question asks how big the first piece will get: look at which faces share an edge, not at which blocks touch.',
+      step('Tab for edit mode, press 3 for face select, click a face of the bottom-left block and press Ctrl+L (Edit › Select linked): its 6 faces are selected, and not the block resting on its corner.', (e) => {
+        const m = e.scene.get('Blocks')?.mesh;
+        if (!m || e.mode !== 'edit' || e.selectMode !== 'face') return false;
+        const sel = e.selectedFaces().sort((a, b) => a - b).join();
+        return sel === '0,1,2,3,4,5';
+      }),
+      step('Now press 1 for vertex select, click a corner of the same block and press Ctrl+L: in vertex select it follows faces through any shared vertex, so the corner joins the two blocks: 15 vertices.', (e) => e.mode === 'edit' && e.selectMode === 'vert' && e.selectedVerts().length === 15),
+      'The block on the right is never selected: no face of it shares an edge or a vertex with the others. It is a separate piece of the same mesh object.',
+    ],
+    code: `// Three unit cubes in one mesh. The second rests on the first's top corner; the third stands apart.
+const verts = [], faces = []
+const SIDES = [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1], [4, 5, 7, 6]]
+// Add a cube with its corner 0 at p; share maps a corner of this cube to a vertex already in the list.
+function block(p, share = {}) {
+  const ids = []
+  for (let i = 0; i < 8; i++) {
+    if (i in share) { ids.push(share[i]); continue }
+    ids.push(verts.length)
+    verts.push([p[0] + i % 2, p[1] + Math.floor(i / 2) % 2, p[2] + Math.floor(i / 4)])
+  }
+  for (const s of SIDES) faces.push(s.map((k) => ids[k]))
+}
+block([0, 0, 0])               // faces 0 to 5
+block([1, 1, 1], { 0: 7 })     // faces 6 to 11: its corner 0 is vertex 7, the first block's top corner
+block([3, 0, 0])               // faces 12 to 17
+const m = scene.add.mesh({ name: 'Blocks', verts, faces, position: [-2, 0, -0.5] })
+log(verts.length, 'vertices,', faces.length, 'faces')
+
+// The pieces, by breadth-first search across shared edges. With Record traces on, the trace shows the queue.
+m.mesh.pieces().forEach((p, i) => log(\`piece \${i + 1}: faces \${p.join(', ')}\`))`,
+  },
+  {
+    id: 'eulers-formula',
+    title: "Euler's formula",
+    icon: '🍩',
+    group: 'Learning',
+    desc: 'A closed cube, a sphere, a torus and an open box, each counted with V − E + F. The script counts the torus again with Record traces on, so you can predict χ and the number of holes through it; then you make a hole yourself.',
+    lang: 'js',
+    setup: { select: 'Torus', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Select each object and read the Inspector\u2019s MESH section: Vertices, Edges, Faces and Euler V − E + F. The closed cube and the sphere both give 2, though the sphere has 16 times as many faces.',
+      'In the Algorithm trace, press Play: it counts the torus\u2019s vertices, edges and faces, then asks for χ, and then for how many holes go through it.',
+      step('Make a hole: select the Closed cube, Tab for edit mode, press 3 for face select, click a face and press X. The Euler number drops from 2 to 1: one face fewer, and its rim is one boundary loop.', (e) => { const m = e.scene.get('Closed cube')?.mesh; return !!m && m.faces.length === 5 && m.stats().euler === 1; }),
+      'The Open box gives 1 too. A hole you can see into (a boundary loop, b) and a hole that goes through, like the torus\u2019s (genus g), both lower χ: χ = 2 − 2g − b.',
+    ],
+    code: `// Four surfaces, counted with Euler's formula.
+const cube = scene.add.cube({ name: 'Closed cube', size: 1.2, position: [-3.5, 0.6, 0] })
+const sphere = scene.add.uvSphere({ name: 'Sphere', radius: 0.7, segments: 16, rings: 8, position: [-1.2, 0.7, 0] })
+const torus = scene.add.torus({ name: 'Torus', radius: 0.7, tube: 0.3, segments: 12, tubeSegments: 8, position: [1.2, 0.7, 0] })
+const box = scene.add.cube({ name: 'Open box', size: 1.2, position: [3.5, 0.6, 0] })
+box.mesh.delete({ faces: box.mesh.faces.top() })   // no lid
+
+for (const o of [cube, sphere, torus, box]) {
+  const s = o.mesh.stats()
+  log(\`\${o.name}: V − E + F = \${s.verts} − \${s.edges} + \${s.faces} = \${s.euler}\`)
+}
+
+// Count the torus with Record traces on: the trace asks for χ, then for the number of holes through it.
+const t = torus.mesh.topology()
+log('Torus:', t.boundaryLoops, 'boundary loops, genus', t.genus)`,
+  },
   {
     id: 'island',
     title: 'Low-poly island',

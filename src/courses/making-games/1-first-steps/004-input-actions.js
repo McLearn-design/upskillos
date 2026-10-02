@@ -19,7 +19,7 @@ export default {
 
   prerequisites: ['mg1-003'],
 
-  nextLesson: null,
+  nextLesson: 'mg2-001',
 
   hook: {
     question: 'Hero moves 100 pixels a second when you hold →, and 100 when you hold ↓. How fast does it go when you hold both?',

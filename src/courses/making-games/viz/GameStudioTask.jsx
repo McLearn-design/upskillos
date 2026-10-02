@@ -13,8 +13,8 @@ import { taskById } from '../../../labs/game-studio/tasks'
 import { gameStudioLink } from '../../../labs/game-studio/tasks/links'
 import { useProgress } from '../../../hooks/useProgress.js'
 
-const SHOTS = import.meta.glob('../../../labs/game-studio/tasks/shots/*.jpg', { eager: true, query: '?url', import: 'default' })
-const shot = (task, step) => SHOTS[`../../../labs/game-studio/tasks/shots/${task}-${step}.jpg`]
+const SHOTS = import.meta.glob('../../../labs/game-studio/tasks/shots/*.webp', { eager: true, query: '?url', import: 'default' })
+const shot = (task, step) => SHOTS[`../../../labs/game-studio/tasks/shots/${task}-${step}.webp`]
 const COURSE = 'making-games'
 
 export default function GameStudioTask({ params = {} }) {

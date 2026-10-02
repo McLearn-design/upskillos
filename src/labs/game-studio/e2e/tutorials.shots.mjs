@@ -2,12 +2,13 @@
 //
 // For each task: start it from Help › Tutorials, then for each step do what the step says through
 // the editor (as a learner would), wait for Game Studio to tick it, outline the control used, and
-// save a picture to tasks/shots/<task>-<step>.jpg. A step that does not tick is reported, and the
+// save a picture to tasks/shots/<task>-<step>.webp. A step that does not tick is reported, and the
 // run fails. The task panel shows the picture for the step you are on.
 //
 //   npm run game:shots   (starts and stops its own server; rewrites the pictures)
 
 import { mkdirSync } from 'node:fs';
+import sharp from 'sharp';
 import { withGameStudio } from './harness.mjs';
 
 const OUT = new URL('../tasks/shots/', import.meta.url);
@@ -218,7 +219,8 @@ const failed = await withGameStudio(5182, async ({ page, t, check, answer }) => 
         if (focus) await focus.evaluate((el) => { el.dataset.gsShot = '1'; el.style.outline = '3px solid #ff9f1c'; el.style.outlineOffset = '2px'; }).catch(() => {});
         // The picture is shown in the task panel, so it shows the editor without the panel.
         await page.evaluate(() => { const p = document.querySelector('[data-testid="task-panel"]'); if (p) p.style.visibility = 'hidden'; });
-        await page.screenshot({ path: new URL(`${id}-${i}.jpg`, OUT).pathname, type: 'jpeg', quality: 72 });
+        // Sharp enough to read every label when enlarged: captured at 2× and saved as WebP (about 100 KB each).
+        await sharp(await page.screenshot({ type: 'png' })).webp({ quality: 85 }).toFile(new URL(`${id}-${i}.webp`, OUT).pathname);
         await page.evaluate(() => { const p = document.querySelector('[data-testid="task-panel"]'); if (p) p.style.visibility = ''; });
         await page.evaluate(() => document.querySelectorAll('[data-gs-shot]').forEach((el) => { el.style.outline = ''; delete el.dataset.gsShot; }));
         await ui.stop();
@@ -231,5 +233,5 @@ const failed = await withGameStudio(5182, async ({ page, t, check, answer }) => 
     }
   }
   check(`Every step of ${all.length} tutorials done as it says, ticked, and pictured`, bad.length === 0, bad.join(' | '));
-}, { scale: 0.6 });
+}, { scale: 2 });
 process.exit(failed ? 1 : 0);

@@ -5,7 +5,16 @@
 //
 //   node src/labs/game-studio/e2e/course.acceptance.mjs   (starts and stops its own server)
 
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { withGameStudio } from './harness.mjs';
+
+// Every lesson of the course, with the task its Try it card opens (none for the bonus lesson).
+const COURSE = fileURLToPath(new URL('../../../courses/making-games/', import.meta.url));
+const ALL = readdirSync(COURSE).filter((d) => /^\d+-/.test(d)).sort((a, b) => parseInt(a) - parseInt(b)).flatMap((chapter) => readdirSync(COURSE + chapter).filter((f) => f.endsWith('.js')).sort().map((f) => {
+  const text = readFileSync(`${COURSE}${chapter}/${f}`, 'utf8');
+  return { route: `/chapter/making-games-${parseInt(chapter)}/${f.replace(/^\d+-/, '').replace(/\.js$/, '')}`, task: text.match(/task: '([a-z-]+)'/)?.[1] ?? null };
+}));
 
 const LESSON = '/chapter/making-games-1/scenes-nodes-and-positions';
 
@@ -29,5 +38,19 @@ const failed = await withGameStudio(5185, async ({ page, t, check }) => {
   await page.getByTestId('try-it-first-sprite').getByText('✓ Done').waitFor({ timeout: 5000 }).then(() => {}, () => {});
   const done = await page.getByTestId('try-it-first-sprite').getByText('✓ Done').count();
   check('Finishing it and pressing Back to the lesson returns to the lesson, where the card says Done', done === 1);
+
+  // Every lesson opens and shows its Try it card, with no errors on the page.
+  const bad = [];
+  for (const l of ALL) {
+    await page.goto(page.url().replace(/#.*$/, `#${l.route}`));
+    await page.getByText('Conceptual Intuition').first().waitFor({ timeout: 20000 }).catch(() => bad.push(`${l.route}: did not load`));
+    if (l.task) {
+      const card = page.getByTestId(`try-it-${l.task}`);
+      for (let i = 0; i < 12 && !(await card.count()); i++) { await page.mouse.wheel(0, 1500); await page.waitForTimeout(150); }
+      if (!(await card.count())) bad.push(`${l.route}: no Try it card for ${l.task}`);
+    }
+    if (await page.getByText('failed to render').count()) bad.push(`${l.route}: a block failed to render`);
+  }
+  check(`All ${ALL.length} lessons open, each with its Try it card`, bad.length === 0 && ALL.length >= 33, bad.join(' | '));
 }, { hash: `#${LESSON}`, ready: 'try-it-first-sprite' });
 process.exit(failed ? 1 : 0);

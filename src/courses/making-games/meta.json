@@ -1,7 +1,7 @@
 {
-  "label": "Learn to Program by Making Games",
+  "label": "Building Games with Game Studio",
   "icon": "🎮",
-  "description": "Learn to program by building real games in Game Studio, one idea at a time: each lesson explains it, you try it in the editor with checks that tick as you work, then come back to see why it works.",
+  "description": "Learn to build games in Game Studio, one idea at a time: each lesson explains it, you try it in the editor with checks that tick as you work, then come back to see why it works. It ends with Tetris, built step by step.",
   "color": "sky",
   "domain": "cs"
 }

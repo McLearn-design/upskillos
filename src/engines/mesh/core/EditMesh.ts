@@ -32,7 +32,7 @@
 // The invariant to hold on to: `verts` and `faces` are the truth. Everything
 // else is a cache, rebuilt when they change.
 
-import { Trace, fmt, fmtV } from './trace';
+import { Trace, fmt, fmtV, type TraceStep } from './trace';
 
 export type Vec3 = [number, number, number];
 
@@ -199,6 +199,50 @@ export class EditMesh {
     return map;
   }
 
+  /**
+   * Build the edge table afresh, as edges() does, recording each step: every face, every edge round it, the
+   * sorted key it is filed under, and whether that key was new or already there. Then the edges by how many
+   * faces they have: one (open), two (shared), three or more (non-manifold). The mesh is not changed.
+   */
+  edgeTable(trace?: Trace): { edges: number; open: [number, number][]; nonManifold: [number, number][] } {
+    const map = new Map<string, EdgeInfo>();
+    let asked = false;
+    this.faces.forEach((face, fi) => {
+      for (let i = 0; i < face.length; i++) {
+        const a = face[i], b = face[(i + 1) % face.length];
+        if (a === b) continue;
+        const key = EditMesh.edgeKey(a, b), found = map.get(key);
+        const before = found ? [...found.faces] : [];
+        if (found) found.faces.push(fi); else map.set(key, { a: Math.min(a, b), b: Math.max(a, b), faces: [fi] });
+        if (!trace) continue;
+        const quiz = found && !asked;
+        if (quiz) asked = true;
+        trace.step({
+          phase: found ? 'Found' : 'New edge',
+          label: `Face ${fi}, v${a} → v${b}: key "${key}" ${found ? `found, faces ${before.join(', ')} → ${[...before, fi].join(', ')}` : 'is new, added with face ' + fi}`,
+          detail: found
+            ? 'The key is the two vertex numbers smallest first, so v' + a + ' → v' + b + ' finds the entry face ' + before[0] + ' made going the other way. Looking a key up in a hash map takes about the same time however big the table is, so the whole table costs one pass over the faces.'
+            : 'The key is the two vertex numbers smallest first, so the same edge walked the other way by the next face finds this entry.',
+          faces: [fi], edges: [[a, b]], verts: [a, b],
+          values: [['key', key], ['faces on it', [...before, fi].join(', ')], ['edges so far', String(map.size)]],
+          quiz: quiz ? { prompt: `Face ${fi} walks v${a} → v${b}. The table already holds key "${key}" with face ${before.join(', ')}. How many faces does the edge have after this step, and how many edges are in the table?`, answer: [before.length + 1, map.size], labels: ['faces on the edge', 'edges in the table'], rule: 'A key that is already there gains a face; the table does not grow. Only a new key adds an edge.' } : undefined,
+        }, this);
+      }
+    });
+    const all = [...map.values()];
+    const pick = (test: (n: number) => boolean) => all.filter((e) => test(e.faces.length)).map((e) => [e.a, e.b] as [number, number]);
+    const open = pick((n) => n === 1), shared = pick((n) => n === 2), nonManifold = pick((n) => n > 2);
+    const list = (es: [number, number][]) => es.length ? es.map(([a, b]) => `${a}-${b}`).join(', ') : 'none';
+    trace?.step({
+      phase: 'Classify', label: `${map.size} edges: ${open.length} open, ${shared.length} shared by two faces, ${nonManifold.length} on three or more`,
+      detail: 'An edge with one face is open: the surface has a hole or a rim there. Two faces is what every edge of a closed, solid surface has. Three or more is non-manifold: no solid object has one.',
+      edges: [...open, ...nonManifold],
+      values: [['open (1 face)', list(open)], ['shared (2 faces)', String(shared.length)], ['non-manifold (3+)', list(nonManifold)]],
+      quiz: { prompt: `The table holds ${map.size} edges. How many are open (on only one face), and how many are on three or more faces?`, answer: [open.length, nonManifold.length], labels: ['open', 'three or more'], rule: 'Count the faces filed under each key: one is open, two is shared, three or more is non-manifold.' },
+    }, this);
+    return { edges: map.size, open, nonManifold };
+  }
+
   /** Edges with exactly one face. Zero of these means a closed surface. */
   boundaryEdges(): EdgeInfo[] {
     return [...this.edges().values()].filter((e) => e.faces.length === 1);
@@ -228,6 +272,88 @@ export class EditMesh {
       // neighbour" is not a well-defined question, so say so rather than guess.
       return others.length === 1 ? others[0] : -1;
     });
+  }
+
+  /**
+   * The pieces of the mesh: faces joined by shared edges, found by breadth-first search over the face graph.
+   * Each piece starts from the lowest-numbered face not yet seen (or only from the faces in `from`), visits faces
+   * in the order they were queued, and queues every unseen face across each of their edges. Traced: each visit
+   * with the queue after it, and each finished piece.
+   */
+  pieces(trace?: Trace, from?: number[]): number[][] {
+    const map = this.edges(), seen = new Array<boolean>(this.faces.length).fill(false), out: number[][] = [];
+    let askedQueue = false, first: TraceStep | null = null;
+    for (const seed of from ?? this.faces.map((_, i) => i)) {
+      if (seed < 0 || seed >= this.faces.length || seen[seed]) continue;
+      const piece: number[] = [], queue = [seed];
+      seen[seed] = true;
+      while (queue.length) {
+        const f = queue.shift()!, face = this.faces[f], added: number[] = [];
+        piece.push(f);
+        face.forEach((a, i) => {
+          for (const g of map.get(EditMesh.edgeKey(a, face[(i + 1) % face.length]))?.faces ?? []) if (!seen[g]) { seen[g] = true; queue.push(g); added.push(g); }
+        });
+        if (!trace) continue;
+        const across = face.map((a, i) => (map.get(EditMesh.edgeKey(a, face[(i + 1) % face.length]))?.faces ?? []).filter((g) => g !== f)).flat();
+        const quiz = !askedQueue && added.length > 0 && piece.length > 1;
+        if (quiz) askedQueue = true;
+        const step: TraceStep = {
+          phase: 'Visit', label: `Piece ${out.length + 1}: visit face ${f}${added.length ? `, queue ${added.join(', ')}` : ', nothing new'}; queue now ${queue.length ? queue.join(', ') : 'empty'}`,
+          detail: 'Take the face at the front of the queue. Across each of its edges is a neighbour (the edge table says which); any neighbour not seen before is marked seen and joins the back of the queue, so faces are visited in rings spreading out from the first.',
+          faces: [...piece], verts: [...face],
+          values: [['visiting', `face ${f}`], ['across its edges', across.length ? across.join(', ') : 'nothing'], ['new', added.length ? added.join(', ') : 'none'], ['queue', queue.length ? queue.join(', ') : 'empty'], ['piece so far', `${piece.length} face${piece.length === 1 ? '' : 's'}`]],
+          quiz: quiz ? { prompt: `The queue holds ${[...queue.slice(0, queue.length - added.length)].join(', ') || 'nothing'} before face ${f} is visited. Across its edges are faces ${across.join(', ')}; faces already seen are not queued again. How many faces are in the queue after the visit?`, answer: [queue.length], labels: ['faces in the queue'], rule: 'Only neighbours not seen before join the queue. Faces already visited, or already waiting in the queue, are skipped, so each face is visited exactly once.' } : undefined,
+        };
+        if (!first && out.length === 0) first = step;
+        trace.step(step, this);
+      }
+      out.push(piece);
+      if (!trace) continue;
+      // The first visit asks how big the first piece will get (when there is more than one): a question about
+      // the shape, answered before the search shows it.
+      if (first && out.length === 1 && !from && this.faces.length > piece.length) first.quiz = { prompt: `The search starts at face ${piece[0]} and spreads across shared edges. The mesh has ${this.faces.length} faces. How many will be in this first piece when the queue runs dry?`, answer: [piece.length], labels: ['faces in piece 1'], rule: 'A piece is everything reachable across shared edges from its first face: look at which faces touch along an edge, not at which are close.' };
+      trace.step({
+        phase: 'Piece done', label: `Piece ${out.length}: the queue is empty after ${piece.length} face${piece.length === 1 ? '' : 's'}`,
+        detail: 'Nothing is left to visit, so no other face shares an edge with this piece. The search starts again from the next face not yet seen.',
+        faces: [...piece],
+        values: [['piece', String(out.length)], ['faces', piece.join(', ')]],
+      }, this);
+    }
+    return out;
+  }
+
+  /**
+   * Count what Euler's formula needs, from the lists and the edge table: the vertices faces use, the edges, the
+   * faces, the pieces and the boundary loops (rims of holes). Then χ = V − E + F, and for a single edge-manifold
+   * piece its genus g (handles, holes through it) from χ = 2 − 2g − b. Traced: one step per count, and the result.
+   */
+  topology(trace?: Trace): { V: number; E: number; F: number; chi: number; pieces: number; boundaryLoops: number; genus: number | null } {
+    const used = new Set(this.faces.flat()), map = this.edges();
+    const V = used.size, E = map.size, F = this.faces.length, chi = V - E + F;
+    const pieces = this.pieces().length;
+    // Boundary loops: the open edges, grouped by shared vertices (each rim is one loop of open edges).
+    const open = [...map.values()].filter((e) => e.faces.length === 1);
+    const parent = new Map<number, number>();
+    const find = (x: number): number => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x)!)!); x = parent.get(x)!; } return x; };
+    for (const e of open) { if (!parent.has(e.a)) parent.set(e.a, e.a); if (!parent.has(e.b)) parent.set(e.b, e.b); parent.set(find(e.a), find(e.b)); }
+    const boundaryLoops = new Set([...parent.keys()].map(find)).size;
+    const manifold = [...map.values()].every((e) => e.faces.length <= 2);
+    const g2 = 2 - chi - boundaryLoops;
+    const genus = pieces === 1 && manifold && g2 >= 0 && g2 % 2 === 0 ? g2 / 2 : null;
+    if (trace) {
+      trace.step({ phase: 'Count', label: `V = ${V}: the vertices the faces use`, detail: 'Count each vertex once, however many faces it is in. A vertex no face uses is not part of the surface.', verts: [...used], values: [['V', String(V)]] }, this);
+      trace.step({ phase: 'Count', label: `E = ${E}: the entries in the edge table`, detail: 'Each edge once, under its two vertex numbers smallest first (lesson 1.3).', edges: [...map.values()].map((e) => [e.a, e.b] as [number, number]), values: [['E', String(E)], ['corner slots', String(this.faces.reduce((s, f) => s + f.length, 0))]] }, this);
+      trace.step({ phase: 'Count', label: `F = ${F}: the faces`, detail: 'The length of the face list.', faces: this.faces.map((_, i) => i), values: [['F', String(F)]],
+        quiz: { prompt: `V = ${V}, E = ${E}, F = ${F}. What is V − E + F?`, answer: [chi], labels: ['χ'], rule: 'χ = V − E + F, the Euler characteristic. For one closed piece shaped like a sphere it is 2.' } }, this);
+      trace.step({ phase: 'Count', label: `${pieces} piece${pieces === 1 ? '' : 's'}, ${boundaryLoops} boundary loop${boundaryLoops === 1 ? '' : 's'}`, detail: 'Pieces by breadth-first search (lesson 1.4); boundary loops are the rims of holes, each a loop of open edges.', edges: open.map((e) => [e.a, e.b] as [number, number]), values: [['pieces', String(pieces)], ['boundary loops', String(boundaryLoops)], ['open edges', String(open.length)]] }, this);
+      trace.step({
+        phase: 'Result', label: `χ = ${V} − ${E} + ${F} = ${chi}${genus !== null ? `, so genus ${genus}` : ''}`,
+        detail: 'For one piece with no edge on three faces, χ = 2 − 2g − b: g is the genus (the number of holes through it, like the hole of a ring) and b the number of boundary loops.',
+        values: [['χ', String(chi)], ['b', String(boundaryLoops)], ['genus', genus === null ? 'not one manifold piece' : String(genus)]],
+        quiz: genus !== null ? { prompt: `χ = ${chi} and the surface has ${boundaryLoops} boundary loop${boundaryLoops === 1 ? '' : 's'}. Using χ = 2 − 2g − b, how many holes go through it (its genus g)?`, answer: [genus], labels: ['g'], rule: 'g = (2 − χ − b) / 2. A sphere has χ = 2 and g = 0; a ring (torus) has χ = 0 and g = 1.' } : undefined,
+      }, this);
+    }
+    return { V, E, F, chi, pieces, boundaryLoops, genus };
   }
 
   /** How many separate pieces the mesh is in, by walking shared edges. */
@@ -397,10 +523,33 @@ export class EditMesh {
     return this.touch();
   }
 
-  /** Reverse the winding of the given faces, or all of them. */
-  flip(faceIdxs?: number[]): this {
+  /**
+   * Reverse the winding of the given faces, or all of them. The normal is a cross product of edges taken in the
+   * face's order (Newell's method, faceNormal), so going round the other way turns it to point the other way.
+   * Traced: each face's normal before, its corners reversed, and its normal after.
+   */
+  flip(faceIdxs?: number[], trace?: Trace): this {
     const target = faceIdxs ?? this.faces.map((_, i) => i);
-    for (const fi of target) this.faces[fi] = this.faces[fi].slice().reverse();
+    for (const [k, fi] of target.entries()) {
+      const before = this.faceNormal(fi), c = this.faceCenter(fi), len = 0.6 * Math.sqrt(Math.max(this.faceArea(fi), 1e-9));
+      const tip = (n: Vec3): Vec3 => [c[0] + n[0] * len, c[1] + n[1] * len, c[2] + n[2] * len];
+      const order = this.faces[fi];
+      trace?.step({
+        phase: 'Normal before', label: `Face ${fi}: corners ${order.map((v) => `v${v}`).join(' → ')}, normal ${fmtV(before)}`,
+        detail: 'Newell\'s method: the normal is the sum of cross products of the edges, taken in the order the corners are listed (the right-hand rule).',
+        faces: [fi], verts: order, arrows: [{ from: c, to: tip(before), label: 'n', color: '#ffd166' }],
+        values: [['corners', order.map((v) => `v${v}`).join(', ')], ['normal', fmtV(before)]],
+      });
+      this.faces[fi] = order.slice().reverse();
+      const after = this.faceNormal(fi);
+      trace?.step({
+        phase: 'Reversed', label: `Face ${fi}: corners ${this.faces[fi].map((v) => `v${v}`).join(' → ')}, normal ${fmtV(after)}`,
+        detail: 'Every edge now runs the other way, so every cross product in the sum changes sign: n′ = −n.',
+        faces: [fi], verts: this.faces[fi], arrows: [{ from: c, to: tip(after), label: 'n′', color: '#06d6a0' }],
+        values: [['corners', this.faces[fi].map((v) => `v${v}`).join(', ')], ['normal before', fmtV(before)], ['normal after', fmtV(after)]],
+        quiz: k === 0 ? { prompt: `Face ${fi}'s normal is ${fmtV(before)} with its corners in the order ${order.map((v) => `v${v}`).join(', ')}. Reversed to ${this.faces[fi].map((v) => `v${v}`).join(', ')}, what is its normal?`, answer: after, labels: ['x', 'y', 'z'], rule: 'Reversing the order reverses every edge, so every cross product changes sign: the normal points the other way, n′ = −n, with the same length.' } : undefined,
+      }, this);
+    }
     return this.touch();
   }
 

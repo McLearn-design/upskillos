@@ -8,8 +8,8 @@ import { C, useStore } from './kit';
 import { nextTask } from '../tasks';
 
 // Pictures of each step done in the editor, made by e2e/tutorials.shots.mjs (npm run game:shots).
-const SHOTS = import.meta.glob('../tasks/shots/*.jpg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
-const shot = (task: string, step: number): string | undefined => SHOTS[`../tasks/shots/${task}-${step}.jpg`];
+const SHOTS = import.meta.glob('../tasks/shots/*.webp', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+const shot = (task: string, step: number): string | undefined => SHOTS[`../tasks/shots/${task}-${step}.webp`];
 
 export function TaskPanel({ store, onBack }: { store: Store; onBack: (route: string) => void }) {
   useStore(store);
