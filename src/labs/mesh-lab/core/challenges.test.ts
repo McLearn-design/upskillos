@@ -7,8 +7,11 @@ describe('challenges', () => {
   for (const c of CHALLENGES) {
     it(`"${c.title}": the start does not pass, the solution does`, () => {
       const e = new Editor();
+      e.traceEnabled = true; // as MeshLab opens: the setup still leaves no trace, and tracing stays on
       expect(startChallenge(e, c)).toBeNull();
       expect(e.undoStack.length).toBe(0);
+      expect(e.trace).toBeNull();
+      expect(e.traceEnabled).toBe(true);
       const before = c.check(e);
       expect(before.length).toBeGreaterThan(1);
       expect(before.every((x) => x.ok), JSON.stringify(before)).toBe(false);
@@ -37,6 +40,39 @@ describe('challenges', () => {
 const f = m.fill(m.verts.filter((v) => v.y > 0.6).map((v) => v.index))
 m.flip([f])`);
     expect(byId('close-the-box').check(e).map((x) => x.ok)).toEqual([true, true, false]);
+  });
+
+  it('"Turn the faces outwards": flipping every face, or only one of the two, is not enough', () => {
+    const ch = CHALLENGES.find((x) => x.id === 'fix-the-normals')!;
+    const e = new Editor();
+    startChallenge(e, ch);
+    const m = e.scene.get('Box')!.mesh!;
+    expect(ch.check(e).find((x) => x.label === 'Every face points outwards')!.detail).toMatch(/^faces \d+, \d+ still point into the box$/);
+    m.flip();   // all six: the two that were in now point out, and the four that were out point in
+    expect(ch.check(e).find((x) => x.label === 'Every face points outwards')!.detail).toMatch(/^faces (\d+, ){3}\d+ still point into the box$/);
+    expect(m.volume()).toBeLessThan(0);
+  });
+
+  it('"Remove the fin": the start names the fin\'s four edges; deleting the lid instead gets six faces but not a box', () => {
+    const ch = CHALLENGES.find((x) => x.id === 'remove-the-fin')!;
+    const e = new Editor();
+    startChallenge(e, ch);
+    expect(ch.check(e).map((x) => x.detail)).toEqual(['edges 0-1, 6-7', 'edges 1-7, 0-6', '8 corners, 7 faces']);
+    e.scene.get('Box')!.mesh!.deleteFaces([3]);   // the lid, not the fin: six faces again, but the wrong six
+    expect(ch.check(e).map((x) => x.ok)).toEqual([false, false, false]);
+    expect(ch.check(e)[0].detail).toBe('edge 0-1');   // the lid never touched it
+  });
+
+  it('"Remove the floaters": deleting the block instead, or only one floater, does not pass', () => {
+    const ch = CHALLENGES.find((x) => x.id === 'remove-the-floaters')!;
+    const e = new Editor();
+    startChallenge(e, ch);
+    expect(ch.check(e)[0].detail).toBe('3 pieces');
+    const m = e.scene.get('Scan')!.mesh!;
+    m.deleteFaces([0, 1, 2, 3, 4, 5]);   // the first floater
+    expect(ch.check(e).map((x) => [x.ok, x.detail])).toEqual([[false, '2 pieces'], [true, undefined]]);
+    m.deleteFaces([0, 1, 2, 3, 4, 5]);   // now the block: one piece is left, but it is a floater
+    expect(ch.check(e).map((x) => x.ok)).toEqual([true, false]);
   });
 
   it('"The farthest point": straight across the hole is the tempting answer, and it is only about 73% of the way', () => {

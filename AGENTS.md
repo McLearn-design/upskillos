@@ -24,7 +24,7 @@ There is no `src/content/` folder and no chapter `index.js` to register lessons 
 2. **Don't renumber lesson files to reorder them.** The number prefix only sets order within a chapter. Moving a lesson to another chapter or course changes its URL.
 3. **Don't edit generated files by hand.** Regenerate them instead (see below).
 4. **Put helpers outside chapter folders.** Any `.js` file directly in a chapter folder is treated as a lesson.
-5. **Use router navigation for in-app links.** `<Link to="/x">` or `navigate('/x')`. A plain `href="/x"` breaks under `HashRouter`. Every link must have a route: `src/routes.test.js` checks. To open a lab from inside the app without leaving the page, use `useOpenLab()` (`src/components/desktop/useOpenLab.js`), not `navigate('/lab/…')`.
+5. **Use router navigation for in-app links.** `<Link to="/x">` or `navigate('/x')`. A plain `href="/x"` breaks under `HashRouter`. Every link must have a route: `src/routes.test.js` checks. To open a lab from inside the app without leaving the page, use `useOpenLab()` (`src/components/desktop/useOpenLab.js`), not `navigate('/lab/…')`. In lesson Markdown and notebook text, an in-app link is an ordinary Markdown link whose target starts with `#/` (a lab link is `#/lab/<lab>?project=<id>`): `src/components/routing/InAppLinks.jsx` turns a click on them into router navigation, so a lab opens over the lesson and the lesson stays.
 6. **Don't commit or push unless asked.**
 
 ## Generated files

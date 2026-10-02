@@ -645,10 +645,49 @@ export class Editor {
     this.emit('select');
   }
 
-  /** Select everything connected to the current selection (Ctrl+L). */
+  /**
+   * Select the edges that are not on exactly two faces (edit mode, edge select): the open ones, on one face,
+   * and the non-manifold ones, on three or more. Traced: building the edge table that finds them.
+   */
+  selectNonManifold(): boolean {
+    const o = this.activeObject;
+    if (!o?.mesh) { this.say('Select a mesh object first'); return false; }
+    if (this.mode !== 'edit' && !this.enterEdit()) return false;
+    const trace = this.traceEnabled ? new Trace('Edge table') : undefined;
+    if (trace && o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const r = o.mesh.edgeTable(trace);
+    if (trace && trace.steps.length) { this.trace = trace; this.traceTarget = o.id; this.emit('trace'); }
+    this.selectMode = 'edge';
+    this.clearElements(false);
+    for (const [a, b] of [...r.open, ...r.nonManifold]) this.sel.edges.add(EditMesh.edgeKey(a, b));
+    const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+    this.message = r.open.length + r.nonManifold.length
+      ? `${n(r.open.length, 'open edge', 'open edges')}, ${n(r.nonManifold.length, 'edge', 'edges')} on three or more faces`
+      : `Every one of the ${r.edges} edges is on exactly two faces: the surface is closed`;
+    this.emit('select');
+    return true;
+  }
+
+  /**
+   * Select everything connected to the current selection (Ctrl+L). In face select it follows shared edges, by
+   * breadth-first search over the face graph (traced); in vertex and edge select it follows faces through any
+   * shared vertex.
+   */
   selectLinked(): void {
     const mesh = this.editObject?.mesh;
     if (!mesh) return;
+    if (this.selectMode === 'face') {
+      const from = this.selectedFaces();
+      if (!from.length) { this.say('Select linked: select a face first'); return; }
+      const trace = this.traceEnabled ? new Trace('Select linked') : undefined;
+      if (trace && mesh.verts.length <= trace.snapshotLimit) trace.before = mesh.toSnapshot();
+      const pieces = mesh.pieces(trace, from);
+      if (trace && trace.steps.length) { this.trace = trace; this.traceTarget = this.active; this.emit('trace'); }
+      this.sel.faces = new Set(pieces.flat());
+      this.message = `${this.sel.faces.size} face${this.sel.faces.size === 1 ? '' : 's'} linked by shared edges`;
+      this.emit('select');
+      return;
+    }
     const verts = new Set(this.selectedVerts());
     let grew = true;
     while (grew) {
@@ -864,7 +903,7 @@ export class Editor {
   }
 
   flip(): boolean {
-    return this.meshOp('Flip normals', 'faces', (o, m, faces) => { m.flip(faces as number[]); return `${ref(o)}.mesh.flip(${lit(faces)})`; });
+    return this.meshOp('Flip normals', 'faces', (o, m, faces, t) => { m.flip(faces as number[], t); return `${ref(o)}.mesh.flip(${lit(faces)})`; }, 'Flip normals');
   }
 
   /** Set vertex positions (local coordinates). Used by the inspector and by a finished drag. */

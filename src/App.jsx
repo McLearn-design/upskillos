@@ -18,6 +18,7 @@ import { TourProvider } from "./context/TourContext.jsx";
 import { MontyProvider } from "./features/compass/MontyContext.tsx";
 import TourSpotlight from "./components/ui/TourSpotlight.jsx";
 import TourAutoStart from "./components/ui/TourAutoStart.jsx";
+import InAppLinks from "./components/routing/InAppLinks.jsx";
 
 const DesktopPage = lazy(() => import("./pages/DesktopPage.jsx"));
 const ChapterPage = lazy(() => import("./pages/ChapterPage.jsx"));
@@ -105,6 +106,7 @@ export default function App() {
                       <NotificationToast />
                     </Suspense>
                     <TourAutoStart />
+                    <InAppLinks />
                     <TourSpotlight />
                     <RootErrorBoundary>
                       <AppShell>

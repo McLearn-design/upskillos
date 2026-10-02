@@ -161,6 +161,54 @@ describe('UV and material projects', () => {
     }
   });
 
+  it('winding and normals: face 2 is turned out by a traced flip (its question is the reversed normal); face 3 still points in', () => {
+    const { e, r } = open('winding-and-normals');
+    // The script logs every face's normal before the flip: faces 2 and 3 point into the pyramid.
+    expect(r.output).toEqual(['face 0 normal 0, -1, 0', 'face 1 normal 0, 0.55, -0.83', 'face 2 normal -0.83, -0.55, 0', 'face 3 normal 0, -0.55, -0.83', 'face 4 normal -0.83, 0.55, 0']);
+    const m = e.scene.get('Pyramid')!.mesh!, centre = [0, 0.3, 0];
+    const out = (i: number) => { const n = m.faceNormal(i), c = m.faceCenter(i); return n[0] * (c[0] - centre[0]) + n[1] * (c[1] - centre[1]) + n[2] * (c[2] - centre[2]) > 0; };
+    expect([0, 1, 2, 3, 4].map(out)).toEqual([true, true, true, false, true]);
+    expect(m.faces[2]).toEqual([4, 2, 1]);
+    expect(e.trace?.op).toBe('Flip normals');
+    const q = e.trace!.steps.find((x) => x.quiz)!.quiz!;
+    q.answer.forEach((a, i) => expect(a).toBeCloseTo(m.faceNormal(2)[i], 12));
+    expect(q.answer.map((x) => +x.toFixed(2))).toEqual([0.83, 0.55, 0]);
+  });
+
+  it('edges and neighbours: the table of the open box, rebuilt by a traced edgeTable() that asks twice', () => {
+    const { e, r } = open('edges-and-neighbours');
+    expect(r.output).toEqual([
+      'edge 0-4: faces 0, 2', 'edge 4-6: faces 0, 4', 'edge 2-6: faces 0', 'edge 0-2: faces 0, 3',
+      'edge 1-3: faces 1, 3', 'edge 3-7: faces 1', 'edge 5-7: faces 1, 4', 'edge 1-5: faces 1, 2',
+      'edge 0-1: faces 2, 3', 'edge 4-5: faces 2, 4', 'edge 2-3: faces 3', 'edge 6-7: faces 4',
+      '12 edges, 4 open: 2-6, 3-7, 2-3, 6-7',
+    ]);
+    expect(e.trace?.op).toBe('Edge table');
+    expect(e.trace!.steps.filter((x) => x.quiz).map((x) => x.quiz!.answer)).toEqual([[2, 9], [4, 0]]);
+    const m = e.scene.get('Open box')!.mesh!;
+    // Neighbours: the bottom (face 2) has four; each side has three and one open edge (-1).
+    expect(m.neighbours(2)).toEqual([3, 1, 4, 0]);
+    expect([0, 1, 3, 4].map((f) => m.neighbours(f).filter((x) => x < 0).length)).toEqual([1, 1, 1, 1]);
+  });
+
+  it('connected pieces: three pieces by shared edges; the trace asks the first piece\'s size, then the queue', () => {
+    const { e, r } = open('connected-pieces');
+    expect(r.output).toEqual(['23 vertices, 18 faces', 'piece 1: faces 0, 2, 5, 3, 4, 1', 'piece 2: faces 6, 8, 11, 9, 10, 7', 'piece 3: faces 12, 14, 17, 15, 16, 13']);
+    expect(e.trace?.op).toBe('Pieces');
+    const asked = e.trace!.steps.filter((x) => x.quiz);
+    expect(asked.map((x) => x.label)).toEqual(['Piece 1: visit face 0, queue 2, 5, 3, 4; queue now 2, 5, 3, 4', 'Piece 1: visit face 2, queue 1; queue now 5, 3, 4, 1']);
+    expect(asked.map((x) => x.quiz!.answer)).toEqual([[6], [4]]);
+    expect(e.trace!.steps.filter((x) => x.phase === 'Piece done')).toHaveLength(3);
+  });
+
+  it("Euler's formula: 2, 2, 0, 1; the traced count asks for χ, then the genus", () => {
+    const { e, r } = open('eulers-formula');
+    expect(r.output).toEqual(['Closed cube: V − E + F = 8 − 12 + 6 = 2', 'Sphere: V − E + F = 114 − 240 + 128 = 2', 'Torus: V − E + F = 96 − 192 + 96 = 0', 'Open box: V − E + F = 8 − 12 + 5 = 1', 'Torus: 0 boundary loops, genus 1']);
+    expect(e.trace?.op).toBe('Euler characteristic');
+    expect(e.trace!.steps.filter((x) => x.quiz).map((x) => x.quiz!.answer)).toEqual([[0], [1]]);
+    expect(e.scene.get('Open box')!.mesh!.topology()).toMatchObject({ chi: 1, boundaryLoops: 1, genus: 0 });
+  });
+
   it('two lists: the shared pyramid is closed with 5 vertices; the separate one has 16 and tears when its tip moves', () => {
     const { e, r } = open('two-lists');
     expect(r.output).toEqual(['Shared corners: 5 vertices, 5 faces', 'Separate faces: 16 vertices, 5 faces: [[0,1,2,3],[4,5,6],[7,8,9],[10,11,12],[13,14,15]]']);
@@ -311,6 +359,11 @@ describe('guide steps that tick themselves', () => {
   };
   const firstEdge = (e: Editor, name: string) => [...obj(e, name).mesh!.edges().values()].find((x) => x.faces.length === 2)!;
   const act: Record<string, (e: Editor) => void> = {
+    'Tab for edit mode, press 3 for face select, click a face of the bottom-left block': (e) => { edit(e, 'Blocks', 'face', [3]); e.selectLinked(); },
+    'Now press 1 for vertex select, click a corner of the same block': (e) => { edit(e, 'Blocks', 'vert', [0]); e.selectLinked(); },
+    'Make a hole: select the Closed cube': (e) => { edit(e, 'Closed cube', 'face', [0]); e.deleteElements(); },
+    'Find the rim: Edit › Select non-manifold': (e) => { e.selectObject(obj(e, 'Open box').id); expect(e.selectNonManifold()).toBe(true); },
+    'Fix the last one: Tab for edit mode': (e) => { edit(e, 'Pyramid', 'face', [3]); expect(e.flip()).toBe(true); },
     'Select the left Pyramid': (e) => { runScript(e, `scene.get('Pyramid').mesh.translate([4], [0, 1, 0])`); },
     'Press Tab, select the right pyramid': (e) => { runScript(e, `scene.get('Pyramid, separate faces').mesh.translate([6], [0, 1, 0])`); },
     'Click a tree.': (e) => { runScript(e, `scene.get('Tree 3').rotation = [0, 1, 0]`); },

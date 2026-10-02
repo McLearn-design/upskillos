@@ -577,6 +577,23 @@ below the first override only their picture. Its tests pass unchanged.
 - `e2e/phase7.acceptance.mjs` (9/9).
 - `npm run game:acceptance`: all eight browser tests pass (15, 6, 9, 12, 10, 10, 13 and 9 checks).
 
+## Done: the whole course, 33 lessons (2026-10-01)
+
+"Building Games with Game Studio" (`src/courses/making-games/`, from `course-sources/making-games.yaml`):
+- **8 chapters:** first steps, physics, camera and HUD, animation, tilemaps, scenes, Tetris (9 lessons), and a bonus
+  lesson on training an agent.
+- **Each lesson has:**
+  - a Try it card opening its Game Studio task, with that task's high-definition step pictures (the bonus has none);
+  - an optional "Under the hood" section, with every number checked against the engine;
+  - three examples, three challenges, a six-question quiz and eight checkpoints.
+- **Pictures** are now 2× WebP (about 120 KB each, 88 of them), after the user found the old 0.6× JPEGs pixelated.
+- **Checks:**
+  - schema validation and `check_latex` pass for all 33;
+  - `tasks.test.ts` checks every Try it card names a real task and a declared lab checkpoint;
+  - `e2e/course.acceptance.mjs` (5/5) opens all 33 lessons in the browser and finds each card, as well as the
+    full loop for lesson 1.1;
+  - `npm run facts` and `catalog:check` pass (1265 lessons in the app).
+
 ## Fixed: links into labs, and windows losing their work (2026-10-01)
 
 The user found that a lesson's Try it button left the course for `#/labs`, a page that does not exist, though the
@@ -692,12 +709,13 @@ between browsers:
 
 ## Done: the course's first lessons, 1.1 to 1.4 (2026-10-01)
 
-**"Learn to Program by Making Games"** (working title) is in the catalogue (`src/courses/making-games/`), with
+**"Building Games with Game Studio"** (named 2026-10-01; first called "Learn to Program by Making Games") is in the catalogue (`src/courses/making-games/`), with
 chapter 1's four lessons. Each teaches one idea, sends the learner to Game Studio with a Try it card, and explains
 the maths under "Under the hood (optional)". The details and the decisions left to the user are in the course plan,
 under "Lessons as built". They are the trial the plan asked for: the user reviews them before more are written.
-- **Why a card:** lesson prose cannot hold links or pictures, so the Try it card is a registered visualization
-  (`GameStudioTask`). It fits the lesson schema as it is.
+- **Why a card:** lesson prose does render Markdown links (an earlier version of this note said it could not),
+  but a link cannot show the task's steps and pictures, open Game Studio over the lesson, or say Done. So the
+  Try it card is a registered visualization (`GameStudioTask`). It fits the lesson schema as it is.
 - **Checks:**
   - `validate-lesson-schema` and `check_latex` pass for all four;
   - `npm run facts` regenerated the catalogue (44 courses, 1236 lessons);
@@ -927,11 +945,11 @@ In this order (proposed to the user, 2026-10-01):
 2. ~~Tetris, step by step~~: done (above). The optional maths waits for the course lessons.
 3. ~~Sprite Forge and Tile Mapper connected~~ and ~~brought to Game Studio's standard~~: done (above): round-trip
    editing, GUI → code with a Code panel, examples in both, and browser tests. Still open: the look.
-4. **The course lessons, "Learn to Program by Making Games":** lessons 1.1–1.4 are written (above), for the user to
-   review before the rest. The plan is in [game-studio-course-plan.md](game-studio-course-plan.md).
-5. ~~Phase 8, export~~ and ~~Phase 9 in Game Studio~~: done (above). Still open: **Phase 9 in the ML Lab**, using
-   the same environment from the ML Lab's Python. It needs a decision on the ML Lab's runtime first (see Phase 9
-   above).
+4. ~~The course, "Building Games with Game Studio"~~: all 33 lessons written (2026-10-01), in 8 chapters. Details are
+   in [game-studio-course-plan.md](game-studio-course-plan.md). Still open: linking the bonus lesson (mg8-001) from
+   the ML Lab, which is ML Lab work.
+5. ~~Phase 8, export~~ and ~~Phase 9 in Game Studio~~: done (above). For the ML Lab, the user chose a bonus lesson
+   at the end of the course, linked from the ML Lab (item 4). A bridge from its Python stays possible later.
 
 ## Phases
 

@@ -185,6 +185,105 @@ m.fill(m.verts.filter((v) => v.y > 0.6).map((v) => v.index))   // the four corne
     },
   },
   {
+    id: 'fix-the-normals',
+    title: 'Turn the faces outwards',
+    icon: '🧭',
+    brief: 'Two faces of this box are wound the wrong way round, so their normals point into the box and they shade dark. Find them and turn them outwards, so every face of the closed box points out.',
+    select: 'Box',
+    setup: `const box = scene.add.cube({ name: 'Box', size: 1.4, position: [0, 0.7, 0] })
+box.mesh.flip([...box.mesh.faces.top(), ...box.mesh.faces.facing([1, 0, 0])])   // the lid and the +x side, wound inwards`,
+    hints: [
+      'Turn on Normals in the toolbar: each face shows a line along its normal. Two of them point into the box.',
+      'Tab for edit mode, press 3 for face select, then click one inward face and Shift-click the other.',
+      'Mesh › Flip normals reverses the order of the selected faces\' corners, and with it the direction of their normals.',
+    ],
+    solution: `const m = scene.get('Box').mesh
+// A face points out when its normal leads away from the box's centre. The mesh's corners are in the box's own
+// coordinates, centred on (0, 0, 0), so that is n · centre > 0.
+m.flip(m.faces.filter((f) => f.normal[0] * f.center[0] + f.normal[1] * f.center[1] + f.normal[2] * f.center[2] < 0).map((f) => f.index))`,
+    check(e) {
+      const m = e.scene.get('Box')?.mesh;
+      if (!m) return [{ label: 'The box is there', ok: false }];
+      // The box's centre, and which faces point towards it instead of away.
+      const c = m.verts.reduce((a, v) => [a[0] + v[0] / m.verts.length, a[1] + v[1] / m.verts.length, a[2] + v[2] / m.verts.length], [0, 0, 0]);
+      const inward = m.faces.map((_, i) => i).filter((i) => { const n = m.faceNormal(i), p = m.faceCenter(i); return n[0] * (p[0] - c[0]) + n[1] * (p[1] - c[1]) + n[2] * (p[2] - c[2]) < 0; });
+      const s = m.stats();
+      return [
+        { label: 'Still a closed box of six faces', ok: s.faces === 6 && s.closed, detail: `${s.faces} faces${s.closed ? '' : ', not closed'}` },
+        { label: 'Every face points outwards', ok: inward.length === 0, detail: inward.length ? `face${inward.length === 1 ? '' : 's'} ${inward.join(', ')} still point${inward.length === 1 ? 's' : ''} into the box` : undefined },
+        { label: 'So the volume comes out positive', ok: m.volume() > 0, detail: `volume ${fmt(m.volume(), 3)}` },
+      ];
+    },
+  },
+  {
+    id: 'remove-the-fin',
+    title: 'Remove the fin',
+    icon: '🦈',
+    brief: 'Someone added an extra face that cuts diagonally through this box. Two of its edges are now on three faces each, and its other two edges are open. Remove it, so every edge is on exactly two faces again.',
+    select: 'Box',
+    setup: `const V = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]]
+const sides = [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1], [4, 5, 7, 6]]
+scene.add.mesh({ name: 'Box', verts: V, faces: [...sides, [0, 1, 7, 6]], position: [-0.5, 0, -0.5] })   // the last face is the fin`,
+    hints: [
+      'Edit › Select non-manifold lights up the problem edges: the two on three faces, and the two open ones. All four belong to one face.',
+      'Press 3 for face select and click the face that cuts through the box (X-ray in the toolbar lets you see inside).',
+      'X deletes the selected face. The status bar then reads 12 edges, with no open edges.',
+    ],
+    solution: `const m = scene.get('Box').mesh
+// The six sides each face straight along an axis; the fin is the one face whose normal is diagonal.
+m.delete({ faces: m.faces.where((f) => Math.max(...f.normal.map(Math.abs)) < 0.99) })`,
+    check(e) {
+      const m = e.scene.get('Box')?.mesh;
+      if (!m) return [{ label: 'The box is there', ok: false }];
+      const s = m.stats();
+      const list = (es: { a: number; b: number }[]) => es.map((x) => `${x.a}-${x.b}`).join(', ');
+      const open = m.boundaryEdges(), many = m.nonManifoldEdges();
+      return [
+        { label: 'No edge on three or more faces', ok: many.length === 0, detail: many.length ? `edge${many.length === 1 ? '' : 's'} ${list(many)}` : undefined },
+        { label: 'No open edges', ok: open.length === 0, detail: open.length ? `edge${open.length === 1 ? '' : 's'} ${list(open)}` : undefined },
+        { label: 'Still the box: its 8 corners and 6 sides', ok: s.verts === 8 && s.faces === 6 && Math.abs(m.volume() - 1) < 1e-9, detail: `${s.verts} corners, ${s.faces} faces` },
+      ];
+    },
+  },
+  {
+    id: 'remove-the-floaters',
+    title: 'Remove the floaters',
+    icon: '🫧',
+    brief: 'A scan came back with two small bits floating next to the object: separate pieces of the same mesh. Delete both, and keep the block.',
+    select: 'Scan',
+    setup: `const verts = [], faces = []
+const SIDES = [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1], [4, 5, 7, 6]]
+function block(p, size) {
+  const base = verts.length
+  for (let i = 0; i < 8; i++) verts.push([p[0] + size * (i % 2), p[1] + size * (Math.floor(i / 2) % 2), p[2] + size * Math.floor(i / 4)])
+  for (const s of SIDES) faces.push(s.map((k) => base + k))
+}
+block([0.6, 1.2, 0.1], 0.15)   // a floater
+block([-0.8, -0.8, -0.8], 1.6) // the block
+block([-1.3, 0.4, 0.5], 0.2)   // another floater
+scene.add.mesh({ name: 'Scan', verts, faces, position: [0, 0.8, 0] })`,
+    hints: [
+      'Tab for edit mode and press 3 for face select. Click any face of a floater, then Ctrl+L (Edit › Select linked) selects its whole piece.',
+      'Shift-click a face of the other floater and press Ctrl+L again to add its piece, or do one at a time.',
+      'X deletes the selected faces. The status bar should end at 6 faces.',
+    ],
+    solution: `const m = scene.get('Scan').mesh
+// Keep the piece with the largest area; delete the rest.
+const area = (piece) => piece.reduce((sum, f) => sum + m.faces[f].area, 0)
+const pieces = m.pieces().sort((a, b) => area(b) - area(a))
+m.delete({ faces: pieces.slice(1).flat() })`,
+    check(e) {
+      const m = e.scene.get('Scan')?.mesh;
+      if (!m) return [{ label: 'The scan is there', ok: false }];
+      const pieces = m.pieces();
+      const big = pieces.find((p) => p.length === 6 && Math.abs(p.reduce((a, f) => a + m.faceArea(f), 0) - 6 * 1.6 * 1.6) < 1e-6);
+      return [
+        { label: 'One piece left', ok: pieces.length === 1, detail: `${pieces.length} piece${pieces.length === 1 ? '' : 's'}` },
+        { label: 'It is the block, all 6 sides', ok: !!big, detail: big ? undefined : 'the large block is not whole' },
+      ];
+    },
+  },
+  {
     id: 'farthest-point',
     title: 'The farthest point',
     icon: '🚩',
@@ -270,7 +369,12 @@ export function startChallenge(editor: Editor, c: Challenge): string | null {
   const cube = editor.scene.get('Cube');
   if (cube) editor.scene.remove(cube.id);
   editor.selected.clear(); editor.active = null;
+  // The setup is not traced: its trace would show how the starting scene was made, which can give the
+  // answer away (fix-the-normals' setup flips the very faces the learner has to find).
+  const tracing = editor.traceEnabled;
+  editor.traceEnabled = false;
   const r = runScript(editor, c.setup, `Start challenge: ${c.title}`);
+  editor.traceEnabled = tracing;
   if (r.error) return r.error;
   // The starting point is not something to undo or to replay as the learner's work.
   editor.undoStack = []; editor.redoStack = []; editor.log = [];

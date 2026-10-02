@@ -108,6 +108,12 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       get faces() { return facesList(); },
       get edges() { return [...m().edges().values()].map((e) => ({ a: e.a, b: e.b, faces: [...e.faces], get length() { const p = m().verts[e.a], q = m().verts[e.b]; return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); } })); },
       stats: () => m().stats(),
+      /** Build the edge table (traced with Record traces on): how many edges, and which are open or on three or more faces. */
+      edgeTable: () => m().edgeTable(trace('Edge table', o)),
+      /** The pieces: faces joined by shared edges, by breadth-first search (traced with Record traces on). Each is a list of face numbers. */
+      pieces: () => m().pieces(trace('Pieces', o)),
+      /** V, E, F, χ = V − E + F, pieces, boundary loops and genus (traced with Record traces on). */
+      topology: () => m().topology(trace('Euler characteristic', o)),
       /** The index of the vertex nearest a point (local coordinates). */
       nearest(p: Vec3) {
         let best = -1, bd = Infinity;
@@ -150,7 +156,7 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       },
       /** Close a hole with one face: the vertices round it, in any order. Returns the new face's index. */
       fill(verts: number[]) { return m().fill(verts); },
-      flip(faces?: number[]) { m().flip(faces); return api; },
+      flip(faces?: number[]) { m().flip(faces, trace('Flip normals', o)); return api; },
       weld(tol = 0) { m().weld(tol); return api; },
       translate(verts: number[], d: Vec3) { m().translateVerts(verts, d); return api; },
       setVerts(map: Record<number, Vec3>) { for (const [i, p] of Object.entries(map)) m().verts[Number(i)] = [p[0], p[1], p[2]]; m().touch(); return api; },

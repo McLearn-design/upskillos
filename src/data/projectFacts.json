@@ -9,8 +9,8 @@
   },
   "counts": {
     "courses": 44,
-    "chapters": 218,
-    "lessons": 1236,
+    "chapters": 225,
+    "lessons": 1268,
     "labs": 52,
     "games": 15
   },
@@ -249,11 +249,11 @@
     },
     {
       "id": "making-games",
-      "label": "Learn to Program by Making Games",
+      "label": "Building Games with Game Studio",
       "domain": "cs",
-      "description": "Learn to program by building real games in Game Studio, one idea at a time: each lesson explains it, you try it in the editor with checks that tick as you work, then come back to see why it works.",
-      "chapters": 1,
-      "lessons": 4
+      "description": "Learn to build games in Game Studio, one idea at a time: each lesson explains it, you try it in the editor with checks that tick as you work, then come back to see why it works. It ends with Tetris, built step by step.",
+      "chapters": 8,
+      "lessons": 33
     },
     {
       "id": "mesh-engine",
@@ -269,7 +269,7 @@
       "domain": "creative",
       "description": "The maths, algorithms, computer graphics and tools behind 3D modelling: meshes, transforms, the rendering pipeline, picking, modelling operations, subdivision, curvature, UVs, shading, animation and skinning, each built by hand in a notebook and then used in MeshLab",
       "chapters": 1,
-      "lessons": 1
+      "lessons": 4
     },
     {
       "id": "native-languages",

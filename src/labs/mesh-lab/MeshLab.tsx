@@ -41,6 +41,18 @@ function download(name: string, data: BlobPart, type: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/** An edge table's counts, worked out once per table (a mesh makes a new table when it changes). */
+const edgeCountCache = new WeakMap<Map<string, { faces: number[] }>, { edges: number; open: number; many: number }>();
+function edgeCounts(table: Map<string, { faces: number[] }>) {
+  let c = edgeCountCache.get(table);
+  if (!c) {
+    c = { edges: table.size, open: 0, many: 0 };
+    for (const e of table.values()) { if (e.faces.length === 1) c.open++; else if (e.faces.length > 2) c.many++; }
+    edgeCountCache.set(table, c);
+  }
+  return c;
+}
+
 export default function MeshLab({ onBack }: MeshLabProps) {
   const editor = useMemo(() => {
     const e = new Editor();
@@ -160,6 +172,8 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       if (mod && k === 's') return act(() => saveFile());
       if (mod && k === 'r') return act(() => loopCut());
       if (mod && k === 'l') return act(() => ed.selectLinked());
+      // By code, not key: Alt changes the character a letter types on a Mac.
+      if (mod && e.shiftKey && e.altKey && e.code === 'KeyM') return act(() => ed.selectNonManifold());
       if (mod && k === 'p') return act(() => ed.bindToArmature());
       if (mod && k === 'b' && ed.mode === 'edit') return act(() => ed.bevel(0.1, 1));
       if (mod && k === 'x' && ed.mode === 'edit') return act(() => ed.dissolve());
@@ -285,7 +299,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
       ['Export OBJ (keeps quads, for Blender)', () => download('scene.obj', exportOBJ(editor.modelScene), 'text/plain')],
       ['Export GLB', exportGlb],
     ],
-    Edit: [['Undo', () => editor.undo(), 'Ctrl+Z'], ['Redo', () => editor.redo(), 'Ctrl+Shift+Z'], ['Duplicate', () => editor.duplicate(), 'Shift+D'], ['Delete', () => (edit ? editor.deleteElements() : editor.deleteObjects()), 'X'], ['Select all', () => (edit ? editor.selectAllElements() : editor.selectAllObjects()), 'A'], ['Select loop (Alt+click an edge)', () => { const e = vp?.hoveredEdge() ?? editor.selectedEdges()[0]; if (e) editor.selectLoop(e[0], e[1], false); else editor.say('Select loop: Alt+click an edge in edit mode'); }, 'Alt+click'], ['Select linked', () => editor.selectLinked(), 'Ctrl+L']],
+    Edit: [['Undo', () => editor.undo(), 'Ctrl+Z'], ['Redo', () => editor.redo(), 'Ctrl+Shift+Z'], ['Duplicate', () => editor.duplicate(), 'Shift+D'], ['Delete', () => (edit ? editor.deleteElements() : editor.deleteObjects()), 'X'], ['Select all', () => (edit ? editor.selectAllElements() : editor.selectAllObjects()), 'A'], ['Select loop (Alt+click an edge)', () => { const e = vp?.hoveredEdge() ?? editor.selectedEdges()[0]; if (e) editor.selectLoop(e[0], e[1], false); else editor.say('Select loop: Alt+click an edge in edit mode'); }, 'Alt+click'], ['Select linked', () => editor.selectLinked(), 'Ctrl+L'], ['Select non-manifold (open edges, edges on 3+ faces)', () => editor.selectNonManifold(), 'Shift+Ctrl+Alt+M']],
     Add: [...PRIMS.map(([t, label]) => [label, () => editor.addPrimitive(t)] as [string, () => void]), ['Empty', () => editor.addEmpty()], ['Armature (one bone)', () => editor.addArmature()], ['Camera', () => editor.addCamera()], ['Camera from this view', cameraFromView]],
     Mesh: [
       ['Extrude', () => editor.extrude(0.5), 'E'], ['Inset (region)', () => editor.insetRegion(0.1), 'I'], ['Inset individual faces', () => editor.inset(0.25)], ['Bevel edges', () => editor.bevel(0.1, 1), 'Ctrl+B'], ['Loop cut', loopCut, 'Ctrl+R'], ['Knife (drag a line)', () => vp?.armKnife(true), 'K'],
@@ -321,10 +335,11 @@ export default function MeshLab({ onBack }: MeshLabProps) {
     Help: [['Keyboard shortcuts', () => setHelp(true), '?']],
   };
 
+  // Counts for the whole scene; open and non-manifold edges only when there are some.
   const stats = (() => {
-    let v = 0, f = 0;
-    for (const x of editor.scene.objects) if (x.mesh) { v += x.mesh.verts.length; f += x.mesh.faces.length; }
-    return `${editor.scene.objects.length} objects · ${v} verts · ${f} faces`;
+    let v = 0, e = 0, f = 0, open = 0, many = 0;
+    for (const x of editor.scene.objects) if (x.mesh) { const c = edgeCounts(x.mesh.edges()); v += x.mesh.verts.length; e += c.edges; f += x.mesh.faces.length; open += c.open; many += c.many; }
+    return `${editor.scene.objects.length} objects · ${v} verts · ${e} edges · ${f} faces${open ? ` · ${open} open edge${open === 1 ? '' : 's'}` : ''}${many ? ` · ${many} on 3+ faces` : ''}`;
   })();
 
   const toggle = (k: keyof ViewOptions) => setOpts((p) => ({ ...p, [k]: !p[k] }));
@@ -440,7 +455,7 @@ export default function MeshLab({ onBack }: MeshLabProps) {
 function Help({ onClose }: { onClose: () => void }) {
   const keys: [string, string][] = [
     ['Tab', 'Object / Edit mode'], ['1 2 3', 'Vertex / edge / face select (edit mode)'], ['Click, Shift+click', 'Select, add to selection'],
-    ['B then drag', 'Box select'], ['A, Alt+A', 'Select all, none'], ['Ctrl+L', 'Select linked'], ['G R S', 'Move / rotate / scale gizmo'],
+    ['B then drag', 'Box select'], ['A, Alt+A', 'Select all, none'], ['Ctrl+L', 'Select linked'], ['Shift+Ctrl+Alt+M', 'Select non-manifold: open edges and edges on 3+ faces'], ['G R S', 'Move / rotate / scale gizmo'],
     ['U (edit mode)', 'Unwrap: LSCM on the pieces the seams cut'], ['Ctrl+B', 'Bevel the selected edges'], ['Ctrl+X', 'Dissolve the selection (keep the shape)'], ['E', 'Extrude faces'], ['I', 'Inset the selection as one region (edit mode); insert keyframe (object mode)'], ['Space', 'Play / pause the animation'], ['← →', 'Previous / next frame'], ['Ctrl+R', 'Loop cut at the edge under the pointer'], ['M', 'Merge vertices at centre'], ['K (edit mode)', 'Knife: drag a line; it cuts the faces facing you (all of them with X-ray)'], ['Alt+click', 'Select the edge loop (face mode: the ring of faces)'],
     ['X, Delete', 'Delete'], ['Shift+D', 'Duplicate object'], ['H', 'Hide object'], ['F, Home', 'Frame selected, frame all (. in edit mode)'], ['0', 'Look through the scene camera (drag or zoom to leave)'], ['Ctrl+Alt+0', 'Move the scene camera to this view'], ['F (edit mode)', 'Fill: close the hole round the selected vertices with a face'],
     ['Tab on an armature', 'Edit bones: click a joint, drag it; E extrudes a bone'], ['Ctrl+Tab on an armature', 'Pose mode: click a bone, rotate it'], ['Ctrl+Tab on a bound mesh', 'Weight paint: brush a bone\'s weights'], ['Ctrl+P', 'Bind the selected mesh to the active armature'], ['Alt+R (pose mode)', 'Clear the pose'],

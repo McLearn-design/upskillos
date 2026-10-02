@@ -1,7 +1,42 @@
 # Course plan: Making Games with Game Studio
 
-Status (2026-10-01): **Lessons 1.1–1.4 are written, as the trial for the user to review** (see "Lessons as
-built" below). "Try it" is built and tested. Decided with the user (2026-10-01):
+Status (2026-10-01): **The user reviewed lessons 1.1–1.4: "good", with one change: the pictures must be high
+definition** (now 2× WebP). Decided at that review:
+- **Name:** "Building Games with Game Studio". The course id stays `making-games`, because progress is keyed by it.
+- **Scope:** concept lessons, not whole games. Teach how to do each thing a game needs (changing scenes, and so on)
+  on top of chapter 1, then Tetris as the one complete game, which is "enough to get the full picture". The old
+  chapter 8 (rebuilding Coin Run, Breakout and Zombie Arena) is dropped.
+- **Machine learning:** a bonus lesson at the end of the course, linked from the ML Lab. A bridge from the ML
+  Lab's Python to the engine remains possible later.
+
+The outline below is updated to match. Lessons 1.1–1.4 were the trial (see "Lessons as built").
+
+**All lessons written (2026-10-01): 33 lessons in 8 chapters.** Chapter 7 (game logic) was folded in: game states
+are lesson 6.5, and chasing is in the Maze Chase example. Tetris is now chapter 7, and the bonus is chapter 8.
+
+| Chapter | Lessons (each with its Try it task) |
+|---|---|
+| 1 First steps | scenes, nodes and positions; run and stop; your first script; steering with input actions |
+| 2 Physics | bodies and walls; gravity and jumping; areas and pickups; rigid bodies and bouncing; layers and masks |
+| 3 Camera and HUD | a camera that follows; camera limits; a HUD on a CanvasLayer |
+| 4 Animation | sprite animation; keyframes on a timeline; animation from scripts |
+| 5 Tilemaps | tilesets and painting; solid walls; maps from Tiled and Tile Mapper |
+| 6 Scenes | scenes inside scenes; making things while the game runs; groups; signals; changing scenes |
+| 7 Tetris | one lesson per Tetris task, 1 to 9 |
+| 8 Bonus | a game that learns to play itself (Run › Train an agent…, no task) |
+
+Every number in the optional maths was checked against the engine's code:
+- physics: the minimum translation vector, sliding v − (v·n)n, bounce v − (1+e)(v·n)n, a fixed 1/60 s step and
+  gravity 980;
+- camera: smoothing 1 − e^(−k·dt) and the limits clamp;
+- animation: frame timing, play() not restarting a playing animation, linear keys;
+- tilemaps: tile numbering, the solid-rectangle merge, Tiled's flip bits;
+- scenes: instance cycles refused, signal error isolation;
+- Tetris: every constant in `tasks/tetris.ts`.
+
+Two claims were wrong in the first draft and corrected before generating:
+- what play() does when called every frame;
+- what Tiled import makes solid. "Try it" is built and tested. Decided with the user (2026-10-01):
 - **Full, deep maths in every lesson, labelled optional:** "Under the hood (optional)". A learner can skip it
   and still finish the course.
 - **Both forms: the course, and learning inside Game Studio.** The same tasks serve the course's "Try it"
@@ -171,16 +206,19 @@ hood** is the maths or algorithm the lesson explains.
 - 7.2 Game states. *Task:* start, play, pause and over. *Under the hood:* state machines.
 - 7.3 Difficulty over time. *Task:* enemies that come faster. *Under the hood:* curves and timers.
 
-**8. Projects**
-- 8.1 to 8.3: build Coin Run, Breakout and Zombie Arena from an empty project, as chains of tasks, with less
-  help each time.
+**8. Tetris** (the capstone: the tutorial chain exists, `tasks/tetris.ts`)
+- 8.1 to 8.9, one lesson per Tetris task: the board as a 2D array, a piece as data, moving with collision checks,
+  falling on a timer and locking, turning, clearing lines, scoring and a HUD, a fair bag of pieces and game over,
+  hard drop, levels and the next piece. *Under the hood:* grids as arrays (row × width + column), rotation
+  matrices, Fisher–Yates, and speed as 0.5 × 0.85^(level − 1).
 
-**9. Machine learning (after Phase 9)**
-- A game as an environment, a reward, and an agent that learns to play Breakout. It links to the ML Lab.
+**9. Bonus: a game that learns** (Phase 9 is built in Game Studio: Run › Train an agent…)
+- One lesson: a game as an environment (what the agent sees, does and earns), the cross-entropy method, and
+  training an agent to play Breakout, then watching it play. The ML Lab links to it as a bonus.
 
 ## Lessons as built (2026-10-01)
 
-**Course:** `src/courses/making-games/`, "Learn to Program by Making Games" (working title), generated from
+**Course:** `src/courses/making-games/`, "Building Games with Game Studio", generated from
 `course-sources/making-games.yaml` with `npm run course:create`. Edit the YAML, then regenerate with `--force`.
 
 **Chapter 1, First steps:** four lessons, each built round one existing task:
@@ -280,7 +318,7 @@ and objects (the board, a piece), events (signals), state (game states). It sugg
 - **Part 2:** Game Studio's features (the chapters above);
 - **Part 3:** Tetris, then the other projects.
 
-The name is the user's to confirm; "Learn to Program by Making Games" is the working title now.
+The user later named the course "Building Games with Game Studio" and chose concept lessons plus Tetris over a series of whole games (see the status at the top).
 
 **3. Pictures of what to do, at every step.** Each tutorial step gets a screenshot of the real editor, showing
 where to click. They are made by a script that does each task's steps in a browser and photographs the editor at
@@ -319,4 +357,4 @@ All three labs run in the same page, so they can hand work over directly, with n
 
 ## Still open
 
-- **The course's name** in the catalogue. Working title now: "Learn to Program by Making Games" (see above).
+- ~~The course's name~~: "Building Games with Game Studio" (decided 2026-10-01).

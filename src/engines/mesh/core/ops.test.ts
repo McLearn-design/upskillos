@@ -3,7 +3,7 @@ import { EditMesh } from './EditMesh';
 import { makePrimitive } from './primitives';
 import { catmullClark, subdivide } from './subdivision';
 import { mirror, evaluate } from './modifiers';
-import { Trace } from './trace';
+import { Trace, checkQuiz } from './trace';
 
 const cube = () => makePrimitive('cube', { size: 2 });
 const find = (m: EditMesh, p: number[]) => m.verts.findIndex((v) => v.every((x, i) => Math.abs(x - p[i]) < 1e-9));
@@ -151,5 +151,76 @@ describe('inset, loop cut, delete, merge', () => {
     expect(t.phases().map((p) => p.phase)).toEqual(['Average normal', 'Copy vertices', 'Border edges', 'Lift faces', 'Walls']);
     expect(t.steps.at(-1)!.mesh).toEqual(m.toSnapshot());
     expect(m.volume()).toBeCloseTo(12, 10);
+  });
+});
+
+describe('flip, traced', () => {
+  it('each face: its normal, the corners reversed, and n′ = −n; the first face asks for a prediction', () => {
+    const m = new EditMesh([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [2, 0, 0]], [[0, 1, 2, 3], [1, 4, 2]]);
+    const before = [m.faceNormal(0), m.faceNormal(1)];
+    const t = new Trace('Flip normals');
+    m.flip(undefined, t);
+    expect(m.faces[0]).toEqual([3, 2, 1, 0]);
+    expect(t.steps.map((s) => s.phase)).toEqual(['Normal before', 'Reversed', 'Normal before', 'Reversed']);
+    for (const [i, n] of before.entries()) expect(m.faceNormal(i).map((x) => x + 0)).toEqual(n.map((x) => -x + 0));
+    const q = t.steps[1].quiz!;
+    expect(q.answer.map((x) => x + 0)).toEqual([0, 0, -1]);   // the square faced +z; reversed it faces −z
+    expect(checkQuiz(q, [0, 0, -1]).correct).toBe(true);
+    expect(checkQuiz(q, [0, 0, 1]).correct).toBe(false);
+    expect(t.steps[3].quiz).toBeUndefined();
+  });
+});
+
+describe('edge table, traced', () => {
+  // The unit cube numbered as lesson 1.3 numbers it (vertex i at i % 2, ⌊i / 2⌋ % 2, ⌊i / 4⌋), lid removed.
+  const V = Array.from({ length: 8 }, (_, i) => [i % 2, Math.floor(i / 2) % 2, Math.floor(i / 4)] as [number, number, number]);
+  const box = () => new EditMesh(V.map((v) => [...v] as [number, number, number]), [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [0, 2, 3, 1], [4, 5, 7, 6]]);
+
+  it('every edge of every face, new or found; then the four rim edges are open', () => {
+    const m = box(), t = new Trace('Edge table');
+    const r = m.edgeTable(t);
+    expect(r.edges).toBe(12);
+    expect(r.open.map(([a, b]) => `${a}-${b}`).sort()).toEqual(['2-3', '2-6', '3-7', '6-7']);
+    expect(r.nonManifold).toEqual([]);
+    expect(t.steps).toHaveLength(20 + 1);   // 5 quads × 4 edges, then the classification
+    expect(t.steps.filter((s) => s.phase === 'New edge')).toHaveLength(12);
+    expect(t.steps.filter((s) => s.phase === 'Found')).toHaveLength(8);
+    expect(m.faces).toHaveLength(5);         // reading the table changes nothing
+  });
+
+  it('asks twice: at the first key already in the table, and for the counts at the end', () => {
+    const t = new Trace('Edge table');
+    box().edgeTable(t);
+    const asked = t.steps.filter((s) => s.quiz);
+    expect(asked).toHaveLength(2);
+    // Faces 0 and 1 share no edge; face 2's second edge, v1 → v5, is face 1's v5 → v1.
+    expect(asked[0].label).toBe('Face 2, v1 → v5: key "1-5" found, faces 1 → 1, 2');
+    expect(asked[0].quiz!.answer).toEqual([2, 9]);
+    expect(checkQuiz(asked[1].quiz!, [4, 0]).correct).toBe(true);
+  });
+
+  it('a fin through the closed cube: two edges on three faces, two open', () => {
+    const m = new EditMesh(V.map((v) => [...v] as [number, number, number]), [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 7, 6]]);
+    const r = m.edgeTable();
+    expect(r.edges).toBe(14);
+    expect(r.nonManifold.map(([a, b]) => `${a}-${b}`).sort()).toEqual(['0-1', '6-7']);
+    expect(r.open.map(([a, b]) => `${a}-${b}`).sort()).toEqual(['0-6', '1-7']);
+  });
+});
+
+describe('topology, traced', () => {
+  it('counts V, E, F, pieces and boundary loops; genus from χ = 2 − 2g − b', () => {
+    const V = Array.from({ length: 8 }, (_, i) => [i % 2, Math.floor(i / 2) % 2, Math.floor(i / 4)] as [number, number, number]);
+    const sides = [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1], [4, 5, 7, 6]];
+    expect(new EditMesh(V.map((v) => [...v] as [number, number, number]), sides).topology()).toEqual({ V: 8, E: 12, F: 6, chi: 2, pieces: 1, boundaryLoops: 0, genus: 0 });
+    // A tube: the four sides round y, no top or bottom: two boundary loops, χ = 0, genus 0.
+    expect(new EditMesh(V.map((v) => [...v] as [number, number, number]), sides.filter((_, i) => i !== 2 && i !== 3)).topology()).toEqual({ V: 8, E: 12, F: 4, chi: 0, pieces: 1, boundaryLoops: 2, genus: 0 });
+    // Two pieces: no single genus.
+    const two = new EditMesh([...V, ...V.map((v) => [v[0] + 3, v[1], v[2]] as [number, number, number])], [...sides, ...sides.map((f) => f.map((k) => k + 8))]);
+    expect(two.topology()).toMatchObject({ chi: 4, pieces: 2, genus: null });
+    const t = new Trace('Euler characteristic');
+    two.topology(t);
+    expect(t.steps.map((x) => x.phase)).toEqual(['Count', 'Count', 'Count', 'Count', 'Result']);
+    expect(t.steps.filter((x) => x.quiz)).toHaveLength(1);   // χ only: two pieces have no one genus to ask for
   });
 });
