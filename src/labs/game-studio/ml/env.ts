@@ -73,6 +73,12 @@ export interface EnvSpec {
   fps?: number;
   /** The scene to play (the main scene unless given). */
   scene?: string;
+  /**
+   * Draw the Q table over the game while it trains and plays (ml/overlay.ts), for an agent whose state is a grid
+   * cell: its first two binned readings are its column and row. Each cell gets a colour for its best Q and an arrow
+   * for the greedy action.
+   */
+  overlay?: { grid: [number, number]; cell: [number, number]; origin?: [number, number]; arrows?: string[] };
 }
 
 export interface StepResult { observation: number[]; reward: number; terminated: boolean; truncated: boolean; info: { step: number; errors: string[] } }

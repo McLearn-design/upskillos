@@ -2,6 +2,7 @@
 // done), a hint for the step you are on, "Show me" when stuck, and the way back to the lesson (or
 // on to the next task, in a tutorial). The checks run in tasks/checker.ts.
 
+import { TRAIN_HUD_HEIGHT, trainHudShown } from './TrainHud';
 import React, { useState } from 'react';
 import type { Store } from './store';
 import { C, useStore } from './kit';
@@ -28,7 +29,7 @@ export function TaskPanel({ store, onBack }: { store: Store; onBack: (route: str
         <img src={big} alt="" style={{ maxWidth: '92%', maxHeight: '92%', borderRadius: 4, boxShadow: '0 10px 40px #000' }} />
       </div>
     )}
-    <div data-testid="task-panel" style={{ position: 'absolute', right: 10, top: 10, width: 340, maxWidth: 'calc(100% - 20px)', maxHeight: 'calc(100% - 20px)', overflowY: 'auto', background: '#16181cf2', border: `1px solid ${t.finished ? C.ok : C.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 12, color: C.dim, lineHeight: 1.5, zIndex: 6 }}>
+    <div data-testid="task-panel" style={{ position: 'absolute', right: 10, top: 10, width: 340, maxWidth: 'calc(100% - 20px)', maxHeight: store.running && trainHudShown(store) ? `calc(100% - ${TRAIN_HUD_HEIGHT + 20}px)` : 'calc(100% - 20px)', overflowY: 'auto', background: '#16181cf2', border: `1px solid ${t.finished ? C.ok : C.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 12, color: C.dim, lineHeight: 1.5, zIndex: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ color: C.faint, fontSize: 11 }}>TRY IT · {t.def.chain}</span>
         <span style={{ flex: 1 }} />

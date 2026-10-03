@@ -1,15 +1,16 @@
 // Training off the editor's page (ml/qlearning.ts or ml/cem.ts on ml/env.ts): the game's scripts expect globals
 // such as Node and scene, which must not touch the page, and training takes seconds to minutes.
 // In:  { project, spec, method, options }
-// Out: { type: 'describe' | 'random' | 'generation' | 'episode' | 'done' | 'error', … }
+// Out: { type: 'describe' | 'random' | 'generation' | 'episode' | 'done' | 'compareRun' | 'compareDone' | 'error', … }
 import { GameEnv } from './env';
 import { cem, evaluate, type CemOptions } from './cem';
 import { evaluateQ, qLearning, type QOptions } from './qlearning';
 import { loadScripts } from '../runtime/scripts';
+import { runOnce, type CompareConfig } from './compare';
 import type { Project } from '../core/types';
 import type { EnvSpec } from './env';
 
-type Job = { project: Project; spec: EnvSpec } & ({ method: 'q'; options: QOptions } | { method: 'cem'; options: CemOptions });
+type Job = { project: Project; spec: EnvSpec } & ({ method: 'q'; options: QOptions } | { method: 'cem'; options: CemOptions } | { method: 'compare'; configs: CompareConfig[]; seeds: number[] });
 
 self.onmessage = async (e: MessageEvent<Job>) => {
   const job = e.data;
@@ -18,7 +19,14 @@ self.onmessage = async (e: MessageEvent<Job>) => {
     // What the agent can do and sees, by name, and its bins: a script agent's come from its script.
     postMessage({ type: 'describe', actions: env.actionNames, observation: env.observationNames, bins: env.bins });
     postMessage({ type: 'random', score: evaluate(env, 'random', 3, 7) });
-    if (job.method === 'q') {
+    if (job.method === 'compare') {
+      // Every setting meets every seed, one run at a time, so the page can draw the comparison as it fills in.
+      for (const seed of job.seeds) for (let config = 0; config < job.configs.length; config++) {
+        const r = runOnce(env, job.configs[config].options, seed);
+        postMessage({ type: 'compareRun', config, seed, ...r });
+      }
+      postMessage({ type: 'compareDone' });
+    } else if (job.method === 'q') {
       const run = qLearning(env, job.options);
       let r = run.next();
       // Each episode's numbers, and on a check a copy of the table so far, for the dialog to draw.

@@ -16,7 +16,9 @@ mkdirSync(OUT, { recursive: true });
 const PP = 'assets/pixel-platformer';
 const CHAR = `${PP}/characters/tile_0000.png`, WALK2 = `${PP}/characters/tile_0001.png`, COIN = `${PP}/tiles/tile_0151.png`;
 const BALL = 'assets/puzzle-pack/balls/ballblue_01.png', SHEET = 'assets/tiny-dungeon/tilemap/tilemap_packed.png';
-const only = process.argv[2];   // a task id (or the start of one, like tetris), to make just those pictures
+const only = process.argv[2];
+// Tasks whose steps carry on in the same running game (one training run in view across several steps).
+const KEEP_RUNNING = new Set(['td-step']);   // a task id (or the start of one, like tetris), to make just those pictures
 
 const failed = await withGameStudio(5182, async ({ page, t, check, answer }) => {
   let focus = null;
@@ -50,6 +52,18 @@ const failed = await withGameStudio(5182, async ({ page, t, check, answer }) => 
       await t('left-files').click(); await ui.openScript('scripts/board.js');
       await ui.script(await page.evaluate(([a, b]) => window.__gameStudio.tetrisStepScripts(a)[b], [task, step]));
       await ui.run(); mark(page.locator('iframe[title="Running game"]'));
+    },
+    // Run › Train an agent…: the table-learning settings, typed in.
+    td: async ({ algorithm = 'q', episodes, alpha, gamma, from, to, schedule }) => {
+      await t('train-algorithm').selectOption(algorithm);
+      if (schedule) await t('train-schedule').selectOption(schedule);
+      for (const [id, v] of [['train-episodes', episodes], ['train-alpha', alpha], ['train-gamma', gamma], ['train-epsilon', from], ['train-epsilon-end', to]]) if (v !== undefined) await t(id).fill(String(v));
+    },
+    // Train in view, paused: Step to the next update, and wait until the trace shows it.
+    step: async () => {
+      const head = await page.getByTestId('trace-head').innerText().catch(() => '');
+      await mark(t('train-step')).click();
+      await page.waitForFunction((h) => { const e = document.querySelector('[data-testid="trace-head"]'); return e && e.textContent !== h; }, head, { timeout: 15000 });
     },
     // Run › Train an agent…: Breakout's environment with these bins on the ball-across and ball-velocity.y readings, typed in.
     spec: async ({ across, vy }) => {
@@ -200,6 +214,44 @@ const failed = await withGameStudio(5182, async ({ page, t, check, answer }) => 
       () => ui.board('tetris-finish', 1),
       async () => { await t('file-scenes/main.scene').click(); await ui.label('Next', 92, 'Next'); await ui.board('tetris-finish', 2); },
     ],
+    // Game AI that learns, 9.1: step through updates, predict three, finish, then a small α.
+    'td-step': [
+      async () => {
+        await t('menu-Run').click(); await t('item-Train an agent…').click();
+        await ui.td({ algorithm: 'q', episodes: 200, alpha: 0.5, gamma: 1, from: 0.1, to: 0.1, schedule: 'constant' });
+        await t('train-in-view').click();
+        await page.getByTestId('train-hud-status').filter({ hasText: /Episode \d+ of 200/ }).waitFor({ timeout: 60000 });
+        for (let k = 0; k < 5; k++) await ui.step();
+        mark(page.getByTestId('train-trace'));
+      },
+      async () => {
+        await t('train-predict').check();
+        for (let k = 0; k < 3; k++) {
+          await ui.step();
+          const tr = await page.evaluate(() => window.__gameStudio.store.trainTransition);
+          await t('trace-guess-target').fill(String(+tr.target.toFixed(3)));
+          await t('trace-guess-after').fill(String(+tr.after.toFixed(3)));
+          await t('trace-check').click();
+        }
+        mark(page.getByTestId('train-trace'));
+      },
+      async () => {
+        await t('train-predict').uncheck();
+        await t('train-speed-1024').click();
+        await page.getByTestId('train-hud-status').filter({ hasText: 'Trained.' }).waitFor({ timeout: 300000 });
+        mark(page.getByTestId('train-hud'));
+      },
+      async () => {
+        await ui.stop();
+        await t('menu-Run').click(); await t('item-Train an agent…').click();
+        await ui.td({ alpha: 0.05 });
+        await t('train-in-view').click();
+        await page.getByTestId('train-hud-status').filter({ hasText: /Episode \d+ of 200/ }).waitFor({ timeout: 60000 });
+        await t('train-speed-1024').click();
+        await page.getByTestId('train-hud-status').filter({ hasText: 'Trained.' }).waitFor({ timeout: 300000 });
+        mark(page.getByTestId('train-hud'));
+      },
+    ],
     // A game that learns: every step is in Run › Train an agent…. The spec is edited as JSON, as a learner types it.
     'q-agent': [
       async () => { await t('menu-Run').click(); await t('item-Train an agent…').click(); await ui.spec({ across: [-0.25, -0.1, -0.03, 0.03, 0.1, 0.25] }); },
@@ -241,8 +293,9 @@ const failed = await withGameStudio(5182, async ({ page, t, check, answer }) => 
         await sharp(await page.screenshot({ type: 'png' })).webp({ quality: 85 }).toFile(new URL(`${id}-${i}.webp`, OUT).pathname);
         await page.evaluate(() => { const p = document.querySelector('[data-testid="task-panel"]'); if (p) p.style.visibility = ''; });
         await page.evaluate(() => document.querySelectorAll('[data-gs-shot]').forEach((el) => { el.style.outline = ''; delete el.dataset.gsShot; }));
-        await ui.stop();
+        if (!KEEP_RUNNING.has(id)) await ui.stop();
       }
+      await ui.stop();
       await page.locator('[data-testid="task-finished"]').waitFor({ timeout: 8000 }).catch(() => bad.push(`${id}: not finished`));
     } catch (e) {
       bad.push(`${id}: ${e.message.split('\n')[0]}`);

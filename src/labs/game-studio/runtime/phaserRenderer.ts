@@ -14,7 +14,7 @@ import * as Phaser from 'phaser';
 import type { DrawItem, Renderer, View } from '../engine/game';
 import { tileFlags, tileId, tileTransform } from '../core/tiles';
 
-type Obj = Phaser.GameObjects.Image | Phaser.GameObjects.Text | Phaser.Tilemaps.TilemapLayer;
+type Obj = Phaser.GameObjects.Image | Phaser.GameObjects.Text | Phaser.GameObjects.Rectangle | Phaser.Tilemaps.TilemapLayer;
 interface Rec { obj: Obj; kind: DrawItem['kind']; screen: boolean; map?: Phaser.Tilemaps.Tilemap; version?: string; offset?: { x: number; y: number } }
 
 export class PhaserRenderer implements Renderer {
@@ -56,6 +56,7 @@ export class PhaserRenderer implements Renderer {
         this.drop(rec);
         const obj: Obj = it.kind === 'sprite'
           ? this.scene.add.image(0, 0, this.scene.textures.exists(it.texture) ? it.texture : '__MISSING')
+          : it.kind === 'rect' ? this.scene.add.rectangle(0, 0, it.width, it.height, 0xffffff)
           : this.scene.add.text(0, 0, '', { fontFamily: 'system-ui, sans-serif' }).setOrigin(0, 0);
         // Each object is drawn by one camera only.
         (it.screen ? main : this.ui).ignore(obj);
@@ -69,6 +70,11 @@ export class PhaserRenderer implements Renderer {
       o.setAlpha(it.alpha);
       o.setDepth(it.depth);
       if (it.kind === 'sprite') (o as Phaser.GameObjects.Image).setFlip(it.flipX, it.flipY);
+      else if (it.kind === 'rect') {
+        const r = o as Phaser.GameObjects.Rectangle;
+        r.setSize(it.width, it.height);
+        r.setFillStyle(Phaser.Display.Color.HexStringToColor(it.color).color, 1);
+      }
       else if (it.kind === 'text') {
         const t = o as Phaser.GameObjects.Text;
         if (t.text !== it.text) t.setText(it.text);

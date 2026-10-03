@@ -15,6 +15,7 @@ import type { NodeData, Project, SceneData } from '../core/types';
 import type { DrawItem, Game, View } from '../engine/game';
 import type { Node } from '../engine/nodes';
 import type { EnvSpec } from '../ml/env';
+import type { QOptions } from '../ml/qlearning';
 
 export type CheckResult = true | string;
 
@@ -69,8 +70,13 @@ export interface PlayView {
 export interface TrainingView {
   /** The environment as typed in the dialog (when it is valid JSON), or null. */
   draft: EnvSpec | null;
-  /** Every training run that finished: how it trained, on what, and how it then scored against random play. */
-  runs: { method: 'q' | 'cem'; spec: EnvSpec; score: number; random: number }[];
+  /** Every training run that finished: how it trained, on what (and with which settings), and how it then scored against random play. */
+  runs: { method: 'q' | 'cem'; spec: EnvSpec; score: number; random: number; options?: QOptions; inView?: boolean }[];
+  /** Updates stepped through one at a time (Train in view's Step), and Predict's answers checked: how many were right. */
+  stepped?: number;
+  predictions?: { right: number; total: number };
+  /** Finished comparisons: each setting's options. */
+  compared?: { options: QOptions[]; seeds: number }[];
   /** "Watch it play" has run the game with a trained agent at the controls. */
   watched: boolean;
   /** Brains saved from the dialog since the task started, by path. */

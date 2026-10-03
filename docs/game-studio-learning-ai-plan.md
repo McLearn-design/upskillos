@@ -34,27 +34,31 @@ leads to deep Q-networks, and it is still small enough to read.
 
 ## The chapter: "Game AI that learns" (chapter 9, after the bonus)
 
-Each lesson has a notebook (the maths, built by hand on a small game) and a Game Studio task, as 8.1 does.
+**Revised 2026-10-03, at the user's request.** The user is studying Q-learning for a course assignment this week
+and asked that the lab teach every concept of the topic, in whatever language the assignment uses. So the
+chapter now covers the whole of tabular TD control (Sutton & Barto ch. 6, with the pieces of ch. 2, 3 and 9–10 it
+leans on) before applying it to your own games.
 
-| # | Lesson | What you learn | In Game Studio |
+The user does their own assignment. The lessons teach and give practice; they do not solve anything set for the
+course.
+
+Each lesson has:
+- a notebook: the maths, built by hand on a small problem, every number tested;
+- a Game Studio task on Cliff Walk or another example, using the lab's instruments: Train in view, Step and
+  Predict, Compare, and the overlay.
+
+| # | Lesson | Concepts | In Game Studio |
 |---|---|---|---|
-| 1 | Q-learning (today's 8.1) | The loop, Q, Bellman, the TD update, exploration | Breakout, 14 states |
-| 2 | Designing an environment for any game | A checklist: what decides the action, relative coordinates, what ends an episode, how often to decide | The platformer: an agent that reaches the flag |
-| 3 | States that work | The Markov question, aliasing, how many bins, measuring instead of guessing | Experiments with bins, compared on the curve |
-| 4 | Rewards and shaping | Misspecification, potential-based shaping (with the proof), sparse vs dense rewards | A reward that teaches the wrong thing, then fixed |
-| 5 | An NPC that learns | Agents in script; brains as files; training against a scripted player | Maze Chase: a ghost that learns to corner you, shipped in the game |
-| 6 | Many NPCs, one brain | Shared experience, and the opponent problem (a moving target; self-play) | Zombie Arena: zombies that learn to flank |
-| 7 | Beyond tables | Linear Q-learning with features: the gradient view of the update, and why it can diverge | The same ghost with features instead of bins |
-| 8 | Debugging and judging agents | Seeds, held-out games, overlays, and when a state machine or path-finding is the better tool | The overlay, and the ghost against the breadth-first-search ghost |
-| 9 | Capstone: a learning enemy in your own game | The whole recipe on a game you made | Your project |
-
-Lesson 8 is there on purpose. Most game NPCs are better written by hand, with state machines, path-finding and
-behaviour trees. Learning earns its place for:
-- tuning behaviour that is hard to write down;
-- opponents that adapt;
-- finding exploits in your own game (an agent that breaks a level shows you where).
-
-The course should teach that judgement, not only the technique.
+| 1 | Learning from every step | Prediction vs control; Monte Carlo vs TD(0); bootstrapping; the TD error; the random walk (Ex. 6.2) | Step and Predict through Cliff Walk's updates |
+| 2 | Exploration | ε-greedy and its schedules, softmax (Boltzmann), optimistic initial values; exploration vs exploitation | Compare schedules and starting values on the cliff |
+| 3 | On-policy and off-policy: SARSA and Q-learning | The two targets; why SARSA walks safe and Q-learning walks the edge (Ex. 6.6, Fig. 6.4) | Train both in view; Compare them over seeds |
+| 4 | Expected SARSA and Double Q-learning | Averaging over the policy; maximization bias (Ex. 6.7) and its fix | Compare all four updates |
+| 5 | Experiments that mean something | α, γ and episodes; seeds and spread; learning curves vs greedy scores; reporting results | Compare sweeps of α and γ |
+| 6 | Bigger state spaces | Binning, aliasing and the Markov property; how many bins; state design | Breakout and the chaser: bins measured |
+| 7 | Beyond tables | Linear function approximation, features, the semi-gradient update; DQN's replay buffer and target network | (notebook; linear Q in Game Studio later) |
+| 8 | NPCs that learn in your own game | Script agents, brains, ai.training, scripted opponents, shared brains | Maze Chase: a ghost that learns |
+| 9 | When not to learn | Search, state machines, behaviour trees vs learning, measured | The learned ghost vs the breadth-first-search ghost |
+| 10 | Capstone | A learning enemy in your own game | Your project |
 
 ## Order of work
 
@@ -112,7 +116,49 @@ real bottleneck is measuring each lesson's claims (training runs over seeds), no
 - **Scope:** the player's keys are ignored while it trains; Pause pauses training; Stop ends it.
 - **Pictures:** `$TMPDIR/game-studio-train-in-view.png`, `game-studio-train-hud.png`.
 
+**Lab instruments for the concepts: done (2026-10-03).**
+- **Four updates** in `QLearner`: Q-learning, SARSA, Expected SARSA and Double Q-learning.
+- **Exploration options:** ε-greedy or softmax; linear, exponential or constant schedules; optimistic starting Q.
+  Q-learning's default numbers are unchanged; Breakout's checks are locked in the test.
+- `ml/td.test.ts` reproduces Sutton & Barto:
+  - Example 6.6: Q-learning's 13-move edge path, SARSA's top-row path, SARSA earning more while exploring;
+  - Example 6.7: maximization bias, Q-learning against Double Q-learning.
+- **Cliff Walk** (`examples/cliffWalk.ts`), the textbook gridworld, as a playable example:
+  - the Walker is a script agent; its cell is its state;
+  - `ml/overlay.ts` draws the table on the grid while it trains and plays (a `rect` draw kind);
+  - `ml/cliff.test.ts` gets the textbook result on the real engine.
+- **Step and Predict** (`editor/TrainTrace.tsx`):
+  - pause and step one update at a time, written in its algorithm's formula with its real numbers;
+  - Predict hides the target and the new Q until you check;
+  - `TrainTrace.test.tsx` proves the shown arithmetic gives the learner's numbers, for all four updates.
+- **Compare** (`ml/compare.ts`, `editor/CompareView.tsx`):
+  - settings over the same seeds, with averaged curves and mean ± sample sd of late return and greedy score;
+  - on the cliff it shows Fig. 6.4's shape.
+- **Browser:** `cliff.acceptance.mjs` 8/8 (in `npm run game:acceptance`).
+
+**Lesson 9.1, in progress (stopped 2026-10-03 at the end of a session):**
+- **Done:** the Game Studio task `td-step` (`tasks/learning.ts`, chain "Game AI that learns"): step 5 updates,
+  predict 3, finish (−13), retrain with α 0.05 (−200).
+  - Its pictures are made, and all 4 steps tick (`tutorials.shots.mjs td-step`).
+  - Editor checks now see Steps, Predict answers, each run's settings, and comparisons.
+- **Fixed:** the task panel now stops above the training strip; it had covered Predict's Check button.
+- **Not done:** the lesson text and notebook.
+  - Verified cells are drafted (in the session scratchpad: random walk, MC vs TD(0), one Q update, error curves,
+    TD(0) challenge).
+  - Measured results to quote:
+    - true values 1/6 … 5/6;
+    - one episode C→D→C→B→A→B→A changes every visited state under Monte Carlo, and only A under TD(0);
+    - error after 100 episodes: TD α 0.1 0.054, α 0.05 0.035; MC α 0.03 0.090, α 0.01 0.094;
+    - cliff greedy returns at α 0.5, 200 episodes: Q −13, SARSA −17, Expected SARSA −15, Double Q −17;
+    - Q with α 0.05: −200.
+  - Write it into course-sources/making-games.yaml as chapter 9 (folder 9-game-ai-that-learns, id mg9-001), set
+    mg8-001's nextLesson, and add a lesson test.
+
 **Next:**
+- the lessons above, finishing 9.1;
+- then step 2 (shared brains, a scripted opponent), the NPC overlay, and linear Q in Game Studio.
+
+**Earlier list, kept for reference:**
 - step 2: shared brains, several NPCs learning one table, and a scripted opponent in an example;
 - step 3: the overlay;
 - step 4: linear Q-learning;

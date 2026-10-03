@@ -8,8 +8,9 @@ import type { Store, TrainMethod } from './store';
 import { Btn, C, useStore } from './kit';
 import { Modal } from './Dialogs';
 import type { EnvSpec } from '../ml/env';
-import type { QEpisode, QOptions } from '../ml/qlearning';
+import type { QEpisode, QOptions, TdAlgorithm } from '../ml/qlearning';
 import { isQPolicy } from '../ml/policy';
+import { CompareView } from './CompareView';
 
 const W = 460, H = 150, PAD = 26;
 
@@ -21,7 +22,8 @@ function frame(values: number[], random: number | null) {
   return { lo, hi, y };
 }
 
-function Axes({ lo, hi, y, random, first, total, legend }: { lo: number; hi: number; y: (v: number) => number; random: number | null; first: string; total: number; legend: React.ReactNode }) {
+function Axes({ lo, hi, y, random, first, total, legend, width }: { lo: number; hi: number; y: (v: number) => number; random: number | null; first: string; total: number; legend: React.ReactNode; width?: number }) {
+  const W = width ?? 460;
   return <>
     <line x1={PAD} x2={W - 8} y1={y(0)} y2={y(0)} stroke={C.border} />
     {random !== null && <><line x1={PAD} x2={W - 8} y1={y(random)} y2={y(random)} stroke={C.warn} strokeDasharray="4 3" /><text x={W - 10} y={y(random) - 4} fill={C.warn} fontSize={10} textAnchor="end">random play {random.toFixed(1)}</text></>}
@@ -51,15 +53,16 @@ function CemCurve({ points, random, total }: { points: { best: number; eliteMean
 }
 
 /** Q-learning: each training episode's return (faint), their average over the last 10 (blue), and the greedy checks (green). */
-export function QCurve({ episodes, random, total }: { episodes: QEpisode[]; random: number | null; total: number }) {
+export function QCurve({ episodes, random, total, width }: { episodes: QEpisode[]; random: number | null; total: number; width?: number }) {
   const avg = episodes.map((_, i) => { const w = episodes.slice(Math.max(0, i - 9), i + 1); return w.reduce((s, e) => s + e.total, 0) / w.length; });
   const checks = episodes.filter((e) => e.greedy !== undefined);
   const { lo, hi, y } = frame([...episodes.map((e) => e.total), ...checks.map((e) => e.greedy!)], random);
-  const x = (ep: number) => PAD + ((ep - 1) / Math.max(1, total - 1)) * (W - PAD - 8);
+  const Wd = width ?? W;
+  const x = (ep: number) => PAD + ((ep - 1) / Math.max(1, total - 1)) * (Wd - PAD - 8);
   const path = (vals: number[]) => vals.map((v, i) => `${i ? 'L' : 'M'}${x(i + 1).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
   return (
-    <svg data-testid="train-curve" width={W} height={H} style={svgStyle}>
-      <Axes lo={lo} hi={hi} y={y} random={random} first="episode 1" total={total} legend={<>return per episode · <tspan fill={C.faint}>each</tspan> · <tspan fill={C.accent}>last 10 averaged</tspan> · <tspan fill={C.ok}>greedy check</tspan></>} />
+    <svg data-testid="train-curve" width={Wd} height={H} style={svgStyle}>
+      <Axes lo={lo} hi={hi} y={y} random={random} first="episode 1" total={total} width={Wd} legend={width ? <>return · <tspan fill={C.accent}>last 10</tspan> · <tspan fill={C.ok}>greedy</tspan></> : <>return per episode · <tspan fill={C.faint}>each</tspan> · <tspan fill={C.accent}>last 10 averaged</tspan> · <tspan fill={C.ok}>greedy check</tspan></>} />
       <path d={path(episodes.map((e) => e.total))} fill="none" stroke={C.faint} strokeWidth={1} />
       <path d={path(avg)} fill="none" stroke={C.accent} strokeWidth={2} />
       {checks.map((e) => <circle key={e.episode} cx={x(e.episode)} cy={y(e.greedy!)} r={3} fill={C.ok} />)}
@@ -112,29 +115,43 @@ function QTable({ described, table, visits }: { described: Described; table: num
 const brainPathFor = (spec: EnvSpec | null, project: string) => `brains/${((spec?.agent ?? project).split('/').pop() ?? 'agent').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '') || 'agent'}.json`;
 
 /** The Q-learning settings the dialog trains with (in the worker, or in view). */
-export const qOptions = (episodes: number, alpha: number, gamma: number, epsilon: number): QOptions => ({ episodes, alpha, gamma, epsilon, epsilonEnd: 0.02, seed: 3, checkEvery: 10 });
+export interface TdSettings { episodes: number; algorithm: TdAlgorithm; alpha: number; gamma: number; explore: 'epsilon' | 'softmax'; schedule: 'linear' | 'exponential' | 'constant'; start: number; end: number; initialQ: number }
+export const DEFAULT_TD: TdSettings = { episodes: 100, algorithm: 'q', alpha: 0.2, gamma: 0.97, explore: 'epsilon', schedule: 'linear', start: 0.3, end: 0.02, initialQ: 0 };
+export const qOptions = (t: TdSettings): QOptions => ({
+  episodes: t.episodes, algorithm: t.algorithm, alpha: t.alpha, gamma: t.gamma, explore: t.explore, schedule: t.schedule,
+  ...(t.explore === 'softmax' ? { temperature: t.start, temperatureEnd: t.end } : { epsilon: t.start, epsilonEnd: t.end }),
+  ...(t.initialQ ? { initialQ: t.initialQ } : {}), seed: 3, checkEvery: 10,
+});
+/** A setting in a line, for the comparison's legend. */
+export const settingsLabel = (t: TdSettings) => `${ALGORITHM_TEXT[t.algorithm][0]}, α ${t.alpha}, γ ${t.gamma}, ${t.explore === 'softmax' ? 'τ' : 'ε'} ${t.start}${t.schedule === 'constant' ? '' : `→${t.end} ${t.schedule}`}${t.initialQ ? `, Q₀ ${t.initialQ}` : ''}, ${t.episodes} ep.`;
+
+/** What each update is, in a line (Sutton & Barto ch. 6). */
+export const ALGORITHM_TEXT: Record<TdAlgorithm, [string, string]> = {
+  q: ['Q-learning', 'target r + γ max Q(s′, ·): learns the greedy policy\'s values while exploring (off-policy)'],
+  sarsa: ['SARSA', 'target r + γ Q(s′, a′), a′ the action it takes next: learns the exploring policy\'s values (on-policy)'],
+  'expected-sarsa': ['Expected SARSA', 'target r + γ Σ π(a′|s′) Q(s′, a′): SARSA without the randomness of a′'],
+  'double-q': ['Double Q-learning', 'two tables: one picks the best next action, the other values it, so noise is not mistaken for value'],
+};
 
 export function TrainDialog({ store, onClose, onWatch, onTrainInView }: { store: Store; onClose: () => void; onWatch: () => void; onTrainInView: (spec: EnvSpec, options: QOptions) => void }) {
   useStore(store);
   const t = store.training;
   const [text, setText] = useState(() => JSON.stringify(t.spec ?? store.defaultAgentSpec(), null, 2));
-  const [method, setMethod] = useState<TrainMethod>(t.method);
+  const [method, setMethod] = useState<TrainMethod | 'compare'>(t.method);
   const [generations, setGenerations] = useState(10);
   const [population, setPopulation] = useState(24);
-  const [episodes, setEpisodes] = useState(100);
-  const [alpha, setAlpha] = useState(0.2);
-  const [gamma, setGamma] = useState(0.97);
-  const [epsilon, setEpsilon] = useState(0.3);
+  const [td, setTd] = useState<TdSettings>(store.tdSettings ?? DEFAULT_TD);
+  const setT = (patch: Partial<TdSettings>) => setTd((t) => { const n = { ...t, ...patch }; store.tdSettings = n; return n; });
   const parsed = useMemo((): { spec: EnvSpec } | { error: string } => {
     try {
       const spec = JSON.parse(text) as EnvSpec;
       if (typeof spec.agent === 'string') {
         // A script agent: its script says what it sees, does and earns; the spec gives the bins.
-        if (method === 'q' && !(Array.isArray(spec.bins) && spec.bins.some((c) => Array.isArray(c) && c.length))) return { error: 'Q-learning needs "bins": a list of cut points for each number the agent\'s observe() returns ([] for one that is not binned).' };
+        if (method !== 'cem' && !(Array.isArray(spec.bins) && spec.bins.some((c) => Array.isArray(c) && c.length))) return { error: 'Q-learning needs "bins": a list of cut points for each number the agent\'s observe() returns ([] for one that is not binned).' };
         return { spec };
       }
       if (!Array.isArray(spec.actions) || !Array.isArray(spec.observation) || !Array.isArray(spec.reward)) return { error: 'It needs actions, observation and reward lists, or "agent": the path of a node whose script has observe() and act().' };
-      if (method === 'q' && !spec.observation.some((o) => o.bins?.length)) return { error: 'Q-learning needs "bins" on at least one observation reading: the cut points that turn its numbers into states.' };
+      if (method !== 'cem' && !spec.observation.some((o) => o.bins?.length)) return { error: 'Q-learning needs "bins" on at least one observation reading: the cut points that turn its numbers into states.' };
       return { spec };
     } catch (e) { return { error: `Not valid JSON: ${e instanceof Error ? e.message : String(e)}` }; }
   }, [text, method]);
@@ -144,10 +161,11 @@ export function TrainDialog({ store, onClose, onWatch, onTrainInView }: { store:
     try { spec = JSON.parse(text) as EnvSpec; } catch { /* not JSON yet */ }
     store.setTrainDraft(spec && typeof spec === 'object' ? spec : null);
   }, [text, store]);
+  const sel: React.CSSProperties = { background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 3, padding: '2px 4px' };
   const num: React.CSSProperties = { width: 50, background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 3, padding: '2px 4px' };
   const field = (label: string, value: number, set: (v: number) => void, opts: { min: number; max: number; step?: number; testid?: string; title?: string }) => (
     <label title={opts.title} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>{label}
-      <input data-testid={opts.testid} type="number" min={opts.min} max={opts.max} step={opts.step ?? 1} value={value} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) set(Math.min(opts.max, Math.max(opts.min, v))); }} style={num} />
+      <input data-testid={opts.testid} type="number" min={opts.min} max={opts.max} step={opts.step && opts.step < 1 ? 'any' : opts.step ?? 1} value={value} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) set(Math.min(opts.max, Math.max(opts.min, v))); }} style={num} />
     </label>
   );
   const spec = t.spec ?? ('spec' in parsed ? parsed.spec : null);
@@ -158,7 +176,7 @@ export function TrainDialog({ store, onClose, onWatch, onTrainInView }: { store:
   const lastCheck = [...t.episodes].reverse().find((e) => e.greedy !== undefined);
   const start = () => {
     if (!('spec' in parsed)) return;
-    if (method === 'q') store.startTraining(parsed.spec, { method: 'q', options: qOptions(episodes, alpha, gamma, epsilon) });
+    if (method === 'q') store.startTraining(parsed.spec, { method: 'q', options: qOptions(td) });
     else store.startTraining(parsed.spec, { method: 'cem', options: { generations, population, elite: 0.2, noise: 1, seed: 3 } });
   };
   const status = t.error ? `Could not train: ${t.error}`
@@ -177,9 +195,10 @@ export function TrainDialog({ store, onClose, onWatch, onTrainInView }: { store:
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, fontSize: 12, color: C.dim }}>
         method
-        <Btn small testid="train-method-q" active={method === 'q'} onClick={() => setMethod('q')} title="A table of Q(s, a): the return it expects for each action in each state, learned from every step">Q-learning</Btn>
+        <Btn small testid="train-method-q" active={method === 'q'} onClick={() => setMethod('q')} title="A table of Q(s, a): the return it expects for each action in each state, learned from every step (Q-learning, SARSA and their relatives)">Table (TD)</Btn>
+        <Btn small testid="train-method-compare" active={method === 'compare'} onClick={() => setMethod('compare')} title="Several settings, each trained over the same seeds: averaged learning curves, and mean ± spread">Compare</Btn>
         <Btn small testid="train-method-cem" active={method === 'cem'} onClick={() => setMethod('cem')} title="Many random weightings of a linear policy; keep the best and search around them">Cross-entropy</Btn>
-        <span style={{ color: C.faint, marginLeft: 6 }}>{method === 'q' ? 'learns a value for every state and action, one step at a time (ML Lab lesson 37.4)' : 'searches over the weights of a linear policy, one whole game at a time'}</span>
+        <span style={{ color: C.faint, marginLeft: 6 }}>{method === 'q' ? 'learns a value for every state and action, one step at a time (ML Lab lessons 37.4 and 37.5)' : method === 'compare' ? 'settings side by side, each averaged over seeds: add the current settings, change them, add again' : 'searches over the weights of a linear policy, one whole game at a time'}</span>
       </div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -188,27 +207,47 @@ export function TrainDialog({ store, onClose, onWatch, onTrainInView }: { store:
             style={{ width: '100%', height: 300, boxSizing: 'border-box', background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 3, fontFamily: C.mono, fontSize: 11, padding: 6 }} />
           {'error' in parsed && <div data-testid="train-spec-error" style={{ color: C.warn, fontSize: 11 }}>{parsed.error}</div>}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, fontSize: 12, color: C.dim, flexWrap: 'wrap' }}>
-            {method === 'q' ? <>
-              {field('episodes', episodes, setEpisodes, { min: 1, max: 2000, testid: 'train-episodes' })}
-              {field('α', alpha, setAlpha, { min: 0.01, max: 1, step: 0.05, testid: 'train-alpha', title: 'Step size: how far each update moves Q(s, a) towards its target' })}
-              {field('γ', gamma, setGamma, { min: 0, max: 1, step: 0.01, testid: 'train-gamma', title: 'Discount per step: a reward k steps away counts γ^k' })}
-              {field('ε', epsilon, setEpsilon, { min: 0, max: 1, step: 0.05, testid: 'train-epsilon', title: 'Exploration at the start (a random action with this probability), falling to 0.02 by the end' })}
+            {method !== 'cem' ? <>
+              <label style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>update
+                <select data-testid="train-algorithm" value={td.algorithm} onChange={(e) => setT({ algorithm: e.target.value as TdAlgorithm })} style={sel} title={ALGORITHM_TEXT[td.algorithm][1]}>
+                  {(Object.keys(ALGORITHM_TEXT) as TdAlgorithm[]).map((a) => <option key={a} value={a}>{ALGORITHM_TEXT[a][0]}</option>)}
+                </select>
+              </label>
+              {field('episodes', td.episodes, (v) => setT({ episodes: v }), { min: 1, max: 5000, testid: 'train-episodes' })}
+              {field('α', td.alpha, (v) => setT({ alpha: v }), { min: 0.01, max: 1, step: 0.05, testid: 'train-alpha', title: 'Step size: how far each update moves Q(s, a) towards its target' })}
+              {field('γ', td.gamma, (v) => setT({ gamma: v }), { min: 0, max: 1, step: 0.01, testid: 'train-gamma', title: 'Discount per step: a reward k steps away counts γ^k' })}
+              <label style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>explore
+                <select data-testid="train-explore" value={td.explore} onChange={(e) => { const explore = e.target.value as 'epsilon' | 'softmax'; setT(explore === 'softmax' ? { explore, start: 1, end: 0.05 } : { explore, start: 0.3, end: 0.02 }); }} style={sel}>
+                  <option value="epsilon">ε-greedy</option><option value="softmax">softmax</option>
+                </select>
+              </label>
+              {field(td.explore === 'softmax' ? 'τ from' : 'ε from', td.start, (v) => setT({ start: v }), { min: 0, max: td.explore === 'softmax' ? 100 : 1, step: 0.05, testid: 'train-epsilon', title: td.explore === 'softmax' ? 'Temperature at the start: high is nearly random, low is nearly greedy' : 'Exploration at the start: a random action with this probability' })}
+              {field('to', td.end, (v) => setT({ end: v }), { min: 0, max: td.explore === 'softmax' ? 100 : 1, step: 0.01, testid: 'train-epsilon-end', title: 'Its value at the last episode' })}
+              <label style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }} title="How it goes from the start to the end: a straight line, the same ratio each episode, or not at all">
+                <select data-testid="train-schedule" value={td.schedule} onChange={(e) => setT({ schedule: e.target.value as TdSettings['schedule'] })} style={sel}>
+                  <option value="linear">linear</option><option value="exponential">exponential</option><option value="constant">constant</option>
+                </select>
+              </label>
+              {field('Q₀', td.initialQ, (v) => setT({ initialQ: v }), { min: -1000, max: 1000, step: 1, testid: 'train-initial-q', title: 'Every Q value starts here. Higher than any return it can earn is "optimistic": untried actions look best, so it tries them' })}
             </> : <>
               {field('generations', generations, setGenerations, { min: 1, max: 200, testid: 'train-generations' })}
               {field('population', population, setPopulation, { min: 4, max: 200 })}
             </>}
             <span style={{ flex: 1 }} />
-            {t.running
+            {method === 'compare'
+              ? <Btn testid="compare-add" disabled={!('spec' in parsed) || store.comparison.running} onClick={() => store.addCompareConfig({ label: settingsLabel(td), options: qOptions(td) })}>+ Add to comparison</Btn>
+              : t.running
               ? <Btn testid="train-stop" onClick={() => store.stopTraining()}>Stop</Btn>
               : <>
-                {method === 'q' && <Btn testid="train-in-view" disabled={!('spec' in parsed)} title="Train inside the running game: watch every episode as it learns (slower; set the speed while it runs)" onClick={() => 'spec' in parsed && onTrainInView(parsed.spec, qOptions(episodes, alpha, gamma, epsilon))}>▶ Train in view</Btn>}
+                {method === 'q' && <Btn testid="train-in-view" disabled={!('spec' in parsed)} title="Train inside the running game: watch every episode as it learns (slower; set the speed while it runs)" onClick={() => 'spec' in parsed && onTrainInView(parsed.spec, qOptions(td))}>▶ Train in view</Btn>}
                 <Btn testid="train-start" disabled={!('spec' in parsed)} title="Train headless, as fast as it can go" onClick={start}>Train</Btn>
               </>}
           </div>
         </div>
         <div style={{ width: 470 }}>
+          {method === 'compare' ? <CompareView store={store} spec={'spec' in parsed ? parsed.spec : null} /> : <>
           {shown === 'q'
-            ? <QCurve episodes={t.episodes} random={t.random} total={t.total || episodes} />
+            ? <QCurve episodes={t.episodes} random={t.random} total={t.total || td.episodes} />
             : <CemCurve points={t.generations} random={t.random} total={t.total || generations} />}
           <div data-testid="train-status" style={{ fontSize: 12, color: t.error ? C.warn : C.dim, margin: '6px 0' }}>{status}</div>
           {shown === 'q' && t.table && t.described && (
@@ -246,6 +285,7 @@ export function TrainDialog({ store, onClose, onWatch, onTrainInView }: { store:
               </div>
             </>
           )}
+          </>}
         </div>
       </div>
     </Modal>

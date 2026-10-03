@@ -20,7 +20,7 @@
 
 import { seeded, type GameEnv, type Reading } from './env';
 import { episode } from './cem';
-import { actQ, stateCount, stateOf, type QPolicy } from './brain';
+import { actQ, greedy, stateCount, stateOf, type QPolicy } from './brain';
 
 export { actQ, binOf, greedy, stateCount, stateOf, type QPolicy } from './brain';
 
@@ -35,15 +35,37 @@ function greedyRandomTies(row: number[], rand: () => number): number {
   return ties[Math.floor(rand() * ties.length)];
 }
 
+/**
+ * Which update the learner makes (Sutton & Barto ch. 6). All four learn a table Q(s, a) from single steps; they differ
+ * in the target for Q(S, A) after the step S, A → R, S′:
+ *   q               R + γ max_a′ Q(S′, a′)                       off-policy: the value of acting greedily
+ *   sarsa           R + γ Q(S′, A′), A′ the action it then takes on-policy: the value of the exploring policy
+ *   expected-sarsa  R + γ Σ_a′ π(a′|S′) Q(S′, a′)                on-policy, without A′'s randomness
+ *   double-q        two tables; one picks argmax_a′ at S′, the other values it (no maximization bias)
+ */
+export type TdAlgorithm = 'q' | 'sarsa' | 'expected-sarsa' | 'double-q';
+export const TD_ALGORITHMS: TdAlgorithm[] = ['q', 'sarsa', 'expected-sarsa', 'double-q'];
+
 export interface QOptions {
   episodes: number;
+  /** The update (Q-learning unless given). */
+  algorithm?: TdAlgorithm;
   /** Step size α: how far each update moves Q(s, a) towards its target. */
   alpha?: number;
   /** Discount γ per step: a reward k steps away is worth γᵏ now. */
   gamma?: number;
-  /** Exploration ε at the start, falling linearly to epsilonEnd at the last episode. */
+  /** How it explores: ε-greedy (a random action with probability ε), or softmax (actions with higher Q more likely, by temperature τ). */
+  explore?: 'epsilon' | 'softmax';
+  /** How ε (or τ) changes from its start to its end over training: a straight line, a constant ratio per episode, or not at all. */
+  schedule?: 'linear' | 'exponential' | 'constant';
+  /** Exploration ε at the start and at the last episode. */
   epsilon?: number;
   epsilonEnd?: number;
+  /** Softmax temperature τ at the start and at the last episode. */
+  temperature?: number;
+  temperatureEnd?: number;
+  /** Every Q value starts here (0 unless given). Above any return it can earn, it is "optimistic": untried actions look best, so it tries them. */
+  initialQ?: number;
   seed?: number;
   /** Every this many episodes, play the greedy policy (no learning) and keep the best table. 0: never. */
   checkEvery?: number;
@@ -54,6 +76,24 @@ export interface QOptions {
 /** One episode of training: its return, the ε it explored with, how many states have been visited so far, and
  *  (on a check) how the greedy policy scores now and a copy of the table. */
 export interface QEpisode { episode: number; total: number; epsilon: number; visited: number; steps: number; greedy?: number; table?: number[][]; visits?: number[] }
+
+/** One update, with every number in it, for a page that steps through learning (Train in view's trace). */
+export interface QTransition {
+  episode: number; step: number;
+  s: number; a: number; r: number; next: number;
+  /** The episode ended at S′ (so no future term). */
+  terminal: boolean;
+  /** SARSA: the action it will take next, whose value is in the target. */
+  a2?: number;
+  /** Double Q-learning: which table was updated. */
+  updated?: 'A' | 'B';
+  target: number; delta: number; before: number; after: number;
+  /** Q(S′, ·) as it was, the row the target is read from. */
+  nextRow: number[];
+  /** The exploration ε (or temperature τ) this step used; Expected SARSA: the probabilities π(·|S′) it averaged with. */
+  epsilon: number;
+  probs?: number[];
+}
 
 /** The average return of a Q policy playing greedily on seeded episodes. */
 export function evaluateQ(env: GameEnv, policy: QPolicy, episodes: number, seed: number): number {
@@ -73,27 +113,55 @@ export function* qLearning(env: GameEnv, opts: QOptions): Generator<QEpisode, QP
 }
 
 /** What the learner is doing on its current step, for a page that shows training as it happens. */
-export interface QLive { mode: 'reset' | 'learn' | 'check'; episode: number; episodes: number; epsilon: number; total: number; steps: number; checkGame: number }
+export interface QLive { mode: 'reset' | 'learn' | 'check'; episode: number; episodes: number; epsilon: number; total: number; steps: number; checkGame: number; algorithm: TdAlgorithm; explore: 'epsilon' | 'softmax' }
+
+/** Softmax probabilities of a row at temperature τ (shifted by the max, so large Q values do not overflow). */
+export function softmax(row: number[], tau: number): number[] {
+  const t = Math.max(tau, 1e-6), m = Math.max(...row), e = row.map((q) => Math.exp((q - m) / t)), z = e.reduce((a, b) => a + b, 0);
+  return e.map((x) => x / z);
+}
+
+/** ε-greedy probabilities of a row: ε/|A| each, plus 1 − ε shared by the best actions (ties split it evenly). */
+export function epsilonGreedyProbs(row: number[], epsilon: number): number[] {
+  const best = Math.max(...row), ties = row.filter((q) => q === best).length;
+  return row.map((q) => epsilon / row.length + (q === best ? (1 - epsilon) / ties : 0));
+}
+
+/** A value from its start to its end over training: linearly, by a constant ratio per episode, or not at all. */
+export function scheduled(start: number, end: number, k: number, n: number, schedule: 'linear' | 'exponential' | 'constant'): number {
+  const f = n > 1 ? k / (n - 1) : 1;
+  if (schedule === 'constant') return start;
+  if (schedule === 'exponential' && start > 0 && end > 0) return start * (end / start) ** f;
+  return start + (end - start) * f;
+}
 
 /**
- * Q-learning one environment step at a time: Train an agent's worker runs it flat out, and Train in view runs it
- * inside the visible game, a few steps per drawn frame, so you can watch every episode. Both make the same random
+ * Tabular TD control one environment step at a time: Train an agent's worker runs it flat out, and Train in view runs
+ * it inside the visible game, a few steps per drawn frame, so you can watch every episode. Both make the same random
  * draws in the same order, so they learn the same table. A tick is a reset, one learning step, or one step of a
- * greedy check game.
+ * greedy check game. Q-learning with ε-greedy exploration on a linear schedule is the default.
  */
 export class QLearner {
   readonly bins: number[][];
-  private readonly table: number[][];
+  readonly algorithm: TdAlgorithm;
+  readonly explore: 'epsilon' | 'softmax';
+  /** The table (Double Q-learning: its first table; the policy uses the average of both). */
+  private readonly qa: number[][];
+  private readonly qb: number[][] | null;
   private readonly visits: number[];
   private readonly seen = new Set<number>();
   private readonly rand: () => number;
   private readonly A: number;
-  private readonly alpha: number; private readonly gamma: number; private readonly e0: number; private readonly e1: number;
+  private readonly alpha: number; private readonly gamma: number;
+  private readonly e0: number; private readonly e1: number;
+  private readonly schedule: 'linear' | 'exponential' | 'constant';
   private readonly seed: number; private readonly every: number; private readonly checks: number;
   private best: { score: number; table: number[][]; visits: number[] } | null = null;
   private mode: 'start' | 'learn' | 'checkStart' | 'check' | 'finished' = 'start';
   private ep = 0;
   private s = 0;
+  /** SARSA: the action already chosen for the next step. */
+  private pending = -1;
   private total = 0;
   private steps = 0;
   private epsilon = 0;
@@ -106,56 +174,109 @@ export class QLearner {
   constructor(private readonly env: GameEnv, private readonly opts: QOptions) {
     this.bins = env.bins;
     if (!this.bins.some((c) => c.length)) throw new Error('Q-learning needs bins on at least one observation reading, to turn the numbers into states');
+    this.algorithm = opts.algorithm ?? 'q';
+    this.explore = opts.explore ?? 'epsilon';
     this.A = env.actionCount;
-    this.table = Array.from({ length: stateCount(this.bins) }, () => new Array(this.A).fill(0));
-    this.visits = new Array(this.table.length).fill(0);
-    this.alpha = opts.alpha ?? 0.2; this.gamma = opts.gamma ?? 0.97; this.e0 = opts.epsilon ?? 0.3; this.e1 = opts.epsilonEnd ?? 0.02;
+    const q0 = opts.initialQ ?? 0, S = stateCount(this.bins);
+    this.qa = Array.from({ length: S }, () => new Array(this.A).fill(q0));
+    this.qb = this.algorithm === 'double-q' ? Array.from({ length: S }, () => new Array(this.A).fill(q0)) : null;
+    this.visits = new Array(S).fill(0);
+    this.alpha = opts.alpha ?? 0.2; this.gamma = opts.gamma ?? 0.97;
+    this.e0 = this.explore === 'softmax' ? opts.temperature ?? 1 : opts.epsilon ?? 0.3;
+    this.e1 = this.explore === 'softmax' ? opts.temperatureEnd ?? 0.05 : opts.epsilonEnd ?? 0.02;
+    this.schedule = opts.schedule ?? 'linear';
     this.seed = opts.seed ?? 1;
     this.rand = seeded(this.seed);
     this.every = opts.checkEvery ?? 10; this.checks = opts.checkEpisodes ?? 2;
   }
 
+  /** The values the policy acts on: the table, or the average of Double Q-learning's two. */
+  private row(s: number): number[] {
+    return this.qb ? this.qa[s].map((q, a) => (q + this.qb![s][a]) / 2) : this.qa[s];
+  }
+  private table(): number[][] { return this.qa.map((_, s) => [...this.row(s)]); }
+
   /** What it is doing now. */
   get live(): QLive {
     const mode = this.mode === 'learn' ? 'learn' : this.mode === 'check' || this.mode === 'checkStart' ? 'check' : 'reset';
-    return { mode, episode: Math.min(this.ep + 1, this.opts.episodes), episodes: this.opts.episodes, epsilon: this.epsilon, total: mode === 'check' ? this.checkTotal : this.total, steps: this.steps, checkGame: this.checkIndex + 1 };
+    return { mode, episode: Math.min(this.ep + 1, this.opts.episodes), episodes: this.opts.episodes, epsilon: this.epsilon, total: mode === 'check' ? this.checkTotal : this.total, steps: this.steps, checkGame: this.checkIndex + 1, algorithm: this.algorithm, explore: this.explore };
   }
 
   /** The table as it is now (a copy). */
-  snapshot(): QPolicy { return { kind: 'q', bins: this.bins, table: this.table.map((r) => [...r]), visits: [...this.visits] }; }
+  snapshot(): QPolicy { return { kind: 'q', bins: this.bins, table: this.table(), visits: [...this.visits] }; }
 
-  /** Advance by one tick. It reports an episode when one finishes (with its check, if one was due), and the policy at the end. */
-  tick(): { episode?: QEpisode; policy?: QPolicy } {
-    const { env, table } = this;
+  /** The exploring policy's choice in state s: ε-greedy (ties at random), or a softmax sample. */
+  private choose(s: number): number {
+    const row = this.qb ? this.row(s) : this.qa[s];
+    if (this.explore === 'softmax') {
+      const p = softmax(row, this.epsilon);
+      let u = this.rand(), a = 0;
+      while (a < p.length - 1 && u >= p[a]) { u -= p[a]; a++; }
+      return a;
+    }
+    return this.rand() < this.epsilon ? Math.floor(this.rand() * this.A) : greedyRandomTies(row, this.rand);
+  }
+
+  /** The exploring policy's probabilities in a state (Expected SARSA's average). */
+  private probs(row: number[]): number[] {
+    return this.explore === 'softmax' ? softmax(row, this.epsilon) : epsilonGreedyProbs(row, this.epsilon);
+  }
+
+  /** Advance by one tick. It reports an episode when one finishes (with its check, if one was due), each update's numbers, and the policy at the end. */
+  tick(): { episode?: QEpisode; policy?: QPolicy; transition?: QTransition } {
+    const { env } = this;
     switch (this.mode) {
       case 'finished':
-        return { policy: { kind: 'q', bins: this.bins, table: this.best ? this.best.table : table, visits: this.best ? this.best.visits : this.visits } };
+        return { policy: { kind: 'q', bins: this.bins, table: this.best ? this.best.table : this.table(), visits: this.best ? this.best.visits : this.visits } };
       case 'start': {
-        const n = this.opts.episodes;
-        this.epsilon = this.e0 + (this.e1 - this.e0) * (n > 1 ? this.ep / (n - 1) : 1);
+        this.epsilon = scheduled(this.e0, this.e1, this.ep, this.opts.episodes, this.schedule);
         this.s = stateOf(env.reset(this.seed * 1000 + this.ep).observation, this.bins);
         this.total = 0; this.steps = 0;
         this.seen.add(this.s);
+        if (this.algorithm === 'sarsa') this.pending = this.choose(this.s);
         this.mode = 'learn';
         return {};
       }
       case 'learn': {
         const s = this.s;
-        const a = this.rand() < this.epsilon ? Math.floor(this.rand() * this.A) : greedyRandomTies(table[s], this.rand);
+        const a = this.algorithm === 'sarsa' ? this.pending : this.choose(s);
         const r = env.step(a);
         const next = stateOf(r.observation, this.bins);
         // A truncated episode was cut short, not ended: its next state still has a future, so it is bootstrapped.
-        const target = r.reward + (r.terminated ? 0 : this.gamma * Math.max(...table[next]));
+        const future = !r.terminated;
+        let table = this.qa, target: number, a2: number | undefined, updated: 'A' | 'B' | undefined, probs: number[] | undefined;
+        const nextRow = [...this.row(next)];
+        if (this.algorithm === 'q') target = r.reward + (future ? this.gamma * Math.max(...this.qa[next]) : 0);
+        else if (this.algorithm === 'sarsa') {
+          // A′ is chosen now, by the same exploring policy, and is the action taken next. A truncated episode still
+          // chooses one, to bootstrap from; only a real ending has no future.
+          a2 = r.terminated ? undefined : this.choose(next);
+          target = r.reward + (a2 !== undefined ? this.gamma * this.qa[next][a2] : 0);
+          this.pending = a2 ?? -1;
+        } else if (this.algorithm === 'expected-sarsa') {
+          const row = this.qa[next], p = this.probs(row);
+          probs = p;
+          target = r.reward + (future ? this.gamma * row.reduce((sum, q, i) => sum + p[i] * q, 0) : 0);
+        } else {
+          // Double Q-learning: a fair coin says which table learns; it picks the best next action, the other values it.
+          const first = this.rand() < 0.5;
+          table = first ? this.qa : this.qb!;
+          const other = first ? this.qb! : this.qa;
+          updated = first ? 'A' : 'B';
+          target = r.reward + (future ? this.gamma * other[next][greedy(table[next])] : 0);
+        }
+        const before = table[s][a];
         table[s][a] += this.alpha * (target - table[s][a]);
         this.visits[s]++;
         this.total += r.reward; this.steps++; this.s = next; this.seen.add(next);
-        if (!(r.terminated || r.truncated)) return {};
+        const transition: QTransition = { episode: this.ep + 1, step: this.steps, s, a, r: r.reward, next, terminal: r.terminated, ...(a2 === undefined ? {} : { a2 }), ...(updated ? { updated } : {}), target, delta: target - before, before, after: table[s][a], nextRow, epsilon: this.epsilon, ...(probs ? { probs } : {}) };
+        if (!(r.terminated || r.truncated)) return { transition };
         this.lastEpisode = { episode: this.ep + 1, total: this.total, epsilon: this.epsilon, visited: this.seen.size, steps: this.steps };
         if (this.every > 0 && ((this.ep + 1) % this.every === 0 || this.ep + 1 === this.opts.episodes)) {
           this.mode = 'checkStart'; this.checkIndex = 0; this.checkSum = 0;
-          return {};
+          return { transition };
         }
-        return this.finishEpisode();
+        return { ...this.finishEpisode(), transition };
       }
       case 'checkStart':
         // Its own seeds: not the training games, nor the ones a final score is measured on.
@@ -164,14 +285,14 @@ export class QLearner {
         this.mode = 'check';
         return {};
       case 'check': {
-        const r = env.step(actQ({ kind: 'q', bins: this.bins, table }, this.checkObs));
+        const r = env.step(greedy(this.row(stateOf(this.checkObs, this.bins))));
         this.checkTotal += r.reward; this.checkObs = r.observation;
         if (!(r.terminated || r.truncated)) return {};
         this.checkSum += this.checkTotal;
         if (++this.checkIndex < this.checks) { this.mode = 'checkStart'; return {}; }
         const greedyScore = this.checkSum / this.checks;
-        if (!this.best || greedyScore > this.best.score) this.best = { score: greedyScore, table: table.map((row) => [...row]), visits: [...this.visits] };
-        this.lastEpisode = { ...this.lastEpisode!, greedy: greedyScore, table: table.map((row) => [...row]), visits: [...this.visits] };
+        if (!this.best || greedyScore > this.best.score) this.best = { score: greedyScore, table: this.table(), visits: [...this.visits] };
+        this.lastEpisode = { ...this.lastEpisode!, greedy: greedyScore, table: this.table(), visits: [...this.visits] };
         return this.finishEpisode();
       }
     }
