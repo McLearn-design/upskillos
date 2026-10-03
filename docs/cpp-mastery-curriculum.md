@@ -1,0 +1,46 @@
+# C++ from zero to mastery — the Project Studio series
+
+A complete path from "I've edited a Python script once" to designing, debugging, testing, profiling and shipping serious C++ software. Every lesson is a Project Studio track lesson: the learner types real code into real files, builds with the real compiler and CMake, and every step is checked. Every track has a walkthrough test (`walkCppTrack.js`) that plays a learner through every step and tries wrong answers the checks must reject.
+
+## How the series teaches
+
+- **The tools before the language.** Compiler, linker, errors, CMake and the debugger come first, so nothing later is magic.
+- **One concept per step**: a short code block, bullet explanations, a prediction, then build and observe.
+- **Scaffolding fades.** Guided steps give the code; later steps give only requirements and tests; challenges give neither. Full files stay available under *Full reference file (optional)*.
+- **Tests from the start.** Specifications arrive as test files. Learners write their own tests, and then a reviewer's test file checks the cases they missed.
+- **Mistakes on purpose.** Lessons hand over broken code and ask for a diagnosis before a fix: compiler errors, linker errors, warnings, crashes, copies that should have been references.
+- **See the machine.** Trace in CodeLens shows variables, the call stack and the heap at every step. The debugger (lldb or gdb) is taught early and used throughout. AddressSanitizer is used once memory is the subject.
+
+## Tracks
+
+Status: ✅ built and walkthrough-tested, 🛠 next, 📋 planned.
+
+| # | Track | Lessons | Status |
+|---|---|---|---|
+| 0 | **C++ from Zero — Tools of the Trade** (`cpp-foundations`) | first program and the build stages, reading compiler errors and warnings, compiler vs. linker, CMake, first crash and the debugger | ✅ 5 lessons |
+| 1 | **C++ Foundations — Thinking in Types** (`cpp-language-basics`) | values, types and input; functions, headers and unit tests (red, green, refactor); independent work (GCD and LCM, with a reviewer's tests); loops; strings; `std::vector` and algorithms; structs, references, `const`, `std::optional`, `enum class` | ✅ 7 lessons |
+| 2 | **Memory, Lifetime and Ownership** | stack, heap and lifetime (constructors and destructors made visible); `new`/`delete` and use-after-free caught by AddressSanitizer; `std::unique_ptr` and RAII; build your own dynamic array (growth, rule of three, bounds checking); move semantics and the rule of five; `shared_ptr`, `weak_ptr` and ownership cycles; RAII for files and locks | 🛠 |
+| 3 | **Classes and Abstraction** | invariants and encapsulation (a `Fraction` class); operator overloading; inheritance and virtual functions (when *not* to use them); composition and interfaces; error-handling design: exceptions vs. `std::expected`; value semantics | 📋 |
+| 4 | **Generic Programming** | function and class templates (a `Stack<T>`); concepts; iterators and writing your own; ranges and views; lambdas and function objects in depth; the standard algorithms | 📋 |
+| 5 | **Data Structures and Algorithms, Measured** | complexity you can see (benchmarking); `vector` vs. `list` vs. `deque`; build a hash map, then use `unordered_map`; binary search trees and `std::map`; heaps and priority queues; graphs (BFS, DFS, Dijkstra); dynamic programming. Projects: a searchable command system, a mini database | 📋 |
+| 6 | **Software Engineering** | Git inside the course (lessons end in commits); GoogleTest; CMake for real projects (libraries, FetchContent); clang-format and clang-tidy; sanitizers in the test run; continuous integration; packaging and releases. Project: a command interpreter | 📋 |
+| 7 | **Systems Programming** | files and `std::filesystem`; processes and pipes; threads, mutexes and condition variables; atomics and the memory model; a thread pool. Projects: a shell, a job system | 📋 |
+| 8 | **Networking** | sockets; a TCP client and server; protocol design and serialization; asynchronous I/O; an HTTP server; a multiplayer game server | 📋 |
+| 9 | **Graphics** | vectors, matrices and transforms; a software rasteriser; OpenGL; Vulkan, with the pipeline made visible | 📋 |
+| 10 | **Games and Engines** | the game loop; *Classic Games in C++ — Pong* (already in Project Studio); entities and components; data-oriented design when 50,000 objects get slow; profiling | 📋 (Pong ✅) |
+| 11 | **Mastery** | templates and `constexpr` at compile time; coroutines; allocators; object layout, vtables and the ABI; a catalogue of undefined behaviour; performance engineering; reading and changing a large codebase. Capstone: a production-style application | 📋 |
+
+Tracks 0 and 1 are needed by everything else. After Track 2, the learner can take Track 3 or Track 5 next; Tracks 7 to 11 build on 3 to 6.
+
+## Lab features the series relies on
+
+| Feature | Where | Status |
+|---|---|---|
+| App-managed compiler on the terminal's PATH (`g++`, `lldb`, `mingw32-make`) | `desktop/app/terminal.cjs`, `runtimes/cpp.cjs` | ✅ |
+| `console: true` output message | `index.jsx` | ✅ |
+| Typed input in checks: `run "./calc" stdin="3 4\n" stdout="7"` | `desktop/app/project-checks.cjs` | ✅ (Windows path not yet verified on Windows) |
+| 🔬 Trace in CodeLens for the open `.cpp` file, with local headers pasted in | `codeLensHandoff.js` | ✅ (needs GDB) |
+| Track walkthrough tests with wrong answers | `walkCppTrack.js` | ✅ |
+| AddressSanitizer / UBSan builds for memory lessons | lessons' build commands; llvm-mingw ships the sanitizer runtimes for x86_64 | 🛠 with Track 2 |
+| CodeLens with lldb, for learners who only have the app's compiler | `runtimes/codelens.cjs` | 📋 |
+| A check kind that reads a test program's results directly (passed, failed, names), instead of matching output text | `project-checks.cjs` | 📋 |
