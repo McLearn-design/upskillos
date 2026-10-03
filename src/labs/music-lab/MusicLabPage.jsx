@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
-import MusicLab from './MusicLab';
+import Shell from './Shell.jsx';
 
 export default function MusicLabPage() {
   const navigate = useNavigate();
-  return <MusicLab onBack={() => navigate('/')} />;
+  return <Shell onBack={() => navigate('/')} />;
 }

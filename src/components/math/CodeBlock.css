@@ -1,0 +1,45 @@
+/* Keep fenced Markdown code readable in both themes. Scope the palette so
+   other Prism consumers cannot change it through global token styles. */
+pre.oc-code-block {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-color: #475569;
+}
+
+pre.oc-code-block > code,
+pre.oc-code-block code .token {
+  color: #e2e8f0;
+  background: transparent;
+  text-shadow: none;
+  opacity: 1;
+}
+
+pre.oc-code-block code .token.comment,
+pre.oc-code-block code .token.prolog,
+pre.oc-code-block code .token.doctype,
+pre.oc-code-block code .token.cdata { color: #94a3b8; }
+
+pre.oc-code-block code .token.keyword,
+pre.oc-code-block code .token.atrule,
+pre.oc-code-block code .token.builtin { color: #c4b5fd; }
+
+pre.oc-code-block code .token.function,
+pre.oc-code-block code .token.function-name { color: #93c5fd; }
+
+pre.oc-code-block code .token.string,
+pre.oc-code-block code .token.char,
+pre.oc-code-block code .token.attr-value,
+pre.oc-code-block code .token.inserted { color: #86efac; }
+
+pre.oc-code-block code .token.number,
+pre.oc-code-block code .token.boolean,
+pre.oc-code-block code .token.constant { color: #fcd34d; }
+
+pre.oc-code-block code .token.operator,
+pre.oc-code-block code .token.deleted,
+pre.oc-code-block code .token.tag { color: #f9a8d4; }
+
+pre.oc-code-block code .token.class-name,
+pre.oc-code-block code .token.property,
+pre.oc-code-block code .token.attr-name,
+pre.oc-code-block code .token.selector { color: #67e8f9; }

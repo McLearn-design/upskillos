@@ -191,13 +191,13 @@ async function runProjectFile(app, runtimes, runtimeKey, relPath, onOutput) {
     const abs = resolveInRoot(root, relPath)
     if (!(await pathExists(abs))) return { ok: false, reason: `${relPath} doesn't exist yet` }
 
-    const cmd = await mod.projectCommand(app, abs)
+    const cmd = await mod.projectCommand(app, abs, root)
     if (!cmd) return { ok: false, reason: `The ${runtimeKey} runtime isn't installed` }
 
     const runId = `proj-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const child = spawn(cmd.command, cmd.args, {
       cwd: root,
-      windowsHide: false, // GUI projects are the point — let their windows show
+      windowsHide: cmd.windowsHide ?? false,
       stdio: ['ignore', 'pipe', 'pipe'],
       // A runtime can ask for extra env — Python needs PYTHONUNBUFFERED so a
       // long-running GUI's print() output actually streams instead of
@@ -230,7 +230,13 @@ function killAllProjectRuns() {
   runningProcs.clear()
 }
 
+function killProjectRun(runId) {
+  const child = runningProcs.get(runId)
+  if (!child) return false
+  return child.kill()
+}
+
 module.exports = {
   pickFolder, getProject, tree, readFile, writeFile, mkdir, remove, rename,
-  runProjectFile, killAllProjectRuns,
+  runProjectFile, killProjectRun, killAllProjectRuns,
 }

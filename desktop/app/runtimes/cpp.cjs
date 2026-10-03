@@ -31,6 +31,7 @@
 const { promises: fs } = require('node:fs')
 const path = require('node:path')
 const { spawn, execFile } = require('node:child_process')
+const { promisify } = require('node:util')
 const { pathExists, downloadFile, extractZip, findFile, errorDetail } = require('./_shared.cjs')
 const { systemCpp } = require('./_toolchains.cjs')
 
@@ -188,4 +189,30 @@ function killAllScripts() {
   runningProcs.clear()
 }
 
-module.exports = { getStatus, install, runCode, killRun, killAllScripts }
+// Project Studio keeps source files in the learner's folder. Compile the entry
+// translation unit there (quoted includes find sibling headers), then let the
+// existing project runner own the game process and its output lifecycle.
+async function projectCommand(app, absFile, projectRoot = path.dirname(absFile)) {
+  if (!/\.(cpp|cc|cxx)$/i.test(absFile)) throw new Error('Choose a C++ source file (.cpp, .cc or .cxx) to run')
+  const compiler = await resolveCompiler(app)
+  if (!compiler) return null
+  const buildDir = path.join(projectRoot, 'build')
+  await fs.mkdir(buildDir, { recursive: true })
+  const exePath = path.join(buildDir, `${path.basename(absFile, path.extname(absFile))}.exe`)
+  // An old executable must never look like a successful build of edited source.
+  await fs.rm(exePath, { force: true })
+  try {
+    await promisify(execFile)(compiler.exe, [
+      '-std=c++17', '-O2', '-static', absFile, '-o', exePath,
+      ...(process.platform === 'win32' ? ['-luser32', '-lgdi32'] : []),
+    ], { cwd: projectRoot, windowsHide: true, timeout: 30000, maxBuffer: 10 * 1024 * 1024 })
+  } catch (error) {
+    await fs.rm(exePath, { force: true }).catch(() => {})
+    throw new Error(`C++ build failed:\n${String(error.stderr || error.message).split(absFile).join(path.relative(projectRoot, absFile))}`)
+  }
+  // STARTUPINFO's hidden-window flag can suppress the first ShowWindow call
+  // of a native GUI too, not just a console. The game must be visible.
+  return { command: exePath, args: [], windowsHide: false }
+}
+
+module.exports = { getStatus, install, runCode, killRun, killAllScripts, projectCommand }

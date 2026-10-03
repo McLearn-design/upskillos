@@ -22,6 +22,7 @@ export default function LessonPanel({
   lesson, lessons, stepIndex, step, currentContent,
   onPrev, onNext, onSelectLesson, C,
   checkState, onCheck, canCheck, isStepDone, isLessonDone,
+  onCreateProvided, providedError,
 }) {
   const atFirst = stepIndex === 0;
   const atLast = stepIndex >= lesson.steps.length - 1;
@@ -70,6 +71,23 @@ export default function LessonPanel({
           {step.title}
         </h3>
 
+        {lesson.meta?.reference === 'optional' && step.file && (
+          <div style={{ padding: '6px 8px', marginBottom: 8, border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, color: C.text }}>
+            {step.provided ? `Create and read the supplied ${step.file}; no code edits in this step.` : `Edit ${step.file}; change only the lines described below.`}
+          </div>
+        )}
+
+        {step.provided && (
+          <div style={{ margin: '8px 0', fontSize: 12 }}>
+            <button onClick={onCreateProvided} disabled={!canCheck}
+              style={navBtn(C, !canCheck, true)}>
+              {lesson.meta?.starterLabel || `Create provided ${step.file}`}
+            </button>
+            {providedError && <p role="alert">{providedError}</p>}
+          </div>
+        )}
+
+
         {step.prose && (
           <div style={{ color: C.text }}>
             <MarkdownProse text={step.prose} className={COMPACT_PROSE} />
@@ -81,7 +99,12 @@ export default function LessonPanel({
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: C.muted, marginTop: 12 }}>
               {step.file}
             </div>
-            <DiffBlock current={currentContent} target={step.target} C={C} />
+            {lesson.meta?.reference === 'optional' ? (
+              <details style={{ margin: '8px 0', fontSize: 12 }}>
+                <summary style={{ cursor: 'pointer', color: C.hint }}>Full reference file (optional)</summary>
+                <DiffBlock current={currentContent} target={step.target} C={C} />
+              </details>
+            ) : <DiffBlock current={currentContent} target={step.target} C={C} />}
           </>
         )}
 

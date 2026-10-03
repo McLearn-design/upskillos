@@ -251,7 +251,7 @@ ipcMain.handle('desktop:get-github-token', async () => {
 ipcMain.handle('desktop:runtime-status', async (_event, runtime) => {
   const mod = RUNTIMES[runtime]
   if (!mod) return { ok: false, reason: `Unknown runtime: ${runtime}` }
-  return { ok: true, status: await mod.getStatus(app) }
+  return { ok: true, status: { ...await mod.getStatus(app), projectSupported: typeof mod.projectCommand === 'function' } }
 })
 
 ipcMain.handle('desktop:install-runtime', async (_event, runtime) => {
@@ -289,6 +289,7 @@ ipcMain.handle('desktop:run-project', async (_event, runtime, spec) => {
 // Stops one run by id (used for run timeouts, e.g. an infinite loop in a
 // lesson challenge). Run ids are unique across runtimes.
 ipcMain.handle('desktop:stop-run', async (_event, runId) => {
+  if (projectFs.killProjectRun(runId)) return { ok: true }
   for (const mod of Object.values(RUNTIMES)) {
     if (mod.killRun?.(runId)) return { ok: true }
   }

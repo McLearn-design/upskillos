@@ -1,0 +1,53 @@
+// @vitest-environment happy-dom
+import React, { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('../../components/math/MarkdownProse.jsx', () => ({ default: ({ text }) => <p>{text}</p> }));
+vi.mock('./DiffBlock.jsx', () => ({ default: () => <pre>reference source</pre> }));
+import LessonPanel from './LessonPanel.jsx';
+const C = {};
+let root, host;
+beforeEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  host = document.createElement('div'); document.body.appendChild(host);
+  root = createRoot(host);
+});
+afterEach(async () => {
+  await act(async () => root.unmount()); host.remove();
+  delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+});
+async function render(provided, optional = true, currentContent = '') {
+  const step = { title: 'A small change', file: 'main.cpp', target: 'source', prose: 'Explanation', provided, checks: [] };
+  const lesson = { id: 'lesson', title: 'Pong', meta: optional ? { reference: 'optional', starterLabel: 'Create Pong starter' } : {}, steps: [step] };
+  const onCreate = vi.fn();
+  await act(async () => root.render(<LessonPanel C={C} step={step} lesson={lesson} lessons={[lesson]} stepIndex={0}
+    currentContent={currentContent} canCheck onCreateProvided={onCreate} />));
+  return onCreate;
+}
+describe('lesson action clarity', () => {
+  it('allows repairing support files even when the main file already matches', async () => {
+    const onCreate = await render(true, true, 'source');
+    const button = [...host.querySelectorAll('button')].find(b => b.textContent === 'Create Pong starter');
+    expect(button.disabled).toBe(false);
+    await act(async () => button.click());
+    expect(onCreate).toHaveBeenCalledOnce();
+  });
+  it('identifies supplied code as read-only teaching and provides an explicit setup action', async () => {
+    const onCreate = await render(true);
+    expect(host.textContent).toContain('Create and read the supplied main.cpp; no code edits in this step.');
+    const button = [...host.querySelectorAll('button')].find(b => b.textContent === 'Create Pong starter');
+    await act(async () => button.click());
+    expect(onCreate).toHaveBeenCalledOnce();
+    expect(host.querySelector('details').open).toBe(false);
+  });
+  it('identifies an editing step and omits the starter action', async () => {
+    await render(false);
+    expect(host.textContent).toContain('Edit main.cpp; change only the lines described below.');
+    expect(host.textContent).not.toContain('Create Pong starter');
+  });
+  it('keeps the existing full reference display for tracks that have not opted in', async () => {
+    await render(false, false);
+    expect(host.querySelector('details')).toBeNull();
+    expect(host.querySelector('pre').textContent).toBe('reference source');
+  });
+});

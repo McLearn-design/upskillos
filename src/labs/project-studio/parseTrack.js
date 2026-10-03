@@ -53,7 +53,7 @@ function parseFenceInfo(info) {
     const idx = part.indexOf('=');
     if (idx > 0) attrs[part.slice(0, idx)] = part.slice(idx + 1).replace(/^["']|["']$/g, '');
   }
-  return { lang, file: attrs.file || null };
+  return { lang, file: attrs.file || null, provided: parts.includes('provided') };
 }
 
 /**
@@ -76,7 +76,7 @@ function parseStepBody(rawBody) {
   const extraTargets = fileFences.slice(1).map((m) => parseFenceInfo(m[1]).file);
   let match;
   while ((match = fenceRe.exec(body)) !== null) {
-    const { lang, file } = parseFenceInfo(match[1]);
+    const { lang, file, provided } = parseFenceInfo(match[1]);
     if (!file) continue;
     return {
       prose: body.slice(0, match.index).trim(),
@@ -84,6 +84,7 @@ function parseStepBody(rawBody) {
       target: match[2].replace(/\n$/, ''),
       file,
       lang,
+      provided,
       checks,
       extraTargets,
     };

@@ -5,7 +5,7 @@
 // already used this way for inline code in PrismInlineCode.jsx — this just
 // extends the same technique to multi-line blocks with language detection.
 import Prism from 'prismjs'
-import 'prismjs/themes/prism-tomorrow.css'
+import './CodeBlock.css'
 import 'prismjs/components/prism-python'
 import 'prismjs/components/prism-sql'
 import 'prismjs/components/prism-css'
@@ -29,7 +29,7 @@ const InPreContext = createContext(false)
 export function CodeBlockPre({ children }) {
   return (
     <InPreContext.Provider value={true}>
-      <pre className="my-6 p-4 rounded-xl overflow-x-auto text-sm leading-relaxed bg-slate-900/40 dark:bg-slate-950/60 border border-slate-800/60 dark:border-slate-800 shadow-inner max-w-[75ch] sidebar-scroll">
+      <pre className="oc-code-block my-6 p-4 rounded-xl overflow-x-auto text-sm leading-relaxed border shadow-inner max-w-[75ch] sidebar-scroll">
         {children}
       </pre>
     </InPreContext.Provider>
@@ -42,7 +42,7 @@ export function CodeBlockCode({ className, children, inlineClassName }) {
   if (!className?.startsWith('language-')) {
     if (inPre) {
       // Plain text code block (no language specified)
-      return <code className="font-mono text-slate-600 dark:text-slate-300">{children}</code>
+      return <code className="font-mono">{children}</code>
     }
     // True inline code (`code`)
     return <code className={inlineClassName}>{children}</code>
@@ -53,7 +53,7 @@ export function CodeBlockCode({ className, children, inlineClassName }) {
   if (!grammar) {
     // Unrecognized language — still render as a plain (unhighlighted) block
     // rather than crashing or silently dropping the content.
-    return <code className={`${className} font-mono text-slate-200`}>{code}</code>
+    return <code className={`${className} font-mono`}>{code}</code>
   }
   const html = Prism.highlight(code, grammar, lang)
   // eslint-disable-next-line react/no-danger

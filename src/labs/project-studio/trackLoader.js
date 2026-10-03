@@ -5,6 +5,16 @@
 import { parseLesson } from './parseTrack.js';
 
 const FILES = import.meta.glob('./tracks/**/*.md', { query: '?raw', import: 'default', eager: true });
+const SUPPORT_FILES = import.meta.glob('./tracks/*/support/*', { query: '?raw', import: 'default', eager: true });
+
+// Opt-in supplied infrastructure stays out of the lesson's teaching code blocks.
+export function getSupportFiles(track, names = '') {
+  return names.split(',').map(name => name.trim()).filter(Boolean).map(file => {
+    const content = SUPPORT_FILES[`./tracks/${track}/support/${file}`];
+    if (content == null) throw new Error(`Missing support file: ${track}/${file}`);
+    return { file, content };
+  });
+}
 
 // './tracks/pyside6-engine/01-a-window.md' → { track, id }
 function parsePath(p) {

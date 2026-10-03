@@ -71,6 +71,12 @@ Each was confirmed against the renderer; none is fixed yet.
 
 ### P1 — Finish the contributor system
 
+- [x] **Desktop classic-game C++ starting point (2026-10-03):** Project Studio uses the existing desktop compiler to build a persistent C++ entry file and headers. Pong lesson 1, compiler setup UI, and compiled behavior tests are implemented; the course loader remains unchanged. Scope, validation, and the proposed next classics are in [the C++ Project Studio guide](cpp-classic-games-project-studio.md).
+- [ ] Extend the classic-game track with smaller Pong refinements and subsequent classic projects; validate each runnable step and deliberately broken game rules before publishing lessons.
+- [x] **Pong setup repair and C++ foundations:** keep starter repair available when the entry file matches, preserve typed learner code while supplying missing headers, supply infrastructure on Run, and explain older desktop-process support. Lesson 1 now teaches C++ syntax explicitly alongside game behavior; focused repair and compiled-step tests pass.
+- [x] **Visible native game and Stop:** remove the hidden-window launch flag from C++ project executables, wire Stop to individual project processes, and retain early exit events. Native visibility and live-process termination tests pass.
+- [x] **Pong lesson 1 teaching revision:** replace the code-copying introduction with a supplied starter, small code blocks followed by bullet explanations, and nine runnable changes focused on one paddle. Each step identifies whether to read supplied `main.cpp` or edit it; `game.h` stays provided. Full references are optional, and existing tracks retain their default display. The complete rally prototype is preserved outside the beginner lesson.
+
 - [ ] Implement the unified course/lab/game authoring system described in [the Authoring System Plan](authoring-system-plan.md), starting with safe course editing and a native Machine Learning Lab adapter.
 - [ ] Rewrite `ARCHITECTURE.md` around the current `courseLoader`, lab discovery, game registry, HashRouter routes, shell, renderers, and progress system. Move obsolete architecture into `docs/history/` when it remains useful.
 - [ ] Finish the task guides planned under `docs/contributing/`: an index plus lessons, visualizations, UI/features, labs/games, tests/verification, documentation, and pull-request guides.

@@ -17,12 +17,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useThemeColors } from '../../hooks/useThemeColors';
 import { useGlobalTheme } from '../../context/ThemeContext.jsx';
 import { useProjectFs } from './useProjectFs.js';
-import { TRACKS, TRACK_KEYS, trackTitle } from './trackLoader.js';
+import { TRACKS, TRACK_KEYS, trackTitle, getSupportFiles } from './trackLoader.js';
+import { createProvidedFiles } from './providedFiles.js';
 import FileTree from './FileTree.jsx';
 import EditorPane from './EditorPane.jsx';
 import LessonPanel from './LessonPanel.jsx';
 import OutputPanel from './OutputPanel.jsx';
 import TerminalPanel from './TerminalPanel.jsx';
+import CppProjectRuntime from './CppProjectRuntime.jsx';
 import { useProgress } from './progress.js';
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -51,6 +53,7 @@ export default function ProjectStudio() {
   const [buffers, setBuffers] = useState({}); // rel -> content in the editor
   const [saving, setSaving] = useState(false);
   const [conflict, setConflict] = useState(null);
+  const [providedError, setProvidedError] = useState(null);
 
   // What each open file looked like on disk when we last read or wrote it.
   // These are the learner's real project files and they're explicitly meant
@@ -62,6 +65,9 @@ export default function ProjectStudio() {
   const [output, setOutput] = useState([]);
   const [running, setRunning] = useState(false);
   const runIdRef = useRef(null);
+  const stopRequestedRef = useRef(false);
+  const earlyOutputRef = useRef([]);
+  const startingRunRef = useRef(false);
   const saveTimers = useRef({});
 
   const [bottomTab, setBottomTab] = useState('terminal');
@@ -160,6 +166,24 @@ export default function ProjectStudio() {
     return true;
   }, [activeFile, buffers, fs, reloadFromDisk]);
 
+  const createProvided = useCallback(async () => {
+    if (!step?.provided || !fs.root) return;
+    setProvidedError(null);
+    try {
+      if (!(await flushActive())) throw new Error('Resolve the open file conflict before creating the provided file.');
+      await createProvidedFiles(window.openCalcDesktop.project, [
+        ...getSupportFiles(trackKey, lesson.meta.support),
+        { file: step.file, content: step.target, preserveExisting: Boolean(lesson.meta.support) },
+      ]);
+      await reloadFromDisk(step.file);
+      await fs.refresh();
+    } catch (error) {
+      setProvidedError(error.message);
+    }
+  }, [step, fs, flushActive, reloadFromDisk, trackKey, lesson]);
+
+  useEffect(() => { setProvidedError(null); }, [step?.id, fs.root]);
+
   // When a step names a file, open it. This is how new files and folders enter the project:
   // a step refers to a path that isn't there yet, and the first edit creates it.
   useEffect(() => {
@@ -215,6 +239,7 @@ export default function ProjectStudio() {
   useEffect(() => {
     if (!fs.available) return;
     const unsub = window.openCalcDesktop.onScriptOutput((evt) => {
+      if (!runIdRef.current) { if (startingRunRef.current) earlyOutputRef.current.push(evt); return; }
       if (evt.runId !== runIdRef.current) return;
       if (evt.stream === 'exit') {
         setRunning(false);
@@ -235,14 +260,53 @@ export default function ProjectStudio() {
     setBottomTab('output');
     setOutput([]);
     setRunning(true);
-    const res = await fs.run(lesson.runtime || 'python', target);
+    runIdRef.current = null;
+    startingRunRef.current = true;
+    earlyOutputRef.current = [];
+    stopRequestedRef.current = false;
+    if (lesson.meta.support) {
+      try {
+        await createProvidedFiles(window.openCalcDesktop.project, getSupportFiles(trackKey, lesson.meta.support));
+        await fs.refresh();
+      } catch (error) {
+        setOutput([{ stream: 'stderr', text: error.message }]);
+        setRunning(false);
+        startingRunRef.current = false;
+        return;
+      }
+    }
+    let res;
+    try { res = await fs.run(lesson.runtime || 'python', target); }
+    catch (error) { res = { ok: false, reason: error.message }; }
+    startingRunRef.current = false;
     if (!res.ok) {
-      setOutput([{ stream: 'stderr', text: res.reason || 'Failed to run.' }]);
+      const reason = lesson.runtime === 'cpp' && res.reason?.includes('isn\'t supported')
+        ? 'This desktop process does not have the C++ project runner loaded. Save your work, fully close UpSkillOS, and restart the desktop app from the updated source (npm run desktop:dev). An older installed build needs an updated desktop build; refreshing the page will not update its runner.'
+        : res.reason || 'Failed to run.';
+      setOutput([{ stream: 'stderr', text: reason }]);
       setRunning(false);
       return;
     }
     runIdRef.current = res.runId;
-  }, [lesson, step, fs, flushActive]);
+    const early = earlyOutputRef.current.filter(evt => evt.runId === res.runId);
+    earlyOutputRef.current = [];
+    setOutput(prev => [...prev, { stream: 'meta', text: lesson.runtime === 'cpp' ? 'Game launched in a separate window. Use Escape in the game or Stop here to close it.\n' : 'Project launched.\n' },
+      ...early.map(evt => evt.stream === 'exit' ? { stream: 'meta', text: `\n[process exited with code ${evt.code}]` } : evt)]);
+    if (early.some(evt => evt.stream === 'exit')) setRunning(false);
+    if (stopRequestedRef.current) await window.openCalcDesktop.stopRun(res.runId);
+  }, [lesson, step, fs, flushActive, trackKey]);
+
+  const stopProject = useCallback(async () => {
+    stopRequestedRef.current = true;
+    if (!runIdRef.current) {
+      setOutput(prev => [...prev, { stream: 'meta', text: 'Stop requested; waiting for the build to finish.\n' }]);
+      return;
+    }
+    const result = await window.openCalcDesktop.stopRun(runIdRef.current);
+    if (!result?.ok) {
+      setOutput(prev => [...prev, { stream: 'stderr', text: 'Could not stop this process. Close the game window or fully close the desktop app.\n' }]);
+    }
+  }, []);
 
   // ── checks ───────────────────────────────────────────────────────────────
   const runChecks = useCallback(async () => {
@@ -325,6 +389,8 @@ export default function ProjectStudio() {
       stepIndex={lesson.steps.indexOf(step)}
       step={step}
       currentContent={step.file ? (buffers[step.file] ?? '') : ''}
+      onCreateProvided={createProvided}
+      providedError={providedError}
       onPrev={goPrev}
       onNext={goNext}
       onSelectLesson={selectLesson}
@@ -408,7 +474,14 @@ export default function ProjectStudio() {
             {running ? 'Running…' : `▶ Run ${lesson.run}`}
           </button>
         )}
+        {running && (
+          <button onClick={stopProject} style={{ fontSize: 12, padding: '5px 14px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surface2, color: C.text }}>
+            ■ Stop
+          </button>
+        )}
       </div>
+
+      {lesson?.runtime === 'cpp' && <CppProjectRuntime C={C} />}
 
       {conflict && (
         <div
