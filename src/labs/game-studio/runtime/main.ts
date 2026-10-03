@@ -17,7 +17,7 @@ import { CHANNEL, type FromRuntime, type LogLevel, type ToRuntime } from './prot
 import { loadScripts, locate, type LoadedScripts } from './scripts';
 import { PhaserRenderer } from './phaserRenderer';
 import { observeGame, pressAction, type EnvSpec } from '../ml/env';
-import { act, type LinearPolicy } from '../ml/cem';
+import { actPolicy, type AgentPolicy } from '../ml/policy';
 
 const send = (m: FromRuntime) => parent.postMessage({ channel: CHANNEL, ...m }, '*');
 
@@ -96,11 +96,11 @@ async function start(msg: Extract<ToRuntime, { type: 'load' }>): Promise<void> {
 // ── a trained agent playing (ml/) ─────────────────────────────────────────
 // Every frameSkip frames it reads the same numbers it was trained on and holds the keys of its action,
 // as GameEnv.step does in training.
-let agent: { spec: EnvSpec; policy: LinearPolicy; frame: number; held: string[] } | null = null;
+let agent: { spec: EnvSpec; policy: AgentPolicy; frame: number; held: string[] } | null = null;
 function drive(g: Game): void {
   const a = agent!;
   if (a.frame++ % (a.spec.frameSkip ?? 4) !== 0) return;
-  const action = a.spec.actions[act(a.policy, observeGame(g, a.spec))] ?? [];
+  const action = a.spec.actions[actPolicy(a.policy, observeGame(g, a.spec))] ?? [];
   pressAction(g, lastLoad!.project.input, a.held, action);
   a.held = action;
 }

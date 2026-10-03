@@ -51,6 +51,12 @@ const failed = await withGameStudio(5182, async ({ page, t, check, answer }) => 
       await ui.script(await page.evaluate(([a, b]) => window.__gameStudio.tetrisStepScripts(a)[b], [task, step]));
       await ui.run(); mark(page.locator('iframe[title="Running game"]'));
     },
+    // Run › Train an agent…: Breakout's environment with these bins on the ball-across and ball-velocity.y readings, typed in.
+    spec: async ({ across, vy }) => {
+      const spec = JSON.parse(await t('train-spec').inputValue());
+      spec.observation = spec.observation.map((o) => { const { bins, ...r } = o; void bins; return o.minus && across ? { ...r, bins: across } : o.path === 'Ball:velocity.y' && vy ? { ...r, bins: vy } : r; });
+      await mark(t('train-spec')).fill(JSON.stringify(spec, null, 2));
+    },
     label: async (name, y, text) => { await ui.add('Label', 'HUD'); await ui.rename('Label', name); await ui.select(name); await ui.prop('text', text); await ui.prop('position-x', 640); await ui.prop('position-y', y); },
   };
   const boardSteps = (task, n) => Array.from({ length: n }, (_, k) => () => ui.board(task, k));
@@ -193,6 +199,18 @@ const failed = await withGameStudio(5182, async ({ page, t, check, answer }) => 
       () => ui.board('tetris-finish', 0),
       () => ui.board('tetris-finish', 1),
       async () => { await t('file-scenes/main.scene').click(); await ui.label('Next', 92, 'Next'); await ui.board('tetris-finish', 2); },
+    ],
+    // A game that learns: every step is in Run › Train an agent…. The spec is edited as JSON, as a learner types it.
+    'q-agent': [
+      async () => { await t('menu-Run').click(); await t('item-Train an agent…').click(); await ui.spec({ across: [-0.25, -0.1, -0.03, 0.03, 0.1, 0.25] }); },
+      () => ui.spec({ across: [-0.25, -0.1, -0.03, 0.03, 0.1, 0.25], vy: [0] }),
+      async () => { await t('train-method-q').click(); await t('train-start').click(); await page.getByTestId('train-status').filter({ hasText: 'Trained.' }).waitFor({ timeout: 300000 }); mark(t('train-qtable')); },
+      async () => { await t('train-watch').click(); await page.locator('iframe[title="Running game"]').waitFor({ timeout: 20000 }); await page.waitForTimeout(2500); mark(page.locator('iframe[title="Running game"]')); },
+      async () => {
+        await ui.stop(); await t('menu-Run').click(); await t('item-Train an agent…').click();
+        await ui.spec({ across: [-0.1, 0.1], vy: [0] });
+        await t('train-start').click(); await page.getByTestId('train-status').filter({ hasText: 'Trained.' }).waitFor({ timeout: 300000 }); mark(t('train-qtable'));
+      },
     ],
   };
 

@@ -14,6 +14,7 @@
 import type { NodeData, Project, SceneData } from '../core/types';
 import type { DrawItem, Game, View } from '../engine/game';
 import type { Node } from '../engine/nodes';
+import type { EnvSpec } from '../ml/env';
 
 export type CheckResult = true | string;
 
@@ -64,10 +65,21 @@ export interface PlayView {
   play(opts: PlayOptions): Promise<PlayResult>;
 }
 
+/** What the learner has done in Run › Train an agent… since the task started (ml/). */
+export interface TrainingView {
+  /** The environment as typed in the dialog (when it is valid JSON), or null. */
+  draft: EnvSpec | null;
+  /** Every training run that finished: how it trained, on what, and how it then scored against random play. */
+  runs: { method: 'q' | 'cem'; spec: EnvSpec; score: number; random: number }[];
+  /** "Watch it play" has run the game with a trained agent at the controls. */
+  watched: boolean;
+}
+
 /** What an editor check can look at. */
 export interface EditorView {
   /** The game has been run since the task started. */
   ran: boolean;
+  training?: TrainingView;
 }
 
 export type Check =
@@ -99,4 +111,9 @@ export interface GameTask {
   solution: string;
   /** What to read next, said when it is done (the lesson usually takes over). */
   done: string;
+  /** The environment Run › Train an agent… starts from in this task (instead of the example's). */
+  agent?: EnvSpec;
+  /** For steps done in the editor rather than the project (training an agent): what the editor looks like
+   *  once they are done, for the tests that prove the solution passes every step. */
+  solvedEditor?: Omit<EditorView, 'ran'>;
 }

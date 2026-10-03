@@ -18,15 +18,21 @@ import * as storage from './storage';
 import { starterImage, type StarterMap } from './starterLibrary';
 import { taskById } from '../tasks';
 import type { TaskLink } from '../tasks/links';
-import type { CheckResult, GameTask } from '../tasks/types';
+import type { CheckResult, GameTask, TrainingView } from '../tasks/types';
 import type { GameExample } from '../examples/types';
 import { mapNodeOf, mapToSceneCode, sceneToMap, type ArtMap } from '../core/artMaps';
 import { gameHtmlFile, gameZip, projectZip, readProjectZip } from '../core/archive';
 import { loadRuntimeSource } from './runner';
 import type { EnvSpec } from '../ml/env';
-import type { CemOptions, Generation, LinearPolicy } from '../ml/cem';
+import type { CemOptions, Generation } from '../ml/cem';
+import type { QEpisode, QOptions } from '../ml/qlearning';
+import { isQPolicy, type AgentPolicy } from '../ml/policy';
+
 import { EXAMPLES } from '../examples';
 import { sendArt } from '../../../utils/artBridge.js';
+
+/** How Run › Train an agent… trains: Q-learning (a table of values) or the cross-entropy method (a search over weights). */
+export type TrainMethod = 'q' | 'cem';
 
 export interface OutputLine { level: 'log' | 'info' | 'warn' | 'error' | 'system'; text: string; file?: string | null; line?: number | null; column?: number | null; node?: string | null }
 
@@ -225,7 +231,9 @@ export class Store {
   // ── tasks: "Try it" from the course, and Help › Tutorials (docs/game-studio-course-plan.md) ──
 
   /** The task being done, its link back to the lesson, and its checks' latest results. */
-  task: { def: GameTask; link: TaskLink | null; results: CheckResult[]; ran: boolean; finished: boolean } | null = null;
+  task: { def: GameTask; link: TaskLink | null; results: CheckResult[]; ran: boolean; finished: boolean; runs: TrainingView['runs']; watched: boolean } | null = null;
+  /** The environment as typed in Run › Train an agent… (when it parses), for a task's checks. */
+  trainDraft: EnvSpec | null = null;
   /** Called once when a task's every step passes (Game Studio marks the lesson's checkpoint). */
   onTaskDone: ((task: GameTask, link: TaskLink | null) => void) | null = null;
   private checker: Worker | null = null;
@@ -246,7 +254,9 @@ export class Store {
     this.sceneId = p.scenes.find((x) => x.path === p.settings.mainScene)?.id ?? p.scenes[0]?.id ?? null;
     this.selection = [];
     this.guide = null;
-    this.task = { def, link, results: def.steps.map(() => 'Not checked yet'), ran: false, finished: false };
+    this.task = { def, link, results: def.steps.map(() => 'Not checked yet'), ran: false, finished: false, runs: [], watched: false };
+    // A task that trains an agent starts from its own environment, not one left from earlier training.
+    if (def.agent) { this.stopTraining(); this.training = { ...this.training, spec: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, random: null, error: null, total: 0 }; this.trainDraft = null; }
     this.say(`Task: ${def.title}. The steps are beside the viewport.`);
     this.scheduleCheck(0);
     return true;
@@ -286,7 +296,7 @@ export class Store {
       // Checked as typed: open scripts count with their unsaved text (Run saves them first anyway).
       const project = JSON.parse(JSON.stringify(doc.project)) as Project;
       for (const sc of project.scripts) sc.source = this.scriptText(sc.path);
-      this.checker.postMessage({ id: ++this.checkId, taskId: t.def.id, project, editor: { ran: t.ran } });
+      this.checker.postMessage({ id: ++this.checkId, taskId: t.def.id, project, editor: { ran: t.ran, training: { draft: this.trainDraft, runs: t.runs, watched: t.watched } } });
     }, delay);
   }
 
@@ -818,6 +828,7 @@ export class Store {
     const game = await runGame({ project: p, scene, assets, container, onMessage: (m) => this.onRuntime(m) });
     this.running = { game, scene, paused: false, live: null };
     if (this.task && !this.task.ran) { this.task = { ...this.task, ran: true }; this.scheduleCheck(0); }
+    if (this.task && this.watchingAgent && !this.task.watched) { this.task = { ...this.task, watched: true }; this.scheduleCheck(0); }
     this.changed();
     game.frame.focus();
   }
@@ -837,10 +848,16 @@ export class Store {
     this.changed();
   }
 
-  // ── training an agent (ml/: a Gymnasium-style environment and the cross-entropy method) ─────
+  // ── training an agent (ml/: a Gymnasium-style environment; Q-learning or the cross-entropy method) ─────
 
-  training: { running: boolean; spec: EnvSpec | null; random: number | null; generations: Generation[]; policy: LinearPolicy | null; score: number | null; error: string | null; total: number } =
-    { running: false, spec: null, random: null, generations: [], policy: null, score: null, error: null, total: 0 };
+  training: {
+    running: boolean; method: TrainMethod; spec: EnvSpec | null; random: number | null;
+    /** Cross-entropy: one entry per generation. Q-learning: one per episode. */
+    generations: Generation[]; episodes: QEpisode[];
+    /** Q-learning: the table at the latest check (and how often each state was updated), to show while it trains. */
+    table: number[][] | null; visits: number[] | null;
+    policy: AgentPolicy | null; score: number | null; error: string | null; total: number;
+  } = { running: false, method: 'q', spec: null, random: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, error: null, total: 0 };
   /** The game running from "Watch it play": the trained agent holds the controls. */
   watchingAgent = false;
   private trainer: Worker | null = null;
@@ -848,6 +865,7 @@ export class Store {
   /** The agent spec to start from: the example's, if the project is one that has it, else a sketch to fill in. */
   defaultAgentSpec(): EnvSpec {
     const p = this.doc?.project;
+    if (this.task?.def.agent) return this.task.def.agent;
     const ex = this.guide?.agent ? this.guide : EXAMPLES.find((e) => e.title === p?.name && e.agent);
     if (ex?.agent) return ex.agent;
     const scene = p?.scenes.find((x) => x.path === p.settings.mainScene);
@@ -863,25 +881,41 @@ export class Store {
     };
   }
 
-  /** Train in a worker; each generation's scores arrive as it finishes. */
-  startTraining(spec: EnvSpec, options: CemOptions): void {
+  /** Train in a worker; each episode's (or generation's) scores arrive as it finishes. */
+  startTraining(spec: EnvSpec, job: { method: 'q'; options: QOptions } | { method: 'cem'; options: CemOptions }): void {
     if (!this.doc) return;
     this.stopTraining();
     for (const path of [...this.buffers.keys()]) if (this.isScriptDirty(path)) this.saveScript(path);
-    this.training = { running: true, spec, random: null, generations: [], policy: null, score: null, error: null, total: options.generations };
+    const total = job.method === 'q' ? job.options.episodes : job.options.generations;
+    this.training = { running: true, method: job.method, spec, random: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, error: null, total };
     const w = this.trainer = new Worker(new URL('../ml/train.worker.ts', import.meta.url), { type: 'module' });
     w.onmessage = (e: MessageEvent) => {
-      const m = e.data as { type: string; score?: number; policy?: LinearPolicy; message?: string } & Generation;
+      const m = e.data as { type: string; score?: number; policy?: AgentPolicy; message?: string } & Generation & QEpisode;
       const t = this.training;
       if (m.type === 'random') this.training = { ...t, random: m.score! };
       else if (m.type === 'generation') this.training = { ...t, generations: [...t.generations, { generation: m.generation, best: m.best, eliteMean: m.eliteMean, mean: m.mean, champion: m.champion }], policy: m.champion };
-      else if (m.type === 'done') { this.training = { ...t, running: false, policy: m.policy!, score: m.score! }; this.stopTraining(false); }
+      else if (m.type === 'episode') {
+        const ep: QEpisode = { episode: m.episode, total: m.total, epsilon: m.epsilon, visited: m.visited, steps: m.steps, ...(m.greedy === undefined ? {} : { greedy: m.greedy }) };
+        this.training = { ...t, episodes: [...t.episodes, ep], table: m.table ?? t.table, visits: m.visits ?? t.visits };
+      }
+      else if (m.type === 'done') {
+        this.training = { ...t, running: false, policy: m.policy!, score: m.score!, table: isQPolicy(m.policy!) ? m.policy.table : t.table, visits: isQPolicy(m.policy!) ? m.policy.visits ?? null : t.visits };
+        this.stopTraining(false);
+        if (this.task) { this.task = { ...this.task, runs: [...this.task.runs, { method: t.method, spec, score: m.score!, random: t.random ?? 0 }] }; this.scheduleCheck(0); }
+      }
       else if (m.type === 'error') { this.training = { ...t, running: false, error: m.message! }; this.stopTraining(false); }
       this.changed();
     };
     w.onerror = (e) => { this.training = { ...this.training, running: false, error: e.message || 'The trainer stopped' }; this.stopTraining(false); this.changed(); };
-    w.postMessage({ project: JSON.parse(JSON.stringify(this.doc.project)), spec, options });
+    w.postMessage({ project: JSON.parse(JSON.stringify(this.doc.project)), spec, ...job });
     this.changed();
+  }
+
+  /** The dialog's environment as typed: a task's checks look at it (adding bins, say). */
+  setTrainDraft(spec: EnvSpec | null): void {
+    if (JSON.stringify(spec) === JSON.stringify(this.trainDraft)) return;
+    this.trainDraft = spec;
+    this.scheduleCheck();
   }
 
   stopTraining(mark = true): void {

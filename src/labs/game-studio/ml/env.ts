@@ -28,7 +28,11 @@ import { NODE_CLASSES, PhysicsBody2D, type Node } from '../engine/nodes';
 import { Vec2 } from '../engine/vec2';
 
 /** A number read from the game: (value at path − value at minus + offset) × scale. */
-export interface Reading { path: string; minus?: string; scale?: number; offset?: number }
+export interface Reading {
+  path: string; minus?: string; scale?: number; offset?: number;
+  /** Cut points (increasing) that sort this reading into bins, for Q-learning's table of states (ml/qlearning.ts). */
+  bins?: number[];
+}
 export interface EnvSpec {
   /** Each action the agent can take: the input actions held for one step ([] is "do nothing"). */
   actions: string[][];

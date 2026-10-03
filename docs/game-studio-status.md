@@ -583,7 +583,7 @@ below the first override only their picture. Its tests pass unchanged.
 - **8 chapters:** first steps, physics, camera and HUD, animation, tilemaps, scenes, Tetris (9 lessons), and a bonus
   lesson on training an agent.
 - **Each lesson has:**
-  - a Try it card opening its Game Studio task, with that task's high-definition step pictures (the bonus has none);
+  - a Try it card opening its Game Studio task, with that task's high-definition step pictures;
   - an optional "Under the hood" section, with every number checked against the engine;
   - three examples, three challenges, a six-question quiz and eight checkpoints.
 - **Pictures** are now 2× WebP (about 120 KB each, 88 of them), after the user found the old 0.6× JPEGs pixelated.
@@ -620,6 +620,73 @@ lesson and Game Studio can both be open at once. Looking into it turned up four 
   ticks after an error). A cold link now lands on the home desktop behind the window rather than a blank page, so
   headless frames are slower, and the checks failed. They now wait until the thing happens, with a limit.
   All 16 browser tests pass again, each run on its own, and so does `npm run build`.
+
+## Done: Q-learning in Game Studio, and the bonus lesson rebuilt around it (2026-10-03)
+
+The user asked for the bonus lesson to teach Q-learning for real, building on the ML Lab's lab 37, with Game Studio
+as the place it is done. Before, the lesson only described the cross-entropy method and had no Try it task.
+
+**Q-learning on any game** (`ml/qlearning.ts`):
+- **States from numbers.** A reading gets `bins` (cut points); a value's bin is how many cuts are below it, and the
+  binned readings combine like digits. Breakout bins "ball − paddle" into 7 and velocity.y into 2: 14 states.
+- **Watkins' update,** ε-greedy with ties broken at random (as the ML Lab does), and ε falling from 0.3 to 0.02.
+- **Greedy checks.** Every 10 episodes the greedy policy plays 2 games on seeds of its own, without learning, and
+  the best table is kept. Without this the final table was unreliable: training returns climbed on every seed, but
+  the last table sometimes played at −6, because a binned state hides details that matter.
+- **Measured on Breakout** (100 episodes, about 15 seconds; scored on the game's real reward):
+
+  | Variant | Scores |
+  |---|---|
+  | As set up | 48, 48, 48 on seeds 1–3 (the whole wall) |
+  | −1 per lost ball, not −3 | 48, 44, 41 |
+  | No penalty for a lost ball | 43, 1, 48 |
+  | No velocity.y bins (7 states) | 43, 43, 18 |
+  | Three bins across | 13, 24, 34 |
+
+- **Its table does not read as "move towards the ball" in every row:** the state leaves out the ball's sideways
+  speed, and some well-visited rows look wrong. The lesson says so instead of claiming a rule.
+
+**In the editor:** Run › Train an agent… has a method switch, Q-learning (the default) or Cross-entropy:
+- Q-learning has its own settings (episodes, α, γ, ε).
+- Its curve shows each episode's return, the average of the last 10, and the greedy checks.
+- "What it learned" is the Q table: a row per state, with its bins in words, the greedy action in green, and how
+  often each state was updated.
+- "Watch it play" and the runtime take either kind of policy (`ml/policy.ts`).
+
+**The task `q-agent`** (`tasks/learning.ts`, chain "A game that learns") has five steps:
+1. bin the ball-across reading;
+2. bin velocity.y;
+3. train;
+4. watch it play;
+5. train again on three bins and compare.
+
+Its checks are editor checks on a new `training` view: the dialog's spec as typed, the finished runs, and whether
+it was watched. `GameTask.agent` sets the environment the task starts from, and `solvedEditor` lets
+`tasks.test.ts` prove the steps pass. Its pictures come from `npm run game:shots` (`tutorials.shots.mjs q-agent`
+drives the real dialog).
+
+**The lesson** (mg8-001, from the YAML) teaches:
+- the loop, with the notation $S_t, A_t, R_{t+1}$;
+- states from bins, and the return with its recursion;
+- $Q$ and $Q^*$, and the Bellman optimality equation;
+- the TD target and TD error, and ε-greedy exploration;
+- off-policy learning, with the convergence conditions under the hood.
+
+Its notebook builds all of this on a small Catch game: one update by hand, training, then the learned table
+against $Q^*$ solved backwards. With ε = 1 the table converges to within 0.0002 of $Q^*$. The notebook also uses
+Breakout's bins (checked against `ml/qlearning.ts`) and a picture of the table.
+
+The challenge is to write the update. It checks itself against four cases, so it stays plain YAML data. The Try it
+card opens `q-agent`. ML Lab lesson 37.4 now links to the lesson.
+
+**Tested:**
+- `ml/qlearning.test.ts`: bins and states; the update on two hand-solvable environments; Breakout from −5.3 to
+  above 40 with ten checks.
+- `courses/making-games/bonus.test.js`: every cell's printed numbers, the self-checking challenge, the card and the
+  ML Lab link.
+- `e2e/ml.acceptance.mjs` (9/9): Q-learning reaches 48 with the 14-row table, then Watch it play; the
+  cross-entropy method reaches 37.
+- `tutorials.shots.mjs q-agent` (5/5 steps ticked through the real dialog).
 
 ## Done: Phase 9, machine learning, in Game Studio (2026-10-01)
 
@@ -946,8 +1013,8 @@ In this order (proposed to the user, 2026-10-01):
 3. ~~Sprite Forge and Tile Mapper connected~~ and ~~brought to Game Studio's standard~~: done (above): round-trip
    editing, GUI → code with a Code panel, examples in both, and browser tests. Still open: the look.
 4. ~~The course, "Building Games with Game Studio"~~: all 33 lessons written (2026-10-01), in 8 chapters. Details are
-   in [game-studio-course-plan.md](game-studio-course-plan.md). Still open: linking the bonus lesson (mg8-001) from
-   the ML Lab, which is ML Lab work.
+   in [game-studio-course-plan.md](game-studio-course-plan.md). The bonus lesson was rebuilt around Q-learning on
+   2026-10-03, with a Try it task, and ML Lab lesson 37.4 links to it.
 5. ~~Phase 8, export~~ and ~~Phase 9 in Game Studio~~: done (above). For the ML Lab, the user chose a bonus lesson
    at the end of the course, linked from the ML Lab (item 4). A bridge from its Python stays possible later.
 
