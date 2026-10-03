@@ -552,27 +552,42 @@ const CellComponent = React.memo(
                       ? "8px 22px 16px"
                       : "16px 22px 16px",
                   maxWidth: 860,
+                  "--nb-accent": C.blue,
+                  "--nb-strong": C.text,
+                  "--nb-code": C.purple,
+                  "--nb-code-bg": C.purpleBg,
                 }}
+                className="nb-prose"
               >
+                <style>{NB_PROSE_CSS}</style>
                 {(Array.isArray(cell.prose) ? cell.prose : [cell.prose]).map(
-                  (p, i) => {
+                  (p, i, all) => {
                     // ## Header line
                     if (typeof p === "string" && p.startsWith("## ")) {
                       return (
-                        <h3
-                          key={i}
-                          style={{
-                            margin: i === 0 ? "2px 0 10px" : "28px 0 10px",
-                            fontSize: 19,
-                            fontWeight: 650,
-                            color: C.blue,
-                            lineHeight: 1.35,
-                            paddingBottom: 6,
-                            borderBottom: `1px solid ${withAlpha(C.blueBd, "55")}`,
-                          }}
-                        >
-                          {p.slice(3)}
-                        </h3>
+                        (() => {
+                          const learned = /^what you learned/i.test(p.slice(3));
+                          const fg = learned ? C.green : C.blue;
+                          const bg = learned ? C.greenBg : C.blueBg;
+                          return (
+                            <h3
+                              key={i}
+                              style={{
+                                margin: i === 0 ? "2px 0 12px" : "30px 0 12px",
+                                fontSize: 19,
+                                fontWeight: 650,
+                                color: fg,
+                                lineHeight: 1.35,
+                                padding: "8px 14px",
+                                borderRadius: 8,
+                                borderLeft: `4px solid ${fg}`,
+                                background: `linear-gradient(90deg, ${bg} 0%, transparent 85%)`,
+                              }}
+                            >
+                              {p.slice(3)}
+                            </h3>
+                          );
+                        })()
                       );
                     }
                     // ``` fenced code block
@@ -643,12 +658,14 @@ const CellComponent = React.memo(
                       const items = p
                         .split("\n")
                         .filter((l) => l.trim().startsWith("- "));
+                      const covers = i > 0 && typeof all[i - 1] === "string" && /lesson covers:?$/i.test(all[i - 1].trim());
                       return (
                         <ul
                           key={i}
                           style={{
-                            margin: i === 0 ? 0 : "12px 0 0",
-                            paddingLeft: 24,
+                            margin: i === 0 ? 0 : covers ? "8px 0 0" : "12px 0 0",
+                            ...(covers ? { padding: "12px 16px 12px 36px", borderRadius: 10, background: C.tealBg, border: `1px solid ${withAlpha(C.tealBd, "55")}` } : {}),
+                            paddingLeft: covers ? 36 : 24,
                             fontSize: 15,
                             color: C.text,
                             lineHeight: 1.7,
@@ -694,6 +711,47 @@ const CellComponent = React.memo(
                             </li>
                           ))}
                         </ol>
+                      );
+                    }
+                    // "This lesson covers:" label
+                    if (typeof p === "string" && /^this lesson covers:?$/i.test(p.trim())) {
+                      return (
+                        <p key={i} style={{ margin: "18px 0 0", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.teal }}>
+                          {p.replace(/:$/, "")}
+                        </p>
+                      );
+                    }
+                    // "Predict before running: ..." becomes its own callout
+                    if (typeof p === "string" && p.includes("Predict before running:")) {
+                      const at = p.indexOf("Predict before running:");
+                      const before = p.slice(0, at).trim();
+                      const rest = p.slice(at + "Predict before running:".length).trim();
+                      const question = rest.charAt(0).toUpperCase() + rest.slice(1);
+                      return (
+                        <div key={i}>
+                          {before && (
+                            <p style={{ margin: i === 0 ? 0 : "14px 0 0", fontSize: 15, color: C.text, lineHeight: 1.75 }}>
+                              {parseProse(before)}
+                            </p>
+                          )}
+                          <div
+                            style={{
+                              margin: "14px 0 0",
+                              padding: "10px 14px",
+                              borderRadius: 8,
+                              background: C.amberBg,
+                              borderLeft: `4px solid ${C.amber}`,
+                              fontSize: 15,
+                              lineHeight: 1.7,
+                              color: C.text,
+                            }}
+                          >
+                            <span style={{ display: "block", marginBottom: 2, fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: C.amber }}>
+                              Predict before running
+                            </span>
+                            {parseProse(question)}
+                          </div>
+                        </div>
                       );
                     }
                     // Default: paragraph
@@ -1002,6 +1060,17 @@ function fixPythonBrokenStrings(src) {
   if (pending !== null) out.push(pending);
   return out.join("\n");
 }
+
+// Inline colours for lesson prose; the values come from CSS variables set on
+// the prose container, so they follow the light/dark theme.
+const NB_PROSE_CSS = `
+.nb-prose strong { color: var(--nb-strong); font-weight: 700; }
+.nb-prose li::marker { color: var(--nb-accent); }
+.nb-prose p code, .nb-prose li code, .nb-prose div > code {
+  color: var(--nb-code); background: var(--nb-code-bg);
+  padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.88em;
+}
+`;
 
 export default function PythonNotebook({ params, onParamChange, onCellsChange }) {
   const C = useThemeColors();
