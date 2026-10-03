@@ -32,6 +32,7 @@
 // A step can also carry a ```check fence (see checks.js): what the "Check my work" button
 // verifies in the learner's real project folder. It is taken out of the prose.
 import { parseChecks } from './checks.js';
+import { MARKER, parsePrediction } from './predictions.js';
 
 function parseFrontmatter(text) {
   const match = text.match(/^---\n([\s\S]*?)\n---\n?/);
@@ -65,10 +66,18 @@ function parseFenceInfo(info) {
  */
 function parseStepBody(rawBody) {
   const checks = [];
-  const body = rawBody.replace(/```check[^\n]*\n([\s\S]*?)```\n?/g, (_, inner) => {
-    checks.push(...parseChecks(inner));
-    return '';
-  });
+  const predictions = [];
+  const body = rawBody
+    .replace(/```check[^\n]*\n([\s\S]*?)```\n?/g, (_, inner) => {
+      checks.push(...parseChecks(inner));
+      return '';
+    })
+    // A ```predict fence (predictions.js) stays where it was written, as a marker line the
+    // lesson panel replaces with the prediction box.
+    .replace(/```predict[^\n]*\n([\s\S]*?)```\n?/g, (_, inner) => {
+      predictions.push(parsePrediction(inner));
+      return `\n${MARKER(predictions.length - 1)}\n\n`;
+    });
 
   const fenceRe = /```([^\n]*)\n([\s\S]*?)```/g;
   // Only the first `file=` block is the step's target. Any later one would be shown as an
@@ -88,12 +97,13 @@ function parseStepBody(rawBody) {
       lang,
       provided,
       checks,
+      predictions,
       extraTargets,
     };
   }
   // A step with no target file is legitimate — a pure "read this / predict
   // what happens" beat between two code steps, or a step done in the terminal.
-  return { prose: body.trim(), explain: '', target: null, file: null, lang: null, checks };
+  return { prose: body.trim(), explain: '', target: null, file: null, lang: null, checks, predictions };
 }
 
 export function parseLesson(text, id) {

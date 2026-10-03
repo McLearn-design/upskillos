@@ -4,6 +4,8 @@
 // courses use), so bold/inline-code/lists all behave as they do elsewhere.
 import MarkdownProse from '../../components/math/MarkdownProse.jsx';
 import DiffBlock from './DiffBlock.jsx';
+import PredictionBox from './PredictionBox.jsx';
+import { MARKER_SPLIT } from './predictions.js';
 
 // MarkdownProse defaults to article typography — large serif body text with
 // generous leading, which is right for a full-width lesson page and far too
@@ -92,7 +94,7 @@ export default function LessonPanel({
 
         {step.prose && (
           <div style={{ color: C.text }}>
-            <MarkdownProse text={step.prose} className={COMPACT_PROSE} />
+            <StepText text={step.prose} step={step} C={C} />
           </div>
         )}
 
@@ -112,7 +114,7 @@ export default function LessonPanel({
 
         {step.explain && (
           <div style={{ marginTop: 8, color: C.text }}>
-            <MarkdownProse text={step.explain} className={COMPACT_PROSE} />
+            <StepText text={step.explain} step={step} C={C} />
           </div>
         )}
 
@@ -130,6 +132,19 @@ export default function LessonPanel({
       </div>
     </div>
   );
+}
+
+// Step prose with its prediction checkpoints (```predict fences) in the places they were written.
+function StepText({ text, step, C }) {
+  const parts = text.split(MARKER_SPLIT);
+  return parts.map((part, i) => {
+    if (i % 2 === 0) return part.trim() ? <MarkdownProse key={i} text={part} className={COMPACT_PROSE} /> : null;
+    const index = Number(part);
+    const prediction = step.predictions?.[index];
+    if (!prediction) return null;
+    const id = `${step.id}-predict-${index}`;
+    return <PredictionBox key={id} id={id} prediction={prediction} C={C} proseClass={COMPACT_PROSE} />;
+  });
 }
 
 function ChecksBox({ step, state, onCheck, canCheck, C }) {

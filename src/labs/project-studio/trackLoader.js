@@ -5,9 +5,10 @@
 import { parseLesson } from './parseTrack.js';
 
 const FILES = import.meta.glob('./tracks/**/*.md', { query: '?raw', import: 'default', eager: true });
-const SUPPORT_FILES = import.meta.glob('./tracks/*/support/*', { query: '?raw', import: 'default', eager: true });
+const SUPPORT_FILES = import.meta.glob('./tracks/*/support/**/*', { query: '?raw', import: 'default', eager: true });
 
-// Opt-in supplied infrastructure stays out of the lesson's teaching code blocks.
+// Opt-in supplied infrastructure stays out of the lesson's teaching code blocks. A name may
+// include folders (`support: tests/test_grid.py`); the file lands at that path in the project.
 export function getSupportFiles(track, names = '') {
   return names.split(',').map(name => name.trim()).filter(Boolean).map(file => {
     const content = SUPPORT_FILES[`./tracks/${track}/support/${file}`];

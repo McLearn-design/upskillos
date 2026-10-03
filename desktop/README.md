@@ -88,6 +88,14 @@ After that, `Run` spawns the private `python.exe` against the lesson's
 code and a real native window opens outside the Electron app; any
 `print()` output streams back into the lesson's console panel.
 
+**Project Studio and virtual environments:** when a Project Studio
+project folder contains its own `.venv` (made by the learner with
+`python -m venv .venv`, as the *Reinforcement Learning in pygame* track
+teaches), **Run** uses that environment's Python instead of the private
+one, so it sees the packages the learner installed from the project's
+`requirements.txt` (`projectCommand` in `runtimes/python.cjs`). Projects
+without a `.venv` are unchanged.
+
 Windows-only for now — the embeddable-zip trick is a Windows-specific
 mechanism. macOS/Linux would need a different approach (system
 `python3` + a venv) and isn't implemented yet.

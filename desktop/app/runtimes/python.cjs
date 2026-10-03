@@ -257,10 +257,24 @@ function killAllScripts() {
 // scratch copy). Returns null when the runtime isn't installed. A runtime
 // that needs a separate build step before it can run simply doesn't
 // export this, and project runs report that honestly.
-async function projectCommand(app, absFile) {
+//
+// A project with its own virtual environment (`python -m venv .venv` in the
+// project folder, as the RL track teaches) runs on that environment's
+// Python, so Run sees the same packages as the learner's terminal. Projects
+// without one keep using the private PySide6 environment.
+function venvPython(root) {
+  return process.platform === 'win32'
+    ? path.join(root, '.venv', 'Scripts', 'python.exe')
+    : path.join(root, '.venv', 'bin', 'python')
+}
+
+async function projectCommand(app, absFile, root) {
+  if (root && (await pathExists(venvPython(root)))) {
+    return { command: venvPython(root), args: [absFile], env: { ...UNBUFFERED, PYTHONUTF8: '1' } }
+  }
   const exe = pythonExePath(app)
   if (!(await pathExists(exe))) return null
   return { command: exe, args: [absFile], env: UNBUFFERED }
 }
 
-module.exports = { getStatus, install, runScript, runCode, killRun, killAllScripts, projectCommand }
+module.exports = { getStatus, install, runScript, runCode, killRun, killAllScripts, projectCommand, venvPython }
