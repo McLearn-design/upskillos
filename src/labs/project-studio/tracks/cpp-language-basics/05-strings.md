@@ -179,9 +179,7 @@ std::string to_lower(const std::string& text)
 ```check
 file words/build/CMakeCache.txt label="words/build has been configured" -- Run the configure command for your system, from the track folder.
 run "cmake --build words/build --target text_tests" -- Is to_lower defined exactly as declared in text.h?
-run "./words/build/text_tests" stdout="[       OK ] to_lower_changes_capitals" -- Loop with char& so assigning changes the copy.
-run "./words/build/text_tests" stdout="[       OK ] to_lower_does_not_modify_its_argument" -- Change a copy of the text, not the text itself.
-run "./words/build/text_tests" stdout=" passed, 0 failed"
+tests "./words/build/text_tests" require="to_lower_changes_capitals to_lower_does_not_modify_its_argument" -- Loop with char& so assigning changes the copy. Change a copy of the text, not the text itself.
 ```
 
 ## Step 6 — The specification for split_words
@@ -272,10 +270,7 @@ std::vector<std::string> split_words(const std::string& text)
 
 ```check
 run "cmake --build words/build --target text_tests"
-run "./words/build/text_tests" stdout="[       OK ] split_words_on_spaces_and_punctuation"
-run "./words/build/text_tests" stdout="[       OK ] split_words_ignores_repeated_separators" -- Only push a word when current is not empty.
-run "./words/build/text_tests" stdout="[       OK ] split_words_keeps_digits" -- After the loop, current may still hold the last word.
-run "./words/build/text_tests" stdout=" passed, 0 failed"
+tests "./words/build/text_tests" require="split_words_on_spaces_and_punctuation split_words_ignores_repeated_separators split_words_keeps_digits" -- Only push a word when current is not empty. After the loop, current may still hold the last word.
 ```
 
 ## Step 8 — A command-line word counter
@@ -456,7 +451,7 @@ TEST(palindrome_with_mixed_case)
 ```check
 matches words/tests/palindrome_test.cpp "(\bTEST\s*\([\s\S]*){3}" label="palindrome_test.cpp has at least three tests"
 run "cmake --build words/build --target text_tests"
-run "./words/build/text_tests" stdout=" passed, 0 failed"
+tests "./words/build/text_tests"
 ```
 
 ## Step 12 — The reviewer's tests
@@ -498,7 +493,5 @@ TEST(review_edge_cases)
 ```check
 file words/tests/palindrome_review_test.cpp
 run "cmake --build words/build --target text_tests"
-run "./words/build/text_tests" stdout="[       OK ] review_ignores_case_and_punctuation" -- Compare only letters and digits, lower-cased.
-run "./words/build/text_tests" stdout="[       OK ] review_edge_cases" -- Empty text, one character, and text with no letters at all are all palindromes.
-run "./words/build/text_tests" stdout=" passed, 0 failed"
+tests "./words/build/text_tests" require="review_ignores_case_and_punctuation review_edge_cases" -- Compare only letters and digits, lower-cased. Empty text, one character, and text with no letters at all are all palindromes.
 ```

@@ -410,8 +410,7 @@ const int& IntArray::operator[](std::size_t index) const
 ```check
 file dynarray/build/CMakeCache.txt label="dynarray/build has been configured" -- Run the configure command for your system, from the track folder.
 run "cmake --build dynarray/build" -- Every member is defined as IntArray::name, matching the declaration exactly, const included.
-run "./dynarray/build/int_array_tests" stdout="[       OK ] new_array_is_zero_filled" -- new int[size]() with the () zero-fills the array.
-run "./dynarray/build/int_array_tests" stdout=" passed, 0 failed"
+tests "./dynarray/build/int_array_tests" require="new_array_is_zero_filled" -- new int[size]() with the () zero-fills the array.
 ```
 
 ## Step 7 — The specification for growing
@@ -618,7 +617,5 @@ void IntArray::push_back(int value)
 
 ```check
 run "cmake --build dynarray/build" -- Define every new member declared in int_array.h.
-run "./dynarray/build/int_array_tests" stdout="[       OK ] many_push_backs_keep_every_value" -- Copy every existing element into the new buffer before deleting the old one.
-run "./dynarray/build/int_array_tests" stdout="[       OK ] capacity_grows_geometrically" -- Double the capacity (starting from, say, 4) instead of adding one.
-run "./dynarray/build/int_array_tests" stdout=" passed, 0 failed"
+tests "./dynarray/build/int_array_tests" require="many_push_backs_keep_every_value capacity_grows_geometrically" -- Copy every existing element into the new buffer before deleting the old one. Double the capacity (starting from, say, 4) instead of adding one.
 ```

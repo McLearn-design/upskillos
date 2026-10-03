@@ -290,9 +290,7 @@ void IntArray::pop_back()
 
 ```check
 run "cmake --build dynarray/build"
-run "./dynarray/build/int_array_tests" stdout="[       OK ] move_construction_steals_the_buffer" -- Take other's pointer, then set other.data_ to nullptr.
-run "./dynarray/build/int_array_tests" stdout="[       OK ] a_moved_from_array_can_be_used_again" -- Leave the source empty: size 0, capacity 0, no buffer.
-run "./dynarray/build/int_array_tests" stdout=" passed, 0 failed"
+tests "./dynarray/build/int_array_tests" require="move_construction_steals_the_buffer a_moved_from_array_can_be_used_again" -- Take other's pointer, then set other.data_ to nullptr. Leave the source empty: size 0, capacity 0, no buffer.
 ```
 
 ## Step 4 — Predict: what does std::move do?
@@ -454,6 +452,5 @@ TEST(review_copies_are_deep_and_moves_steal)
 file dynarray/tests/grid_review_test.cpp
 contains dynarray/CMakeLists.txt "grid.cpp" -- Add grid.cpp to the add_executable line.
 run "cmake --build dynarray/build"
-run "./dynarray/build/int_array_tests" stdout="[       OK ] review_cells_are_independent" -- Cell (r, c) is at r * cols + c.
-run "./dynarray/build/int_array_tests" stdout=" passed, 0 failed"
+tests "./dynarray/build/int_array_tests" require="review_cells_are_independent" -- Cell (r, c) is at r * cols + c.
 ```

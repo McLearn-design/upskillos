@@ -239,9 +239,7 @@ void IntArray::push_back(int value)
 
 ```check
 run "cmake --build dynarray/build"
-run "./dynarray/build/int_array_tests" stdout="[       OK ] copies_are_independent" -- The copy needs its own new buffer, with the elements copied into it.
-run "./dynarray/build/int_array_tests" stdout="[       OK ] self_assignment_is_harmless" -- Check this == &other first.
-run "./dynarray/build/int_array_tests" stdout=" passed, 0 failed"
+tests "./dynarray/build/int_array_tests" require="copies_are_independent self_assignment_is_harmless" -- The copy needs its own new buffer, with the elements copied into it. Check this == &other first.
 ```
 
 ## Step 4 — Challenge: bounds checking (the header)
@@ -437,7 +435,7 @@ TEST(pop_back_shrinks)
 ```check
 matches dynarray/tests/at_test.cpp "(\bTEST\s*\([\s\S]*){3}" label="at_test.cpp has at least three tests"
 run "cmake --build dynarray/build"
-run "./dynarray/build/int_array_tests" stdout=" passed, 0 failed"
+tests "./dynarray/build/int_array_tests"
 ```
 
 ## Step 7 — The reviewer's tests
@@ -501,6 +499,5 @@ TEST(review_pop_back_on_empty_throws)
 ```check
 file dynarray/tests/at_review_test.cpp
 run "cmake --build dynarray/build"
-run "./dynarray/build/int_array_tests" stdout="[       OK ] review_at_rejects_out_of_range_indices" -- Valid indices are 0 to size() - 1: index == size() is out of range.
-run "./dynarray/build/int_array_tests" stdout=" passed, 0 failed"
+tests "./dynarray/build/int_array_tests" require="review_at_rejects_out_of_range_indices" -- Valid indices are 0 to size() - 1: index == size() is out of range.
 ```

@@ -136,7 +136,6 @@ export const WALKTHROUGH = {
         "fails": [
           1,
           2,
-          3,
         ],
       },
     ],
@@ -180,8 +179,7 @@ export const WALKTHROUGH = {
           configure("dynarray"),
         ],
         "fails": [
-          2,
-          3,
+          1,
         ],
       },
     ],
@@ -219,7 +217,6 @@ export const WALKTHROUGH = {
         ],
         "fails": [
           1,
-          3,
         ],
       },
     ],
@@ -286,7 +283,6 @@ export const WALKTHROUGH = {
         ],
         "fails": [
           2,
-          3,
         ],
       },
     ],
@@ -327,7 +323,6 @@ export const WALKTHROUGH = {
         ],
         "fails": [
           1,
-          3,
         ],
       },
     ],

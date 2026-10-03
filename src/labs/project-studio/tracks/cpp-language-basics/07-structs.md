@@ -188,8 +188,7 @@ double total_value(const std::vector<Item>& items)
 ```check
 file inventory/build/CMakeCache.txt label="inventory/build has been configured" -- Run the configure command for your system, from the track folder.
 run "cmake --build inventory/build --target inventory_tests" -- The struct needs ; after its closing }. Members with defaults: int quantity = 0;
-run "./inventory/build/inventory_tests" stdout="[       OK ] item_fields_default_to_zero" -- Give quantity and price default member initialisers.
-run "./inventory/build/inventory_tests" stdout=" passed, 0 failed"
+tests "./inventory/build/inventory_tests" require="item_fields_default_to_zero" -- Give quantity and price default member initialisers.
 ```
 
 ## Step 6 — A teammate's restock function
@@ -283,7 +282,7 @@ inline void restock(Item& item, int amount)
 ```check
 matches inventory/restock.h "restock\s*\(\s*Item\s*&" label="restock takes the item by reference"
 run "cmake --build inventory/build --target inventory_tests"
-run "./inventory/build/inventory_tests" stdout=" passed, 0 failed" -- Item& item: then item IS the caller's object.
+tests "./inventory/build/inventory_tests" -- Item& item: then item IS the caller's object.
 ```
 
 ## Step 9 — Predict: choosing a parameter type
@@ -410,8 +409,7 @@ std::optional<std::size_t> find_index(const std::vector<Item>& items, const std:
 
 ```check
 run "cmake --build inventory/build --target inventory_tests"
-run "./inventory/build/inventory_tests" stdout="[       OK ] find_index_reports_missing_items" -- After the loop, return std::nullopt.
-run "./inventory/build/inventory_tests" stdout=" passed, 0 failed"
+tests "./inventory/build/inventory_tests" require="find_index_reports_missing_items" -- After the loop, return std::nullopt.
 ```
 
 ## Step 13 — Challenge: categories (the header)
@@ -593,6 +591,5 @@ TEST(review_category_names)
 ```check
 file inventory/tests/category_review_test.cpp
 run "cmake --build inventory/build --target inventory_tests"
-run "./inventory/build/inventory_tests" stdout="[       OK ] review_count_in_counts_units_per_category" -- count_in adds up quantities, not the number of items.
-run "./inventory/build/inventory_tests" stdout=" passed, 0 failed"
+tests "./inventory/build/inventory_tests" require="review_count_in_counts_units_per_category" -- count_in adds up quantities, not the number of items.
 ```

@@ -104,7 +104,7 @@ export const WALKTHROUGH = {
       typeFile: true,
       editFiles: { 'calculator/calc.cpp': [['    a = a < 0 ? -a : a;\n    b = b < 0 ? -b : b;\n    while', '    while']] },
       run: [CALC],
-      fails: [2, 4],
+      fails: [1],
     }],
   },
   '03-gcd-and-lcm#Step 6 — Write your own tests': {
@@ -116,7 +116,7 @@ export const WALKTHROUGH = {
       typeFile: true,
       editFiles: { 'calculator/calc.cpp': [['return a / gcd(a, b) * b;', 'return a * b / gcd(a, b);']] },
       run: [CALC],
-      fails: [2, 3],
+      fails: [2],
     }],
   },
   // ── 4. Loops ─────────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ export const WALKTHROUGH = {
   // ── 5. Strings ───────────────────────────────────────────────────────────
   '05-strings#Step 5 — Characters, one at a time': {
     run: [WORDS],
-    wrong: [{ name: 'returned the text unchanged', files: { 'words/text.cpp': '#include "text.h"\n\nstd::string to_lower(const std::string& text)\n{\n    return text;\n}\n' }, run: [WORDS], fails: [2, 4] }],
+    wrong: [{ name: 'returned the text unchanged', files: { 'words/text.cpp': '#include "text.h"\n\nstd::string to_lower(const std::string& text)\n{\n    return text;\n}\n' }, run: [WORDS], fails: [2] }],
   },
   '05-strings#Step 7 — Splitting text into words': {
     wrong: [{
@@ -147,7 +147,7 @@ export const WALKTHROUGH = {
       typeFile: true,
       editFiles: { 'words/text.cpp': [['    if (!current.empty())\n        words.push_back(current);\n    return words;', '    return words;']] },
       run: [WORDS],
-      fails: [3, 4],
+      fails: [1],
     }],
   },
   '05-strings#Step 8 — A command-line word counter': {
@@ -162,7 +162,7 @@ export const WALKTHROUGH = {
       typeFile: true,
       editFiles: { 'words/text.cpp': [['            letters += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));', '            letters += c;']] },
       run: [WORDS],
-      fails: [2, 4],
+      fails: [2],
     }],
   },
 
@@ -172,10 +172,10 @@ export const WALKTHROUGH = {
     wrong: [{ name: 'printed only the count', files: { 'gradebook/main.cpp': main('    std::cout << "count: 0\\n";') }, run: [GRADES], fails: [0, 3] }],
   },
   '06-vectors#Step 6 — Average, with an algorithm': {
-    wrong: [{ name: 'started the sum at 0 (int division)', typeFile: true, editFiles: { 'gradebook/grades.cpp': [['    const double total = std::accumulate(scores.begin(), scores.end(), 0.0);\n    return total / static_cast<double>(scores.size());', '    const int total = std::accumulate(scores.begin(), scores.end(), 0);\n    return total / static_cast<int>(scores.size());']] }, run: [GRADES], fails: [1, 3] }],
+    wrong: [{ name: 'started the sum at 0 (int division)', typeFile: true, editFiles: { 'gradebook/grades.cpp': [['    const double total = std::accumulate(scores.begin(), scores.end(), 0.0);\n    return total / static_cast<double>(scores.size());', '    const int total = std::accumulate(scores.begin(), scores.end(), 0);\n    return total / static_cast<int>(scores.size());']] }, run: [GRADES], fails: [1] }],
   },
   '06-vectors#Step 8 — Median: sorting a copy': {
-    wrong: [{ name: 'divided by 2 (int)', typeFile: true, editFiles: { 'gradebook/grades.cpp': [['    return (scores[mid - 1] + scores[mid]) / 2.0;', '    return (scores[mid - 1] + scores[mid]) / 2;']] }, run: [GRADES], fails: [1, 3] }],
+    wrong: [{ name: 'divided by 2 (int)', typeFile: true, editFiles: { 'gradebook/grades.cpp': [['    return (scores[mid - 1] + scores[mid]) / 2.0;', '    return (scores[mid - 1] + scores[mid]) / 2;']] }, run: [GRADES], fails: [1] }],
   },
   '06-vectors#Step 11 — The full report': {
     wrong: [{ name: 'no empty check', typeFile: true, editFiles: { 'gradebook/main.cpp': [['    if (scores.empty()) {\n        std::cout << "no scores\\n";\n        return 0;\n    }\n', '']] }, run: [GRADES], fails: [2] }],
@@ -186,14 +186,14 @@ export const WALKTHROUGH = {
       typeFile: true,
       editFiles: { 'gradebook/grades.cpp': [['if (s >= 90)', 'if (s > 90)']] },
       run: [GRADES],
-      fails: [2, 3],
+      fails: [2],
     }],
   },
 
   // ── 7. Structs ───────────────────────────────────────────────────────────
   '07-structs#Step 5 — Implement total_value': {
     run: [INV],
-    wrong: [{ name: 'forgot the ; after the struct', files: { 'inventory/inventory.h': '#pragma once\n#include <string>\n#include <vector>\nstruct Item {\n    std::string name;\n    int quantity = 0;\n    double price = 0.0;\n}\ndouble total_value(const std::vector<Item>& items);\n' }, typeFile: true, run: [INV], fails: [1, 2, 3] }],
+    wrong: [{ name: 'forgot the ; after the struct', files: { 'inventory/inventory.h': '#pragma once\n#include <string>\n#include <vector>\nstruct Item {\n    std::string name;\n    int quantity = 0;\n    double price = 0.0;\n}\ndouble total_value(const std::vector<Item>& items);\n' }, typeFile: true, run: [INV], fails: [1, 2] }],
   },
   '07-structs#Step 7 — The bug that copies': {
     wrong: [{ name: 'did not create the test', fails: [0, 2] }],
@@ -202,7 +202,7 @@ export const WALKTHROUGH = {
     wrong: [{ name: 'did nothing', run: [INV], fails: [0, 2] }],
   },
   '07-structs#Step 12 — Implement find_index': {
-    wrong: [{ name: 'returned position 0 when missing', typeFile: true, editFiles: { 'inventory/inventory.cpp': [['    return std::nullopt;', '    return 0;']] }, run: [INV], fails: [1, 2] }],
+    wrong: [{ name: 'returned position 0 when missing', typeFile: true, editFiles: { 'inventory/inventory.cpp': [['    return std::nullopt;', '    return 0;']] }, run: [INV], fails: [1] }],
   },
   '07-structs#Step 16 — The reviewer\'s tests': {
     wrong: [{
@@ -210,7 +210,7 @@ export const WALKTHROUGH = {
       typeFile: true,
       editFiles: { 'inventory/inventory.cpp': [['            total += item.quantity;', '            total += 1;']] },
       run: [INV],
-      fails: [2, 3],
+      fails: [2],
     }],
   },
 };

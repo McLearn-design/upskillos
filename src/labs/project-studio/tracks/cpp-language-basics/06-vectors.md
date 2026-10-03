@@ -229,9 +229,7 @@ double average(const std::vector<int>& scores)
 
 ```check
 run "cmake --build gradebook/build --target grades_tests"
-run "./gradebook/build/grades_tests" stdout="[       OK ] average_is_not_integer_division" -- Start accumulate at 0.0, not 0, so the sum is a double.
-run "./gradebook/build/grades_tests" stdout="[       OK ] average_of_nothing_throws" -- Check scores.empty() first and throw std::invalid_argument.
-run "./gradebook/build/grades_tests" stdout=" passed, 0 failed"
+tests "./gradebook/build/grades_tests" require="average_is_not_integer_division average_of_nothing_throws" -- Start accumulate at 0.0, not 0, so the sum is a double. Check scores.empty() first and throw std::invalid_argument.
 ```
 
 ## Step 7 — The specification for median
@@ -325,9 +323,7 @@ double median(std::vector<int> scores)
 
 ```check
 run "cmake --build gradebook/build --target grades_tests"
-run "./gradebook/build/grades_tests" stdout="[       OK ] median_of_even_count_averages_the_middle_two" -- Even count: the mean of positions mid - 1 and mid, divided by 2.0.
-run "./gradebook/build/grades_tests" stdout="[       OK ] median_does_not_reorder_the_callers_scores" -- median takes its vector by value: sort that copy.
-run "./gradebook/build/grades_tests" stdout=" passed, 0 failed"
+tests "./gradebook/build/grades_tests" require="median_of_even_count_averages_the_middle_two median_does_not_reorder_the_callers_scores" -- Even count: the mean of positions mid - 1 and mid, divided by 2.0. median takes its vector by value: sort that copy.
 ```
 
 ## Step 9 — Predict: why does median take a copy?
@@ -522,6 +518,5 @@ TEST(review_count_at_least)
 ```check
 file gradebook/tests/report_review_test.cpp
 run "cmake --build gradebook/build --target grades_tests"
-run "./gradebook/build/grades_tests" stdout="[       OK ] review_letter_grade_boundaries" -- 90 is an A and 89 a B: compare with >=, highest grade first.
-run "./gradebook/build/grades_tests" stdout=" passed, 0 failed"
+tests "./gradebook/build/grades_tests" require="review_letter_grade_boundaries" -- 90 is an A and 89 a B: compare with >=, highest grade first.
 ```

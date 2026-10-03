@@ -414,7 +414,7 @@ TEST(add_two_positive_numbers)
 ```check
 file calculator/tests/calc_test.cpp -- The file goes in a tests folder inside calculator, and its name must end in _test.cpp.
 run "cmake --build calculator/build" -- Did CMake pick up the new test file? Its name must end in _test.cpp.
-run "./calculator/build/calc_tests" stdout="[       OK ] add_two_positive_numbers"
+tests "./calculator/build/calc_tests" require="add_two_positive_numbers"
 ```
 
 ## Step 8 — Test every function
@@ -466,7 +466,7 @@ matches calculator/tests/calc_test.cpp "\bsubtract\s*\(" label="a test calls sub
 matches calculator/tests/calc_test.cpp "\bmultiply\s*\(" label="a test calls multiply"
 matches calculator/tests/calc_test.cpp "\bdivide\s*\(" label="a test calls divide"
 run "cmake --build calculator/build"
-run "./calculator/build/calc_tests" stdout=" passed, 0 failed" -- Read the failing test's message: it shows both values.
+tests "./calculator/build/calc_tests" -- Read the failing test's message: it shows both values.
 ```
 
 ## Step 9 — Red: a test for behaviour that doesn't exist yet
@@ -581,7 +581,7 @@ double divide(double a, double b)
 ```check
 contains calculator/calc.cpp "throw"
 run "cmake --build calculator/build"
-run "./calculator/build/calc_tests" stdout=" passed, 0 failed"
+tests "./calculator/build/calc_tests"
 ```
 
 ## Step 11 — Refactor: catch it in main
@@ -645,5 +645,5 @@ lacks calculator/main.cpp "b == 0" label="main no longer checks for zero itself"
 run "cmake --build calculator/build"
 run "./calculator/build/calculator" stdin="1 / 0\n" stdout="Error: division by zero"
 run "./calculator/build/calculator" stdin="9 / 3\n" stdout="9 / 3 = 3"
-run "./calculator/build/calc_tests" stdout=" passed, 0 failed"
+tests "./calculator/build/calc_tests"
 ```

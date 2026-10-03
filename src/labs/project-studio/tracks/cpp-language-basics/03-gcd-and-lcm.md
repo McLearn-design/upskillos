@@ -156,10 +156,7 @@ Any number that divides `a` and `b` also divides `a % b`, and the reverse holds 
 
 ```check
 run "cmake --build calculator/build" -- The definition must match the declaration: long long gcd(long long a, long long b)
-run "./calculator/build/calc_tests" stdout="[       OK ] gcd_with_zero" -- gcd(a, 0) is a, and gcd(0, 0) is 0.
-run "./calculator/build/calc_tests" stdout="[       OK ] gcd_is_never_negative" -- Make both inputs non-negative first.
-run "./calculator/build/calc_tests" stdout="[       OK ] gcd_is_fast_for_large_numbers" timeout=20 -- Subtracting or counting down one at a time is far too slow. Use the remainder.
-run "./calculator/build/calc_tests" stdout=" passed, 0 failed"
+tests "./calculator/build/calc_tests" require="gcd_with_zero gcd_is_never_negative gcd_is_fast_for_large_numbers" timeout=20 -- gcd(a, 0) is a, and gcd(0, 0) is 0. Make both inputs non-negative first. Subtracting or counting down one at a time is far too slow. Use the remainder.
 ```
 
 ## Step 4 — Declare lcm
@@ -246,7 +243,7 @@ long long lcm(long long a, long long b)
 ```check
 contains calculator/calc.cpp "lcm"
 run "cmake --build calculator/build"
-run "./calculator/build/calc_tests" stdout=" passed, 0 failed"
+tests "./calculator/build/calc_tests"
 ```
 
 ## Step 6 — Write your own tests
@@ -280,7 +277,7 @@ TEST(lcm_of_negative_numbers_is_positive)
 file calculator/tests/lcm_test.cpp -- The name must end in _test.cpp, in calculator/tests.
 matches calculator/tests/lcm_test.cpp "(\bTEST\s*\([\s\S]*){3}" label="lcm_test.cpp has at least three tests"
 run "cmake --build calculator/build"
-run "./calculator/build/calc_tests" stdout=" passed, 0 failed"
+tests "./calculator/build/calc_tests"
 ```
 
 ## Step 7 — The reviewer's tests
@@ -330,6 +327,5 @@ TEST(review_lcm_avoids_needless_overflow)
 ```check
 file calculator/tests/lcm_review_test.cpp
 run "cmake --build calculator/build"
-run "./calculator/build/calc_tests" stdout="[       OK ] review_lcm_avoids_needless_overflow" -- Multiplying a * b first overflows long long. Divide by gcd(a, b) first.
-run "./calculator/build/calc_tests" stdout=" passed, 0 failed" -- Fix lcm in calc.cpp. Don't edit the reviewer's tests.
+tests "./calculator/build/calc_tests" require="review_lcm_avoids_needless_overflow" -- Multiplying a * b first overflows long long. Divide by gcd(a, b) first. Fix lcm in calc.cpp. Don't edit the reviewer's tests.
 ```
