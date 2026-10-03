@@ -49,5 +49,24 @@ contextBridge.exposeInMainWorld('openCalcDesktop', {
     remove: (relPath)           => ipcRenderer.invoke('project:delete', relPath),
     rename: (fromRel, toRel)    => ipcRenderer.invoke('project:rename', fromRel, toRel),
     run:    (runtime, relPath)  => ipcRenderer.invoke('project:run', runtime, relPath),
+    check:  (checks)            => ipcRenderer.invoke('project:check', checks),
+  },
+
+  // A real shell in the project folder. See desktop/app/terminal.cjs.
+  terminal: {
+    start:  (opts)               => ipcRenderer.invoke('terminal:start', opts),
+    write:  (id, data)           => ipcRenderer.send('terminal:write', id, data),
+    resize: (id, cols, rows)     => ipcRenderer.send('terminal:resize', id, cols, rows),
+    kill:   (id)                 => ipcRenderer.send('terminal:kill', id),
+    onData: (cb) => {
+      const handler = (_event, payload) => cb(payload)
+      ipcRenderer.on('terminal:data', handler)
+      return () => ipcRenderer.off('terminal:data', handler)
+    },
+    onExit: (cb) => {
+      const handler = (_event, payload) => cb(payload)
+      ipcRenderer.on('terminal:exit', handler)
+      return () => ipcRenderer.off('terminal:exit', handler)
+    },
   },
 })

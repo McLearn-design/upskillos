@@ -1,5 +1,5 @@
 // LessonPanel.jsx
-// The current step: prose, the diffed target code, and the explanation.
+// The current step: prose, the diffed target code, the explanation, and the step's checks.
 // Prose/explanation go through MarkdownProse (the same renderer the
 // courses use), so bold/inline-code/lists all behave as they do elsewhere.
 import MarkdownProse from '../../components/math/MarkdownProse.jsx';
@@ -14,14 +14,18 @@ const COMPACT_PROSE =
   '[&_li]:text-[13px] [&_li]:leading-[1.6] [&_li]:font-sans ' +
   '[&_ul]:my-2 [&_ol]:my-2 [&_code]:text-[12px] ' +
   '[&_h3]:text-[13px] [&_h3]:font-bold [&_h3]:mt-3 [&_h3]:mb-1 [&_h3]:font-sans ' +
-  '[&_strong]:font-semibold';
+  '[&_strong]:font-semibold [&_table]:text-[12px] ' +
+  // Terminal transcripts are wide; at article size they overflow a side panel.
+  '[&_pre]:text-[11.5px] [&_pre_code]:text-[11.5px] [&_pre]:my-3 [&_pre]:p-3 [&_pre]:leading-[1.45]';
 
 export default function LessonPanel({
   lesson, lessons, stepIndex, step, currentContent,
   onPrev, onNext, onSelectLesson, C,
+  checkState, onCheck, canCheck, isStepDone, isLessonDone,
 }) {
   const atFirst = stepIndex === 0;
   const atLast = stepIndex >= lesson.steps.length - 1;
+  const hasChecks = step.checks?.length > 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, overflow: 'hidden', background: C.surface }}>
@@ -35,12 +39,30 @@ export default function LessonPanel({
           }}
         >
           {lessons.map((l) => (
-            <option key={l.id} value={l.id}>{l.title}</option>
+            <option key={l.id} value={l.id}>{isLessonDone?.(l) ? '✓ ' : ''}{l.title}</option>
           ))}
         </select>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px' }}>
+        {atFirst && lesson.intro && (
+          <div style={{ color: C.text, marginBottom: 12, paddingBottom: 8, borderBottom: `1px solid ${C.border}` }}>
+            <MarkdownProse text={lesson.intro} className={COMPACT_PROSE} />
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+          {lesson.steps.map((s, i) => (
+            <span
+              key={s.id}
+              title={s.title}
+              style={{
+                width: 18, height: 4, borderRadius: 2,
+                background: isStepDone?.(s) ? C.teal : i === stepIndex ? C.blue : C.border,
+              }}
+            />
+          ))}
+        </div>
         <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.blue, marginBottom: 4 }}>
           Step {stepIndex + 1} of {lesson.steps.length}
         </div>
@@ -68,6 +90,10 @@ export default function LessonPanel({
             <MarkdownProse text={step.explain} className={COMPACT_PROSE} />
           </div>
         )}
+
+        {hasChecks && (
+          <ChecksBox step={step} state={checkState} onCheck={onCheck} canCheck={canCheck} C={C} />
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: 8, padding: '8px 10px', borderTop: `1px solid ${C.border}` }}>
@@ -75,6 +101,69 @@ export default function LessonPanel({
         <button onClick={onNext} disabled={atLast} style={navBtn(C, atLast, true)}>Next step →</button>
       </div>
     </div>
+  );
+}
+
+function ChecksBox({ step, state, onCheck, canCheck, C }) {
+  const running = state?.running;
+  const results = state?.results;
+  const allPass = results && results.length === step.checks.length && results.every((r) => r.pass);
+
+  return (
+    <div style={{ marginTop: 14, border: `1px solid ${allPass ? C.teal : C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: C.surface2, borderBottom: `1px solid ${C.border}` }}>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: allPass ? C.teal : C.muted }}>
+          {allPass ? '✓ Step complete' : 'When you have done this step'}
+        </span>
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={onCheck}
+          disabled={running || !canCheck}
+          title={canCheck ? 'Look at your project folder and check this step' : 'Checks run in the desktop app'}
+          style={{
+            fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 5, border: 'none',
+            background: C.teal, color: '#fff', cursor: running || !canCheck ? 'default' : 'pointer', opacity: running || !canCheck ? 0.5 : 1,
+          }}
+        >
+          {running ? 'Checking…' : 'Check my work'}
+        </button>
+      </div>
+      <ul style={{ listStyle: 'none', margin: 0, padding: '6px 10px' }}>
+        {step.checks.map((check, i) => {
+          const r = results?.[i];
+          const mark = !r ? '○' : r.pass ? '✓' : '✗';
+          const color = !r ? C.hint : r.pass ? C.teal : C.red ?? '#ef4444';
+          return (
+            <li key={i} style={{ fontSize: 12, lineHeight: 1.5, padding: '3px 0', color: C.text }}>
+              <span style={{ color, fontWeight: 700, display: 'inline-block', width: 16 }}>{mark}</span>
+              <MarkdownInline text={check.label} />
+              {r?.skipped && <span style={{ color: C.hint }}> (not checked on this computer)</span>}
+              {r && !r.pass && r.detail && (
+                <pre style={{ margin: '4px 0 2px 16px', padding: '6px 8px', fontSize: 11, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: C.surface2, borderRadius: 5, color: C.text }}>
+                  {r.detail}
+                </pre>
+              )}
+              {r && !r.pass && check.hint && (
+                <div style={{ margin: '2px 0 0 16px', fontSize: 12, color: C.hint }}>{check.hint}</div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {state?.error && <div style={{ padding: '0 10px 8px', fontSize: 12, color: C.amber }}>{state.error}</div>}
+    </div>
+  );
+}
+
+// Check labels use `backticks` for commands; render just that, without a full Markdown pass.
+function MarkdownInline({ text }) {
+  const parts = String(text).split(/(`[^`]+`)/g);
+  return (
+    <span>
+      {parts.map((p, i) => (p.startsWith('`') && p.endsWith('`') && p.length > 1
+        ? <code key={i} style={{ fontSize: 11 }}>{p.slice(1, -1)}</code>
+        : <span key={i}>{p}</span>))}
+    </span>
   );
 }
 

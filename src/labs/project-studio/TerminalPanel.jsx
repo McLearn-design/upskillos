@@ -1,0 +1,214 @@
+// TerminalPanel.jsx
+// The learner's real shell, running in the project folder (desktop/app/terminal.cjs), drawn
+// with xterm.js. Several can be open at once, as tabs: a dev server keeps one terminal busy,
+// and Git commands need another. Each shell is restarted whenever the project folder
+// changes, so its starting directory is always the project.
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
+
+const api = () => (typeof window !== 'undefined' ? window.openCalcDesktop?.terminal : null);
+
+let nextKey = 1;
+
+export default function TerminalPanel({ root, visible, C }) {
+  const [tabs, setTabs] = useState(() => [{ key: nextKey++, label: 'Terminal 1', status: 'starting' }]);
+  const [active, setActive] = useState(tabs[0].key);
+
+  const addTab = useCallback(() => {
+    const key = nextKey++;
+    setTabs((prev) => [...prev, { key, label: `Terminal ${prev.length + 1}`, status: 'starting' }]);
+    setActive(key);
+  }, []);
+
+  const closeTab = useCallback((key) => {
+    setTabs((prev) => {
+      if (prev.length === 1) return prev;
+      const next = prev.filter((t) => t.key !== key);
+      setActive((cur) => (cur === key ? next[next.length - 1].key : cur));
+      return next;
+    });
+  }, []);
+
+  const setStatus = useCallback((key, status, shell) => {
+    setTabs((prev) => prev.map((t) => (t.key === key ? { ...t, status, shell: shell ?? t.shell } : t)));
+  }, []);
+
+  const activeTab = tabs.find((t) => t.key === active) ?? tabs[0];
+
+  return (
+    <div style={{ display: visible ? 'flex' : 'none', flexDirection: 'column', height: '100%', minHeight: 0, background: '#0c0c0c' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontSize: 11, color: C.hint, background: C.surface2, borderBottom: `1px solid ${C.border}` }}>
+        {tabs.map((t) => (
+          <span
+            key={t.key}
+            onClick={() => setActive(t.key)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 8px', borderRadius: 4, cursor: 'pointer',
+              background: t.key === active ? C.surface : 'transparent', color: t.key === active ? C.text : C.hint,
+            }}
+          >
+            {t.label}
+            {tabs.length > 1 && (
+              <span
+                role="button"
+                aria-label={`Close ${t.label}`}
+                title="Close this terminal (stops whatever is running in it)"
+                onClick={(e) => { e.stopPropagation(); closeTab(t.key); }}
+                style={{ opacity: 0.7 }}
+              >
+                ×
+              </span>
+            )}
+          </span>
+        ))}
+        <button onClick={addTab} style={smallBtn(C)} title="Open another terminal in the project folder" aria-label="New terminal">+</button>
+        <div style={{ flex: 1 }} />
+        <span style={{ marginRight: 6 }}>{statusText(activeTab)}</span>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+        {tabs.map((t) => (
+          <TerminalSession
+            key={t.key}
+            root={root}
+            visible={visible && t.key === active}
+            onStatus={(status, shell) => setStatus(t.key, status, shell)}
+            C={C}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function statusText(tab) {
+  if (!tab) return '';
+  if (tab.status === 'running' && tab.shell) return `${shellName(tab.shell)} in your project folder`;
+  if (tab.status === 'starting') return 'Starting the shell…';
+  if (tab.status === 'exited') return 'The shell has ended';
+  return 'The terminal is unavailable';
+}
+
+// One shell and its screen. Kept mounted while its tab is hidden, so a running program (a dev
+// server) keeps running and its output is still there when you switch back.
+function TerminalSession({ root, visible, onStatus, C }) {
+  const hostRef = useRef(null);
+  const termRef = useRef(null);
+  const fitRef = useRef(null);
+  const idRef = useRef(null);
+  const [error, setError] = useState(null);
+  const [generation, setGeneration] = useState(0);
+  const onStatusRef = useRef(onStatus);
+  onStatusRef.current = onStatus;
+
+  useEffect(() => {
+    const term = new Terminal({
+      fontFamily: 'Cascadia Mono, Consolas, Menlo, monospace',
+      fontSize: 13,
+      cursorBlink: true,
+      scrollback: 5000,
+      theme: { background: '#0c0c0c', foreground: '#cccccc' },
+    });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(hostRef.current);
+    termRef.current = term;
+    fitRef.current = fit;
+    const sub = term.onData((data) => { if (idRef.current) api()?.write(idRef.current, data); });
+    const resizeSub = term.onResize(({ cols, rows }) => { if (idRef.current) api()?.resize(idRef.current, cols, rows); });
+    return () => {
+      sub.dispose();
+      resizeSub.dispose();
+      term.dispose();
+      termRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const t = api();
+    if (!t) return undefined;
+    const offData = t.onData(({ id, data }) => { if (id === idRef.current) termRef.current?.write(data); });
+    const offExit = t.onExit(({ id, code }) => {
+      if (id !== idRef.current) return;
+      idRef.current = null;
+      onStatusRef.current('exited');
+      termRef.current?.write(`\r\n\x1b[90m[The shell ended with exit code ${code}. Press Restart to open a new one.]\x1b[0m\r\n`);
+    });
+    return () => { offData(); offExit(); };
+  }, []);
+
+  // Start a shell for this project folder (again whenever the folder or `generation` changes).
+  useEffect(() => {
+    const t = api();
+    if (!t || !root || !termRef.current) return undefined;
+    let cancelled = false;
+    const term = termRef.current;
+    term.reset();
+    onStatusRef.current('starting');
+    setError(null);
+    try { fitRef.current?.fit(); } catch {}
+    t.start({ cols: term.cols, rows: term.rows }).then((res) => {
+      if (cancelled) {
+        if (res.ok) t.kill(res.id);
+        return;
+      }
+      if (!res.ok) {
+        onStatusRef.current('error');
+        setError(res.reason);
+        return;
+      }
+      idRef.current = res.id;
+      onStatusRef.current('running', res.shell);
+    });
+    return () => {
+      cancelled = true;
+      if (idRef.current) t.kill(idRef.current);
+      idRef.current = null;
+    };
+  }, [root, generation]);
+
+  useEffect(() => {
+    if (!hostRef.current) return undefined;
+    const ro = new ResizeObserver(() => {
+      if (!visible) return;
+      try { fitRef.current?.fit(); } catch {}
+    });
+    ro.observe(hostRef.current);
+    return () => ro.disconnect();
+  }, [visible]);
+
+  useEffect(() => {
+    if (visible) {
+      requestAnimationFrame(() => {
+        try { fitRef.current?.fit(); } catch {}
+        termRef.current?.focus();
+      });
+    }
+  }, [visible]);
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: visible ? 'flex' : 'none', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, padding: '3px 8px 0' }}>
+        <button onClick={() => termRef.current?.clear()} style={smallBtn(C)} title="Clear the screen (the shell keeps running)">Clear</button>
+        <button onClick={() => setGeneration((g) => g + 1)} style={smallBtn(C)} title="Close this shell and open a new one in the project folder">Restart</button>
+      </div>
+      {error && <div style={{ padding: '8px 12px', fontSize: 12, color: C.amber }}>{error}</div>}
+      <div ref={hostRef} style={{ flex: 1, minHeight: 0, padding: '2px 0 0 6px' }} />
+    </div>
+  );
+}
+
+function shellName(file) {
+  const base = String(file).split(/[\\/]/).pop().replace(/\.exe$/i, '');
+  if (base.toLowerCase() === 'powershell') return 'Windows PowerShell';
+  if (base.toLowerCase() === 'pwsh') return 'PowerShell';
+  return base;
+}
+
+function smallBtn(C) {
+  return {
+    fontSize: 11, padding: '1px 8px', borderRadius: 4, cursor: 'pointer',
+    border: `1px solid ${C.border}`, background: 'transparent', color: C.text,
+  };
+}

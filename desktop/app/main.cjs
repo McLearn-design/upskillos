@@ -20,6 +20,9 @@ const javaRuntime = require('./runtimes/java.cjs')
 const dotnetRuntime = require('./runtimes/dotnet.cjs')
 const codelensRuntime = require('./runtimes/codelens.cjs')
 const projectFs = require('./project-fs.cjs')
+const terminal = require('./terminal.cjs')
+const projectChecks = require('./project-checks.cjs')
+const { evalInPage } = require('./page-eval.cjs')
 
 // Keyed dispatch table for the generic runtime IPC handlers below — adding
 // a new language means adding one more entry here, not more branches.
@@ -87,6 +90,7 @@ app.on('before-quit', () => {
   backendProc?.kill()
   for (const mod of Object.values(RUNTIMES)) mod.killAllScripts?.()
   projectFs.killAllProjectRuns()
+  terminal.killAll()
 })
 
 app.on('activate', () => {
@@ -310,6 +314,37 @@ ipcMain.handle('project:run', async (_event, runtime, relPath) => {
   const emit = (payload) => mainWindow?.webContents.send('desktop:script-output', payload)
   return projectFs.runProjectFile(app, RUNTIMES, runtime, relPath, emit)
 })
+
+// A lesson step's checks (project-checks.cjs). Commands run with the same fresh PATH a new
+// terminal gets, so a tool the learner just installed is found.
+ipcMain.handle('project:check', async (_event, checks) => {
+  const { root } = await projectFs.getProject(app)
+  return projectChecks.runChecks(root, checks, { env: await terminal.shellEnv(), evalInPage })
+})
+
+// A real terminal in the project folder (terminal.cjs).
+const terminalOwners = new Set()
+ipcMain.handle('terminal:start', async (event, opts) => {
+  const { root } = await projectFs.getProject(app)
+  const sender = event.sender
+  const owner = sender.id
+  // A reload or navigation to another page doesn't run the page's cleanup code, so close
+  // that window's terminals here instead of leaving shells running unseen.
+  if (!terminalOwners.has(owner)) {
+    terminalOwners.add(owner)
+    sender.on('did-start-navigation', (e, _url, isInPlace, isMainFrame) => {
+      const sameDocument = e?.isSameDocument ?? isInPlace
+      const mainFrame = e?.isMainFrame ?? isMainFrame
+      if (mainFrame && !sameDocument) terminal.killOwner(owner)
+    })
+    sender.once('destroyed', () => { terminal.killOwner(owner); terminalOwners.delete(owner) })
+  }
+  const send = (channel, payload) => { if (!sender.isDestroyed()) sender.send(channel, payload) }
+  return terminal.start({ cwd: root, cols: opts?.cols, rows: opts?.rows, owner }, send)
+})
+ipcMain.on('terminal:write', (_event, id, data) => terminal.write(id, data))
+ipcMain.on('terminal:resize', (_event, id, cols, rows) => terminal.resize(id, cols, rows))
+ipcMain.on('terminal:kill', (_event, id) => terminal.kill(id))
 
 // ── End project filesystem ──────────────────────────────────────────────────
 

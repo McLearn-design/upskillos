@@ -2,6 +2,8 @@
 title: 1 — A Window That Stays Open
 runtime: python
 run: main.py
+track: A Game-Engine Editor in PySide6
+trackOrder: 2
 ---
 
 You're building a game-engine editor: a window with a live viewport, a scene tree, and an inspector, like Godot's. Everything starts from one problem — getting a window to exist at all, and getting it to *stay*.

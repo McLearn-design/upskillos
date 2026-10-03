@@ -7,17 +7,23 @@
 // outlives the app. That's what makes it possible to build something
 // worth open-sourcing rather than a throwaway snippet.
 //
-// Desktop-only by necessity — it needs real filesystem and real process
-// access. In a browser tab it explains that instead of breaking.
+// The panes: a file tree, an editor over the real files, the lesson, and below the editor
+// a real terminal in the project folder plus the output of the Run button. A step can carry
+// checks ("Check my work"), run against the real folder by desktop/app/project-checks.cjs.
+//
+// Running needs the desktop app — it needs real filesystem and real process access. In a
+// browser tab the lessons can still be read, and followed in your own editor and terminal.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useThemeColors } from '../../hooks/useThemeColors';
 import { useGlobalTheme } from '../../context/ThemeContext.jsx';
 import { useProjectFs } from './useProjectFs.js';
-import { TRACKS, TRACK_KEYS } from './trackLoader.js';
+import { TRACKS, TRACK_KEYS, trackTitle } from './trackLoader.js';
 import FileTree from './FileTree.jsx';
 import EditorPane from './EditorPane.jsx';
 import LessonPanel from './LessonPanel.jsx';
 import OutputPanel from './OutputPanel.jsx';
+import TerminalPanel from './TerminalPanel.jsx';
+import { useProgress } from './progress.js';
 
 const SAVE_DEBOUNCE_MS = 400;
 
@@ -26,13 +32,19 @@ export default function ProjectStudio() {
   const { themeStyles } = useGlobalTheme();
   const monacoTheme = themeStyles?.monaco || (C.dark ? 'open-calc-dark' : 'open-calc-light');
   const fs = useProjectFs();
+  const progress = useProgress();
 
-  const [trackKey, setTrackKey] = useState(TRACK_KEYS[0] ?? null);
+  const [trackKey, setTrackKey] = useState(() => (TRACKS[progress.position.trackKey] ? progress.position.trackKey : TRACK_KEYS[0] ?? null));
   const lessons = useMemo(() => (trackKey ? TRACKS[trackKey] ?? [] : []), [trackKey]);
-  const [lessonId, setLessonId] = useState(lessons[0]?.id ?? null);
+  const [lessonId, setLessonId] = useState(() => progress.position.lessonId ?? lessons[0]?.id ?? null);
   const lesson = useMemo(() => lessons.find((l) => l.id === lessonId) ?? lessons[0], [lessons, lessonId]);
-  const [stepIndex, setStepIndex] = useState(0);
-  const step = lesson?.steps?.[stepIndex] ?? null;
+  const [stepIndex, setStepIndex] = useState(() => Math.max(0, progress.position.stepIndex ?? 0));
+  const step = lesson?.steps?.[Math.min(stepIndex, (lesson?.steps?.length ?? 1) - 1)] ?? null;
+
+  // Remember where the learner is, so reopening the lab lands on the same step.
+  useEffect(() => {
+    if (lesson) progress.savePosition({ trackKey, lessonId: lesson.id, stepIndex });
+  }, [trackKey, lesson, stepIndex, progress.savePosition]);
 
   const [openFiles, setOpenFiles] = useState([]);
   const [activeFile, setActiveFile] = useState(null);
@@ -51,6 +63,19 @@ export default function ProjectStudio() {
   const [running, setRunning] = useState(false);
   const runIdRef = useRef(null);
   const saveTimers = useRef({});
+
+  const [bottomTab, setBottomTab] = useState('terminal');
+  const [bottomHeight, setBottomHeight] = useState(260);
+  const [checkStates, setCheckStates] = useState({}); // stepId -> { running, results, error }
+
+  // A new project folder means none of the open buffers belong to it any more.
+  useEffect(() => {
+    setOpenFiles([]);
+    setActiveFile(null);
+    setBuffers({});
+    setCheckStates({});
+    loadedRef.current = {};
+  }, [fs.root]);
 
   // ── open / edit / save ───────────────────────────────────────────────────
   const openFile = useCallback(async (rel) => {
@@ -77,19 +102,21 @@ export default function ProjectStudio() {
     // don't hammer the disk on every keystroke.
     clearTimeout(saveTimers.current[activeFile]);
     setSaving(true);
-    saveTimers.current[activeFile] = setTimeout(async () => {
+    const file = activeFile;
+    saveTimers.current[file] = setTimeout(async () => {
       // Re-check disk before writing. If it no longer matches what we loaded,
       // something outside the lab changed it, and blindly writing our buffer
       // would destroy that work.
-      const onDisk = await fs.readFile(activeFile);
-      if (onDisk !== loadedRef.current[activeFile] && onDisk !== content) {
-        setConflict(activeFile);
+      const onDisk = await fs.readFile(file);
+      if (onDisk !== loadedRef.current[file] && onDisk !== content) {
+        setConflict(file);
         setSaving(false);
         return;
       }
-      await fs.writeFile(activeFile, content);
-      loadedRef.current[activeFile] = content;
+      await fs.writeFile(file, content);
+      loadedRef.current[file] = content;
       setSaving(false);
+      fs.refresh();
     }, SAVE_DEBOUNCE_MS);
   }, [activeFile, fs]);
 
@@ -112,9 +139,29 @@ export default function ProjectStudio() {
     setSaving(false);
   }, [buffers, fs]);
 
-  // When a step names a file, open it — creating it empty if it doesn't
-  // exist yet. This is how new files and folders enter the project: a step
-  // simply refers to a path that isn't there yet.
+  // Write any pending edit now (before a run or a check), refusing if the file changed on
+  // disk underneath us. Returns false if there was a conflict.
+  const flushActive = useCallback(async () => {
+    if (!activeFile || buffers[activeFile] === undefined) return true;
+    clearTimeout(saveTimers.current[activeFile]);
+    if (buffers[activeFile] !== loadedRef.current[activeFile]) {
+      const onDisk = await fs.readFile(activeFile);
+      if (onDisk !== loadedRef.current[activeFile] && onDisk !== buffers[activeFile]) {
+        setConflict(activeFile);
+        setSaving(false);
+        return false;
+      }
+      await fs.writeFile(activeFile, buffers[activeFile]);
+      loadedRef.current[activeFile] = buffers[activeFile];
+    } else {
+      await reloadFromDisk(activeFile);
+    }
+    setSaving(false);
+    return true;
+  }, [activeFile, buffers, fs, reloadFromDisk]);
+
+  // When a step names a file, open it. This is how new files and folders enter the project:
+  // a step refers to a path that isn't there yet, and the first edit creates it.
   useEffect(() => {
     if (!step?.file || !fs.root) return;
     let cancelled = false;
@@ -128,6 +175,41 @@ export default function ProjectStudio() {
     })();
     return () => { cancelled = true; };
   }, [step?.file, fs.root, fs.readFile]);
+
+  // Files change outside the editor all the time here: the terminal creates them, and Git
+  // rewrites them (`git switch`, `git restore`). So the tree is refreshed regularly, and an
+  // open file that hasn't been edited here follows the disk. A file with unsaved edits is never
+  // replaced; the save conflict banner handles that case.
+  const buffersRef = useRef(buffers);
+  buffersRef.current = buffers;
+  const openFilesRef = useRef(openFiles);
+  openFilesRef.current = openFiles;
+  useEffect(() => {
+    if (!fs.available || !fs.root) return undefined;
+    let busy = false;
+    const sync = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        fs.refresh();
+        for (const rel of openFilesRef.current) {
+          const buf = buffersRef.current[rel];
+          // Edited here and not yet written (or written and diverged): leave it alone.
+          if (buf === undefined || buf !== loadedRef.current[rel]) continue;
+          const onDisk = await fs.readFile(rel);
+          if (onDisk !== loadedRef.current[rel] && buffersRef.current[rel] === loadedRef.current[rel]) {
+            loadedRef.current[rel] = onDisk;
+            setBuffers((prev) => ({ ...prev, [rel]: onDisk }));
+          }
+        }
+      } finally {
+        busy = false;
+      }
+    };
+    window.addEventListener('focus', sync);
+    const timer = setInterval(sync, 2000);
+    return () => { window.removeEventListener('focus', sync); clearInterval(timer); };
+  }, [fs.available, fs.root, fs.refresh, fs.readFile]);
 
   // ── run ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -146,31 +228,11 @@ export default function ProjectStudio() {
 
   const runProject = useCallback(async () => {
     if (!lesson) return;
-    // Flush a pending debounced save first, or we'd run stale bytes — but
-    // only for a file actually edited here. An untouched buffer has nothing
-    // to contribute and may be older than what's on disk, so writing it back
-    // can only lose work. Untouched files get re-read instead, so a run
-    // always executes the current bytes.
-    if (activeFile && buffers[activeFile] !== undefined) {
-      clearTimeout(saveTimers.current[activeFile]);
-      if (buffers[activeFile] !== loadedRef.current[activeFile]) {
-        const onDisk = await fs.readFile(activeFile);
-        if (onDisk !== loadedRef.current[activeFile] && onDisk !== buffers[activeFile]) {
-          setConflict(activeFile);
-          setSaving(false);
-          return;
-        }
-        await fs.writeFile(activeFile, buffers[activeFile]);
-        loadedRef.current[activeFile] = buffers[activeFile];
-      } else {
-        await reloadFromDisk(activeFile);
-      }
-      setSaving(false);
-    }
-
+    if (!(await flushActive())) return;
     const target = lesson.run || step?.file;
     if (!target) return;
 
+    setBottomTab('output');
     setOutput([]);
     setRunning(true);
     const res = await fs.run(lesson.runtime || 'python', target);
@@ -180,7 +242,32 @@ export default function ProjectStudio() {
       return;
     }
     runIdRef.current = res.runId;
-  }, [lesson, step, activeFile, buffers, fs, reloadFromDisk]);
+  }, [lesson, step, fs, flushActive]);
+
+  // ── checks ───────────────────────────────────────────────────────────────
+  const runChecks = useCallback(async () => {
+    if (!step?.checks?.length || !fs.available) return;
+    const id = step.id;
+    setCheckStates((prev) => ({ ...prev, [id]: { ...prev[id], running: true, error: null } }));
+    if (!(await flushActive())) {
+      setCheckStates((prev) => ({ ...prev, [id]: { ...prev[id], running: false, error: 'A file changed on disk while it was open here. Choose which version to keep (above), then check again.' } }));
+      return;
+    }
+    const res = await window.openCalcDesktop.project.check(step.checks);
+    fs.refresh();
+    if (!res?.ok) {
+      setCheckStates((prev) => ({ ...prev, [id]: { running: false, results: null, error: res?.reason || 'The checks could not run.' } }));
+      return;
+    }
+    setCheckStates((prev) => ({ ...prev, [id]: { running: false, results: res.results, error: null } }));
+    if (res.results.every((r) => r.pass)) progress.markDone(id);
+  }, [step, fs, flushActive, progress.markDone]);
+
+  const isStepDone = useCallback((s) => (s.checks?.length ? progress.isDone(s.id) : false), [progress]);
+  const isLessonDone = useCallback((l) => {
+    const checked = l.steps.filter((s) => s.checks?.length);
+    return checked.length > 0 && checked.every((s) => progress.isDone(s.id));
+  }, [progress]);
 
   // ── new file / folder / delete ───────────────────────────────────────────
   const newFile = useCallback(async () => {
@@ -205,47 +292,93 @@ export default function ProjectStudio() {
     setActiveFile((cur) => (cur === rel ? null : cur));
   }, [fs]);
 
-  // ── non-desktop / no-project states ──────────────────────────────────────
+  // Dragging the bar between the editor and the terminal.
+  const startResize = useCallback((e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = bottomHeight;
+    const move = (ev) => setBottomHeight(Math.min(Math.max(120, startH + (startY - ev.clientY)), 700));
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }, [bottomHeight]);
+
+  const selectLesson = useCallback((id) => { setLessonId(id); setStepIndex(0); }, []);
+  const selectTrack = useCallback((key) => { setTrackKey(key); setLessonId(TRACKS[key][0]?.id); setStepIndex(0); }, []);
+  const goPrev = useCallback(() => setStepIndex((i) => Math.max(0, i - 1)), []);
+  const goNext = useCallback(() => setStepIndex((i) => Math.min((lesson?.steps.length ?? 1) - 1, i + 1)), [lesson]);
+
+  const trackPicker = TRACK_KEYS.length > 1 && (
+    <select
+      value={trackKey}
+      onChange={(e) => selectTrack(e.target.value)}
+      style={{ fontSize: 11, padding: '3px 6px', borderRadius: 5, background: C.surface2, color: C.text, border: `1px solid ${C.border}` }}
+    >
+      {TRACK_KEYS.map((k) => <option key={k} value={k}>{trackTitle(k)}</option>)}
+    </select>
+  );
+
+  const lessonPanel = lesson && step && (
+    <LessonPanel
+      lesson={lesson}
+      lessons={lessons}
+      stepIndex={lesson.steps.indexOf(step)}
+      step={step}
+      currentContent={step.file ? (buffers[step.file] ?? '') : ''}
+      onPrev={goPrev}
+      onNext={goNext}
+      onSelectLesson={selectLesson}
+      checkState={checkStates[step.id]}
+      onCheck={runChecks}
+      canCheck={fs.available && !!fs.root}
+      isStepDone={isStepDone}
+      isLessonDone={isLessonDone}
+      C={C}
+    />
+  );
+
+  // ── web: the lessons can be read and followed in your own editor ─────────
   if (!fs.available) {
     return (
-      <Centered C={C}>
-        <h2 style={{ margin: '0 0 8px', fontSize: 18, color: C.text }}>🖥️ Project Studio needs the desktop app</h2>
-        <p style={{ margin: 0, fontSize: 13, color: C.hint, lineHeight: 1.7, maxWidth: 520 }}>
-          This lab reads and writes real files in a folder on your computer and runs them with a real
-          Python interpreter, which a browser tab is not allowed to do. The free UpSkillOS desktop app
-          (Windows and macOS) includes it, along with everything in the web version.
-        </p>
-        <a
-          href="https://github.com/g4m3rm1k3/upskillos/releases/latest"
-          target="_blank"
-          rel="noreferrer"
-          style={{ marginTop: 16, padding: '8px 16px', borderRadius: 8, background: '#0f766e', color: '#fff', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}
-        >
-          Download the desktop app →
-        </a>
-      </Centered>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: C.bg, color: C.text }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderBottom: `1px solid ${C.border}`, background: C.surface }}>
+          <strong style={{ fontSize: 13 }}>Project Studio</strong>
+          {trackPicker}
+        </div>
+        <div style={{ padding: '8px 14px', fontSize: 12, lineHeight: 1.6, color: C.text, background: C.amberBg, borderBottom: `1px solid ${C.border}` }}>
+          You're reading this in a browser. Every step can be followed with your own editor and terminal; the
+          built-in editor, terminal and <strong>Check my work</strong> need the desktop app, because a browser tab isn't
+          allowed to read your files or run programs.
+        </div>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', justifyContent: 'center' }}>
+          <div style={{ width: '100%', maxWidth: 760, borderLeft: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>
+            {lessonPanel}
+          </div>
+        </div>
+      </div>
     );
   }
 
+  // No folder yet. The lesson stays visible beside the chooser, because choosing (and naming)
+  // the folder is the first thing a new track's first lesson explains.
   if (!fs.root) {
     return (
-      <Centered C={C}>
-        <h2 style={{ margin: '0 0 8px', fontSize: 18, color: C.text }}>Choose a project folder</h2>
-        <p style={{ margin: '0 0 16px', fontSize: 13, color: C.hint, lineHeight: 1.7, maxWidth: 520 }}>
-          Pick (or create) an empty folder anywhere on your machine. Everything you build here lives in
-          that folder as ordinary files — you can open it in another editor, put it under git, and publish
-          it whenever you want. It's your project, not app data.
-          {fs.missing && (
-            <><br /><br /><span style={{ color: C.amber }}>The folder you used last time isn't there any more: <code>{fs.missing}</code></span></>
-          )}
-        </p>
-        <button
-          onClick={fs.pick}
-          style={{ fontSize: 13, fontWeight: 600, padding: '8px 18px', borderRadius: 7, border: 'none', background: C.teal, color: '#fff', cursor: 'pointer' }}
-        >
-          Choose folder…
-        </button>
-      </Centered>
+      <div style={{ display: 'flex', height: '100%', minHeight: 0, background: C.bg, color: C.text }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderBottom: `1px solid ${C.border}`, background: C.surface }}>
+            <strong style={{ fontSize: 13 }}>Project Studio</strong>
+            {trackPicker}
+          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <ChooseFolder fs={fs} C={C} />
+          </div>
+        </div>
+        {lessonPanel && (
+          <div style={{ width: 440, flexShrink: 0, borderLeft: `1px solid ${C.border}` }}>
+            {lessonPanel}
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -261,26 +394,20 @@ export default function ProjectStudio() {
         }}
       >
         <strong style={{ fontSize: 13 }}>Project Studio</strong>
-        {TRACK_KEYS.length > 1 && (
-          <select
-            value={trackKey}
-            onChange={(e) => { setTrackKey(e.target.value); setLessonId(TRACKS[e.target.value][0]?.id); setStepIndex(0); }}
-            style={{ fontSize: 11, padding: '3px 6px', borderRadius: 5, background: C.surface2, color: C.text, border: `1px solid ${C.border}` }}
-          >
-            {TRACK_KEYS.map((k) => <option key={k} value={k}>{k}</option>)}
-          </select>
-        )}
+        {trackPicker}
         <div style={{ flex: 1 }} />
-        <button
-          onClick={runProject}
-          disabled={running}
-          style={{
-            fontSize: 12, fontWeight: 600, padding: '5px 14px', borderRadius: 6, border: 'none',
-            background: C.teal, color: '#fff', cursor: running ? 'default' : 'pointer', opacity: running ? 0.5 : 1,
-          }}
-        >
-          {running ? 'Running…' : `▶ Run ${lesson?.run || step?.file || ''}`}
-        </button>
+        {lesson?.run && (
+          <button
+            onClick={runProject}
+            disabled={running}
+            style={{
+              fontSize: 12, fontWeight: 600, padding: '5px 14px', borderRadius: 6, border: 'none',
+              background: C.teal, color: '#fff', cursor: running ? 'default' : 'pointer', opacity: running ? 0.5 : 1,
+            }}
+          >
+            {running ? 'Running…' : `▶ Run ${lesson.run}`}
+          </button>
+        )}
       </div>
 
       {conflict && (
@@ -335,22 +462,39 @@ export default function ProjectStudio() {
               C={C}
             />
           </div>
-          <OutputPanel lines={output} running={running} onClear={() => setOutput([])} C={C} />
+          <div
+            onPointerDown={startResize}
+            title="Drag to resize"
+            style={{ height: 5, cursor: 'row-resize', background: C.border, flexShrink: 0 }}
+          />
+          <div style={{ height: bottomHeight, flexShrink: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <div style={{ display: 'flex', background: C.surface, borderBottom: `1px solid ${C.border}` }}>
+              {[['terminal', 'Terminal'], ['output', 'Output']].map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setBottomTab(key)}
+                  style={{
+                    fontSize: 11, fontWeight: 600, padding: '5px 12px', border: 'none', cursor: 'pointer',
+                    background: 'transparent', color: bottomTab === key ? C.text : C.hint,
+                    borderBottom: bottomTab === key ? `2px solid ${C.blue}` : '2px solid transparent',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <TerminalPanel root={fs.root} visible={bottomTab === 'terminal'} C={C} />
+              {bottomTab === 'output' && (
+                <OutputPanel lines={output} running={running} onClear={() => setOutput([])} C={C} fill />
+              )}
+            </div>
+          </div>
         </div>
 
-        {lesson && step && (
-          <div style={{ width: 420, flexShrink: 0, borderLeft: `1px solid ${C.border}` }}>
-            <LessonPanel
-              lesson={lesson}
-              lessons={lessons}
-              stepIndex={stepIndex}
-              step={step}
-              currentContent={step.file ? (buffers[step.file] ?? '') : ''}
-              onPrev={() => setStepIndex((i) => Math.max(0, i - 1))}
-              onNext={() => setStepIndex((i) => Math.min(lesson.steps.length - 1, i + 1))}
-              onSelectLesson={(id) => { setLessonId(id); setStepIndex(0); }}
-              C={C}
-            />
+        {lessonPanel && (
+          <div style={{ width: 440, flexShrink: 0, borderLeft: `1px solid ${C.border}` }}>
+            {lessonPanel}
           </div>
         )}
       </div>
@@ -369,6 +513,28 @@ function conflictBtn(C, primary) {
     background: primary ? C.amber : 'transparent',
     color: primary ? '#1a1a1a' : C.text,
   };
+}
+
+function ChooseFolder({ fs, C }) {
+  return (
+    <Centered C={C}>
+      <h2 style={{ margin: '0 0 8px', fontSize: 18, color: C.text }}>Choose a project folder</h2>
+      <p style={{ margin: '0 0 16px', fontSize: 13, color: C.hint, lineHeight: 1.7, maxWidth: 520 }}>
+        Pick (or create) an empty folder anywhere on your machine. Everything you build here lives in
+        that folder as ordinary files — you can open it in another editor, put it under git, and publish
+        it whenever you want. It's your project, not app data.
+        {fs.missing && (
+          <><br /><br /><span style={{ color: C.amber }}>The folder you used last time isn't there any more: <code>{fs.missing}</code></span></>
+        )}
+      </p>
+      <button
+        onClick={fs.pick}
+        style={{ fontSize: 13, fontWeight: 600, padding: '8px 18px', borderRadius: 7, border: 'none', background: C.teal, color: '#fff', cursor: 'pointer' }}
+      >
+        Choose folder…
+      </button>
+    </Centered>
+  );
 }
 
 function Centered({ children, C }) {

@@ -18,6 +18,25 @@ await fs.mkdir(staging, { recursive: true })
 await fs.copyFile(path.join(appDir, 'main.cjs'),       path.join(staging, 'main.cjs'))
 await fs.copyFile(path.join(appDir, 'preload.cjs'),    path.join(staging, 'preload.cjs'))
 await fs.copyFile(path.join(appDir, 'project-fs.cjs'), path.join(staging, 'project-fs.cjs'))
+// Project Studio's terminal and step checks.
+for (const f of ['terminal.cjs', 'project-checks.cjs', 'page-eval.cjs']) {
+  await fs.copyFile(path.join(appDir, f), path.join(staging, f))
+}
+
+// node-pty, the terminal's native module. Only what runs is copied: its JavaScript, its
+// package.json, and the prebuilt binaries without their debug symbols (.pdb). The full npm
+// package is about 64 MB, mostly sources and symbols; this is a few MB per platform.
+// node-addon-api, its one dependency, is only needed to compile it, so it is left out.
+const ptySrc = path.join(root, 'node_modules', 'node-pty')
+const ptyDst = path.join(staging, 'node_modules', 'node-pty')
+await fs.mkdir(ptyDst, { recursive: true })
+await fs.copyFile(path.join(ptySrc, 'package.json'), path.join(ptyDst, 'package.json'))
+await fs.copyFile(path.join(ptySrc, 'LICENSE'), path.join(ptyDst, 'LICENSE'))
+await fs.cp(path.join(ptySrc, 'lib'), path.join(ptyDst, 'lib'), { recursive: true })
+await fs.cp(path.join(ptySrc, 'prebuilds'), path.join(ptyDst, 'prebuilds'), {
+  recursive: true,
+  filter: (src) => !src.endsWith('.pdb'),
+})
 
 // Copy the desktop-only language runtime installers (e.g. runtimes/python.cjs,
 // required by main.cjs) — these are small source files, not the actual
@@ -45,7 +64,10 @@ const stagingPkg = {
     },
 
     // Only the Electron process files go into app.asar
-    files: ['main.cjs', 'preload.cjs', 'project-fs.cjs', 'runtimes/**/*'],
+    files: ['main.cjs', 'preload.cjs', 'project-fs.cjs', 'terminal.cjs', 'project-checks.cjs', 'page-eval.cjs', 'runtimes/**/*', 'node_modules/node-pty/**/*'],
+    // A native module can't be loaded from inside app.asar, and node-pty also starts helper
+    // programs (OpenConsole.exe, winpty-agent.exe) from its own folder.
+    asarUnpack: ['node_modules/node-pty/**/*'],
 
     // Frontend build + backend live outside asar so Node can read them at runtime
     extraResources: [
@@ -82,4 +104,4 @@ await fs.writeFile(
 )
 
 console.log(`desktop/staging/ ready  (v${appPkg.version})`)
-console.log('  main.cjs  preload.cjs  project-fs.cjs  runtimes/  package.json')
+console.log('  main.cjs  preload.cjs  project-fs.cjs  terminal.cjs  project-checks.cjs  page-eval.cjs  runtimes/  node_modules/node-pty/  package.json')

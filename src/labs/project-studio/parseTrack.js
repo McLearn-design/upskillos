@@ -26,6 +26,10 @@
 // computed at runtime (lineDiff.js). That means an author never hand-writes
 // or maintains a diff, and the highlight is always accurate to the real
 // file rather than to an assumption about it.
+//
+// A step can also carry a ```check fence (see checks.js): what the "Check my work" button
+// verifies in the learner's real project folder. It is taken out of the prose.
+import { parseChecks } from './checks.js';
 
 function parseFrontmatter(text) {
   const match = text.match(/^---\n([\s\S]*?)\n---\n?/);
@@ -53,12 +57,23 @@ function parseFenceInfo(info) {
 }
 
 /**
- * Split a step's body into { prose, target, file, lang, explain }.
+ * Split a step's body into { prose, target, file, lang, explain, checks }.
  * The first fence carrying a `file=` attribute is the step's target; prose
  * is what precedes it, explanation is what follows.
  */
-function parseStepBody(body) {
+function parseStepBody(rawBody) {
+  const checks = [];
+  const body = rawBody.replace(/```check[^\n]*\n([\s\S]*?)```\n?/g, (_, inner) => {
+    checks.push(...parseChecks(inner));
+    return '';
+  });
+
   const fenceRe = /```([^\n]*)\n([\s\S]*?)```/g;
+  // Only the first `file=` block is the step's target. Any later one would be shown as an
+  // ordinary code block and never opened or checked, so it's recorded for the lesson tests to
+  // reject: a step changes one file.
+  const fileFences = [...body.matchAll(fenceRe)].filter((m) => parseFenceInfo(m[1]).file);
+  const extraTargets = fileFences.slice(1).map((m) => parseFenceInfo(m[1]).file);
   let match;
   while ((match = fenceRe.exec(body)) !== null) {
     const { lang, file } = parseFenceInfo(match[1]);
@@ -69,15 +84,18 @@ function parseStepBody(body) {
       target: match[2].replace(/\n$/, ''),
       file,
       lang,
+      checks,
+      extraTargets,
     };
   }
   // A step with no target file is legitimate — a pure "read this / predict
-  // what happens" beat between two code steps.
-  return { prose: body.trim(), explain: '', target: null, file: null, lang: null };
+  // what happens" beat between two code steps, or a step done in the terminal.
+  return { prose: body.trim(), explain: '', target: null, file: null, lang: null, checks };
 }
 
 export function parseLesson(text, id) {
-  const { meta, body } = parseFrontmatter(text);
+  // Files checked out on Windows can have CRLF line endings; every pattern here expects \n.
+  const { meta, body } = parseFrontmatter(String(text).replace(/\r\n/g, '\n'));
 
   // Split on level-2 headings: "## Step 1 — Title" (any "## " heading, so a
   // lesson can also open with "## Overview" before its first step).
@@ -96,6 +114,7 @@ export function parseLesson(text, id) {
     title: meta.title || id,
     runtime: meta.runtime || 'python',
     run: meta.run || null,
+    meta,
     intro,
     steps,
   };

@@ -15,7 +15,7 @@ function parsePath(p) {
 const byTrack = {};
 for (const [path, raw] of Object.entries(FILES)) {
   const { track, id } = parsePath(path);
-  (byTrack[track] ||= []).push({ sortKey: id, lesson: parseLesson(raw, id) });
+  (byTrack[track] ||= []).push({ sortKey: id, lesson: parseLesson(raw, `${track}/${id}`) });
 }
 
 export const TRACKS = Object.fromEntries(
@@ -25,4 +25,12 @@ export const TRACKS = Object.fromEntries(
   ]),
 );
 
-export const TRACK_KEYS = Object.keys(TRACKS).sort();
+// Ordered by the first lesson's `trackOrder:` frontmatter (tracks without one go last), then by
+// folder name. The first track is the one a new learner sees.
+const trackOrder = (key) => Number(TRACKS[key]?.find((l) => l.meta?.trackOrder)?.meta.trackOrder ?? Infinity);
+export const TRACK_KEYS = Object.keys(TRACKS).sort((a, b) => trackOrder(a) - trackOrder(b) || a.localeCompare(b));
+
+// A track's display name: the first lesson's `track:` frontmatter, or the folder name.
+export function trackTitle(key) {
+  return TRACKS[key]?.find((l) => l.meta?.track)?.meta.track ?? key;
+}

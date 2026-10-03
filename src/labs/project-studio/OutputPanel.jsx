@@ -5,8 +5,11 @@
 // scratch script.
 import { useEffect, useRef, useState } from 'react';
 
-export default function OutputPanel({ lines, running, onClear, C }) {
-  const [open, setOpen] = useState(true);
+// `fill` makes it fill its container (as a tab under the editor) instead of being a
+// collapsible strip of fixed height.
+export default function OutputPanel({ lines, running, onClear, C, fill = false }) {
+  const [openState, setOpen] = useState(true);
+  const open = fill || openState;
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -14,7 +17,9 @@ export default function OutputPanel({ lines, running, onClear, C }) {
   }, [lines, open]);
 
   return (
-    <div style={{ borderTop: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
+    <div style={fill
+      ? { background: C.surface, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }
+      : { borderTop: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
       <div
         style={{
           display: 'flex', alignItems: 'center', gap: 8,
@@ -42,7 +47,7 @@ export default function OutputPanel({ lines, running, onClear, C }) {
         <div
           ref={scrollRef}
           style={{
-            height: 150, overflowY: 'auto', padding: '4px 12px 10px',
+            ...(fill ? { flex: 1, minHeight: 0 } : { height: 150 }), overflowY: 'auto', padding: '4px 12px 10px',
             fontFamily: 'monospace', fontSize: 12, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
           }}
         >
