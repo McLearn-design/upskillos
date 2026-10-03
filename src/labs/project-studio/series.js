@@ -10,7 +10,10 @@ const CPP_CHAPTERS = [
   ['cpp-engineering', 'Software Engineering'],
   ['cpp-systems', 'Systems Programming'],
   ['cpp-networking', 'Networking'],
+  ['cpp-graphics', 'Graphics from First Principles'],
+  ['cpp-engines', 'Games and Engines'],
   ['cpp-game', 'Game Project: Pong'],
+  ['cpp-advanced', 'Mastery: Advanced C++'],
 ];
 
 export function studioSeries(tracks, keys, title) {
@@ -23,7 +26,7 @@ export function studioSeries(tracks, keys, title) {
   const result = keys.filter(key => !cppKeys.has(key)).map(key => ({ key, label: title(key), chapters: [{ key, label: title(key) }] }));
   if (chapters.length) result.splice(Math.min(2, result.length), 0, {
     key: 'cpp-mastery', label: 'C++ — From Zero to Mastery', chapters,
-    planned: 'Graphics, further games and engines, and advanced mastery chapters are planned.',
+    planned: 'Chapters on OpenGL and Vulkan are planned.',
   });
   return result;
 }

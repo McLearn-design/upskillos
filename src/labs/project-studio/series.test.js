@@ -16,11 +16,14 @@ it('continues through lessons and then chapters without changing their project k
  const tools=TRACKS['cpp-foundations'];
  expect(nextSeriesLesson(cpp,TRACKS,'cpp-foundations',tools[0].id)).toEqual({trackKey:'cpp-foundations',lesson:tools[1]});
  expect(nextSeriesLesson(cpp,TRACKS,'cpp-foundations',tools.at(-1).id)).toEqual({trackKey:'cpp-language-basics',lesson:TRACKS['cpp-language-basics'][0]});
- expect(nextSeriesLesson(cpp,TRACKS,'cpp-game',TRACKS['cpp-game'].at(-1).id)).toBeNull();
+ const last=cpp.chapters.at(-1).key;
+ expect(nextSeriesLesson(cpp,TRACKS,last,TRACKS[last].at(-1).id)).toBeNull();
+ const engines=cpp.chapters.findIndex(item=>item.key==='cpp-engines');
+ expect(cpp.chapters.slice(engines-1,engines+2).map(item=>item.key)).toEqual(['cpp-graphics','cpp-engines','cpp-game']);
 });
 it('automatically keeps newly discovered C++ topics inside the C++ series',()=>{
- const tracks={...TRACKS,'cpp-graphics':[{id:'cpp-graphics/first'}]};
- const grouped=studioSeries(tracks,[...TRACK_KEYS,'cpp-graphics'],trackTitle);
- expect(grouped.find(item=>item.key==='cpp-mastery').chapters.some(chapter=>chapter.key==='cpp-graphics')).toBe(true);
- expect(grouped.some(item=>item.key==='cpp-graphics')).toBe(false);
+ const tracks={...TRACKS,'cpp-audio':[{id:'cpp-audio/first'}]};
+ const grouped=studioSeries(tracks,[...TRACK_KEYS,'cpp-audio'],trackTitle);
+ expect(grouped.find(item=>item.key==='cpp-mastery').chapters.some(chapter=>chapter.key==='cpp-audio')).toBe(true);
+ expect(grouped.some(item=>item.key==='cpp-audio')).toBe(false);
 });

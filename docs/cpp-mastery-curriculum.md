@@ -2,9 +2,9 @@
 
 An ordered Project Studio series from "I've edited a Python script once" toward designing, debugging, testing, profiling and shipping serious C++ software. The implemented chapters and planned extensions are distinguished below. The learner types real code into real files and builds with the real compiler and CMake. Chapter walkthrough tests (`walkCppTrack.js`) play a learner through the implemented steps and try wrong answers the checks must reject.
 
-Studio presents **C++ — From Zero to Mastery** as one series. Tools, language foundations, memory, classes, generic programming, algorithms, engineering, systems and networking are chapters inside it; Pong is an introductory game-project chapter. The chapter selector chooses a topic, and the lesson selector chooses a lesson in that topic. At a lesson's last step, Continue opens the next lesson or chapter. Future discovered `cpp-*` topics join this series automatically.
+Studio presents **C++ — From Zero to Mastery** as one series. Tools, language foundations, memory, classes, generic programming, algorithms, engineering, systems, networking, graphics, games and engines, and advanced C++ are chapters inside it; Pong is the windowed game project that follows Games and Engines. The chapter selector chooses a topic, and the lesson selector chooses a lesson in that topic. At a lesson's last step, Continue opens the next lesson or chapter. Future discovered `cpp-*` topics join this series automatically.
 
-This navigation grouping preserves existing track keys, lesson/step ids, progress and source paths. Each chapter retains its existing project-folder assignment so reorganizing the menu does not move or mix learner files. Graphics, further games/engines and mastery extensions remain explicitly planned.
+This navigation grouping preserves existing track keys, lesson/step ids, progress and source paths. Each chapter retains its existing project-folder assignment so reorganizing the menu does not move or mix learner files. Chapters on OpenGL and Vulkan remain planned.
 
 ## How the series teaches
 
