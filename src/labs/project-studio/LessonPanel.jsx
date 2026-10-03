@@ -23,6 +23,7 @@ export default function LessonPanel({
   onPrev, onNext, onSelectLesson, C,
   checkState, onCheck, canCheck, isStepDone, isLessonDone,
   onCreateProvided, providedError,
+  continuationLabel, onContinue, seriesNote,
 }) {
   const atFirst = stepIndex === 0;
   const atLast = stepIndex >= lesson.steps.length - 1;
@@ -32,6 +33,7 @@ export default function LessonPanel({
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, overflow: 'hidden', background: C.surface }}>
       <div style={{ padding: '6px 10px', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 6, alignItems: 'center' }}>
         <select
+          aria-label="Lesson"
           value={lesson.id}
           onChange={(e) => onSelectLesson(e.target.value)}
           style={{
@@ -117,11 +119,14 @@ export default function LessonPanel({
         {hasChecks && (
           <ChecksBox step={step} state={checkState} onCheck={onCheck} canCheck={canCheck} C={C} />
         )}
+        {atLast && seriesNote && <p style={{ fontSize: 12, color: C.hint }}>{seriesNote}</p>}
       </div>
 
       <div style={{ display: 'flex', gap: 8, padding: '8px 10px', borderTop: `1px solid ${C.border}` }}>
         <button onClick={onPrev} disabled={atFirst} style={navBtn(C, atFirst)}>← Back</button>
-        <button onClick={onNext} disabled={atLast} style={navBtn(C, atLast, true)}>Next step →</button>
+        {atLast && continuationLabel
+          ? <button onClick={onContinue} style={navBtn(C, false, true)}>{continuationLabel} →</button>
+          : <button onClick={onNext} disabled={atLast} style={navBtn(C, atLast, true)}>Next step →</button>}
       </div>
     </div>
   );

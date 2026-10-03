@@ -1,6 +1,10 @@
 # C++ from zero to mastery — the Project Studio series
 
-A complete path from "I've edited a Python script once" to designing, debugging, testing, profiling and shipping serious C++ software. Every lesson is a Project Studio track lesson: the learner types real code into real files, builds with the real compiler and CMake, and every step is checked. Every track has a walkthrough test (`walkCppTrack.js`) that plays a learner through every step and tries wrong answers the checks must reject.
+An ordered Project Studio series from "I've edited a Python script once" toward designing, debugging, testing, profiling and shipping serious C++ software. The implemented chapters and planned extensions are distinguished below. The learner types real code into real files and builds with the real compiler and CMake. Chapter walkthrough tests (`walkCppTrack.js`) play a learner through the implemented steps and try wrong answers the checks must reject.
+
+Studio presents **C++ — From Zero to Mastery** as one series. Tools, language foundations, memory, classes, generic programming, algorithms, engineering, systems and networking are chapters inside it; Pong is an introductory game-project chapter. The chapter selector chooses a topic, and the lesson selector chooses a lesson in that topic. At a lesson's last step, Continue opens the next lesson or chapter. Future discovered `cpp-*` topics join this series automatically.
+
+This navigation grouping preserves existing track keys, lesson/step ids, progress and source paths. Each chapter retains its existing project-folder assignment so reorganizing the menu does not move or mix learner files. Graphics, further games/engines and mastery extensions remain explicitly planned.
 
 ## How the series teaches
 
@@ -11,7 +15,7 @@ A complete path from "I've edited a Python script once" to designing, debugging,
 - **Mistakes on purpose.** Lessons hand over broken code and ask for a diagnosis before a fix: compiler errors, linker errors, warnings, crashes, copies that should have been references.
 - **See the machine.** Trace in CodeLens shows variables, the call stack and the heap at every step. The debugger (lldb or gdb) is taught early and used throughout. AddressSanitizer is used once memory is the subject.
 
-## Tracks
+## Chapters
 
 Status: ✅ built and walkthrough-tested, 🛠 next, 📋 planned.
 

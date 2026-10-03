@@ -21,6 +21,8 @@ import { useProjectFs } from './useProjectFs.js';
 import { TRACKS, TRACK_KEYS, trackTitle, getSupportFiles } from './trackLoader.js';
 import { createProvidedFiles } from './providedFiles.js';
 import FileTree from './FileTree.jsx';
+import StudioPanes from './StudioPanes.jsx';
+import { studioSeries, nextSeriesLesson } from './series.js';
 import EditorPane from './EditorPane.jsx';
 import LessonPanel from './LessonPanel.jsx';
 import OutputPanel from './OutputPanel.jsx';
@@ -30,6 +32,7 @@ import { canTrace, handOffToCodeLens, inlineLocalHeaders } from './codeLensHando
 import { useProgress } from './progress.js';
 
 const SAVE_DEBOUNCE_MS = 400;
+const SERIES = studioSeries(TRACKS, TRACK_KEYS, trackTitle);
 
 export default function ProjectStudio() {
   const C = useThemeColors();
@@ -76,6 +79,10 @@ export default function ProjectStudio() {
 
   const [bottomTab, setBottomTab] = useState('terminal');
   const [bottomHeight, setBottomHeight] = useState(260);
+  const [explorerVisible, setExplorerVisible] = useState(() => {
+    try { return localStorage.getItem('project-studio:explorer-visible') !== 'false'; } catch { return true; }
+  });
+  useEffect(() => { try { localStorage.setItem('project-studio:explorer-visible', String(explorerVisible)); } catch {} }, [explorerVisible]);
   const [checkStates, setCheckStates] = useState({}); // stepId -> { running, results, error }
 
   // A new project folder means none of the open buffers belong to it any more.
@@ -443,14 +450,32 @@ export default function ProjectStudio() {
   const goPrev = useCallback(() => setStepIndex((i) => Math.max(0, i - 1)), []);
   const goNext = useCallback(() => setStepIndex((i) => Math.min((lesson?.steps.length ?? 1) - 1, i + 1)), [lesson]);
 
-  const trackPicker = TRACK_KEYS.length > 1 && (
-    <select
+  const series = SERIES.find(item => item.chapters.some(chapter => chapter.key === trackKey)) ?? SERIES[0];
+  const continuation = lesson && series ? nextSeriesLesson(series, TRACKS, trackKey, lesson.id) : null;
+  const continueSeries = async () => {
+    if (!continuation || !(await flushProject())) return;
+    if (continuation.trackKey !== trackKey) await selectTrack(continuation.trackKey);
+    else { setLessonId(continuation.lesson.id); setStepIndex(0); }
+  };
+  const pickerStyle = { fontSize: 11, padding: '3px 6px', borderRadius: 5, background: C.surface2, color: C.text, border: `1px solid ${C.border}`, maxWidth: 270 };
+  const explorerToggle = <button onClick={() => setExplorerVisible(value => !value)} aria-expanded={explorerVisible}
+    style={{ padding: '5px 10px', fontSize: 12, borderRadius: 6, border: `1px solid ${C.border}`, background: C.surface2, color: C.text, cursor: 'pointer' }}>
+    {explorerVisible ? 'Hide explorer' : 'Show explorer'}
+  </button>;
+  const trackPicker = series && (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <label style={{ fontSize: 11 }}>Series <select aria-label="Series" value={series.key} style={pickerStyle}
+        onChange={event => selectTrack(SERIES.find(item => item.key === event.target.value).chapters[0].key)}>
+        {SERIES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+      </select></label>
+      {series.chapters.length > 1 && <label style={{ fontSize: 11 }}>Chapter <select aria-label="Chapter"
       value={trackKey}
       onChange={(e) => selectTrack(e.target.value)}
-      style={{ fontSize: 11, padding: '3px 6px', borderRadius: 5, background: C.surface2, color: C.text, border: `1px solid ${C.border}` }}
+      style={pickerStyle}
     >
-      {TRACK_KEYS.map((k) => <option key={k} value={k}>{trackTitle(k)}</option>)}
-    </select>
+      {series.chapters.map((chapter, index) => <option key={chapter.key} value={chapter.key}>{index + 1}. {chapter.label}</option>)}
+    </select></label>}
+    </div>
   );
 
   const lessonPanel = lesson && step && (
@@ -465,6 +490,9 @@ export default function ProjectStudio() {
       onPrev={goPrev}
       onNext={goNext}
       onSelectLesson={selectLesson}
+      continuationLabel={continuation ? `${continuation.trackKey === trackKey ? 'Continue to lesson' : 'Continue to chapter'}: ${continuation.trackKey === trackKey ? continuation.lesson.title : series.chapters.find(chapter => chapter.key === continuation.trackKey).label}` : null}
+      onContinue={continueSeries}
+      seriesNote={series?.planned}
       checkState={checkStates[step.id]}
       onCheck={runChecks}
       canCheck={fs.available && !!fs.root}
@@ -500,22 +528,20 @@ export default function ProjectStudio() {
   // the folder is the first thing a new track's first lesson explains.
   if (!fs.root) {
     return (
-      <div style={{ display: 'flex', height: '100%', minHeight: 0, background: C.bg, color: C.text }}>
+      <StudioPanes explorerVisible={explorerVisible} C={C}
+        explorer={<FileTree entries={[]} root={null} onPick={pickProject} C={C} />}
+        editor={
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderBottom: `1px solid ${C.border}`, background: C.surface }}>
             <strong style={{ fontSize: 13 }}>Project Studio</strong>
             {trackPicker}
+            {explorerToggle}
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
             <ChooseFolder fs={fs} C={C} />
           </div>
         </div>
-        {lessonPanel && (
-          <div style={{ width: 440, flexShrink: 0, borderLeft: `1px solid ${C.border}` }}>
-            {lessonPanel}
-          </div>
-        )}
-      </div>
+        } lesson={lessonPanel} />
     );
   }
 
@@ -533,6 +559,7 @@ export default function ProjectStudio() {
         <strong style={{ fontSize: 13 }}>Project Studio</strong>
         {trackPicker}
         <div style={{ flex: 1 }} />
+        {explorerToggle}
         {lesson?.run && (
           <button
             onClick={runProject}
@@ -586,8 +613,7 @@ export default function ProjectStudio() {
         </div>
       )}
 
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        <div style={{ width: 210, flexShrink: 0, borderRight: `1px solid ${C.border}`, background: C.surface }}>
+      <StudioPanes explorerVisible={explorerVisible} C={C} explorer={
           <FileTree
             entries={fs.entries}
             root={fs.root}
@@ -600,9 +626,7 @@ export default function ProjectStudio() {
             onPick={pickProject}
             C={C}
           />
-        </div>
-
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        } editor={<>
           <div style={{ flex: 1, minHeight: 0 }}>
             <EditorPane
               openFiles={openFiles}
@@ -622,7 +646,7 @@ export default function ProjectStudio() {
             title="Drag to resize"
             style={{ height: 5, cursor: 'row-resize', background: C.border, flexShrink: 0 }}
           />
-          <div style={{ height: bottomHeight, flexShrink: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{ height: bottomHeight, maxHeight: '65%', flexShrink: 0, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', background: C.canvasSurface || (C.dark ? '#1e293b' : '#ffffff') }}>
             <div style={{ display: 'flex', background: C.surface, borderBottom: `1px solid ${C.border}` }}>
               {[['terminal', 'Terminal'], ['output', 'Output']].map(([key, label]) => (
                 <button
@@ -638,21 +662,14 @@ export default function ProjectStudio() {
                 </button>
               ))}
             </div>
-            <div style={{ flex: 1, minHeight: 0 }}>
+            <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden', background: C.canvasSurface || (C.dark ? '#1e293b' : '#ffffff') }}>
               <TerminalPanel root={fs.root} projectKey={trackKey} visible={bottomTab === 'terminal'} C={C} />
               {bottomTab === 'output' && (
                 <OutputPanel lines={output} running={running} onClear={() => setOutput([])} C={C} fill />
               )}
             </div>
           </div>
-        </div>
-
-        {lessonPanel && (
-          <div style={{ width: 440, flexShrink: 0, borderLeft: `1px solid ${C.border}` }}>
-            {lessonPanel}
-          </div>
-        )}
-      </div>
+        </>} lesson={lessonPanel} />
     </div>
   );
 }

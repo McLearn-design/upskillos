@@ -150,7 +150,7 @@ export default function FileTree({ entries, root, activeFile, onOpen, onDelete, 
       <div style={{ flex: 1, overflowY: 'auto', padding: 4 }}>
         {entries.length === 0 && (
           <p style={{ fontSize: 11, color: C.hint, padding: 8, lineHeight: 1.6 }}>
-            Empty project. The first step will create its file for you, or use ＋ above.
+            {root ? 'Empty project. The first step will create its file for you, or use ＋ above.' : 'No folder selected for this chapter. Choose its project folder to see your files.'}
           </p>
         )}
         {entries.map((node) => (

@@ -25,6 +25,16 @@ async function render(provided, optional = true, currentContent = '') {
   return onCreate;
 }
 describe('lesson action clarity', () => {
+  it('offers continuation at the end of a lesson', async () => {
+    const step = { id: 'last', title: 'Last step', checks: [] };
+    const lesson = { id: 'lesson', title: 'Tools', steps: [step] };
+    const next = vi.fn();
+    await act(async () => root.render(<LessonPanel C={C} lesson={lesson} lessons={[lesson]} step={step} stepIndex={0}
+      continuationLabel="Continue to chapter: Language Foundations" onContinue={next} />));
+    const button = [...host.querySelectorAll('button')].find(item => item.textContent.includes('Continue to chapter'));
+    await act(async () => button.click());
+    expect(next).toHaveBeenCalledOnce();
+  });
   it('allows repairing support files even when the main file already matches', async () => {
     const onCreate = await render(true, true, 'source');
     const button = [...host.querySelectorAll('button')].find(b => b.textContent === 'Create Pong starter');
