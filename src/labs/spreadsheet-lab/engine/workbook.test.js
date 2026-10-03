@@ -431,3 +431,16 @@ describe('conditional formatting rules', () => {
     expect(back.sheets[0].rules).toEqual([{ id: 'r1', source: 'B3:B10', kind: 'scale' }])
   })
 })
+
+describe('charts of columns that are not side by side', () => {
+  it('reads "A1:A3,C1:C3" as one table and moves both parts with inserted rows', () => {
+    const wb = new Workbook()
+    const s = wb.sheets[0]
+    wb.setCells([['x', 'skip', 'y'], ['1', '9', '2'], ['3', '9', '4']].flatMap((r, i) => r.map((input, c) => ({ sheetId: s.id, row: i, col: c, input }))))
+    expect(wb.rangeValues(s, 'A1:A3,C1:C3')).toEqual([['x', 'y'], [1, 2], [3, 4]])
+    expect(wb.rangeValues(s, 'A1:A3,C1:C2')).toBeNull()
+    wb.addChart(s.id, { type: 'scatter', source: 'A1:A3,C1:C3' })
+    wb.insertRows(s.id, 0, 1)
+    expect(wb.sheets[0].charts[0].source).toBe('A2:A4,C2:C4')
+  })
+})

@@ -46,6 +46,8 @@ export class Sheet {
     this.filter = null
     // Conditional formatting rules (engine/conditional.js), in order.
     this.rules = []
+    // The sample dataset this sheet was made from (datasets/index.js), if any.
+    this.dataset = null
   }
 
   // The last row and column that hold anything, so whole-column references
@@ -701,7 +703,7 @@ export class Workbook {
   // These change many cells at once, so their undo restores a snapshot.
   snapshot() {
     return this.sheets.map((s) => ({
-      id: s.id, name: s.name, colWidths: { ...s.colWidths }, rowHeights: { ...s.rowHeights }, charts: s.charts.map((c) => ({ ...c })), filter: s.filter, rules: s.rules.map((r) => ({ ...r })),
+      id: s.id, name: s.name, colWidths: { ...s.colWidths }, rowHeights: { ...s.rowHeights }, charts: s.charts.map((c) => ({ ...c })), filter: s.filter, rules: s.rules.map((r) => ({ ...r })), dataset: s.dataset,
       cells: [...s.cells].map(([k, c]) => [k, { input: c.input, format: c.format, style: c.style, code: c.code }]),
     }))
   }
@@ -715,6 +717,7 @@ export class Workbook {
       sheet.charts = (d.charts ?? []).map((c) => ({ ...c }))
       sheet.filter = d.filter ?? null
       sheet.rules = (d.rules ?? []).map((r) => ({ ...r }))
+      sheet.dataset = d.dataset ?? null
       return sheet
     })
     snap.forEach((d, i) => { for (const [k, c] of d.cells) { const p = keyToPos(k); this.writeCell(this.sheets[i], p.row, p.col, c) } })
@@ -776,7 +779,7 @@ export class Workbook {
       this.rewriteFormulas((input, sheet) => adjust(input, { formulaSheet: sheet.name, sheetName: target.name, at, count }))
       this.shiftCells(target, axis, at, count)
       // A chart's data range moves with its cells, as a formula's would.
-      for (const chart of target.charts) chart.source = adjust('=' + chart.source, { formulaSheet: target.name, sheetName: target.name, at, count }).slice(1)
+      for (const chart of target.charts) chart.source = chart.source.split(',').map((part) => adjust('=' + part.trim(), { formulaSheet: target.name, sheetName: target.name, at, count }).slice(1)).join(',')
       if (target.filter) {
         const source = adjust('=' + target.filter.source, { formulaSheet: target.name, sheetName: target.name, at, count }).slice(1)
         // Columns inserted or deleted inside the filter shift which column each condition is on.
@@ -839,6 +842,13 @@ export class Workbook {
   // The values in a range such as "A1:C10" on a sheet, row by row, or null if
   // the text is not a range (a chart whose rows were all deleted reads #REF!).
   rangeValues(sheet, text) {
+    // Several ranges ("A1:A9,D1:D9", as when columns that are not side by side
+    // are charted) are put side by side; they must be the same height.
+    if (text.includes(',')) {
+      const parts = text.split(',').map((t) => this.rangeValues(sheet, t.trim()))
+      if (parts.some((p) => !p) || parts.some((p) => p.length !== parts[0].length)) return null
+      return parts[0].map((_, r) => parts.flatMap((p) => p[r]))
+    }
     let v
     try { v = evalNode(parse(text), this.context(sheet, 0, 0)) } catch { return null }
     if (isMatrix(v)) return v.rows
@@ -950,6 +960,7 @@ export class Workbook {
         ...(s.charts.length ? { charts: s.charts } : {}),
         ...(s.filter ? { filter: s.filter } : {}),
         ...(s.rules.length ? { rules: s.rules } : {}),
+        ...(s.dataset ? { dataset: s.dataset } : {}),
         cells: Object.fromEntries([...s.cells].map(([k, c]) => [k, Object.fromEntries(Object.entries({ input: c.input || undefined, format: c.format, style: c.style, code: c.code }).filter(([, v]) => v !== undefined))])),
       })),
     }
@@ -964,6 +975,7 @@ export class Workbook {
       sheet.charts = Array.isArray(s.charts) ? s.charts.map((c) => ({ ...c })) : []
       sheet.filter = s.filter?.source ? { source: s.filter.source, hidden: s.filter.hidden ?? {} } : null
       sheet.rules = Array.isArray(s.rules) ? s.rules.filter((r) => r?.source && r.kind).map((r) => ({ ...r })) : []
+      sheet.dataset = typeof s.dataset === 'string' ? s.dataset : null
       wb.sheets.push(sheet)
     }
     if (!wb.sheets.length) wb.sheets.push(new Sheet('Sheet1'))

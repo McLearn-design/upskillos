@@ -1,0 +1,87 @@
+// Every dataset loads, and every "thing to try" works on it: formulas give
+// no errors, charts find numbers, and the Python really runs (on Pyodide)
+// and gives sensible answers.
+import { beforeAll, describe, expect, it } from 'vitest'
+import { loadPyodide } from 'pyodide'
+import { DATASETS } from './index.js'
+import { Workbook } from '../engine/workbook.js'
+import { parseCell } from '../engine/address.js'
+import { readSeries } from '../engine/chart.js'
+import { codeReferences, plainValue, shapeForCode } from '../engine/code.js'
+import { isError, isMatrix } from '../engine/values.js'
+
+let py
+beforeAll(async () => { py = await loadPyodide() }, 120000)
+
+async function sheetFor(ds) {
+  const wb = new Workbook()
+  const s = wb.sheets[0]
+  const rows = await ds.rows()
+  wb.setCells(rows.flatMap((r, i) => r.map((v, c) => ({ sheetId: s.id, row: i, col: c, input: String(v) }))))
+  return { wb, s, rows }
+}
+
+function runPython(wb, s, source) {
+  const inputs = {}
+  for (const ref of codeReferences(source, 'py')) {
+    const v = wb.rangeValues(s, ref)
+    inputs[ref] = shapeForCode(v.map((r) => r.map(plainValue)))
+  }
+  py.runPython('import json\n_inputs = json.loads(' + JSON.stringify(JSON.stringify(inputs)) + ')\ndef xl(ref): return _inputs[ref]')
+  const ns = py.globals.get('dict')()
+  const out = py.runPython(source, { globals: py.globals })
+  ns.destroy()
+  return out.toJs ? out.toJs() : out
+}
+
+const find = (table, label) => table.find((r) => r[0] === label)?.[1]
+
+describe.each(DATASETS)('dataset: $title', (ds) => {
+  it('loads with a heading row and the documented columns', async () => {
+    const { rows } = await sheetFor(ds)
+    expect(rows.length).toBeGreaterThan(40)
+    expect(rows[0].every((h) => typeof h === 'string')).toBe(true)
+    expect(ds.origin).toBeTruthy()
+  })
+
+  it.each(ds.tries.map((t) => [t.label, t]))('try: %s', async (_, t) => {
+    const { wb, s } = await sheetFor(ds)
+    for (const step of t.steps) {
+      if (step.kind === 'cells') {
+        const at = parseCell(step.at)
+        wb.setCells(step.rows.flatMap((r, i) => r.map((input, c) => ({ sheetId: s.id, row: at.row + i, col: at.col + c, input }))))
+        for (const [i, r] of step.rows.entries()) r.forEach((input, c) => {
+          if (!input.startsWith('=')) return
+          const v = wb.getCell(s.id, at.row + i, at.col + c).value
+          expect(isError(v), step.at + ': ' + input + ' gave ' + (v?.code ?? '') + ' ' + (v?.detail ?? '')).toBe(false)
+          if (isMatrix(v)) expect(v.rows.flat().some(isError)).toBe(false)
+        })
+      } else if (step.kind === 'chart') {
+        const values = wb.rangeValues(s, step.source)
+        expect(values).not.toBeNull()
+        const data = readSeries(values, step.type)
+        expect(data.series.some((x) => x.values.some(Number.isFinite))).toBe(true)
+        expect(data.notes).toEqual([])
+      } else if (step.kind === 'code') {
+        const out = runPython(wb, s, step.source)
+        expect(Array.isArray(out)).toBe(true)
+        step.result = out
+      }
+    }
+    // What the Python versions should find.
+    const result = t.steps.find((x) => x.kind === 'code')?.result
+    if (t.label.startsWith('Classify with k-nearest')) expect(find(result, 'Accuracy')).toBeGreaterThan(0.9)
+    if (t.label.startsWith('Find groups')) expect(result).toHaveLength(4)
+    if (t.label.startsWith('k-nearest neighbours, with and without')) expect(find(result, 'Standardised')).toBeGreaterThan(find(result, 'As measured') + 0.1)
+    if (t.label.startsWith('Learn the line')) {
+      const slope = wb.previewFormula(s, '=SLOPE(B2:B51, A2:A51)')
+      expect(find(result, 'Slope m')).toBeCloseTo(slope, 2)
+      expect(Math.abs(slope - 5.5)).toBeLessThan(0.6)
+    }
+    if (t.label.startsWith('Fit and test')) {
+      expect(find(result, 'Per m² of floor area')).toBeGreaterThan(1.7)
+      expect(find(result, 'Per m² of floor area')).toBeLessThan(2.5)
+      expect(find(result, 'Per km from the centre')).toBeLessThan(-3.5)
+    }
+  }, 60000)
+})

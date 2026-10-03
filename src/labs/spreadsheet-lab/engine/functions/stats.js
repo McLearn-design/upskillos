@@ -87,6 +87,53 @@ function rankOf(x, xs, ascending) {
 
 const prob = (p) => { const x = toNumber(p); if (x <= 0 || x >= 1) fail('#NUM!', 'A probability must be strictly between 0 and 1.'); return x }
 
+// Least squares with several inputs: the weights w solve (XᵀX) w = Xᵀy.
+// Returns LINEST's layout: the coefficients last input first, then the
+// intercept; with stats, four more rows as for one input.
+function multipleRegression(ys, xRows, useConst, stats) {
+  const pairs = ys.map((v, i) => [v, xRows[i]]).filter(([v, r]) => typeof v === 'number' && r.every((x) => typeof x === 'number'))
+  const k = xRows[0].length
+  const n = pairs.length
+  const p = k + (useConst ? 1 : 0)
+  if (n <= p) fail('#NUM!', 'LINEST needs more rows of data than it has coefficients to find.')
+  const X = pairs.map(([, r]) => (useConst ? [1, ...r] : [...r]))
+  const yv = pairs.map(([v]) => v)
+  const XtX = Array.from({ length: p }, (_, i) => Array.from({ length: p }, (_, j) => X.reduce((sum, row) => sum + row[i] * row[j], 0)))
+  const inv = invertMatrix(XtX)
+  if (!inv) fail('#NUM!', 'The x columns are not independent (one can be made from the others), so there is no single best fit.')
+  const Xty = Array.from({ length: p }, (_, i) => X.reduce((sum, row, r) => sum + row[i] * yv[r], 0))
+  const w = inv.map((row) => row.reduce((sum, v, j) => sum + v * Xty[j], 0))
+  const coefs = useConst ? [...w.slice(1).reverse(), w[0]] : [...w.slice().reverse(), 0]
+  if (!stats) return new Matrix([coefs])
+  const pred = X.map((row) => row.reduce((sum, v, j) => sum + v * w[j], 0))
+  const ssres = yv.reduce((sum, v, i) => sum + (v - pred[i]) ** 2, 0)
+  const my = mean(yv)
+  const sstot = useConst ? yv.reduce((sum, v) => sum + (v - my) ** 2, 0) : yv.reduce((sum, v) => sum + v * v, 0)
+  const df = n - p
+  const sey = Math.sqrt(ssres / df)
+  const se = inv.map((row, i) => sey * Math.sqrt(row[i]))
+  const seRow = useConst ? [...se.slice(1).reverse(), se[0]] : [...se.slice().reverse(), err('#N/A')]
+  const blank = () => err('#N/A')
+  const pad = (row) => [...row, ...Array.from({ length: k + 1 - row.length }, blank)]
+  return new Matrix([coefs, seRow, pad([1 - ssres / sstot, sey]), pad([(sstot - ssres) / (p - (useConst ? 1 : 0)) / (ssres / df), df]), pad([sstot - ssres, ssres])])
+}
+
+// The inverse of a square matrix by Gauss–Jordan elimination, or null if it has none.
+function invertMatrix(A) {
+  const n = A.length
+  const M = A.map((row, i) => [...row, ...Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))])
+  for (let c = 0; c < n; c++) {
+    let best = c
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[best][c])) best = r
+    if (Math.abs(M[best][c]) < 1e-12 * Math.max(1, ...A.map((row) => Math.abs(row[c])))) return null
+    ;[M[c], M[best]] = [M[best], M[c]]
+    const pivot = M[c][c]
+    M[c] = M[c].map((v) => v / pivot)
+    for (let r = 0; r < n; r++) if (r !== c && M[r][c] !== 0) { const f = M[r][c]; M[r] = M[r].map((v, j) => v - f * M[c][j]) }
+  }
+  return M.map((row) => row.slice(n))
+}
+
 export default {
   AVERAGE: def(C, 'AVERAGE(number1, [number2], …)', 'The arithmetic mean: the sum divided by the count.', (args) => mean(need(numbers(args), 1, 'AVERAGE')), {
     min: 1, example: ['=AVERAGE(2, 4, 9)', '5'],
@@ -190,6 +237,9 @@ export default {
   LINEST: def(C, 'LINEST(known_ys, [known_xs], [const], [stats])', 'Least-squares fit of a straight line; returns {slope, intercept} (more with stats).', ([y, x, cst, st]) => {
     const Y = toMatrix(y)
     const X = x === undefined ? Matrix.fill(Y.height, Y.width, (r, c) => r * Y.width + c + 1) : toMatrix(x)
+    // Several x columns (or rows): multiple regression.
+    if (Y.width === 1 && X.height === Y.height && X.width > 1) return multipleRegression(Y.rows.map((r) => r[0]), X.rows, optBool(cst, true), optBool(st, false))
+    if (Y.height === 1 && X.width === Y.width && X.height > 1) return multipleRegression(Y.rows[0], X.rows[0].map((_, c) => X.rows.map((r) => r[c])), optBool(cst, true), optBool(st, false))
     const f = linefit(Y, X)
     const useConst = optBool(cst, true)
     let slope = f.slope, intercept = f.intercept

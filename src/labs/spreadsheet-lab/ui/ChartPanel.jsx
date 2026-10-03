@@ -58,10 +58,12 @@ export default function ChartPanel({ chart, values, onChange, onDelete }) {
       <section className="space-y-2">
         <Field label="Data" hint={rangeProblem ?? 'A first row of text names the series; a first column of text labels the categories.'}>
           <LazyInput value={chart.source} aria-label="Chart data range" onCommit={(text) => {
-            const r = parseRange(text.trim().toUpperCase().replace(/\$/g, ''))
-            if (!r || r.r2 === Infinity || r.c2 === Infinity) { setRangeProblem('"' + text + '" is not a range. Write it like A1:C10.'); return }
+            // One range, or several of the same height separated by commas (A1:A9,D1:D9).
+            const parts = text.split(',').map((t) => parseRange(t.trim().toUpperCase().replace(/\$/g, '')))
+            if (parts.some((r) => !r || r.r2 === Infinity || r.c2 === Infinity)) { setRangeProblem('"' + text + '" is not a range. Write it like A1:C10, or A1:A10,D1:D10 for columns that are not side by side.'); return }
+            if (parts.some((r) => r.r2 - r.r1 !== parts[0].r2 - parts[0].r1)) { setRangeProblem('The ranges must have the same number of rows.'); return }
             setRangeProblem(null)
-            set({ source: formatRange(r) })
+            set({ source: parts.map(formatRange).join(',') })
           }} />
         </Field>
         <Field label="Title">

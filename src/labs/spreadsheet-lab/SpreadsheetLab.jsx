@@ -14,6 +14,7 @@ import Grid, { DEFAULT_COL_W, DEFAULT_ROW_H } from './ui/Grid.jsx'
 import { CHART_TYPES, currentRegion, recommendChart } from './engine/chart.js'
 import { hiddenRows, looksLikeHeader, removeDuplicates, sortRows } from './engine/data.js'
 import FilterMenu from './ui/FilterMenu.jsx'
+import { DATASETS } from './datasets/index.js'
 import { ruleEffect, ruleStats } from './engine/conditional.js'
 import FormulaInput from './ui/FormulaInput.jsx'
 import Inspector from './ui/Inspector.jsx'
@@ -179,12 +180,8 @@ export default function SpreadsheetLab() {
     const v = wb.previewFormula(sheet, formula)
     const h = v?.height ?? 1, w = v?.width ?? 1
     // The first place beside the table with room for the whole result.
-    const free = (r0, c0) => {
-      for (let r = r0; r < r0 + h; r++) for (let c = c0; c < c0 + w; c++) if (wb.getCell(sheet.id, r, c) || sheet.spillOwner.has(cellKey(r, c))) return false
-      return true
-    }
     let col = rg.c2 + 2
-    while (!free(rg.r1, col) && col < 16000) col++
+    while (!blockFree(rg.r1, col, h, w) && col < 16000) col++
     wb.setCells([{ sheetId: sheet.id, row: rg.r1, col, input: formula }])
     setSel(cellSelection(rg.r1, col))
     setInspectorTab('cell')
@@ -226,10 +223,77 @@ export default function SpreadsheetLab() {
     setNotice('Added the rule to ' + source + '. It is checked again whenever the values change.')
   }
 
+  // ── Sample datasets ──────────────────────────────────────────────────
+  const dataset = DATASETS.find((d) => d.id === sheet.dataset) ?? null
+  const openDataset = async (id) => {
+    const ds = DATASETS.find((d) => d.id === id)
+    const rows = await ds.rows()
+    const target = wb.addSheet(ds.title)
+    target.dataset = ds.id
+    wb.setCells(rows.flatMap((r, i) => r.map((v, c) => ({ sheetId: target.id, row: i, col: c, input: String(v), ...(i === 0 ? { style: { bold: true } } : {}) }))))
+    rows[0].forEach((h, c) => { if (String(h).length > 12) wb.setSize(target.id, 'col', c, Math.min(220, String(h).length * 7 + 16)) })
+    setSheetId(target.id)
+    setSel(cellSelection(0, 0))
+    setInspectorOpen(true)
+    setInspectorTab('data')
+    setNotice('Added the sheet "' + target.name + '" with ' + (rows.length - 1) + ' rows. The panel on the right says what the columns mean and suggests things to try.')
+    focusGrid()
+  }
+  // Whether a block of cells is empty and not under a chart, so new cells
+  // put there can be seen.
+  const blockFree = (r0, c0, h, w) => {
+    for (let r = r0; r < r0 + h; r++) for (let c = c0; c < c0 + w; c++) if (wb.getCell(sheet.id, r, c) || sheet.spillOwner.has(cellKey(r, c))) return false
+    const x1 = offset(sheet.colWidths, c0, DEFAULT_COL_W), x2 = offset(sheet.colWidths, c0 + w, DEFAULT_COL_W)
+    const y1 = offset(sheet.rowHeights, r0, DEFAULT_ROW_H), y2 = offset(sheet.rowHeights, r0 + h, DEFAULT_ROW_H)
+    return !sheet.charts.some((ch) => x1 < ch.x + ch.w && ch.x < x2 && y1 < ch.y + ch.h && ch.y < y2)
+  }
+  // A "thing to try": carried out beside the data, moving right past
+  // anything already there.
+  const runTry = (t) => {
+    let shift = 0
+    let selectAt = null
+    const placeBlock = (at, h, w) => { let col = at.col; while (!blockFree(at.row, col, h, w) && col < 16000) col++; return col }
+    for (const step of t.steps) {
+      if (step.kind === 'cells') {
+        const at = parseCell(step.at)
+        // The block's size, including what its formulas will spill.
+        let h = step.rows.length, w = Math.max(...step.rows.map((r) => r.length))
+        step.rows.forEach((r, i) => r.forEach((input, c) => {
+          if (!input.startsWith('=')) return
+          const v = wb.previewFormula(sheet, input, at.row + i, at.col + c)
+          if (v?.height) { h = Math.max(h, i + v.height); w = Math.max(w, c + v.width) }
+        }))
+        const col = placeBlock(at, h, w)
+        shift = col - at.col
+        wb.setCells(step.rows.flatMap((r, i) => r.map((input, c) => ({ sheetId: sheet.id, row: at.row + i, col: col + c, input }))))
+        selectAt ??= { row: at.row, col }
+      } else if (step.kind === 'code') {
+        const at = parseCell(step.at)
+        const [h, w] = step.size ?? [1, 1]
+        const col = placeBlock(at, h, w)
+        wb.setCells([{ sheetId: sheet.id, row: at.row, col, code: { lang: step.lang, source: step.source } }])
+        selectAt ??= { row: at.row, col }
+      } else if (step.kind === 'chart') {
+        const parts = step.source.split(',').map((p) => parseRange(p))
+        const moved = parts.map((p) => ({ ...p, c1: p.c1 + shift, c2: p.c2 + shift }))
+        const { x, y } = chartSpot(moved[0], 480, 300)
+        const id = wb.addChart(sheet.id, { type: step.type, source: moved.map(formatRange).join(','), x, y, w: 480, h: 300, ...(step.title ? { title: step.title } : {}), ...(step.trendline ? { trendline: true } : {}), ...(step.xTitle ? { xTitle: step.xTitle } : {}), ...(step.yTitle ? { yTitle: step.yTitle } : {}) })
+        keepTab.current = true
+        setSelectedChart(id)
+      } else if (step.kind === 'rule') {
+        wb.setRules(sheet.id, [...sheet.rules, { ...step.rule, id: 'rule' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), source: step.source }])
+      }
+    }
+    if (selectAt && !t.steps.some((s) => s.kind === 'chart')) setSel(cellSelection(selectAt.row, selectAt.col))
+    setNotice('Done: ' + t.label + '.' + (t.steps.some((s) => s.kind === 'code') ? ' Select the code cell to read and change its code.' : ''))
+  }
+
   // ── Charts ───────────────────────────────────────────────────────────
   const chart = sheet.charts.find((c) => c.id === selectedChart) ?? null
   useEffect(() => { setSelectedChart(null) }, [sheet.id])
+  const keepTab = useRef(false) // a chart made from "Things to try" leaves that list open
   useEffect(() => {
+    if (keepTab.current) { keepTab.current = false; return }
     if (selectedChart) { setInspectorOpen(true); setInspectorTab('chart') }
     else setInspectorTab((t) => (t === 'chart' ? (activeIsCode ? 'code' : 'cell') : t))
   }, [selectedChart]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -716,6 +780,7 @@ export default function SpreadsheetLab() {
         inspectorOpen={inspectorOpen} onToggleInspector={() => setInspectorOpen((o) => !o)}
         onNew={() => { if (confirmReplace()) replaceBook(new Workbook(), 'A new, empty workbook.') }}
         onOpenTour={() => { if (confirmReplace()) replaceBook(sampleWorkbook('tour'), 'The tour workbook is open.') }}
+        datasets={DATASETS} onOpenDataset={openDataset}
         onImport={() => fileRef.current?.click()}
         onExport={exportCSV} onExportXlsx={exportXlsx}
         onInsertCode={(lang) => setCode(sel.active.row, sel.active.col, lang, LANGUAGES[lang].starter)}
@@ -811,6 +876,7 @@ export default function SpreadsheetLab() {
           <Inspector wb={wb} sheet={sheet} sel={sel} version={version} tab={inspectorTab} onTab={setInspectorTab} runtime={runtime}
             onApplyCode={(source) => wb.setCells([{ sheetId: sheet.id, row: sel.active.row, col: sel.active.col, code: { lang: activeCell.code.lang, source } }])}
             chart={chart} chartValues={chartValues}
+            dataset={dataset} onTry={runTry}
             pivotTable={pivotTable} evaluatePivot={evaluatePivot} onInsertPivot={insertPivot}
             rules={sheet.rules} ruleTarget={formatRange(clipped(range))}
             onAddRule={addRule}

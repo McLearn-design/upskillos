@@ -41,10 +41,11 @@ function Palette({ label, icon, colors, onPick, onClear }) {
 
 const Divider = () => <div className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
 
-export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onClearFormat, onUndo, onRedo, inspectorOpen, onToggleInspector, onNew, onOpenTour, onImport, onExport, onExportXlsx, onInsertCode, onInsertChart, onColourRules, onPivot, onSort, onToggleFilter, filterOn, onRemoveDuplicates, tracing, onToggleTracing }) {
+export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onClearFormat, onUndo, onRedo, inspectorOpen, onToggleInspector, onNew, onOpenTour, datasets = [], onOpenDataset, onImport, onExport, onExportXlsx, onInsertCode, onInsertChart, onColourRules, onPivot, onSort, onToggleFilter, filterOn, onRemoveDuplicates, tracing, onToggleTracing }) {
   const [codeMenu, setCodeMenu] = useState(false)
   const [dataMenu, setDataMenu] = useState(false)
   const [saveMenu, setSaveMenu] = useState(false)
+  const [examples, setExamples] = useState(false)
   const style = cell?.style ?? {}
   const format = cell?.format ?? 'General'
   const known = PRESET_FORMATS.some((p) => p.code === format)
@@ -122,7 +123,24 @@ export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onCle
       </button>
       <Divider />
       <Button label="New blank workbook" onClick={onNew}><FilePlus2 size={15} /></Button>
-      <Button label="Open the tour workbook" onClick={onOpenTour}><BookOpen size={15} /></Button>
+      <div className="relative">
+        <Button label="Examples: the tour and sample datasets" active={examples} onClick={() => setExamples((o) => !o)}><BookOpen size={15} /></Button>
+        {examples && (
+          <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-md border border-slate-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900" onPointerDown={(e) => e.preventDefault()}>
+            <button type="button" onClick={() => { setExamples(false); onOpenTour() }} className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800">
+              <span className="font-semibold">The tour workbook</span>
+              <span className="block text-[11px] text-slate-500">A guided first look at formulas, functions and errors. Replaces this workbook.</span>
+            </button>
+            <div className="mx-3 my-1 border-t border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:border-slate-700"><span className="mt-1 block">Sample data (added as a new sheet)</span></div>
+            {datasets.map((d) => (
+              <button key={d.id} type="button" onClick={() => { setExamples(false); onOpenDataset(d.id) }} className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800">
+                <span className="font-semibold">{d.title}</span>
+                <span className="block text-[11px] text-slate-500">{d.summary}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <Button label="Open an Excel workbook (.xlsx), or bring in a CSV file as a new sheet" onClick={onImport}><Upload size={15} /></Button>
       <div className="relative">
         <Button label="Download" active={saveMenu} onClick={() => setSaveMenu((o) => !o)}><Download size={15} /></Button>

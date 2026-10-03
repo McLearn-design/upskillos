@@ -211,3 +211,38 @@ describe('the library', () => {
     }
   })
 })
+
+describe('LINEST with several x columns (multiple regression)', () => {
+  // The office-building example in Microsoft's LINEST documentation.
+  const data = [
+    [2310, 2, 2, 20, 142000], [2333, 2, 2, 12, 144000], [2356, 3, 1.5, 33, 151000], [2379, 3, 2, 43, 150000],
+    [2402, 2, 3, 53, 139000], [2425, 4, 2, 23, 169000], [2448, 2, 1.5, 99, 126000], [2471, 2, 2, 34, 142900],
+    [2494, 3, 3, 23, 163000], [2517, 4, 4, 55, 169000], [2540, 2, 3, 22, 149000],
+  ]
+  function linest(formula) {
+    const wb = new Workbook()
+    const s = wb.sheets[0]
+    wb.setCells(data.flatMap((r, i) => r.map((v, c) => ({ sheetId: s.id, row: i, col: c, input: String(v) }))))
+    wb.setCells([{ sheetId: s.id, row: 20, col: 0, input: formula }])
+    return wb.getCell(s.id, 20, 0).value.rows
+  }
+
+  it('finds the coefficients, last input first, then the intercept', () => {
+    const [row] = linest('=LINEST(E1:E11, A1:D11)')
+    const expected = [-234.2371645, 2553.21066, 12529.76817, 27.64138737, 52317.83051]
+    row.forEach((v, i) => expect(v).toBeCloseTo(expected[i], 4))
+  })
+
+  it('gives the statistics block', () => {
+    const rows = linest('=LINEST(E1:E11, A1:D11, TRUE, TRUE)')
+    expect(rows[1][0]).toBeCloseTo(13.26801148, 5) // standard error of the age coefficient
+    expect(rows[1][4]).toBeCloseTo(12237.3616, 2) // of the intercept
+    expect(rows[2][0]).toBeCloseTo(0.996747993, 8) // R²
+    expect(rows[2][1]).toBeCloseTo(970.5784629, 4) // standard error of y
+    expect(rows[3][0]).toBeCloseTo(459.7536742, 4) // F
+    expect(rows[3][1]).toBe(6) // degrees of freedom
+    expect(rows[4][0]).toBeCloseTo(1732393319, -1)
+    expect(rows[4][1]).toBeCloseTo(5652135.316, 1)
+    expect(rows[2][2].code).toBe('#N/A')
+  })
+})
