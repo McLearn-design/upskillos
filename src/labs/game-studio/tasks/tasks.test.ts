@@ -47,7 +47,7 @@ describe('every task', () => {
       expect(before[0], `${task.id}: the first step is already done at the start`).not.toBe(true);
       d.runCode('Solution', task.solution);
       expect(problems(d.project)).toEqual([]);
-      const after = await evaluateTask(task, d.project, { ran: true }, load);
+      const after = await evaluateTask(task, d.project, { ran: true, ...task.solvedEditor }, load);
       expect(after).toEqual(task.steps.map(() => true));
     });
   }

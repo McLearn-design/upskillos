@@ -3,7 +3,7 @@
 // This is the single source of truth (docs/game-studio-architecture.md, ADR 2).
 // The editor changes it only through commands; the runtime receives a copy.
 
-export const FORMAT_VERSION = 3;
+export const FORMAT_VERSION = 4;
 
 export interface Vec2 { x: number; y: number }
 
@@ -121,4 +121,23 @@ export interface Project {
   /** Added in format 2. */
   tilesets: TilesetData[];
   assets: AssetData[];
+  /** Trained agents (ml/): what an NPC's script asks what to do. Added in format 4. */
+  brains: BrainData[];
+}
+
+/**
+ * A trained agent's brain, saved in the project and exported with the game: a node whose script is an agent
+ * (observe() and act(action)) and names it in its `brain` field is driven by it while the game runs.
+ */
+export interface BrainData {
+  /** brains/<name>.json */
+  path: string;
+  /** The agent's actions and what it sees, by name, in order (for reading the brain; the policy uses positions). */
+  actions: string[];
+  observation: string[];
+  method: 'q' | 'cem';
+  /** A Q table over binned states, or a linear policy's weights (ml/brain.ts). */
+  policy: { kind: 'q'; bins: number[][]; table: number[][]; visits?: number[] } | { weights: number[][] };
+  /** How it was trained: the episodes (or generations), and its score against random play's. */
+  trained: { steps: number; score: number; random: number };
 }

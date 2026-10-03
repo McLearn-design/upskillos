@@ -4,7 +4,7 @@
 
 import type { Project } from '../core/types';
 import type { EnvSpec } from '../ml/env';
-import type { LinearPolicy } from '../ml/cem';
+import type { AgentPolicy } from '../ml/policy';
 
 export type ToRuntime =
   | { type: 'load'; project: Project; scene: string; assets: { path: string; mime: string; bytes: ArrayBuffer }[] }
@@ -13,7 +13,7 @@ export type ToRuntime =
   | { type: 'restart' }
   | { type: 'inspect'; path: string }
   /** A trained agent plays (ml/): every frameSkip frames it looks at the game and holds an action's keys. null stops it. */
-  | { type: 'agent'; spec: EnvSpec; policy: LinearPolicy | null };
+  | { type: 'agent'; spec: EnvSpec; policy: AgentPolicy | null };
 
 export type LogLevel = 'log' | 'info' | 'warn' | 'error';
 

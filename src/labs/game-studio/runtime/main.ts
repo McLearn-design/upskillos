@@ -17,7 +17,7 @@ import { CHANNEL, type FromRuntime, type LogLevel, type ToRuntime } from './prot
 import { loadScripts, locate, type LoadedScripts } from './scripts';
 import { PhaserRenderer } from './phaserRenderer';
 import { observeGame, pressAction, type EnvSpec } from '../ml/env';
-import { act, type LinearPolicy } from '../ml/cem';
+import { actPolicy, type AgentPolicy } from '../ml/policy';
 
 const send = (m: FromRuntime) => parent.postMessage({ channel: CHANNEL, ...m }, '*');
 
@@ -79,6 +79,7 @@ async function start(msg: Extract<ToRuntime, { type: 'load' }>): Promise<void> {
         });
       } catch (e) { report(e as Error, null, 'build'); return; }
       Object.assign(globalThis, scriptGlobals(game));
+      if (agent?.spec.agent) game.setAgentPolicy(agent.spec.agent, agent.policy);   // still watching after a restart
       game.start();
       send({ type: 'running', scene: scene!.path });
     }
@@ -96,11 +97,12 @@ async function start(msg: Extract<ToRuntime, { type: 'load' }>): Promise<void> {
 // ── a trained agent playing (ml/) ─────────────────────────────────────────
 // Every frameSkip frames it reads the same numbers it was trained on and holds the keys of its action,
 // as GameEnv.step does in training.
-let agent: { spec: EnvSpec; policy: LinearPolicy; frame: number; held: string[] } | null = null;
+let agent: { spec: EnvSpec; policy: AgentPolicy; frame: number; held: string[] } | null = null;
 function drive(g: Game): void {
   const a = agent!;
+  if (a.spec.agent) return;   // a script agent: the engine drives it (setAgentPolicy)
   if (a.frame++ % (a.spec.frameSkip ?? 4) !== 0) return;
-  const action = a.spec.actions[act(a.policy, observeGame(g, a.spec))] ?? [];
+  const action = a.spec.actions?.[actPolicy(a.policy, observeGame(g, a.spec))] ?? [];
   pressAction(g, lastLoad!.project.input, a.held, action);
   a.held = action;
 }
@@ -129,7 +131,12 @@ addEventListener('message', (ev: MessageEvent) => {
   else if (m.type === 'pause' || m.type === 'resume') { paused = m.type === 'pause'; game?.input.releaseAll(); send({ type: 'paused', paused }); }
   else if (m.type === 'restart' && lastLoad) void start(lastLoad);
   else if (m.type === 'inspect') send({ type: 'state', path: m.path, props: inspect(m.path) });
-  else if (m.type === 'agent') { if (agent && game) pressAction(game, lastLoad!.project.input, agent.held, []); agent = m.policy ? { spec: m.spec, policy: m.policy, frame: 0, held: [] } : null; }
+  else if (m.type === 'agent') {
+    if (agent && game) { pressAction(game, lastLoad!.project.input, agent.held, []); if (agent.spec.agent) game.setAgentPolicy(agent.spec.agent, null); }
+    agent = m.policy ? { spec: m.spec, policy: m.policy, frame: 0, held: [] } : null;
+    // A script agent (an NPC) is driven by the engine, as a brain in the project would drive it.
+    if (agent?.spec.agent && game) game.setAgentPolicy(agent.spec.agent, agent.policy);
+  }
 });
 
 send({ type: 'ready' });

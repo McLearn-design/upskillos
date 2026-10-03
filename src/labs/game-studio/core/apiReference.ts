@@ -380,6 +380,15 @@ const ENTRIES: ApiEntry[] = [
     ],
   },
   {
+    name: 'ai', kind: 'global', godot: '(none: Godot has no built-in learning agents)',
+    doc: 'Trained agents (Run › Train an agent…). A node whose script has observe() and act(action) is an agent; give it brain = \'brains/name.json\' and the engine asks the brain what to do every decideEvery frames (4 unless the script says). Training drives the same two methods, so the agent behaves the same in training and in the game. Optional: actions (names, in order), observations (names), reward() (earned since the last decision) and done() (the episode is over).',
+    members: [
+      p('training', 'boolean', 'True while an agent is being trained: a player script can play itself then (flee, wander), so an NPC can learn before anyone plays.', '', { readonly: true }),
+      m('has', '(path: string): boolean', 'Whether the project has a brain at this path.', ''),
+      m('act', '(path: string, observation: number[]): number', 'What that brain does for these numbers: the number of an action. For asking a brain directly, instead of the brain field.', ''),
+    ],
+  },
+  {
     name: 'console', kind: 'global', builtin: true, godot: 'print(), push_warning(), push_error()',
     doc: 'JavaScript’s console. While the game runs, what you log appears in the Output panel below the viewport.',
     members: [
@@ -484,6 +493,8 @@ export const SCENE_API: SceneApiEntry[] = [
       { name: 'scene', type: '(path: string): SceneHandle', doc: 'An existing scene.' },
       { name: 'setMainScene', type: '(path: string): void', doc: 'The scene ▶ Run starts.' },
       { name: 'writeScript', type: '(path: string, source: string): void', doc: 'Create or replace a script in scripts/.' },
+      { name: 'saveBrain', type: '(path: string, brain: { actions, observation, method, policy, trained }): void', doc: 'Save a trained agent\'s brain in brains/ (Run › Train an agent… does this). A node whose script is an agent and names it in its brain field is driven by it.' },
+      { name: 'removeBrain', type: '(path: string): void', doc: 'Delete a brain from brains/.' },
       { name: 'addAction', type: '(name: string, keys: string[]): void', doc: 'A new input action, with KeyboardEvent.code key names ("Space", "KeyA", "ArrowLeft").' },
       { name: 'setActionKeys', type: '(name: string, keys: string[]): void', doc: 'Change an action’s keys.' },
       { name: 'removeAction', type: '(name: string): void', doc: 'Remove an action.' },

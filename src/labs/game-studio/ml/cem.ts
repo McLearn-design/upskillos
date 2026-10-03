@@ -9,19 +9,9 @@
 // Seeded throughout, so a run can be repeated exactly (and tested).
 
 import { seeded, type GameEnv } from './env';
+import { actLinear as act, type LinearPolicy } from './brain';
 
-export interface LinearPolicy { weights: number[][] }
-
-/** The action a linear policy takes for an observation. */
-export function act(policy: LinearPolicy, observation: number[]): number {
-  let best = 0, bestScore = -Infinity;
-  policy.weights.forEach((w, a) => {
-    let s = w[w.length - 1];
-    for (let i = 0; i < observation.length; i++) s += w[i] * observation[i];
-    if (s > bestScore) { bestScore = s; best = a; }
-  });
-  return best;
-}
+export { act, type LinearPolicy };
 
 /** Play one episode; its total reward. `choose` picks each action (a policy, or random). */
 export function episode(env: GameEnv, choose: (observation: number[]) => number, seed: number): { total: number; steps: number } {
@@ -65,7 +55,7 @@ function gaussian(rand: () => number): () => number {
 
 /** Train, one generation at a time (so a page can draw the learning curve as it goes). */
 export function* cem(env: GameEnv, opts: CemOptions): Generator<Generation, LinearPolicy> {
-  const A = env.actionCount, D = env.spec.observation.length + 1, n = A * D;
+  const A = env.actionCount, D = env.observationSize + 1, n = A * D;
   const pop = opts.population ?? 24, keep = Math.max(2, Math.round(pop * (opts.elite ?? 0.25))), eps = opts.episodes ?? 1;
   const seed = opts.seed ?? 1, rand = seeded(seed), normal = gaussian(rand);
   const shape = (theta: number[]): LinearPolicy => ({ weights: Array.from({ length: A }, (_, a) => theta.slice(a * D, (a + 1) * D)) });

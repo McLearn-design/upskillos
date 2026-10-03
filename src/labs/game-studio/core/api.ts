@@ -10,7 +10,7 @@
 // checks its arguments; the editor's commands (core/doc.ts) call these same
 // functions, which is why replaying the log gives the same project.
 
-import type { AssetData, NodeData, Project, PropValue, SceneData, TilesetData, Vec2 } from './types';
+import type { AssetData, BrainData, NodeData, Project, PropValue, SceneData, TilesetData, Vec2 } from './types';
 import { applyEdits, cellMap, rectEdits, textEdits, tilesetProblem, type CellEdit } from './tiles';
 import { checkProp, isNodeType, nodeType, propDef, propsOf, propValue } from './registry';
 import { expandScene, expandSceneRoot, wouldLoop } from './instances';
@@ -310,6 +310,9 @@ export interface ProjectApi {
   scene(path: string): SceneHandle;
   setMainScene(path: string): void;
   writeScript(path: string, source: string): void;
+  /** Save a trained agent's brain at brains/<name>.json (Run › Train an agent… does this). Replaces one already there. */
+  saveBrain(path: string, brain: Omit<BrainData, 'path'>): void;
+  removeBrain(path: string): void;
   addAction(name: string, keys: string[]): void;
   setActionKeys(name: string, keys: string[]): void;
   removeAction(name: string): void;
@@ -346,6 +349,22 @@ function tilesetHandle(p: Project, path: string): TilesetHandle {
     });
   }
   return h;
+}
+
+/** What is wrong with a brain's data, or null: its policy must fit its actions (a row per action, or a value per action). */
+export function brainProblem(b: BrainData): string | null {
+  const nA = Array.isArray(b.actions) ? b.actions.length : 0;
+  if (!nA) return `${b.path}: a brain needs its actions`;
+  if (!Array.isArray(b.observation)) return `${b.path}: a brain needs the names of what it sees`;
+  if (b.method !== 'q' && b.method !== 'cem') return `${b.path}: the method is "q" or "cem"`;
+  const pol = b.policy as { kind?: string; bins?: unknown; table?: unknown; weights?: unknown };
+  if (b.method === 'q') {
+    if (pol?.kind !== 'q' || !Array.isArray(pol.bins) || !Array.isArray(pol.table)) return `${b.path}: a Q brain needs bins and a table`;
+    const states = (pol.bins as number[][]).reduce((n, c) => (c.length ? n * (c.length + 1) : n), 1);
+    if ((pol.table as number[][]).length !== states) return `${b.path}: its bins make ${states} states, but its table has ${(pol.table as number[][]).length} rows`;
+    if ((pol.table as number[][]).some((row) => !Array.isArray(row) || row.length !== nA || row.some((q) => typeof q !== 'number'))) return `${b.path}: every row of its table needs a number for each of its ${nA} actions`;
+  } else if (!Array.isArray(pol?.weights) || (pol.weights as number[][]).length !== nA) return `${b.path}: a linear brain needs a row of weights for each of its ${nA} actions`;
+  return null;
 }
 
 export function checkProjectPath(path: string, folder: string, ext: RegExp): string | null {
@@ -394,6 +413,18 @@ export function projectApi(p: Project): ProjectApi {
       if (bad) throw new Error(bad);
       const s = p.scripts.find((x) => x.path === path);
       if (s) s.source = String(source); else p.scripts.push({ path, source: String(source) });
+    },
+    saveBrain(path, brain) {
+      const bad = checkProjectPath(path, 'brains', /\.json$/) ?? brainProblem({ path, ...brain });
+      if (bad) throw new Error(bad);
+      const data: BrainData = JSON.parse(JSON.stringify({ path, actions: brain.actions, observation: brain.observation, method: brain.method, policy: brain.policy, trained: brain.trained }));
+      p.brains ??= [];
+      const i = p.brains.findIndex((b) => b.path === path);
+      if (i >= 0) p.brains[i] = data; else p.brains.push(data);
+    },
+    removeBrain(path) {
+      if (!(p.brains ?? []).some((b) => b.path === path)) throw new Error(`No brain at "${path}"`);
+      p.brains = p.brains.filter((b) => b.path !== path);
     },
     addAction(name, keys) {
       if (!/^[a-z][a-z0-9_]*$/.test(name)) throw new Error('Action names are lower_case_with_underscores');

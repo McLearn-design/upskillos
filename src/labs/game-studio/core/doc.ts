@@ -9,7 +9,7 @@
 // storage). A project model is small: a scene of a thousand nodes is a few
 // hundred kilobytes of JSON.
 
-import type { NodeData, Project, PropValue, SceneData } from './types';
+import type { BrainData, NodeData, Project, PropValue, SceneData } from './types';
 import { addInstance, addNode, connect, deleteNode, disconnect, duplicate, nodeHandle as nodeHandleFor, projectApi, rename, reparent, runSceneCode, setGroups, setProp, setScript } from './api';
 import { expandScene } from './instances';
 import { findNode, pathOf, sceneAt } from './project';
@@ -263,6 +263,15 @@ export class Doc {
 
   writeScript(path: string, source: string, label = `Save ${path}`): void {
     this.run(label, null, `project.writeScript(${lit(path)}, ${lit(source)})`, () => projectApi(this.project).writeScript(path, source));
+  }
+
+  /** Save a trained agent's brain (Run › Train an agent… › Save as brain). */
+  saveBrain(path: string, brain: Omit<BrainData, 'path'>): void {
+    this.run(`Save brain ${path}`, null, `project.saveBrain(${lit(path)}, ${lit(brain)})`, () => projectApi(this.project).saveBrain(path, brain));
+  }
+
+  removeBrain(path: string): void {
+    this.run(`Delete brain ${path}`, null, `project.removeBrain(${lit(path)})`, () => projectApi(this.project).removeBrain(path));
   }
 
   createTileset(path: string, opts: { image: string; tileWidth: number; tileHeight: number; margin?: number; spacing?: number; solid?: number[] }): void {

@@ -20,6 +20,7 @@ export function newProject(name = 'My Game'): Project {
     scripts: [],
     tilesets: [],
     assets: [],
+    brains: [],
   };
 }
 

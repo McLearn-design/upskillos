@@ -12,6 +12,11 @@
 //
 // A lifecycle method that throws is reported once, and that node is skipped from
 // then on; the rest of the game keeps running.
+//
+// Agents (ml/): a node whose script has observe() and act(action) is an agent. If its `brain` field names a
+// brain in the project (brains/ghost.json), then at the start of every decideEvery-th frame (4 unless the
+// script says) the engine asks it what it sees, looks up what the brain does there, and calls act(). Training
+// (ml/env.ts) drives the same two methods itself, so an agent behaves the same in training and in the game.
 
 import type { Connection, NodeData, Project, PropValue, SceneData } from '../core/types';
 import { propsOf } from '../core/registry';
@@ -22,6 +27,7 @@ import { scans, separate } from './physics';
 import { tilesetGrid } from '../core/tiles';
 import { expandScene, expandSceneRoot } from '../core/instances';
 import { Vec2 } from './vec2';
+import { actPolicy, type AgentPolicy } from '../ml/brain';
 
 export const PHYSICS_DT = 1 / 60;
 
@@ -85,11 +91,22 @@ export class Game {
     }
     // With no camera, the screen shows the world from (0, 0) to (width, height).
     this.view = { x: this.screenSize.w / 2, y: this.screenSize.h / 2, zoom: 1 };
+    for (const b of project.brains ?? []) this.brains.set(b.path, b.policy as AgentPolicy);
     this.project = project;
     this.scenePath = scene.path;
     this.root = this.buildTree(expandScene(project, scene).root);
     this.root._game = this;
   }
+
+  /** The project's trained brains, by path. */
+  private brains = new Map<string, AgentPolicy>();
+  /** Brains given to nodes by path from outside the game (Watch it play), over their own `brain` field. */
+  private agentOverrides = new Map<string, AgentPolicy>();
+  private agentFrames = new WeakMap<Node, number>();
+  /** The agent being trained (ml/env.ts drives it, so the engine leaves it alone). */
+  trainee: Node | null = null;
+  /** True while an agent trains: scripts can read it as ai.training (to have the player play itself, say). */
+  training = false;
 
   private tilesets = new Map<string, TilesetInfo>();
   /** A tileset by its path, for TileMapLayer. */
@@ -165,6 +182,7 @@ export class Game {
   step(dt: number): void {
     this.time.frame++;
     this.time.now += dt;
+    this.driveAgents();
     this.accumulator = Math.min(this.accumulator + dt, 0.25);
     while (this.accumulator >= PHYSICS_DT - 1e-12) {
       this.stepDelta = PHYSICS_DT;
@@ -187,6 +205,42 @@ export class Game {
     this.draw();
     this.input.endFrame();
   }
+
+  // ── agents ────────────────────────────────────────────────────────────
+
+  /** Agents with a brain decide now, on their decideEvery-th frame (the first frame included). */
+  private driveAgents(): void {
+    this.each((n) => {
+      if (n === this.trainee || n._broken || !isAgent(n)) return;
+      const field = (n as unknown as { brain?: unknown }).brain;
+      const policy = this.agentOverrides.get(n.path) ?? (typeof field === 'string' ? this.brains.get(field) : undefined);
+      if (!policy) return;
+      const k = this.agentFrames.get(n) ?? 0;
+      this.agentFrames.set(n, k + 1);
+      if (k % decideEvery(n) !== 0) return;
+      this.guard(n, 'act', () => { n.act(actPolicy(policy, n.observe())); });
+    });
+  }
+
+  /** Drive the agent at this path with a policy (Watch it play), or stop doing so (null). */
+  setAgentPolicy(path: string, policy: AgentPolicy | null): void {
+    if (policy) this.agentOverrides.set(path, policy); else this.agentOverrides.delete(path);
+  }
+
+  /** Whether a brain is in the project, and what it does for an observation: for scripts (the ai global). Built
+   *  with a closure, so a script reaches these three and not the game itself. */
+  readonly ai = ((game: Game) => ({
+    get training() { return game.training; },
+    has(path: string) { return game.brains.has(path); },
+    act(path: string, observation: number[]) {
+      const p = game.brains.get(path);
+      if (!p) throw new Error(`There is no brain "${path}" in the project (train one with Run › Train an agent…, then Save as brain)`);
+      return actPolicy(p, observation);
+    },
+  }))(this);
+
+  /** Run fn for a node as the engine runs its lifecycle methods: a mistake is reported once and stops the node. */
+  _run<T>(n: Node, phase: string, fn: () => T): T | undefined { return this.guard(n, phase, fn); }
 
   /** Every node in tree order (parents before children). */
   each(fn: (n: Node) => void): void {
@@ -400,8 +454,17 @@ export function applyProps(node: Node, type: string, props: Record<string, PropV
 
 /** The globals a script sees (ADR 4). */
 export function scriptGlobals(game: Game): Record<string, unknown> {
-  return { input: game.input, scene: game.sceneApi, time: game.time, math: MATH, physics: { gravity: game.gravity }, Vec2, PhysicsBody2D, ...NODE_CLASSES };
+  return { input: game.input, scene: game.sceneApi, time: game.time, math: MATH, physics: { gravity: game.gravity }, ai: game.ai, Vec2, PhysicsBody2D, ...NODE_CLASSES };
 }
+
+/** A node whose script makes it an agent: it can say what it sees and do an action. */
+export type AgentNode = Node & { observe(): number[]; act(action: number): void; reward?(): number; done?(): boolean; actions?: string[]; observations?: string[]; decideEvery?: number };
+export function isAgent(n: Node): n is AgentNode {
+  const a = n as unknown as Record<string, unknown>;
+  return typeof a.observe === 'function' && typeof a.act === 'function';
+}
+/** Frames between an agent's decisions: its decideEvery, 4 unless it says. */
+export const decideEvery = (n: AgentNode): number => Math.max(1, Math.round(Number(n.decideEvery) || 4));
 
 /** Engine callbacks that are also emitted as signals of the same name. */
 const SIGNALS = new Set(['bodyEntered', 'bodyExited', 'animationFinished', 'onCollision']);

@@ -23,7 +23,7 @@ are lesson 6.5, and chasing is in the Maze Chase example. Tetris is now chapter 
 | 5 Tilemaps | tilesets and painting; solid walls; maps from Tiled and Tile Mapper |
 | 6 Scenes | scenes inside scenes; making things while the game runs; groups; signals; changing scenes |
 | 7 Tetris | one lesson per Tetris task, 1 to 9 |
-| 8 Bonus | a game that learns to play itself (Run › Train an agent…, no task) |
+| 8 Bonus | a game that learns to play itself: Q-learning (Run › Train an agent…, task `q-agent`) |
 
 Every number in the optional maths was checked against the engine's code:
 - physics: the minimum translation vector, sliding v − (v·n)n, bounce v − (1+e)(v·n)n, a fixed 1/60 s step and
@@ -213,8 +213,10 @@ hood** is the maths or algorithm the lesson explains.
   matrices, Fisher–Yates, and speed as 0.5 × 0.85^(level − 1).
 
 **9. Bonus: a game that learns** (Phase 9 is built in Game Studio: Run › Train an agent…)
-- One lesson: a game as an environment (what the agent sees, does and earns), the cross-entropy method, and
-  training an agent to play Breakout, then watching it play. The ML Lab links to it as a bonus.
+- One lesson: Q-learning, built on the ML Lab's lab 37. The loop, states from bins, the return, Q and Q*, the
+  Bellman optimality equation, the TD error and ε-greedy exploration, in a notebook on a small Catch game. Then the
+  task `q-agent`: bin Breakout's numbers into 14 states, train, watch it play, and train on coarser states. ML Lab
+  lesson 37.4 links to it. (Rebuilt 2026-10-03; it first taught only the cross-entropy method.)
 
 ## Lessons as built (2026-10-01)
 
