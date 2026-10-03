@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Vertices, edges and degrees
 
+::: math
+\[ \sum_{v \in V} \deg(v) = 2\,|E| \]
+- $V$: the vertices; $E$: the edges; $\deg(v)$: edges meeting $v$
+- every edge has two ends, so the number of odd-degree vertices is even
+In code: `deg[a] += 1` and `deg[b] += 1` for each conveyor `(a, b)`
+:::
+
+
 A **graph** has a set of vertices and a set of edges, each edge joining two vertices. In an undirected graph an edge can be travelled either way, like a two-way conveyor or a cable. The **degree** of a vertex is the number of edges meeting it. Because each edge has two ends, adding up all the degrees counts every edge exactly twice:
 
 \[ \sum_v \deg(v) = 2|E| \]
@@ -42,6 +50,14 @@ The degrees sum to 16, twice the 8 conveyors, as the lemma demands. Two stations
 
 ## The adjacency matrix and counting walks
 
+::: math
+\[ A_{ij} = \begin{cases} 1 & i, j \text{ joined} \\ 0 & \text{otherwise} \end{cases}, \qquad (A^2)_{ij} = \sum_k A_{ik} A_{kj}, \qquad (A^k)_{ij} = \#\text{walks of length } k \]
+- row sums of $A$ are the degrees
+- each term $A_{ik}A_{kj}$ is 1 exactly when $i \to k \to j$ is a walk
+In code: `np.linalg.matrix_power(A, 3)[1, 4]`
+:::
+
+
 A graph on n vertices is captured completely by its **adjacency matrix** A: an n × n matrix with A_ij = 1 if vertices i and j are joined, 0 otherwise. For an undirected graph it is symmetric, and each row sum is that vertex's degree.
 
 Matrix multiplication then does something remarkable. The entry (A²)_ij = Σ_k A_ik A_kj counts the vertices k adjacent to both i and j, that is, the walks of length 2 from i to j. By the same argument, (Aᵏ)_ij counts the **walks** of length k (routes along k edges, allowed to revisit). Predict before running: how many 3-conveyor routes lead from Sort to Pack?
@@ -68,6 +84,14 @@ print("walks of length 2 from each station back to itself:", np.diag(np.linalg.m
 There are 6 three-step routes from Sort to Pack (for example Sort–Wash–Dry–Pack, or Sort–Pack–Dry–Pack), and the brute-force enumeration agrees. The diagonal of A² is the degree of each vertex, since a 2-step walk back to the start goes out along an edge and returns. The same matrix powers count paths in chemistry, model random walks in the probability lessons, and underlie the PageRank method for ranking web pages.
 
 ## Connectivity and the Laplacian
+
+::: math
+\[ L = D - A, \qquad L\mathbf{1} = \mathbf{0}, \qquad \#\{\text{zero eigenvalues of } L\} = \#\text{components} \]
+- $D$: the diagonal matrix of degrees
+- every row of $L$ sums to zero, so 0 is always an eigenvalue
+In code: `np.linalg.eigvalsh(laplacian(n, edges))`, compared with `components_bfs(n, edges)`
+:::
+
 
 A graph is **connected** if every vertex can reach every other. When it is not, it splits into **components**. Breadth-first search finds them, as in the DSA series. Linear algebra gives a second, striking method through the **Laplacian matrix** L = D − A, where D is the diagonal matrix of degrees. L always has eigenvalue 0 (each row sums to zero, so the all-ones vector satisfies L1 = 0), and the number of zero eigenvalues equals the number of connected components. Predict before running: if the Dry–QC conveyor is removed, how many separate groups remain, and what does L say?
 
@@ -116,6 +140,14 @@ The full layout has exactly one zero eigenvalue: it is connected. With the Dry�
 
 ## Euler trails
 
+::: math
+\[ \text{Euler trail exists} \;\Longleftrightarrow\; \text{connected and } \#\{v : \deg(v) \text{ odd}\} \in \{0, 2\} \]
+- each pass through a vertex uses one edge in and one out
+- with 2 odd vertices the trail starts at one and ends at the other
+In code: `euler_trail(n, edges)` (Hierholzer's algorithm)
+:::
+
+
 Can a maintenance engineer walk every conveyor exactly once, without retracing any? Leonhard Euler solved this in 1736 for the bridges of Königsberg, founding graph theory. Each time a route passes through a vertex it uses two of its edges, one in and one out, so every vertex except the start and the end must have **even** degree. Euler's theorem: a connected graph has an **Euler trail** (using every edge once) exactly when it has 0 or 2 odd-degree vertices; with 0 the trail can return to its start (an **Euler circuit**), with 2 it must start at one odd vertex and end at the other. **Hierholzer's algorithm** finds one: walk until stuck, then splice in detours from vertices on the route that still have unused edges. Predict before running: does the packing hall have an Euler trail, and where must it start?
 
 ```python
@@ -154,6 +186,14 @@ The stack holds the current walk; when a vertex has no unused edges left it is m
 The hall has exactly two odd stations, In and Out, so an Euler trail exists, starting at In and ending at Out, and the algorithm finds one using all 8 conveyors once each. Adding a conveyor from In to Out makes every degree even, and the trail becomes a circuit that returns to its start. Snow-ploughing, street sweeping and meter-reading routes are planned this way, adding the fewest repeated edges when odd vertices make a perfect trail impossible.
 
 ## Trees: the fewest links
+
+::: math
+\[ |E_\text{tree}| = n - 1, \qquad \text{MST} = \arg\min_{\text{spanning trees } T} \sum_{e \in T} w(e) \]
+- a tree connects $n$ vertices with no cycles
+- Kruskal: take edges cheapest first, skipping any that would close a cycle
+In code: `sorted(cables)`, keeping an edge when `find(a) != find(b)`
+:::
+
 
 A connected graph with no cycles is a **tree**. Trees are the cheapest way to connect n points: every tree on n vertices has exactly n − 1 edges, removing any edge disconnects it, and adding any edge creates a cycle. A **spanning tree** of a network keeps all its vertices connected using only n − 1 of its links, and when links have costs, a **minimum spanning tree** is the cheapest such network: the least cable that still connects every machine. **Kruskal's algorithm** finds it greedily: consider links from cheapest up, and keep each one unless it would close a cycle. Predict before running: the 7 stations' possible cable runs have costs; how many runs does the cheapest connecting network use?
 

@@ -11,6 +11,14 @@ This lesson covers:
 
 ## Ratios and proportion
 
+::: math
+\[ \text{direct: } y = k\,x, \qquad \text{inverse: } y = \frac{k}{x} \]
+- gear ratio $= \dfrac{N_\text{driver}}{N_\text{driven}}$; here $\dfrac{48}{16} = 3$
+- inverse proportion: $n$ machines finish a job in $T_1 / n$ hours
+In code: `Fraction(48, 16)` keeps the ratio exact; `hours_on_one / machines` is the inverse proportion
+:::
+
+
 A **ratio** compares two quantities of the same kind by division: a gear with 48 teeth driving one with 16 has a ratio of 48 : 16, which is 3 : 1, so the small gear turns 3 times for each turn of the large one. Two ratios that are equal form a **proportion**, and most "how much do I need" questions are proportions in disguise. Mixing 5% coolant means concentrate : total = 5 : 100, so 12 litres of mixture needs 12 × 5 / 100 = 0.6 litres of concentrate.
 
 Two kinds of proportion behave differently:
@@ -41,6 +49,14 @@ Three machines take 10 hours and five take 6: the hours times the machines stay 
 
 ## Rates, and rates working together
 
+::: math
+\[ T_\text{together} = \frac{1}{\dfrac{1}{T_1} + \dfrac{1}{T_2}}, \qquad \bar{v} = \frac{2}{\dfrac{1}{v_1} + \dfrac{1}{v_2}} \]
+- rates add: $r = r_1 + r_2$; times do not
+- $\bar{v}$: the harmonic mean, the true average speed over equal distances
+In code: `tank / sum(pump_rates)`, and the harmonic mean `n / sum(1 / v for v in values)`
+:::
+
+
 A **rate** is a ratio of quantities of **different** kinds, usually per unit time: litres per minute, parts per hour, millimetres per revolution. Rates of things working **together** add: two pumps at 12 and 8 litres per minute together deliver 20. But **times** for a job do not add: if one pump alone fills the tank in 50 minutes and the other in 75, together they do not take 125 minutes, or the average 62.5. Add their **rates** (1/50 + 1/75 of a tank per minute) and invert.
 
 The same trap appears with average speeds. Driving 60 km at 60 km/h and back at 40 km/h does not average 50 km/h. The average speed is total distance over total time, which is the **harmonic mean** of the speeds when the distances are equal. Predict before running: how long do the two pumps take together, and what is the true average speed?
@@ -67,6 +83,14 @@ Together the pumps take 30 minutes, much less than either alone, as they must. T
 
 ## Scaling: the square–cube law
 
+::: math
+\[ \text{length} \propto k, \qquad \text{area} \propto k^2, \qquad \text{volume, mass} \propto k^3 \]
+- $k$: the scale factor applied in every direction
+- self-weight stress $= \dfrac{\text{weight}}{\text{area}} \propto \dfrac{k^3}{k^2} = k$
+In code: `length * k`, `area * k ** 2`, `volume * k ** 3`
+:::
+
+
 Scale a part by a factor k in every direction. Every **length** (edges, hole spacings, perimeters) multiplies by k. Every **area** (cross-sections, surfaces, faces) multiplies by k², because area is length times length. Every **volume**, and so every mass of the same material, multiplies by k³.
 
 This is the **square–cube law**, and it has consequences. A beam's strength depends on its cross-section (k²), but its weight grows with its volume (k³), so the stress from its own weight grows like k³ / k² = k. Scale a working bracket up 10 times and the stress from its own weight is 10 times larger. Heat is generated through a volume and lost through a surface, which is why large motors need forced cooling that small ones do not. Predict before running: if a half-scale prototype works, how much heavier and how much more stressed by its own weight is the full-size part?
@@ -89,6 +113,14 @@ The prototype is half scale, so going to full size is k = 2: 8 times the mass, 4
 The full-size part weighs 680 g, eight times the prototype, but its cross-sections are only four times larger, so stresses from its own weight double. A part that coped at half size might not at full size, and a scale model that works proves less than it seems. Engineers handle this with dimensionless numbers, the subject of a later lesson, which tell them exactly which quantities must match between a model and the real thing.
 
 ## Normalising
+
+::: math
+\[ \text{rate per }1000 = 1000 \times \frac{\text{count}}{\text{total}}, \qquad \text{share}_i = \frac{x_i}{\sum_j x_j} \]
+- normalising puts quantities of different sizes on a common scale
+- shares always add up to 1
+In code: `1000 * scrapped / made`, and `e / total` for each share
+:::
+
 
 Comparing quantities of different sizes or units often starts by putting them on a common scale, called **normalising**. Common forms:
 

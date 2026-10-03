@@ -13,6 +13,14 @@ This lesson covers:
 
 ## The equation and its two numbers
 
+::: math
+\[ m x'' + c x' + k x = F(t), \qquad \omega_n = \sqrt{\frac{k}{m}}, \qquad \zeta = \frac{c}{2\sqrt{km}} \]
+- as a first-order system: $x' = v$ and $v' = \dfrac{F - cv - kx}{m}$
+- $\omega_n$: natural frequency (rad/s); $\zeta$: damping ratio
+In code: `rhs(t, s, m, c, k)` returns `[v, (F(t) - c * v - k * x) / m]`; `zeta = c / (2 * math.sqrt(k * m))`
+:::
+
+
 A mass m on a spring of stiffness k, with a damper (rubber's internal friction, a shock absorber) exerting a force proportional to velocity with coefficient c, and an external force F(t), obeys Newton's second law:
 
 \[ m x'' + c x' + k x = F(t) \]
@@ -56,6 +64,14 @@ The pump rocks at about 10 Hz with a damping ratio of 0.1, so it oscillates, eac
 
 ## Underdamped, critical and overdamped
 
+::: math
+\[ x(t) \approx x_0\,e^{-\zeta\omega_n t}\cos(\omega_d t), \qquad \omega_d = \omega_n\sqrt{1 - \zeta^2} \;\;(\zeta < 1) \]
+- $\zeta < 1$: underdamped, oscillates inside the envelope $e^{-\zeta\omega_n t}$
+- $\zeta = 1$: critically damped; $\zeta > 1$: overdamped, creeps back
+In code: `cz = z * 2 * math.sqrt(k * m)` for each $\zeta$, solved with `solve_ivp(rhs, ...)`
+:::
+
+
 The damping ratio sorts all behaviour into three cases:
 
 - **underdamped** (ζ < 1): decaying oscillation at the damped frequency ω_d = ωₙ√(1 − ζ²);
@@ -88,6 +104,14 @@ Light damping (ζ = 0.1) is still ringing after 0.3 s; ζ = 0.5 overshoots below
 
 ## Measuring damping from a recording
 
+::: math
+\[ \delta = \ln\frac{x_i}{x_{i+1}}, \qquad \zeta = \frac{\delta}{\sqrt{4\pi^2 + \delta^2}} \]
+- $x_i$: successive peaks of a decaying recording
+- every cycle shrinks the amplitude by the same factor, so $\delta$ is constant
+In code: `deltas = np.log(peak_vals[:-1] / peak_vals[1:])`, then `delta = deltas.mean()`
+:::
+
+
 Mass and stiffness can be measured statically, but damping is hard to predict: it comes from material friction, joints and air. It is usually **measured** by a tap test: strike the structure, record the decaying vibration, and compare successive peaks. For an underdamped system, every cycle shrinks the amplitude by the same factor, so the **logarithmic decrement** δ = ln(x_i / x_{i+1}) between successive peaks is constant, and
 
 \[ \zeta = \frac{\delta}{\sqrt{4\pi^2 + \delta^2}} \]
@@ -114,6 +138,14 @@ A peak is a sample that is the largest within 250 samples (25 ms) on either side
 The successive peaks (1.066, 0.570 and 0.305 mm) shrink by the same ratio, about 1.87, each cycle, and the averaged decrement gives ζ ≈ 0.099, close to the true 0.1 despite the noise. The time between peaks gives the damped frequency, about 9.8 Hz against the true 9.91 Hz: with only three peaks, the noise shifts each peak's timing slightly, so the frequency estimate is the rougher of the two. With these two numbers from a single tap, the whole model is known.
 
 ## Forced vibration and resonance
+
+::: math
+\[ r = \frac{\omega}{\omega_n}, \qquad \frac{X}{F_0/k} = \frac{1}{\sqrt{(1 - r^2)^2 + (2\zeta r)^2}} \]
+- $F_0/k$: the static deflection under the force amplitude
+- at resonance ($r = 1$) the amplification is $\dfrac{1}{2\zeta}$
+In code: `amplification(r, z)`, checked against `solve_ivp` with `F0 * math.sin(w * t)`
+:::
+
 
 A pump with a slightly unbalanced rotor pushes on its mounts with a force F₀ sin(ωt) at its running frequency. After the start-up transient dies away, the mass vibrates at the forcing frequency with a steady amplitude X. With r = ω/ωₙ the **frequency ratio**,
 
@@ -148,6 +180,14 @@ The simulation runs for 3 s and measures the amplitude only after 2 s, when the 
 At resonance the amplitude is about five times the static deflection (1/(2ζ) = 5), and the simulation and formula agree; at 20 Hz, twice the natural frequency, the amplitude drops to about a third of static. The curves show the whole picture: light damping means a tall, sharp resonance peak. A machine must not run near its natural frequency, and if it must pass through it during start-up, damping limits the peak.
 
 ## Isolating a vibrating machine
+
+::: math
+\[ T = \sqrt{\frac{1 + (2\zeta r)^2}{(1 - r^2)^2 + (2\zeta r)^2}} \]
+- transmissibility: force reaching the floor divided by the shaking force
+- $T < 1$ only for $r > \sqrt{2}$: isolation needs soft mounts
+In code: `transmissibility(r, z)` with `r_now = 2 * math.pi * run_hz / wn`
+:::
+
 
 What reaches the floor is the force through the mounts, spring plus damper. Its ratio to the shaking force is the **transmissibility**
 

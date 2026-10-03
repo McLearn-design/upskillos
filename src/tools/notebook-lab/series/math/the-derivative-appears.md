@@ -13,6 +13,14 @@ This lesson covers:
 
 ## The definition
 
+::: math
+\[ f'(x) = \lim_{h \to 0} \frac{f(x + h) - f(x)}{h}, \qquad \frac{(x + h)^2 - x^2}{h} = 2x + h \;\to\; 2x \]
+- the limit is the value the quotient approaches as $h$ shrinks, never using $h = 0$ itself
+- other notations: $\dfrac{dy}{dx}$ and $\dfrac{d}{dx} f(x)$
+In code: `quotient(f, x, h)` is `(f(x + h) - f(x)) / h`
+:::
+
+
 The **derivative** of f at x is the limit of the difference quotient as the step h shrinks to zero:
 
 \[ f'(x) = \lim_{h \to 0} \frac{f(x + h) - f(x)}{h} \]
@@ -40,6 +48,14 @@ The last column checks the algebra: each quotient equals 2x + h exactly, up to r
 The quotient is always 6 + h: from the right (h > 0) it is above 6, from the left below, and it closes in on 6 from both sides. That two-sided agreement is what the limit requires. The derivative is exact, 2x, even though every numerical quotient is slightly off.
 
 ## The power rule
+
+::: math
+\[ \frac{d}{dx}\,x^n = n\,x^{n-1}, \qquad \frac{d}{dx}\big(a f + b g\big) = a f' + b g' \]
+- from $(x + h)^n = x^n + n x^{n-1} h + (\text{terms in } h^2 \text{ and higher})$
+- holds for negative and fractional $n$ too
+In code: `central(f, x)` is `(f(x + h) - f(x - h)) / (2 * h)`, compared with `3 * xs ** 2`
+:::
+
 
 The same expansion works for any whole power. (x + h)³ = x³ + 3x²h + 3xh² + h³, so the quotient is 3x² + 3xh + h², which tends to 3x². In general the binomial expansion of (x + h)ⁿ begins xⁿ + n xⁿ⁻¹ h + (terms with h² or higher), which gives the **power rule**:
 
@@ -74,6 +90,14 @@ The numeric slope matches 3x² to about 10⁻¹⁰ everywhere, and the power rul
 
 ## Reading the derivative
 
+::: math
+\[ \frac{d}{dx}\sin x = \cos x, \qquad \frac{d}{dx}\cos x = -\sin x \qquad (x \text{ in radians}) \]
+- $f' > 0$: $f$ increasing; $f' < 0$: decreasing; $f' = 0$: a stationary point
+- $\sin x$ is level at $\pi/2$ and $3\pi/2$, where $\cos x = 0$
+In code: `central(np.sin, xs)` against `np.cos(xs)`; sign changes of the slope locate the peaks
+:::
+
+
 The sign of f′ says which way f is going: positive means increasing, negative means decreasing. Where f has a peak or a valley with a smooth top, it is momentarily level, so f′ = 0 there. These **stationary points** are where maxima and minima of smooth functions hide, which makes derivatives the main tool of optimisation.
 
 The derivative of sine shows this well. Predict before running: what familiar function is the slope of sin x?
@@ -90,6 +114,14 @@ print("sin is level near x =", np.round(sign_changes, 3), " (π/2 =", round(np.p
 The derivative of sin is cos, and the derivative of cos is −sin: with x in radians, and only in radians, these come out without any conversion factor, another reason radians are the natural unit. Sine is level at π/2 (its peak) and 3π/2 (its valley), exactly where cos crosses zero; the grid locates them to within one step.
 
 ## The number e
+
+::: math
+\[ \frac{d}{dx}\,a^x = a^x \cdot \lim_{h \to 0}\frac{a^h - 1}{h} = a^x \ln a, \qquad \frac{d}{dx}\,e^x = e^x \]
+- $e \approx 2.71828$ is the base whose slope at 0 is exactly 1
+- bisection: keep the half of the interval where the slope crosses 1
+In code: `slope_at_zero(a)`, then 50 halvings of `low, high`
+:::
+
 
 Exponentials aⁿ grow in proportion to their own size, so their derivatives should be proportional to the function: the quotient (aˣ⁺ʰ − aˣ)/h = aˣ (aʰ − 1)/h, so d/dx aˣ = aˣ × (the slope of aˣ at 0). That constant depends on the base a. For a = 2 it is about 0.693, for a = 3 about 1.099. Somewhere between 2 and 3 there is a base for which it is exactly 1, so the function is its **own derivative**. That base is **e** ≈ 2.71828, and eˣ, written `exp(x)`, is the exponential the rest of mathematics uses. Predict before running: how close does a search get to e?
 
@@ -116,6 +148,14 @@ Bisection finds 2.71828183, matching `math.e` in every printed digit. The slopes
 
 ## Symbolic derivatives with SymPy
 
+::: math
+\[ \frac{d}{dx}\big(x^2\sin x\big) = x^2\cos x + 2x\sin x, \qquad \frac{d}{dt}\big(20 + 70e^{-t/20}\big) = -\tfrac{7}{2}\,e^{-t/20} \]
+- product rule: $(fg)' = f'g + fg'$; chain rule: $\dfrac{d}{dx} e^{u(x)} = u'(x)\,e^{u(x)}$
+- SymPy applies these rules to formulas, not numbers
+In code: `sp.diff(expr, var)` differentiates the formula
+:::
+
+
 Numerical derivatives give numbers. **Symbolic** differentiation gives formulas, by applying the rules (power rule, sums, products, the chain rule) automatically. SymPy, a computer algebra library, does this in Python: declare a symbol, build an expression, call `diff`. Predict before running: what is the derivative of a cooling curve 20 + 70e^(−0.05t)?
 
 ```python
@@ -137,6 +177,14 @@ print("symbolic and numeric slopes at x = 1.3:", f_prime(1.3), central(f_num, 1.
 SymPy applies the product rule to x² sin x and the chain rule to e^(−x²), giving x² cos x + 2x sin x and −2x e^(−x²). The cooling curve's derivative is −(7/2)e^(−t/20): the temperature always falls, fastest at the start, matching the plot in the plotting lesson. Symbolic and numerical slopes agree to about ten digits. Use symbolic derivatives when a formula exists, and numerical ones for data or for code too complicated to differentiate by hand.
 
 ## Velocity and acceleration
+
+::: math
+\[ v = \frac{dx}{dt}, \qquad a = \frac{dv}{dt} = \frac{d^2 x}{dt^2}, \qquad x(t) = r\cos\omega t + \sqrt{l^2 - r^2\sin^2\omega t} \]
+- $a$ is the second derivative of position
+- $\omega$: the crank's angular speed in rad/s
+In code: `v_t = sp.diff(x_t, time)`, then `a_t = sp.diff(v_t, time)`
+:::
+
 
 For a position x(t), the derivative is the velocity, v = dx/dt, and the derivative of velocity is the acceleration, a = dv/dt = d²x/dt², the **second derivative**. The crank–slider piston from the sine and cosine lesson has a position formula, so SymPy can produce exact velocity and acceleration formulas. Predict before running: at what crank angle is the piston's acceleration largest in size?
 

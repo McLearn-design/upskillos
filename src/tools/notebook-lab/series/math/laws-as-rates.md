@@ -13,6 +13,14 @@ This lesson covers:
 
 ## Laws as rates
 
+::: math
+\[ \frac{dy}{dt} = f(t, y), \quad y(t_0) = y_0, \qquad \text{Torricelli: } \frac{dh}{dt} = -\frac{a}{A}\sqrt{2gh} \]
+- $h$: water depth; $A$: tank cross-section; $a$: hole area
+- Euler's method: $y_{k+1} = y_k + f(t_k, y_k)\,\Delta t$
+In code: `tank_rate(t, h)` is the right-hand side; `euler(f, t0, y0, dt, n)` steps it
+:::
+
+
 A **first-order ordinary differential equation** (ODE) gives the rate of change of a quantity y as a function of time and of y itself:
 
 \[ \frac{dy}{dt} = f(t, y) \]
@@ -54,6 +62,14 @@ The tank does not empty steadily. It drains fastest when full, about 4.4 mm/s, a
 
 ## Direction fields
 
+::: math
+\[ \frac{dT}{dt} = -k\,(T - T_\text{room}) \]
+- at each grid point $(t, T)$, draw a short segment with this slope
+- every solution curve follows the segments
+In code: `slope = -k * (TT - 20)`, drawn with `ax.quiver`
+:::
+
+
 At every point (t, y), the ODE gives the slope of the solution passing through it. Drawing short line segments with those slopes over a grid gives a **direction field**: every solution is a curve that follows the segments, like a leaf floating on a stream. One picture shows the behaviour of all solutions at once, from every starting value. Predict before running: for the cooling law with T_room = 20 °C, what do solutions starting above and below 20 °C do?
 
 ```python
@@ -78,6 +94,14 @@ Each arrow has horizontal component 1 (one unit of time) and vertical component 
 Every solution heads for 20 °C: from above the slopes are negative, from below positive, and on the line T = 20 the slope is exactly zero. Hot parts cool, cold parts warm, and a part at room temperature stays there. The direction field shows this without solving anything.
 
 ## Equilibria and stability
+
+::: math
+\[ f(y^*) = 0, \qquad f'(y^*) < 0 \Rightarrow \text{stable}, \qquad h^* = \frac{(Q/a)^2}{2g} \]
+- an equilibrium $y^*$ is a level where the rate is zero
+- the fed tank: $\dfrac{dh}{dt} = \dfrac{Q - a\sqrt{2gh}}{A}$, so inflow equals outflow at $h^*$
+In code: `fed_tank(t, h)` and `h_star = (Q / a_hole) ** 2 / (2 * g)`
+:::
+
 
 A value y* where f(y*) = 0 is an **equilibrium**: a solution that starts there stays there. It is **stable** if nearby solutions move towards it, which for dy/dt = f(y) means f is positive just below y* and negative just above it. If f′(y*) < 0 that sign pattern is guaranteed, so the equilibrium is stable; if f′(y*) > 0 it is unstable, with nearby solutions moving away (and if f′(y*) = 0 the test is inconclusive).
 
@@ -104,6 +128,14 @@ The tank settles at about 0.204 m from every starting level: below it, inflow be
 
 ## Accurate solutions with SciPy
 
+::: math
+\[ u = \sqrt{h} \;\Longrightarrow\; \frac{du}{dt} = -\frac{a}{A}\sqrt{\frac{g}{2}}, \qquad T_\text{empty} = \frac{A}{a}\sqrt{\frac{2h_0}{g}} \]
+- $\sqrt{h}$ falls at a constant rate, giving the exact emptying time
+- adaptive Runge–Kutta (RK45) controls its own step to meet a tolerance
+In code: `solve_ivp(..., events=empty, rtol=1e-10, atol=1e-12)` against `exact = (A_tank / a_hole) * math.sqrt(2 * 1.0 / g)`
+:::
+
+
 Euler's method is first order: its error shrinks only in proportion to the step. Professional solvers use higher-order methods with automatic step-size control. SciPy's `solve_ivp` uses an adaptive **Runge–Kutta** method (RK45) by default: it takes large steps where the solution is smooth and small ones where it changes quickly, keeping an error estimate below the tolerances `rtol` and `atol` you set. It can also stop at an **event**, such as the tank becoming empty, located precisely.
 
 For the draining tank, the substitution u = √h turns Torricelli's law into du/dt = −(a/A)√(g/2), a constant, so √h falls linearly and the tank empties at exactly T = (A/a)√(2h₀/g). Predict before running: how close do Euler with 1-second steps and `solve_ivp` come to the exact emptying time?
@@ -129,6 +161,14 @@ The event function returns zero when the tank is empty (with a tiny offset so th
 `solve_ivp` reports 451.509 s, 15 ms before the exact 451.524 s, using about 160 adaptive steps. That small gap is not solver error: the event fires at a depth of 10⁻⁹ m, and the last nanometre takes the remaining 0.014 s to drain, because the flow is so slow at the bottom. The depth at 200 s agrees to six decimals. Euler with one-second steps empties about 4 s early; near the end, where the outflow changes fastest relative to the depth, its fixed step is too coarse.
 
 ## Exact solutions of separable equations
+
+::: math
+\[ \frac{dy}{dt} = g(t)\,h(y) \;\Longrightarrow\; \int \frac{dy}{h(y)} = \int g(t)\,dt, \qquad T(t) = T_r + (T_0 - T_r)\,e^{-kt} \]
+- separable equations can be solved by integrating each side
+- cooling is separable with $h(T) = T - T_r$
+In code: `sp.dsolve(sp.Eq(T(t).diff(t), -k_s * (T(t) - Tr)), T(t), ics={T(0): T0})`
+:::
+
 
 Equations of the form dy/dt = g(t) h(y) are **separable**: divide by h(y), multiply by dt, and integrate both sides, ∫ dy/h(y) = ∫ g(t) dt. Cooling and Torricelli's law are both of this kind, which is why they have formulas. SymPy's `dsolve` carries out such steps symbolically. Predict before running: what does SymPy give for the cooling law, and for the draining tank?
 

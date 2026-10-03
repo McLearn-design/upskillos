@@ -12,6 +12,15 @@ This lesson covers:
 
 ## A formula is a function
 
+::: math
+\[ \delta = \frac{F L^3}{3 E I}, \qquad I = \frac{b h^3}{12} \]
+- $\delta$: tip deflection (m); $F$: load (N); $L$: length (m)
+- $E$: Young's modulus (Pa), about $200 \times 10^9$ for steel; $I$: second moment of area (m⁴)
+- $b$ and $h$: the rectangle's width and height
+In code: `def cantilever_deflection(F, L, E, I): return F * L ** 3 / (3 * E * I)`
+:::
+
+
 A steel bar clamped at one end and loaded at the other bends. Its tip deflection is
 
 \[ \delta = \frac{F L^3}{3 E I} \]
@@ -39,6 +48,14 @@ The tip moves just under 1 mm. Calling with keyword arguments (`F=500, L=0.5`) m
 
 ## Building formulas from formulas
 
+::: math
+\[ \delta(b, h) = \frac{F L^3}{3 E \cdot b h^3 / 12} = \frac{4 F L^3}{E\, b\, h^3} \]
+- $\delta \propto \dfrac{1}{h^3}$: doubling the height divides the deflection by 8
+- $\delta \propto \dfrac{1}{b}$: doubling the width only halves it
+In code: `bar_deflection` calls `cantilever_deflection` with `rect_I(b, h)`: one formula built from another
+:::
+
+
 `cantilever_deflection` takes I as an input rather than b and h, so the same function serves rectangles, tubes and I-beams: each shape needs only its own small `I` function. Small formulas that each do one thing, composed together, are easier to check than one long expression.
 
 Composition also makes the formula's structure easy to explore. Because I contains h³, doubling the bar's height should cut the deflection by 2³ = 8, while doubling its width only halves it. Predict before running: which orientation of the same 20 × 40 bar is stiffer, and by how much?
@@ -57,6 +74,14 @@ print("double the width  ->", round(tall / bar_deflection(500, 0.5, STEEL_E, 0.0
 The same steel deflects 4 times as much lying flat as standing on edge. That is why joists and beams are deep and narrow: depth is cubed, width is not.
 
 ## Rearranging for a different unknown
+
+::: math
+\[ \delta = \frac{4 F L^3}{E b h^3} \quad\Longrightarrow\quad h = \left(\frac{4 F L^3}{E\, b\, \delta}\right)^{1/3} \]
+- rearranging solves the same relationship for a different unknown
+- a round trip, $\delta(h(\delta)) = \delta$, checks the algebra
+In code: `(4 * F * L ** 3 / (E * b * max_deflection)) ** (1 / 3)`
+:::
+
 
 The handbook formula gives deflection from the dimensions. A designer usually needs the reverse: the allowable deflection is given (say 0.4 mm), so what height must the bar be? Substitute I = bh³/12 and solve for h:
 
@@ -78,6 +103,14 @@ print(f"mass ratio vs the 40 mm bar: {h / 0.040:.3f}")
 Cutting the deflection from 0.98 mm to 0.4 mm, by a factor of about 2.4, needs a bar only about 35% taller, and so about 35% heavier, because deflection depends on the cube of the height: 1.35³ ≈ 2.4. The round trip returns 0.4 mm to six decimal places, which confirms the algebra.
 
 ## Testing a formula
+
+::: math
+\[ \delta \propto F, \qquad \delta \propto L^3, \qquad \delta \propto \frac{1}{E}, \qquad F = 0 \Rightarrow \delta = 0 \]
+- scaling tests: doubling $L$ must multiply $\delta$ by $2^3 = 8$
+- a formula with $L^2$ instead of $L^3$ fails that test (it gives 4)
+In code: compare `checked_deflection(…, 2 * L, …) / base` with 8
+:::
+
 
 A wrong formula still returns a plausible number, so formulas need tests just like algorithms. Four kinds of test catch almost every mistake:
 
@@ -113,6 +146,14 @@ except ValueError as err:
 The scaling test catches the typo at once: doubling L gives 4 rather than 8. A single known-value test would also catch it here, but scaling tests need no reference answer at all, only knowledge of how the physics behaves.
 
 ## Formulas as values
+
+::: math
+\[ \text{sweep: } h_1, h_2, \ldots \;\mapsto\; \delta(h_1), \delta(h_2), \ldots \quad \text{with } F, L, E, b \text{ held fixed} \]
+- a formula is a function $f(x_1, \ldots, x_n)$; a sweep varies one input
+- the design rule: the smallest $h$ with $\delta(h) \le 0.4$ mm
+In code: `formula(**{name: v}, **fixed)` evaluates the formula with one input changed
+:::
+
 
 In Python a function is a value like any other: it can be stored in a dictionary, passed to another function or returned from one. That makes it possible to write general tools that work for any formula, such as a sweep that evaluates a formula over a range of one input while holding the others fixed. Predict before running: in steps of 10 mm, what is the shortest standard bar height that meets the 0.4 mm limit?
 

@@ -13,6 +13,14 @@ This lesson covers:
 
 ## A x = b
 
+::: math
+\[ A\mathbf{x} = \mathbf{b}, \qquad (A\mathbf{x})_i = \sum_{j=1}^{n} a_{ij}\,x_j, \qquad A\mathbf{x} = x_1 \mathbf{a}_1 + x_2 \mathbf{a}_2 + \dots + x_n \mathbf{a}_n \]
+- $a_{ij}$: row $i$, column $j$; row $i$ holds equation $i$'s coefficients
+- the product is also a combination of the columns $\mathbf{a}_j$, weighted by the $x_j$
+In code: `matvec(A, x)` loops over rows; NumPy writes `A @ x`
+:::
+
+
 A system of m linear equations in n unknowns
 
 \[ a_{11}x_1 + a_{12}x_2 + \dots + a_{1n}x_n = b_1, \quad \dots, \quad a_{m1}x_1 + \dots + a_{mn}x_n = b_m \]
@@ -48,6 +56,14 @@ Both give (85, 65, 80). The third line shows a second, equally important reading
 
 ## A production plan
 
+::: math
+\[ \begin{pmatrix} 2 & 1 & 3 \\ 1 & 2 & 1 \\ 3 & 1 & 2 \end{pmatrix} \begin{pmatrix} x_1 \\ x_2 \\ x_3 \end{pmatrix} = \begin{pmatrix} 85 \\ 65 \\ 80 \end{pmatrix} \]
+- row $i$: hours each product needs on machine $i$; $b_i$: hours that machine has
+- $x_j$: units of product $j$
+In code: `np.linalg.solve(A, b)`, then `A @ plan` to check
+:::
+
+
 A workshop makes three products. Each unit needs time on three machines, in hours:
 
 - product 1: lathe 2, mill 1, grinder 3;
@@ -68,6 +84,14 @@ print("with 5 more lathe hours:", np.linalg.solve(A, b2).round(3))
 The plan is 10, 20 and 15 units, as expected, and it uses exactly the available hours. Five extra lathe hours change the answer to fractional units, including fewer of product 1. Real production planning also needs whole numbers and non-negative quantities; with more products than machines it becomes **optimisation**, which arrives in a later block. The linear system is still at its heart.
 
 ## Gaussian elimination
+
+::: math
+\[ R_i \leftarrow R_i - \frac{m_{ik}}{m_{kk}}\,R_k \;\;(i > k), \qquad x_i = \frac{b_i - \sum_{j > i} u_{ij} x_j}{u_{ii}} \]
+- elimination zeroes column $k$ below the pivot $m_{kk}$, leaving an upper triangular matrix $U$
+- back substitution solves the last row first, then works upwards
+In code: `gauss_solve(A, b)` pivots with `np.argmax(np.abs(M[k:, k]))`, eliminates, then back-substitutes
+:::
+
 
 The algorithm behind `np.linalg.solve` is **Gaussian elimination**, the elimination of the previous lesson applied systematically. Work on the **augmented matrix** [A | b], the coefficients with the right-hand side as an extra column:
 
@@ -102,6 +126,14 @@ Pivoting moves the row with the 3 to the top; after elimination every entry belo
 
 ## Singular systems
 
+::: math
+\[ \det A = 0 \;\Longleftrightarrow\; \operatorname{rank} A < n \;\Longleftrightarrow\; A\mathbf{x} = \mathbf{b} \text{ has no unique solution} \]
+- singular: one row or column is a combination of the others
+- condition number $\kappa(A)$: around $10^{16}$ means singular to float precision
+In code: `np.linalg.matrix_rank(S)` and `np.linalg.cond(S)`; do not trust `det` or `solve` alone
+:::
+
+
 When A's rows are not independent (one equation is a combination of the others), elimination produces a row of zeros in A: the system has no solution or infinitely many, like parallel lines in 2D. Such a matrix is **singular**. Two numbers detect it:
 
 - the **determinant** det(A) is zero, the n-dimensional version of a₁b₂ − a₂b₁;
@@ -125,6 +157,14 @@ print("the original: det", round(np.linalg.det(A), 6), " rank", np.linalg.matrix
 If product 3 takes exactly the machine time of one product 1 plus one product 2, then any plan can swap one product 3 for one of each of the others and use the same hours. Hours alone cannot determine the plan. The determinant comes out as a rounding-sized number instead of exactly 0, the rank is 2, and the condition number is around 10¹⁶, the float precision limit. What `solve` does next depends on the build: some NumPy builds raise `LinAlgError`, while the one in this browser divides by a rounding-sized pivot and returns numbers around 10¹⁷ that do not even satisfy the equations: the residual is tens of hours. That is why a singularity check must not rely on the solver complaining. The original matrix has determinant −8 and rank 3.
 
 ## The same system in OpenMAT
+
+::: math
+\[ \mathbf{x} = A^{-1}\mathbf{b}, \qquad \text{residual } A\mathbf{x} - \mathbf{b} = \mathbf{0} \]
+- OpenMAT writes the solve as a left division, without forming $A^{-1}$
+- a residual of zeros confirms the plan
+In code: `plan = A \ b`, then `check = A * plan - b`
+:::
+
 
 MATLAB-style notation was designed for exactly this. A matrix literal lists rows separated by semicolons, `A \ b` solves the system, and `det` and `rank` work as in NumPy. The cell runs on its own, sharing no variables with the Python cells. Predict before running: does OpenMAT find the same plan and the same determinant?
 

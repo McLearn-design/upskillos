@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Radians
 
+::: math
+\[ \theta_\text{rad} = \theta_\text{deg} \times \frac{\pi}{180}, \qquad s = r\,\theta, \qquad A = \tfrac{1}{2} r^2 \theta \]
+- one radian cuts an arc as long as the radius, so a full turn is $2\pi$ rad
+- $s$: arc length; $A$: sector area; both need $\theta$ in radians
+In code: `math.radians(deg)` converts, then `r * th` is the arc length
+:::
+
+
 A full turn is 360 degrees by convention, a number chosen thousands of years ago because it divides evenly in many ways. The **radian** is not a convention: an angle of one radian at the centre of a circle cuts off an arc exactly as long as the radius. Since the circumference is 2πr, a full turn is 2π radians, so 180° = π rad and 1 rad ≈ 57.3°.
 
 Measured in radians, an angle θ cuts an arc of length s = rθ, and a sector has area ½r²θ, with no conversion factors. That simplicity is why calculus, physics and Python's `math` functions all work in radians. `math.radians` and `math.degrees` convert. Predict before running: what does `math.sin(90)` return, and why?
@@ -34,6 +42,14 @@ The arc and area columns use a radius of 0.25 m, converted to millimetres and sq
 `math.sin(90)` takes its argument as 90 **radians** (about 14 turns plus a bit) and returns 0.894, not 1. Nothing warns you. Every trigonometric function in Python, NumPy and nearly every other language uses radians. The habit that prevents the bug: convert at the edges, when reading input or printing output, and keep radians everywhere inside.
 
 ## Angular speed and surface speed
+
+::: math
+\[ \omega = \text{rpm} \times \frac{2\pi}{60}, \qquad v = \omega\, r \]
+- $\omega$: angular speed in rad/s; $r$: radius in metres; $v$: surface speed in m/s
+- same rpm, larger radius: faster surface speed
+In code: `rpm * 2 * math.pi / 60`, then `omega * (d_mm / 2000)` (diameter in mm to radius in m)
+:::
+
 
 **Angular speed** ω is the rate of change of angle. Machines quote it in revolutions per minute (rpm); formulas need radians per second. One revolution is 2π rad and one minute is 60 s, so ω [rad/s] = rpm × 2π / 60.
 
@@ -59,6 +75,14 @@ At the same 3,000 rpm, the face mill's edge moves about 8.3 times faster than th
 
 ## Gears and belts
 
+::: math
+\[ \omega_1 r_1 = \omega_2 r_2, \qquad \omega_1 N_1 = \omega_2 N_2, \qquad P = T\omega = \text{constant} \]
+- $N$: tooth count; speed falls by the ratio $\dfrac{r_2}{r_1}$ while torque $T$ rises by it
+- a chain of stages multiplies the ratios: $3 \times 4 = 12$
+In code: `rpm * driver / driven` and `torque * driven / driver` for each stage
+:::
+
+
 When two pulleys are joined by a belt, the belt cannot stretch or slip (ideally), so both rims have the same surface speed: ω₁r₁ = ω₂r₂. The angular speeds are **inversely** proportional to the radii, the inverse proportion from the ratios lesson. Meshing gears behave the same way with tooth counts in place of radii, since teeth are spaced equally around each rim: ω₁N₁ = ω₂N₂.
 
 A gearbox chains stages, and the overall ratio is the product of the stage ratios. Torque goes the other way: ignoring losses, power P = Tω is the same on both sides, so slowing a shaft down multiplies its torque. Predict before running: a motor at 1,450 rpm with 12 N·m of torque drives a 100 mm pulley belted to a 300 mm pulley, then a 15-tooth gear driving a 60-tooth gear. What speed and torque come out?
@@ -77,6 +101,14 @@ print("power in:", round(motor_torque * rpm_to_rad_s(motor_rpm)), "W   power out
 The overall reduction is 3 × 4 = 12, so the output turns at about 120.8 rpm with 144 N·m, twelve times the motor's torque. The power, about 1,822 W, is the same on both sides, as it must be for an ideal (lossless) drive; real gearboxes lose a few percent per stage.
 
 ## Angles that wrap around
+
+::: math
+\[ \text{normalise}(\theta) \in (-180°, 180°], \qquad \text{shortest turn from } a \text{ to } b = \text{normalise}(b - a) \]
+- $\theta$ and $\theta + 360°k$ point the same way for any whole number $k$
+- the remainder $\theta \bmod 360$ lands in $[0, 360)$; above 180 subtract 360
+In code: `a = angle % 360`, then `a - 360 if a > 180 else a`
+:::
+
 
 An angle and the same angle plus any whole number of turns describe the same direction. Code that compares or subtracts angles must account for this. Two operations do most of the work:
 
@@ -104,6 +136,14 @@ The mean is taken by stepping half the shortest turn from the first angle, which
 Shortest turns are +20° one way and −20° the other: positive means anticlockwise here. Stepping half the shortest turn from 350° gives the true mean, 0°. The edge case is a half turn: 180° and −180° are the same direction, and the convention (−180, 180] chooses +180.
 
 ## Unwrapping an encoder
+
+::: math
+\[ \Delta_i = \big((r_{i+1} - r_i + 180) \bmod 360\big) - 180, \qquad u_k = r_0 + \sum_{i<k} \Delta_i \]
+- $r_i$: raw readings in $[0, 360)$; $\Delta_i$: each step taken the short way round
+- $u_k$: the unwrapped angle; valid only if the shaft turns less than half a turn per sample
+In code: `(np.diff(readings) + 180) % 360 - 180`, then `np.cumsum`
+:::
+
 
 An absolute rotary encoder reports the shaft's angle within one turn, 0 to 359.9°. To track total rotation, or speed, the log must be **unwrapped**: whenever a reading jumps by more than half a turn, assume the shaft actually went the short way across the 0/360 boundary, and add or subtract 360 from that point on. This only works if the shaft turns less than half a turn between samples; otherwise the direction is ambiguous, the aliasing of the plotting lesson in another form. Predict before running: how many turns does this log record?
 

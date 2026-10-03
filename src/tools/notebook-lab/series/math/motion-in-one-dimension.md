@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Position, displacement and distance
 
+::: math
+\[ \text{displacement} = x_n - x_0, \qquad \text{distance travelled} = \sum_{i=0}^{n-1} |x_{i+1} - x_i| \]
+- displacement can be negative or zero; distance travelled never is
+- the two differ whenever the motion reverses
+In code: `x[-1] - x[0]` and `np.abs(np.diff(x)).sum()`
+:::
+
+
 Choose a line, an origin on it and a positive direction. **Position** x is a signed number: where the object is. **Displacement** is the change in position, x_end − x_start, which can be negative. **Distance travelled** is the total length of path covered, always positive. They differ whenever the motion reverses: a shuttle that goes 3 m forward and 3 m back has displacement 0 but has travelled 6 m.
 
 A transfer shuttle logs its position every second as it moves parts between stations. Predict before running: what are its displacement and distance travelled over the log?
@@ -41,6 +49,14 @@ The shuttle ends 0.8 m from where it started, but it travelled 5.2 m: 3.0 m out 
 
 ## Velocity
 
+::: math
+\[ \bar{v}_i = \frac{x_{i+1} - x_i}{t_{i+1} - t_i}, \qquad \text{placed at } t = \frac{t_i + t_{i+1}}{2} \]
+- $\bar{v}_i$: average velocity over each interval, the slope of the position graph there
+- velocity changes sign where position reaches a maximum or minimum
+In code: `np.diff(x) / np.diff(t)` and `(t[:-1] + t[1:]) / 2`
+:::
+
+
 **Velocity** is the rate of change of position: positive when moving in the positive direction, negative when moving back. **Speed** is its size. Between two log entries the **average velocity** is Δx/Δt, the slope of the line joining the two points on the position graph. A steep graph means fast motion; a flat stretch means the object is stopped; a downward slope means it is moving backwards.
 
 Plotting velocity against time shows the motion from a different angle. Each average velocity belongs to an interval, so it is natural to place it at the interval's midpoint. Predict before running: when is the shuttle moving fastest, and when does it reverse?
@@ -64,6 +80,14 @@ plt.show()
 The shuttle reaches +0.8 m/s around t = 2 to 4 s, slows, stops near t = 6 s, then moves back at up to −0.7 m/s and stops again at the end. The velocity changes sign between the intervals centred on 5.5 s and 6.5 s, which matches the peak of the position graph: a maximum of position is where velocity passes through zero, an idea that returns when calculus finds maxima.
 
 ## Constant velocity and constant acceleration
+
+::: math
+\[ v = v_0 + a t, \qquad x = x_0 + v_0 t + \tfrac{1}{2} a t^2, \qquad v^2 = v_0^2 + 2a(x - x_0) \]
+- $a$: constant acceleration; $v_0$: starting velocity; $x_0$: starting position
+- from rest, reaching $v$ takes $t = v/a$ and covers $x = \dfrac{v^2}{2a}$
+In code: `t_accel = v_target / a` and `0.5 * a * t_accel ** 2`
+:::
+
 
 At **constant velocity** v, position grows linearly: x = x₀ + v t, a straight line on the position graph with slope v.
 
@@ -89,6 +113,14 @@ The lift needs about 2.08 s and 2.60 m to reach full speed. Both routes give the
 
 ## Stopping distances
 
+::: math
+\[ s = v\,t_r + \frac{v^2}{2d} \]
+- $s$: stopping distance; $v$: speed (m/s); $t_r$: reaction time; $d$: braking deceleration
+- the braking term grows with $v^2$: double the speed, four times the braking distance
+In code: `v * reaction_s + v ** 2 / (2 * decel)`, with `v = speed_kmh / 3.6`
+:::
+
+
 A vehicle's stopping distance has two parts. During the **reaction time**, before the brakes act, it continues at full speed: distance v t_r. Then it decelerates at a rate d (a positive number, the size of the negative acceleration) until it stops: from v² = v₀² + 2ax with v = 0 and a = −d, the braking distance is v₀²/(2d). So
 
 \[ s = v t_r + \frac{v^2}{2 d} \]
@@ -110,6 +142,14 @@ Dividing km/h by 3.6 converts to m/s, since 1 km/h is 1000 m per 3600 s.
 Doubling the speed from 10 to 20 km/h doubles the reaction distance but quadruples the braking distance, so the total grows from about 4.3 m to 11.7 m. This square law is why speed limits in warehouses and near pedestrians are set so low.
 
 ## Stepping through time
+
+::: math
+\[ x_{k+1} = x_k + v_k\,\Delta t, \qquad v_{k+1} = v_k + a(t_k)\,\Delta t \]
+- Euler's method: hold the rates constant over each small step $\Delta t$
+- the error is proportional to $\Delta t$ (first order); the exact height here is $4.8\,(1 - \cos(t/2))$
+In code: `pos += vel * dt` then `vel += accel(k * dt) * dt`, repeated
+:::
+
 
 The equations above need constant acceleration. Real motion rarely has it, but a computer can handle any acceleration by **stepping**: over a short time step Δt, assume the acceleration is constant, update the velocity by a Δt and the position by v Δt, and repeat. This is the simplest **numerical integration** method (Euler's method), and the ODE block refines it. Adding up the v Δt pieces is exactly adding the areas of thin rectangles under the velocity graph: displacement is the **area under the velocity–time graph**.
 

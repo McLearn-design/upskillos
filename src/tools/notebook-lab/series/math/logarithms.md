@@ -13,6 +13,14 @@ This lesson covers:
 
 ## Undoing a power
 
+::: math
+\[ \log_b x = y \;\Longleftrightarrow\; b^y = x, \qquad \log_b x = \frac{\ln x}{\ln b} \]
+- defined only for $x > 0$; $\log_b 1 = 0$ for every base
+- halvings from 1 m to below 1 mm: $\lceil \log_2 1000 \rceil = 10$
+In code: `math.log10`, `math.log2`, `math.log` (natural log, base $e$)
+:::
+
+
 The logarithm answers the question "what power?": log_b(x) is the exponent y such that b^y = x. So log₁₀(1000) = 3 because 10³ = 1000, and log₂(8) = 3 because 2³ = 8. Three bases dominate:
 
 - base 10, `math.log10`: orders of magnitude, decibels, pH;
@@ -42,6 +50,14 @@ Ten halvings take a metre below a millimetre, because 2¹⁰ = 1024 is just over
 
 ## The laws of logarithms
 
+::: math
+\[ \log(xy) = \log x + \log y, \qquad \log\frac{x}{y} = \log x - \log y, \qquad \log(x^p) = p\log x \]
+- products become sums, so tiny probabilities can be combined without underflow
+- $\log_{10}(0.1^{400}) = -400$, though $0.1^{400}$ itself rounds to 0
+In code: `math.isclose(math.log10(x * y), math.log10(x) + math.log10(y))`, and summing `math.log10(p)`
+:::
+
+
 Because exponents add when powers multiply (bᵐ bⁿ = bᵐ⁺ⁿ), logarithms turn products into sums:
 
 \[ \log(xy) = \log x + \log y, \qquad \log\frac{x}{y} = \log x - \log y, \qquad \log(x^p) = p \log x \]
@@ -65,6 +81,14 @@ Floats cannot represent numbers below about 10⁻³⁰⁸ (about 10⁻³²⁴ wi
 
 ## Decibels
 
+::: math
+\[ L = 20\log_{10}\frac{p}{p_0}, \qquad L_\text{total} = 10\log_{10}\sum_i 10^{L_i/10} \]
+- $p_0 = 20\ \mu\text{Pa}$; doubling the power adds $10\log_{10} 2 \approx 3$ dB
+- levels do not add; their powers do
+In code: `level_from_pressure(p_pa)` and `combine(levels_db)`
+:::
+
+
 The **decibel** (dB) expresses a ratio of powers as 10 log₁₀(P/P₀). Every factor of 10 in power adds 10 dB; doubling adds about 3 dB, since 10 log₁₀ 2 ≈ 3.01. Sound pressure level uses pressure p rather than power, and power goes as pressure squared, so L = 20 log₁₀(p/p₀) with p₀ = 20 µPa, the threshold of hearing.
 
 Because decibels are logarithms, gains in a chain of amplifiers or losses along a cable simply add. Levels from separate noise sources do **not** add, however: their powers add, so convert back from dB, add, and take the logarithm again. Predict before running: two machines each produce 80 dB at the operator's position. What is the combined level, and what about ten machines?
@@ -86,6 +110,14 @@ Two equal sources give +3 dB, not double the decibels: 83.01 dB. Ten give +10 dB
 
 ## pH and earthquake magnitude
 
+::: math
+\[ \text{pH} = -\log_{10}[\text{H}^+], \qquad E \propto 10^{1.5M}, \qquad \frac{E_2}{E_1} = 10^{1.5(M_2 - M_1)} \]
+- each pH unit is a factor of 10 in acidity
+- two magnitude units: $10^3 = 1000$ times the energy
+In code: `-math.log10(h_conc)` and `10 ** (1.5 * (m2 - m1))`
+:::
+
+
 **pH** is −log₁₀ of the hydrogen-ion concentration in moles per litre: pure water at 25 °C has 10⁻⁷ mol/L, pH 7. Each unit of pH is a factor of 10 in acidity, so diluting an acid tenfold raises its pH by one unit (for strong acids at moderate concentrations).
 
 The **moment magnitude** of an earthquake is designed so that each unit is a factor of about 31.6 (10^1.5) in released energy: E ∝ 10^(1.5 M). Two units is a factor of 1000. Predict before running: how much more energy does a magnitude 9.0 earthquake release than a magnitude 7.0?
@@ -105,6 +137,14 @@ for m1, m2 in [(7.0, 9.0), (6.0, 6.3), (5.0, 8.0)]:
 Magnitude 9.0 releases 1,000 times the energy of 7.0. Even 0.3 units, a difference that sounds small, is a factor of 2.8. Log scales compress huge ranges into small numbers, but each step on them is a large multiplicative jump, which is easy to forget when reading the news.
 
 ## Log axes
+
+::: math
+\[ y = N_0 e^{kt} \;\Rightarrow\; \ln y = \ln N_0 + k\,t, \qquad y = c\,t^p \;\Rightarrow\; \log y = \log c + p\log t \]
+- semi-log axes straighten exponentials; log–log axes straighten power laws
+- the slope of the straight line is the rate $k$ or the exponent $p$
+In code: `ax.set_yscale("log")` (and `ax.set_xscale("log")` for log–log)
+:::
+
 
 The plotting lesson used log–log axes to turn a power law into a straight line. A **semi-log** plot, with only the y axis logarithmic, does the same for exponentials: log y = log N₀ + k t log e is linear in t. On semi-log axes an exponential is a straight line, its slope set by the growth rate, so exponential behaviour in data is spotted at a glance. Predict before running: on semi-log axes, which of the three curves is straight?
 
@@ -137,6 +177,14 @@ for name, ys in curves.items():
 The exponential is straight on semi-log axes (straightness 1.000) and the power law on log-log axes (1.000). The linear function is curved on semi-log axes but straight on log-log, since t¹ is a power law with exponent 1. Choosing axes so that the expected model becomes a straight line is one of the most useful habits in data analysis.
 
 ## Logarithms of small changes
+
+::: math
+\[ \ln(1 + \delta) \approx \delta - \frac{\delta^2}{2}, \qquad e^x - 1 \approx x + \frac{x^2}{2} \qquad (\text{small } \delta, x) \]
+- forming $1 + \delta$ in floating point already rounds $\delta$
+- the special functions never form that sum
+In code: `math.log1p(delta)` and `math.expm1(x)` against `math.log(1 + delta)`
+:::
+
 
 For x very close to 1, ln(x) is a tiny number computed from a number whose information is in its last few digits. Writing x = 1 + δ and computing `math.log(1 + delta)` loses accuracy once δ approaches the float precision: forming 1 + δ already rounds δ. The functions `math.log1p(δ)`, which computes ln(1 + δ), and `math.expm1(x)`, which computes eˣ − 1, avoid forming the rounded sum at all. They matter in finance (tiny daily interest rates), in statistics and in physics. Predict before running: for δ = 10⁻¹⁰, how many correct digits does `log(1 + δ)` give?
 

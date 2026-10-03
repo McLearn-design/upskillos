@@ -13,6 +13,15 @@ This lesson covers:
 
 ## Dimensions are exponents
 
+::: math
+\[ [\text{force}] = \mathrm{M}^{1}\mathrm{L}^{1}\mathrm{T}^{-2}, \qquad [a \times b] = [a][b] \Rightarrow \text{exponents add} \]
+- $\mathrm{L}$, $\mathrm{M}$, $\mathrm{T}$: the base dimensions length, mass, time
+- multiplying quantities adds exponents; dividing subtracts them
+- power $=$ energy per second: $\mathrm{M}^1\mathrm{L}^2\mathrm{T}^{-2} \div \mathrm{T}^1 = \mathrm{M}^1\mathrm{L}^2\mathrm{T}^{-3}$
+In code: a dimension is a dict of exponents, and `combine(a, b, -1)` subtracts them
+:::
+
+
 Every quantity in mechanics can be built from a few **base dimensions**: length (L), mass (M) and time (T), plus a few others for electricity, temperature and amount of substance. A speed is a length divided by a time, L¹T⁻¹. A force is mass times acceleration, M¹L¹T⁻². An energy is a force times a distance, M¹L²T⁻².
 
 So a dimension is just a set of **exponents**, and the rules for combining quantities become rules for exponents:
@@ -45,6 +54,14 @@ for name, dims in [("speed", speed), ("acceleration", acceleration), ("force", f
 Power comes out as M¹L²T⁻³. The same arithmetic shows why torque (a force times a lever arm) has the same dimensions as energy, though they are different kinds of quantity: dimensions catch many mistakes, but not all.
 
 ## A quantity that checks itself
+
+::: math
+\[ (v_1\,u_1)(v_2\,u_2) = (v_1 v_2)\,(u_1 u_2), \qquad v_1 u + v_2 u = (v_1 + v_2)\,u \]
+- a quantity is a value $v$ times a unit $u$
+- products combine units; sums are only defined when the units match
+In code: `__mul__` multiplies values and combines dimensions; `__add__` raises an error on a mismatch
+:::
+
 
 A `Quantity` holds a value in SI base units (metres, kilograms, seconds) and its dimension. Its special methods make it behave like a number that respects physics: `*` and `/` combine dimensions, and `+` and `-` refuse mismatched ones, raising an error instead of silently producing nonsense. Predict before running: which of the last three lines fails?
 
@@ -95,6 +112,14 @@ except TypeError as error:
 
 ## Units, prefixes and conversion
 
+::: math
+\[ x\,[\text{to}] = x\,[\text{from}] \times \frac{f_\text{from}}{f_\text{to}}, \qquad v_c = \pi D n \]
+- $f$: a unit's factor in SI base units, e.g. $f_\text{mm} = 10^{-3}$, $f_\text{min} = 60$
+- $v_c$: cutting speed; $D$: cutter diameter; $n$: rotation rate (rev per unit time)
+In code: `q(value, unit)` multiplies by the factor; `to(quantity, unit)` divides by the target's factor
+:::
+
+
 People do not work in SI base units. A machinist works in millimetres, minutes and revolutions per minute; a US drawing may use inches. Each unit is a **factor** times SI base units, with a dimension: 1 mm is 0.001 m, 1 min is 60 s, 1 inch is exactly 0.0254 m. **Prefixes** scale units by powers of ten (kilo 10³, milli 10⁻³, micro 10⁻⁶).
 
 Converting a value means multiplying by the "from" unit's factor (to reach SI) and dividing by the "to" unit's factor. It is only allowed between units of the same dimension. Revolutions count as dimensionless (a revolution is a pure number of turns), so rpm is just T⁻¹. Predict before running: what cutting speed does a 50 mm cutter at 1,200 rpm give, in metres per minute?
@@ -135,6 +160,14 @@ The cutting speed of a rotating tool is its circumference times its rotation rat
 The cutter's edge moves at 188.5 m/min, which `to` can also express in mm/min. Conversions between same-dimension units just work, and asking for a rotation rate in millimetres is refused. Real libraries such as `pint` (not in the browser here) do exactly this, with thousands of units. The idea is small, as this lesson shows; the payoff is large.
 
 ## Checking formulas by their dimensions
+
+::: math
+\[ T = 2\pi\sqrt{\frac{L}{g}}, \qquad \left[\sqrt{\frac{L}{g}}\right] = \sqrt{\frac{\mathrm{L}}{\mathrm{L}\,\mathrm{T}^{-2}}} = \mathrm{T} \]
+- $L$: pendulum length; $g$: gravitational acceleration ($\mathrm{L}\mathrm{T}^{-2}$)
+- a valid formula has the same dimension on both sides of every equals sign
+In code: a square root halves every exponent: `{b: p / 2 for b, p in dims.items()}`
+:::
+
 
 Dimensions also check **formulas** before any numbers are involved. A formula is dimensionally consistent only if both sides have the same exponents, and every term added together has the same exponents. This catches typos and misremembered formulas. Is a pendulum's period √(L/g) or √(g/L)? Only one is a time. Predict before running: which candidate formula for a pendulum's period has the dimension of time?
 

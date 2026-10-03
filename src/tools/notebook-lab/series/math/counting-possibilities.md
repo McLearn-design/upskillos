@@ -12,6 +12,14 @@ This lesson covers:
 
 ## The multiplication principle
 
+::: math
+\[ N = n_1 \times n_2 \times \dots \times n_k, \qquad \text{passwords: } A^L, \qquad \text{entropy} = \log_2 A^L = L\log_2 A \text{ bits} \]
+- independent choices multiply
+- $A$: alphabet size; $L$: length; each extra bit doubles the search
+In code: `math.prod(settings.values())` and `length * math.log2(alphabet)`
+:::
+
+
 If one choice can be made in a ways and, independently, another in b ways, the pair can be made in a × b ways. For k independent choices from sets of sizes n₁, ..., n_k, the total is the product. A password of length L drawn from an alphabet of size A therefore has Aᴸ possibilities, and its strength is often quoted as **entropy** in bits, log₂(Aᴸ) = L log₂ A: each bit doubles the attacker's work. Predict before running: which is stronger, 8 characters from letters and digits, or 12 lowercase letters?
 
 ```python
@@ -36,6 +44,14 @@ The 6 settings give 4⁶ = 4,096 combinations. The 8-character mixed password ha
 
 ## Permutations and factorial growth
 
+::: math
+\[ n! = n(n - 1)\cdots 1, \qquad P(n, k) = \frac{n!}{(n - k)!}, \qquad n! \approx \sqrt{2\pi n}\left(\frac{n}{e}\right)^n \]
+- $n!$: orders of $n$ items; $P(n, k)$: ordered choices of $k$ from $n$
+- Stirling's approximation, already within 1% at $n = 10$
+In code: `math.factorial(n)` against `math.sqrt(2 * math.pi * n) * (n / math.e) ** n`; `itertools.permutations` to list
+:::
+
+
 Arranging n distinct items in order: n choices for the first position, n − 1 for the second, and so on, giving **n!** (n factorial) **permutations**. Arranging k of the n in order gives n!/(n − k)!. Factorials grow faster than any exponential; **Stirling's approximation** n! ≈ √(2πn)(n/e)ⁿ estimates them. This is why trying every visiting order of a route (the travelling salesman's brute force from the DSA series) collapses beyond a dozen stops. Predict before running: how good is Stirling's formula at n = 10, and how long would checking every 20-stop route take?
 
 ```python
@@ -53,6 +69,14 @@ print(f"checking all 20-stop orders at a billion per second: {math.factorial(20)
 Stirling's formula is within 1% at n = 10 (and its relative error keeps shrinking as n grows). Listing confirms 4! = 24 orders of 4 jobs and 336 ordered choices of 3 tools from 8. Twenty stops have 2.4 × 10¹⁸ orders: at a billion per second, checking them all would take 77 years. Problems like this need the smarter algorithms of the optimisation lessons.
 
 ## Combinations
+
+::: math
+\[ \binom{n}{k} = \frac{n!}{k!\,(n - k)!} = \binom{n - 1}{k - 1} + \binom{n - 1}{k}, \qquad \sum_{k=0}^{n}\binom{n}{k} = 2^n \]
+- order does not matter: each set is counted $k!$ times among the ordered choices
+- Pascal's rule: the last item is either in the set or not
+In code: `math.comb(10, 3)` and `itertools.combinations`; each Pascal row from the one above
+:::
+
 
 When order does not matter, each set of k items chosen from n is counted k! times among the ordered selections, so the number of **combinations** is
 
@@ -76,6 +100,14 @@ Each new row of Pascal's triangle is built by adding neighbouring pairs of the p
 There are 120 three-sensor line-ups and 1,024 line-ups of any size (2¹⁰, since each sensor is either in or out). Pascal's row 8 sums to 256 = 2⁸, and the binomial expansion of (1.7 − 0.4)⁶ matches the direct power. The symmetry C(n, k) = C(n, n − k) shows in every row: choosing 3 to include is choosing 7 to leave out.
 
 ## Counting with rules: inclusion–exclusion
+
+::: math
+\[ |A \cup B| = |A| + |B| - |A \cap B|, \qquad \#\text{good} = \sum_{k=0}^{3} (-1)^k \sum_{|S| = k} \big(62 - \textstyle\sum S\big)^L \]
+- count the strings that break rules, adding and subtracting overlaps
+- $S$: a set of excluded character classes, of sizes 26, 26 and 10
+In code: `good += (-1) ** k * (62 - sum(excluded)) ** L` over `itertools.combinations`
+:::
+
 
 Password rules ("at least one digit and at least one capital") make counting harder: the easy count is of strings that **break** a rule. **Inclusion–exclusion** combines such counts. For two rules, |A ∪ B| = |A| + |B| − |A ∩ B|: adding the two sets counts their overlap twice, so subtract it once. In general, alternately add and subtract the intersections. The number of passwords obeying every rule is the total minus the number breaking at least one. Predict before running: of all 6-character strings from lowercase, uppercase and digits, what fraction contains at least one of each class?
 
@@ -101,6 +133,14 @@ For each set of classes to leave out (none, one, two or all three), count the st
 About 59% of 6-character strings already contain all three classes, so the rule removes about 41% of the space, slightly **weakening** the password space it is meant to protect (though it forces users away from all-lowercase words). On a tiny alphabet, where every string can be listed, the brute-force count and the formula agree exactly, which is the standard way to trust a counting formula.
 
 ## Pairwise testing
+
+::: math
+\[ \#\text{pairs to cover} = \binom{6}{2} \times 4^2 = 240, \qquad \text{tests} \ge \frac{240}{\binom{6}{2}} = 16 \]
+- each test covers $\binom{6}{2} = 15$ value pairs at once
+- greedy: repeatedly add the candidate test covering the most uncovered pairs
+In code: `pairwise_suite(levels)` with `uncovered` holding every `(i, j, a, b)`
+:::
+
 
 The control panel's 4,096 combinations are too many to test. Experience shows that most configuration bugs are triggered by a single setting or by an interaction between **two** settings. **Pairwise testing** therefore covers every pair of values for every pair of settings at least once. There are C(6, 2) × 16 = 240 such value pairs, and each test covers C(6, 2) = 15 of them at once, so no suite can have fewer than 16 tests (for six 4-value settings the true minimum is known to be 19). A simple **greedy** construction gets close: repeatedly pick, from a set of candidate tests, the one that covers the most still-uncovered pairs. Predict before running: how many tests does the greedy method need for the 6 settings?
 

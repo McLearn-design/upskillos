@@ -212,6 +212,17 @@ for (const { series, lesson, file } of lessons) {
       if (cell.proseOnly) continue
       const where = cell.challengeType ? `challenge "${cell.challengeTitle}"` : `cell ${cell.id}`
 
+      // Math series: every demo cell opens with a "The math" box, so the
+      // mathematics can be read before (and without) the code.
+      if (series.id === 'math' && !cell.challengeType) {
+        const box = (cell.prose || []).find(p => typeof p === 'string' && p.startsWith('::: math'))
+        if (!box) problems.push(`${where}: no "::: math" box before the code`)
+        else {
+          if (!/\$|\\\[/.test(box)) problems.push(`${where}: the math box has no LaTeX ($…$ or \\[…\\])`)
+          if (!/^in code:/im.test(box)) problems.push(`${where}: the math box has no "In code:" line`)
+        }
+      }
+
       if (series.id === 'python') {
         const codes = cell.challengeType ? [['starter', cell.code], ['solution', cell.solution]] : [['code', cell.code]]
         for (const [part, code] of codes) {

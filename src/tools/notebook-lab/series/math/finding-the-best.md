@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Setting up the problem
 
+::: math
+\[ V = \pi r^2 h, \qquad h = \frac{V}{\pi r^2}, \qquad A(r) = 2\pi r^2 + \frac{2V}{r} \]
+- objective: sheet area $A$; constraint: fixed volume $V$
+- solving the constraint for $h$ leaves an objective in $r$ alone
+In code: `area(r)` evaluated on `np.linspace(1.5, 8, 1301)`, then the smallest value
+:::
+
+
 A closed cylindrical can of radius r and height h holds V = πr²h and uses sheet area A = 2πr² (two ends) + 2πrh (the side). The objective is A; the constraint is that V is fixed, say 330 ml. A constraint that can be solved for one variable removes it: h = V/(πr²), so
 
 \[ A(r) = 2\pi r^2 + \frac{2V}{r} \]
@@ -51,6 +59,14 @@ The best can has r ≈ 3.74 cm and h ≈ 7.49 cm: its height equals its diameter
 
 ## The derivative test
 
+::: math
+\[ A'(r) = 4\pi r - \frac{2V}{r^2} = 0 \;\Longrightarrow\; r^3 = \frac{V}{2\pi}, \qquad h = 2r, \qquad A''(r) = 4\pi + \frac{4V}{r^3} > 0 \]
+- a smooth interior minimum has zero derivative
+- a positive second derivative confirms a minimum
+In code: `sp.solve(sp.diff(A_expr, r), r)`
+:::
+
+
 At a smooth interior minimum the graph is momentarily level, so the derivative is zero: the stationary points of the derivative lesson. For the can, A′(r) = 4πr − 2V/r² = 0 gives r³ = V/(2π), and then h = V/(πr²) = 2r exactly: height equals diameter, for any volume. The **second derivative** confirms a minimum: A″(r) = 4π + 4V/r³ > 0, so the curve bends upward (it is convex). SymPy does the algebra. Predict before running: does the formula match the grid search?
 
 ```python
@@ -68,6 +84,14 @@ print("second derivative at r*:", float(sp.diff(A_expr, r, 2).subs({r: r_opt, Vs
 SymPy finds r* = (V/2π)^(1/3) = 3.7449 cm, matching the grid's 3.745, with h/r exactly 2. The second derivative is positive, so it is a minimum. The derivative method gives exact, general answers when the algebra is manageable; the grid search needed no algebra but cost 1,301 evaluations for three decimal places.
 
 ## Golden-section search
+
+::: math
+\[ c = b - g\,(b - a), \quad d = a + g\,(b - a), \qquad g = \frac{\sqrt{5} - 1}{2} \approx 0.618 \]
+- if $f(c) < f(d)$ the minimum lies in $[a, d]$, otherwise in $[c, b]$
+- each step reuses one old point and shrinks the interval by the factor $g$
+In code: `golden(f, a, b, tol)` loops `while b - a > tol`
+:::
+
 
 When the objective comes from a simulation rather than a formula, there is no derivative to solve, and a fine grid is expensive. If the function has a single minimum on an interval (it is **unimodal**), the interval can be shrunk systematically: evaluate two interior points; the minimum cannot lie beyond the higher one, so discard that part. **Golden-section search** places the two points at the golden-ratio fractions of the interval, 0.382 and 0.618, so that one old point is reused at every step: each step costs one new evaluation and shrinks the interval by a factor of 0.618. Predict before running: how many evaluations does golden section need to match the grid's precision?
 
@@ -99,6 +123,14 @@ When f(c) < f(d) the minimum lies in [a, d], and the old c becomes the new d; ot
 Golden section reaches the grid's precision (10⁻³ cm) with about 20 evaluations instead of 1,301, and shrinks the interval below 10⁻⁹ with 49. The true accuracy then is only about 10⁻⁸, though: near a minimum the function is so flat that nearly equal values cannot be told apart in floating point, which limits any comparison-based search to about the square root of machine precision. Each evaluation multiplies the interval by 0.618, so the cost grows only with the logarithm of the required precision, the bisection idea again. Its one requirement is unimodality: with several valleys it finds one of them, not necessarily the lowest.
 
 ## Constraints and boundaries
+
+::: math
+\[ \min_{a \le r \le b} A(r): \text{ compare } A \text{ at the stationary points inside and at } r = a,\; r = b \]
+- the best point may lie on the boundary, where $A'(r) \ne 0$
+- with $r \le 3.2$ the area is still falling at the limit
+In code: `optimize.minimize_scalar(area, bounds=(1.5, 3.2), method="bounded")`
+:::
+
 
 Constraints often limit the variables to a range, and then the best point may be on the **boundary**, where the derivative need not be zero. Suppose the can must fit a pallet layout that allows a radius of at most 3.2 cm. The unconstrained optimum, 3.74 cm, is not allowed; since the area falls all the way up to 3.74, the best allowed radius is the boundary 3.2 cm. The rule for one variable on [a, b]: check the stationary points inside and both ends, and take the best.
 

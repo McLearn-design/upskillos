@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Constant factor per step
 
+::: math
+\[ N_n = N_0\,r^n, \qquad r = 1 + p, \qquad n_\text{double} = \frac{\ln 2}{\ln r} \approx \frac{0.693}{p} \]
+- $p$: growth rate per step; $r$: the factor per step
+- linear growth adds the same amount each step: $N_0 + c\,n$
+In code: `1000 * 1.05 ** years` against `1000 + 100 * years`
+:::
+
+
 If a quantity is multiplied by the same factor r every step, after n steps it is N₀ rⁿ. A growth rate of p per step means r = 1 + p: 5% interest gives r = 1.05; a 3% loss gives r = 0.97. The **doubling time** is the number of steps for rⁿ = 2, n = ln 2 / ln r, which for small p is about 0.693/p, giving the "rule of 70": at p percent per year, money doubles in about 70/p years.
 
 The striking thing about exponentials is how they compare with steady, linear change. Predict before running: £1,000 earning 5% a year, against £1,000 plus a fixed £100 a year. Which is ahead after 10 years, and after 40?
@@ -34,6 +42,14 @@ print("compound first ahead in year", crossover)
 The linear account is ahead for years: at 10 years it has £2,000 against £1,629. The compound account catches up only in year 27, and then pulls away: by year 40 it is £2,040 ahead. Exponential growth is slow at first and relentless later, which is why it is so often underestimated, in debt, in populations, and in the spread of faults through a network.
 
 ## Continuous change and e
+
+::: math
+\[ \lim_{n\to\infty}\left(1 + \frac{k}{n}\right)^n = e^k, \qquad \frac{dN}{dt} = kN \;\;\Longrightarrow\;\; N(t) = N_0\,e^{kt} \]
+- compounding $n$ times a year approaches the continuous limit $e^k$
+- $k > 0$: growth; $k < 0$: decay
+In code: `(1 + k / n) ** n` against `math.exp(k)`; an Euler loop multiplies `N` by 1.03 per step
+:::
+
 
 Interest paid more often grows slightly faster: 5% a year paid monthly is 0.05/12 per month, giving (1 + 0.05/12)¹² ≈ 1.0512 per year. Paying ever more often approaches a limit,
 
@@ -66,6 +82,14 @@ Daily compounding gives 1.0512675 against the continuous 1.0512711: the limit is
 
 ## Decay, half-life and time constant
 
+::: math
+\[ V(t) = V_0\,e^{-t/\tau}, \qquad \tau = RC, \qquad t_{1/2} = \tau\ln 2, \qquad t = \tau\ln\frac{V_0}{V} \]
+- after one $\tau$, $1/e \approx 36.8\%$ remains; after $5\tau$, under 1%
+- the fraction lost in any window depends only on its length
+In code: `tau = R * C`, `V0 * math.exp(-n_tau)` and `tau * math.log(V0 / 1.0)`
+:::
+
+
 For decay, N = N₀ e^(−t/τ), where τ (tau) is the **time constant**: after one τ, 1/e ≈ 36.8% remains; after 3τ, 5%; after 5τ, under 1%. The **half-life** is the time for half to remain: e^(−t½/τ) = ½, so t½ = τ ln 2 ≈ 0.693τ. Radioactive isotopes are described by half-lives; electrical circuits by time constants (τ = RC for a capacitor discharging through a resistor). Either one determines the other.
 
 A useful property: the fraction remaining after a time t depends only on t, not on when you start. A sample does not remember its age. Predict before running: a 100 µF capacitor charged to 24 V discharges through a 47 kΩ resistor. When is it below 1 V?
@@ -86,6 +110,14 @@ The time to fall from V₀ to V comes from solving V₀ e^(−t/τ) = V: t = τ 
 The time constant is 4.7 s and the half-life 3.26 s. The voltage is below 1 V after 14.94 s, about 3.2 time constants. Any 2-second window loses the same fraction (keeping 65.3%), whether it starts at 0 s or at 5 s. That memoryless property is what makes exponential decay the natural model for radioactive atoms, which have no internal clock.
 
 ## Cooling as exponential decay
+
+::: math
+\[ T(t) - T_\text{room} = (T_0 - T_\text{room})\,e^{-kt}, \qquad k = \frac{\ln(D_1/D_2)}{t_2 - t_1} \]
+- the **gap** $D = T - T_\text{room}$ decays exponentially, not the temperature
+- two measurements of the gap fix $k$
+In code: `k = math.log((T0 - T_room) / (T4 - T_room)) / 4`
+:::
+
 
 Newton's law of cooling, plotted in an earlier lesson, says the **difference** between an object's temperature and its surroundings decays exponentially: T(t) − T_room = (T₀ − T_room) e^(−kt). The temperature itself is not exponential; the gap is. With two measurements, k follows from taking logarithms: k = ln(D₁/D₂)/(t₂ − t₁), where D is the gap at each time.
 

@@ -13,6 +13,14 @@ This lesson covers:
 
 ## Counting defectives: the binomial distribution
 
+::: math
+\[ P(K = k) = \binom{n}{k}\,p^k\,(1 - p)^{n - k}, \qquad k = 0, 1, \dots, n \]
+- $K$: number of defectives in a box of $n$, each defective with probability $p$
+- $\binom{n}{k}$ counts the ways to choose which $k$ parts are bad
+In code: `binom_pmf(k, n, p)` against `rng.binomial(n, p, size=...)`
+:::
+
+
 The number of defective parts K in a box of n, each independently defective with probability p, is a **discrete** random variable: it takes whole-number values. Its distribution lists P(K = k) for each k. Choosing which k of the n parts are defective can be done in C(n, k) ways, each with probability pᵏ(1 − p)ⁿ⁻ᵏ, so
 
 \[ P(K = k) = \binom{n}{k} p^k (1-p)^{n-k} \]
@@ -50,6 +58,14 @@ Counts of 0 and 1 are almost equally likely (0.364 and 0.372), with 1 just ahead
 
 ## Expected value and variance
 
+::: math
+\[ E[X] = \sum_x x\,P(X = x), \qquad \text{Var}(X) = \sum_x (x - \mu)^2\,P(X = x), \qquad \sigma = \sqrt{\text{Var}(X)} \]
+- binomial: $E[K] = np$ and $\text{Var}(K) = np(1 - p)$
+- expected values always add; variances add for independent variables
+In code: `mean_and_sd(values, probs)` computes `(values * probs).sum()` and the weighted squared deviations
+:::
+
+
 The **expected value** (mean) of a random variable is the probability-weighted average of its values, E[X] = Σ x P(X = x): the long-run average over many repetitions. The **variance** measures spread, the expected squared distance from the mean: Var(X) = E[(X − μ)²]. Its square root, the **standard deviation** σ, has the same units as X.
 
 For the binomial, E[K] = np and Var(K) = np(1 − p). These follow from a powerful rule: **expected values add**, always, E[X + Y] = E[X] + E[Y], and **variances add for independent variables**. K is a sum of n independent 0/1 variables, each with mean p and variance p(1 − p). Predict before running: what are the mean and standard deviation of the defective count?
@@ -71,6 +87,14 @@ print(f"simulated: mean {counts.mean():.4f}, sd {counts.std():.4f}")
 The distribution, the formulas and the simulation all give a mean of 1 defective per box and a standard deviation of about 0.99. A standard deviation as large as the mean is typical of rare counts, and it means the count in a single box says little about the defect rate.
 
 ## Continuous distributions and the normal curve
+
+::: math
+\[ f(x) = \frac{1}{\sigma\sqrt{2\pi}}\,e^{-(x - \mu)^2/(2\sigma^2)}, \qquad P(X < x) = \tfrac{1}{2}\left(1 + \operatorname{erf}\frac{x - \mu}{\sigma\sqrt{2}}\right) \]
+- probability is area under the density: $P(a < X < b) = \int_a^b f(x)\,dx$
+- within $1\sigma$, $2\sigma$, $3\sigma$: about 68%, 95%, 99.7%
+In code: `normal_pdf(x, mu, sigma)` and `normal_cdf(x, mu, sigma)` using `math.erf`
+:::
+
 
 A measurement error is **continuous**: it can take any value in a range, and the chance of any single exact value is zero. Its distribution is described by a **probability density** f(x): probabilities are **areas** under it, P(a < X < b) = ∫ₐᵇ f(x) dx, and the total area is 1. The density is the limit of a histogram whose bar areas are probabilities.
 
@@ -112,6 +136,14 @@ The 68–95–99.7 pattern appears in both the formula and the simulation. ±0.0
 
 ## Why errors are normal
 
+::: math
+\[ S = X_1 + X_2 + \dots + X_n, \qquad E[S] = \sum_i \mu_i, \qquad \text{Var}(S) = \sum_i \sigma_i^2 \]
+- central limit theorem: $S$ is approximately normal for many independent small terms
+- uniform on $[-0.5, 0.5]$ has variance $1/12$, so 12 of them give $\sigma = 1$
+In code: `rng.uniform(-0.5, 0.5, size=(200_000, 12)).sum(axis=1)`
+:::
+
+
 Why should measurement errors be normal at all? Because an error is usually the **sum** of many small independent effects: temperature, vibration, the operator's grip, electrical noise. The **central limit theorem**, proved in the statistics block, says that a sum of many independent random variables of finite variance, none of which dominates the total, is approximately normal, whatever their individual distributions. Predict before running: each of 12 small error sources is uniform on [−0.5, 0.5] µm, as flat as a distribution can be. What does their total look like?
 
 ```python
@@ -135,6 +167,14 @@ A uniform distribution on an interval of width 1 has variance 1/12, so twelve in
 The sum of twelve flat distributions is already almost indistinguishable from the normal curve, with 67.8%, 95.6% and 99.8% within 1, 2 and 3σ against the normal's 68.3%, 95.4% and 99.7%; the small differences remain because a sum of twelve values between −0.5 and 0.5 can never go beyond ±6, while a true normal has (very thin) tails beyond any limit. This is why the normal distribution is everywhere in measurement and manufacturing, and why it is a reasonable default model when a quantity is the net result of many small influences.
 
 ## Tolerance stacking
+
+::: math
+\[ \text{worst case: } \sum_i 3\sigma_i, \qquad \text{statistical (RSS): } 3\sqrt{\sum_i \sigma_i^2} \]
+- standard deviations of independent errors add in quadrature
+- five parts: worst case $5 \times 0.06$, RSS $3\sqrt{5} \times 0.02$
+In code: `(3 * sigmas).sum()` against `3 * math.sqrt((sigmas ** 2).sum())`
+:::
+
 
 An assembly of several parts has a total length that is the sum of the parts' lengths, so its errors add. The **worst-case** approach assumes every part is at the extreme of its tolerance at once, so tolerances add: very safe and very expensive. The **statistical** approach uses the fact that independent errors rarely all go the same way: standard deviations add **in quadrature** (σ_total = √(σ₁² + σ₂² + ...)), because variances add. This root-sum-square (**RSS**) stack lets each part have a much wider tolerance for the same assembly quality.
 

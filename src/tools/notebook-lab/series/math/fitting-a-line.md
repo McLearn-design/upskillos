@@ -13,6 +13,14 @@ This lesson covers:
 
 ## Least squares as a matrix problem
 
+::: math
+\[ A = \begin{pmatrix} 1 & x_1 \\ 1 & x_2 \\ \vdots & \vdots \\ 1 & x_n \end{pmatrix}, \qquad \min_{\mathbf{c}} \|\mathbf{y} - A\mathbf{c}\|^2, \qquad A^\mathsf{T} A\,\mathbf{c} = A^\mathsf{T}\mathbf{y} \]
+- one row per data point; $\mathbf{c} = (c_0, c_1)$: intercept and slope
+- the normal equations turn the overdetermined system into a small square one
+In code: `np.linalg.solve(A.T @ A, A.T @ emf_mv)` and `np.linalg.lstsq(A, emf_mv, rcond=None)`
+:::
+
+
 Fitting y ≈ c₀ + c₁x to n points gives n equations in 2 unknowns, one per point: c₀ + c₁xᵢ ≈ yᵢ. In matrix form A c ≈ y, where the **design matrix** A has a column of ones (for the intercept) and a column of x values. With more equations than unknowns the system is **overdetermined**: no c satisfies them all, so least squares picks the c minimising the squared length of the residual vector, ‖y − A c‖². The minimum satisfies the **normal equations**
 
 \[ A^\mathsf{T} A \, \mathbf{c} = A^\mathsf{T} \mathbf{y} \]
@@ -45,6 +53,14 @@ All three agree: an intercept of about −0.069 mV and a slope of 0.04070 mV per
 
 ## Residuals and R²
 
+::: math
+\[ R^2 = 1 - \frac{\text{SSE}}{\text{SST}}, \qquad \text{SSE} = \sum_i r_i^2, \qquad \text{SST} = \sum_i (y_i - \bar{y})^2 \]
+- $r_i = y_i - \hat{y}_i$: residuals; a pattern in them means the model's shape is wrong
+- $R^2$ near 1 does not prove the model is right
+In code: `resid = emf_mv - A @ lstsq`, then `1 - sse / sst`
+:::
+
+
 A fitted line always exists, so the question is whether it **fits**. Two tools answer it. The **coefficient of determination** R² = 1 − SSE/SST compares the residual sum of squares SSE with the total variation SST = Σ(yᵢ − ȳ)²: R² = 1 means a perfect fit, 0 means the line explains nothing. A **residual plot** is far more informative: residuals scattered randomly about zero mean the model's shape is right; a curve or trend in them means it is wrong, however high R² is. Predict before running: R² will be extremely close to 1. Do the residuals look random?
 
 ```python
@@ -68,6 +84,14 @@ R² is 0.9999, which sounds like a perfect line. The residuals tell a different 
 
 ## Curves that are linear in their parameters
 
+::: math
+\[ y \approx c_0 + c_1 x + c_2 x^2, \qquad A = \begin{pmatrix} 1 & x_i & x_i^2 \end{pmatrix}_{i = 1..n} \]
+- linear least squares means linear in the coefficients $c_j$, not in $x$
+- any model $\sum_j c_j f_j(x)$ fits the same way, one column per $f_j$
+In code: `np.column_stack([np.ones_like(temp_c), temp_c, temp_c ** 2])`, then `lstsq`
+:::
+
+
 "Linear least squares" means linear in the **coefficients**, not in x. A quadratic c₀ + c₁x + c₂x² is linear in c₀, c₁, c₂: its design matrix simply gains a column of x². Any model of the form c₀f₀(x) + c₁f₁(x) + ... fits the same way, with one column per function: polynomials, sines and cosines, or 1/x terms. Predict before running: does adding an x² column remove the U-shaped residual pattern?
 
 ```python
@@ -82,6 +106,14 @@ print(f"rms residual: line {np.sqrt((resid ** 2).mean()) * 1000:.1f} µV, quadra
 The x² coefficient is small (about 3 × 10⁻⁶ mV/°C²), but it removes the systematic pattern: the quadratic's residuals are a few microvolts with no obvious shape, and the rms residual drops from about 45 µV to under 2 µV. The remaining scatter is the measurement noise, which no model should try to follow.
 
 ## Uncertainty of the fit
+
+::: math
+\[ s = \sqrt{\frac{\text{SSE}}{n - 2}}, \qquad \text{SE}(c_1) = \frac{s}{\sqrt{\sum_i (x_i - \bar{x})^2}}, \qquad \text{SE}(c_0) = s\sqrt{\frac{1}{n} + \frac{\bar{x}^2}{\sum_i (x_i - \bar{x})^2}} \]
+- $n - 2$: two parameters were fitted
+- 95% interval: $c_1 \pm t_{n-2}\,\text{SE}(c_1)$
+In code: `s = math.sqrt(((counts - X @ [c0, c1]) ** 2).sum() / (n - 2))`
+:::
+
 
 Fitted coefficients are estimates and deserve standard errors. For a straight line with n points, the residual standard deviation is s = √(SSE/(n − 2)), dividing by n − 2 because two parameters were fitted (the same reasoning as n − 1 for a mean). Then
 
@@ -109,6 +141,14 @@ The sensitivity is about 164.87 counts per kg, known to within about ±0.28 (95%
 
 ## The same fit in OpenMAT
 
+::: math
+\[ \mathbf{c} = (A^\mathsf{T} A)^{-1} A^\mathsf{T}\mathbf{y} \]
+- with more rows than columns, left division returns the least-squares solution
+- $A^\mathsf{T}$ is written `A'`; `.^` squares element by element
+In code: `c = A \ counts` against `c_normal = (A' * A) \ (A' * counts)`
+:::
+
+
 In MATLAB-style notation, the backslash operator does least squares automatically when the system is overdetermined: `A \ y` with more rows than columns returns the least-squares coefficients. `ones(n, 1)` makes the column of ones and `A'` is the transpose. The cell shares no variables with Python. Predict before running: do the backslash and the normal equations agree for the load cell?
 
 ```openmat
@@ -126,6 +166,14 @@ sse = sum(resid .^ 2)
 Both give the same intercept and slope as NumPy, and the residual sum of squares matches. This compactness is why MATLAB-style tools remain popular for calibration and data fitting.
 
 ## Too flexible a model
+
+::: math
+\[ \text{prediction error} = \sqrt{\frac{1}{m}\sum_{j=1}^{m} \big(y_j^\text{new} - \hat{y}(x_j^\text{new})\big)^2} \]
+- a degree $n - 1$ polynomial passes through all $n$ points; degree 7 on 9 points nearly does, and predicts poorly
+- judge a model on data it was not fitted to
+In code: `np.polyfit(x, y, degree)` for degrees 1 and 7, scored with `np.polyval(coef, x_new)`
+:::
+
 
 A polynomial of degree n − 1 passes exactly through n points: zero residuals, R² = 1. That is not a better model, it is memorising the noise. Between the data points such a fit swings away from the truth, and its predictions are worse than a simple line's. This is **overfitting**, and the cure is to judge a model by how well it predicts data it was **not** fitted to. Predict before running: which predicts the held-back points better, a straight line or a degree-7 polynomial?
 

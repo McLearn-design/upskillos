@@ -13,6 +13,14 @@ This lesson covers:
 
 ## The unit circle
 
+::: math
+\[ P(\theta) = (\cos\theta,\; \sin\theta), \qquad \cos^2\theta + \sin^2\theta = 1 \]
+- $\cos\theta$ is the x coordinate, $\sin\theta$ the y coordinate of the point at angle $\theta$ on the unit circle
+- the signs follow the quadrant; adding $360°$ gives the same point
+In code: `math.cos(th), math.sin(th)` with `th = math.radians(deg)`
+:::
+
+
 Take a circle of radius 1 centred at the origin, the **unit circle**. Start at the point (1, 0) and rotate anticlockwise through an angle θ. The point you reach has coordinates
 
 \[ (\cos\theta, \; \sin\theta) \]
@@ -35,6 +43,14 @@ for deg in [0, 30, 45, 90, 135, 180, 270, -60, 420]:
 At 135° the point is up and to the left: cosine negative, sine positive. Signs follow the quadrant. 420° is 60° plus a full turn, so it gives the same point as 60°. The identity cos² + sin² = 1 holds at every angle, up to rounding in the last digit.
 
 ## Waves from rotation
+
+::: math
+\[ y(t) = A\sin(\omega t + \varphi), \qquad T = \frac{2\pi}{\omega}, \qquad f = \frac{1}{T} \]
+- $A$: amplitude; $\omega$: angular frequency; $\varphi$: phase; $T$: period; $f$: frequency in Hz
+- $\cos\theta = \sin(\theta + 90°)$: cosine is sine shifted a quarter turn
+In code: `np.sin(theta)` and `np.cos(theta)` over `np.linspace(0, 4 * np.pi, 400)`
+:::
+
 
 Rotate at a steady angular speed ω and the angle is θ = ωt. The height of the point, sin(ωt), traces a wave against time. It repeats every full turn: the **period** is T = 2π/ω and the **frequency** f = 1/T cycles per second (hertz). A general sinusoid is
 
@@ -69,6 +85,14 @@ Where the sine crosses zero going up (θ = 0, 2π), the cosine is at its maximum
 
 ## Triangles and inverse functions
 
+::: math
+\[ \sin\theta = \frac{\text{opp}}{\text{hyp}}, \quad \cos\theta = \frac{\text{adj}}{\text{hyp}}, \quad \tan\theta = \frac{\text{opp}}{\text{adj}}, \qquad \theta = \operatorname{atan2}(y, x) \in (-180°, 180°] \]
+- $\arctan(y/x)$ cannot tell $(1, 1)$ from $(-1, -1)$; $\operatorname{atan2}$ sees both signs
+- $\arcsin$ turns a ratio back into an angle (principal value)
+In code: `math.atan2(y, x)` for a direction; `math.asin(rise / length)` for the ramp
+:::
+
+
 In a right triangle with an angle θ, put θ at the centre of a circle whose radius is the hypotenuse. The side opposite θ is then the y coordinate and the adjacent side the x coordinate, so
 
 \[ \sin\theta = \frac{\text{opposite}}{\text{hypotenuse}}, \quad \cos\theta = \frac{\text{adjacent}}{\text{hypotenuse}}, \quad \tan\theta = \frac{\sin\theta}{\cos\theta} = \frac{\text{opposite}}{\text{adjacent}} \]
@@ -90,6 +114,14 @@ print(f"a ramp rising {ramp_rise} m over a {ramp_length} m slope is inclined at 
 
 ## Polar coordinates and bolt circles
 
+::: math
+\[ x = r\cos\theta,\; y = r\sin\theta \qquad\Longleftrightarrow\qquad r = \sqrt{x^2 + y^2},\; \theta = \operatorname{atan2}(y, x) \]
+- hole $k$ of $n$ on a bolt circle sits at $\theta_k = \dfrac{2\pi k}{n}$, radius $r = \text{PCD}/2$
+- neighbouring holes are a chord $2r\sin(\pi/n)$ apart
+In code: `pcd / 2 * math.cos(2 * math.pi * k / n)`, and back with `math.hypot`, `math.atan2`
+:::
+
+
 A point can be described by its distance from the origin and its direction: **polar coordinates** (r, θ). Converting is exactly what this lesson has built: x = r cos θ, y = r sin θ one way, and r = √(x² + y²), θ = atan2(y, x) the other.
 
 Flanges, wheel hubs and pipe joints carry holes equally spaced on a **bolt circle** (its diameter is called the pitch circle diameter, PCD). The hole positions are polar coordinates converted to x and y for the CNC program. Predict before running: on a 100 mm PCD with six holes, how far apart are neighbouring holes in a straight line?
@@ -109,6 +141,14 @@ The straight-line distance between neighbouring holes is a **chord** of the circ
 With six holes the spacing equals the radius, 50 mm, because six equal chords form a regular hexagon. Converting back to polar recovers r = 50 and angles in steps of 60° (shown in (−180°, 180°], so 240° appears as −120°). The last line shows hole 3 unrounded: its y coordinate is 6.12e-15, not 0, because π is not exact in floating point. Round coordinates for display and for a machine program.
 
 ## A crank and a piston
+
+::: math
+\[ x(\theta) = r\cos\theta + \sqrt{l^2 - r^2\sin^2\theta} \]
+- $r$: crank radius; $l$: connecting-rod length; $x$: piston distance from the shaft
+- stroke $= x(0) - x(\pi) = 2r$; mid-stroke is $\tfrac{1}{2}\big(x_{\max} + x_{\min}\big)$
+In code: `r * np.cos(theta) + np.sqrt(l ** 2 - (r * np.sin(theta)) ** 2)`
+:::
+
 
 A **crank–slider** turns rotation into back-and-forth motion: a crank of radius r turns about a shaft, and a connecting rod of length l joins the crank pin to a piston sliding along a line. With the crank at angle θ from the line, the pin is at (r cos θ, r sin θ), and the piston, which stays on the line, is at the distance
 

@@ -14,6 +14,15 @@ This lesson covers:
 
 ## Whole numbers are exact
 
+::: math
+\[ a = q\,d + r, \qquad 0 \le r < d \]
+- $q = \lfloor a / d \rfloor$: the whole-number quotient; $r$: the remainder
+- $n! = n \times (n-1) \times \cdots \times 2 \times 1$
+- integers are exact: every digit of $50!$ is correct
+In code: `a // d` is $q$, `a % d` is $r$, and `a / d` is a float approximation of $a/d$
+:::
+
+
 Python's integers (`int`) have no size limit: they grow to as many digits as needed, and arithmetic on them is exact. That makes them right for anything you count: teeth on a gear, parts in a batch, steps in a simulation. Division is the one place to take care. `/` always gives a floating-point result, `//` gives the whole-number quotient (rounded down), and `%` gives the remainder. Predict before running: how many digits does 50! have, and how many full boxes of 48 do 1,000 bolts fill?
 
 ```python
@@ -31,6 +40,15 @@ print("exact check:", (bolts // per_box) * per_box + bolts % per_box == bolts)
 50! has 65 digits, every one of them correct. 1,000 bolts make 20 full boxes with 40 left over, and the check confirms that quotient times divisor plus remainder rebuilds the original exactly. `bolts / per_box` gives 20.833333333333332, a floating-point number, which is the subject of the next section.
 
 ## Floating point: close, not exact
+
+::: math
+\[ \text{fl}(x) = x\,(1 + \delta), \qquad |\delta| \le \varepsilon \approx 1.1 \times 10^{-16} \]
+- $\text{fl}(x)$: the float actually stored for the real number $x$
+- $\delta$: the relative rounding error, at most about $10^{-16}$
+- so compare with a tolerance: $|a - b| \le \text{tol}$, never $a = b$
+In code: `math.isclose(a, b)` or `abs(a - b) <= tol` instead of `a == b`
+:::
+
 
 Measurements and most calculations use **floating-point** numbers (`float`), which store about 15–17 significant decimal digits in binary. Many simple decimal fractions, such as 0.1, have no exact binary form, just as 1/3 has no exact decimal form, so they are stored as the nearest binary fraction. The difference is tiny, but it is there, and it can surface in a comparison. Predict before running: is `0.1 + 0.2 == 0.3`, and does adding a 0.1 mm shim ten times give exactly 1.0 mm?
 
@@ -52,6 +70,14 @@ print("close enough?", math.isclose(stack, 1.0), "| difference:", stack - 1.0)
 Neither comparison is true. The stored 0.1 is 0.1000000000000000055511151231257827..., and the tiny errors add up to a stack that is 1.1 × 10⁻¹⁶ mm short of 1.0. That is far below anything a machine could measure, but `==` sees it. The rule that follows is one of the most important in numerical work: **never compare floats with `==`; compare them with a tolerance**. `math.isclose(a, b)` does that, with a relative tolerance of 10⁻⁹ by default, and `abs(a - b) <= tol` does it with a tolerance you choose from the problem.
 
 ## Exact alternatives: fractions and decimals
+
+::: math
+\[ \left(\frac{37}{12}\right)^3 = \frac{37^3}{12^3} = \frac{50653}{1728} \]
+- a fraction $p/q$ of whole numbers is stored exactly, so products and powers stay exact
+- a decimal such as 0.10 is exact in base 10 but not in base 2
+In code: `Fraction(37, 12) ** 3` stays exact; `Decimal("0.10")` keeps decimal digits exactly
+:::
+
 
 When a number is exact by nature, store it exactly. Python's standard library has two exact types:
 
@@ -81,6 +107,14 @@ The fraction keeps the ratio as exactly 50653/1728. The float version has alread
 
 ## Rounding and significant figures
 
+::: math
+\[ 2.675 \;\to\; \text{stored as } 2.67499999\ldots \;\to\; \text{rounds to } 2.67 \]
+- round half to even: $2.5 \to 2$, $3.5 \to 4$, $0.125 \to 0.12$
+- significant figures report a value only as precisely as it is known
+In code: `round(x, 2)` rounds the stored value; `f"{x:.3g}"` shows 3 significant figures
+:::
+
+
 A result should be reported to the precision it deserves. A diameter measured with a 0.01 mm micrometer is not known to 15 digits, however many the computer prints. Python offers:
 
 - `round(x, n)`, rounding to n decimal places. It rounds exact halves to the **even** neighbour ("banker's rounding"), so `round(2.5)` is 2, which avoids a bias when many values are rounded;
@@ -104,6 +138,14 @@ Underscores in `299_792_458` are ignored by Python; they make long numbers reada
 0.125 and 0.375 are exact in binary, so they are true halves, and both round to the even digit: 0.12 and 0.38. But 2.675 rounds down to 2.67, because the stored value is just below 2.675. Banker's rounding only applies to exact halves, and most decimal halves are not exact in binary. When rounding rules matter legally, as with money, use `Decimal` with an explicit rounding mode. For reporting, choose significant figures to match what was measured.
 
 ## The limits of floating point
+
+::: math
+\[ 10^{16} + 1 = 10^{16} \ \text{in floating point}, \qquad \varepsilon = 2^{-52} \approx 2.2 \times 10^{-16} \]
+- absorption: adding $b$ to $a$ is lost when $|b| < \tfrac{\varepsilon}{2}|a|$
+- a running total of $10^6$ steps of 0.1 accumulates many small rounding errors
+In code: `math.fsum(values)` gives the correctly rounded total; `sys.float_info.epsilon` is $\varepsilon$
+:::
+
 
 Floats have three limits worth knowing:
 

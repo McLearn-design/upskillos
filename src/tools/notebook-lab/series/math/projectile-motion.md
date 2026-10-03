@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Two independent motions
 
+::: math
+\[ x(t) = v\cos\theta\; t, \qquad y(t) = h + v\sin\theta\; t - \tfrac{1}{2} g t^2 \]
+- horizontal: constant velocity; vertical: constant acceleration $-g$
+- $v$: launch speed; $\theta$: launch angle; $h$: launch height; the two motions share only $t$
+In code: `x = v * math.cos(th) * t`, with `t` running from 0 to the flight time
+:::
+
+
 A projectile launched at speed v and angle θ above the horizontal starts with velocity components v cos θ sideways and v sin θ upwards. With air resistance ignored, the only force is gravity, straight down. So horizontally nothing changes: constant velocity. Vertically, the acceleration is the constant −g. Each component follows its own one-dimensional equation from the motion lesson:
 
 \[ x(t) = v\cos\theta \; t, \qquad y(t) = h + v\sin\theta \; t - \tfrac{1}{2} g t^2 \]
@@ -47,6 +55,14 @@ The flight time comes from setting y = 0: t (v sin θ − ½ g t) = 0, so beside
 
 ## Range, height and flight time
 
+::: math
+\[ T = \frac{2v\sin\theta}{g}, \qquad R = \frac{v^2 \sin 2\theta}{g}, \qquad H = \frac{(v\sin\theta)^2}{2g} \]
+- $T$: flight time; $R$: range; $H$: maximum height (level ground)
+- $\sin 2\theta$ peaks at $\theta = 45°$; $\theta$ and $90° - \theta$ give equal ranges
+In code: `level_flight(v, deg)` returns `T, R, H`
+:::
+
+
 The plotted results have formulas. On level ground (h = 0):
 
 \[ T = \frac{2v\sin\theta}{g}, \qquad R = v\cos\theta \cdot T = \frac{v^2 \sin 2\theta}{g}, \qquad H = \frac{(v\sin\theta)^2}{2g} \]
@@ -70,6 +86,14 @@ print("sin(2 × 30°) = sin(2 × 60°):", math.isclose(math.sin(math.radians(60)
 Doubling the speed quadruples the range and the height (they grow with v²) and doubles the flight time. This square law is the reason grinding sparks or flung debris can travel surprisingly far: a fragment leaving a wheel at 40 m/s could, in a vacuum, land 163 m away. Air resistance shortens that a lot, as the last section shows.
 
 ## Launching from a height
+
+::: math
+\[ h + v\sin\theta\; t - \tfrac{1}{2} g t^2 = 0 \quad\Longrightarrow\quad t = \frac{v\sin\theta + \sqrt{(v\sin\theta)^2 + 2gh}}{g} \]
+- the positive root of the quadratic is the landing time
+- landing distance $= v\cos\theta \cdot t$; search $\theta$ for the largest
+In code: `landing_distance(v, deg, h)` evaluated over `np.arange(0, 90.01, 0.1)`
+:::
+
 
 From a height h the landing time solves h + v sin θ t − ½ g t² = 0, a quadratic in t. Its positive root is
 
@@ -96,6 +120,14 @@ The search tries every angle in steps of 0.1° and keeps the best, a brute-force
 The best angle is 31.6°, not 45°, landing 5.96 m out, compared with 5.63 m at 45° and 4.69 m thrown horizontally. The search and the formula agree. When a formula is unknown, a fine search is a trustworthy way to find an optimum of a single variable, and the result checks the formula when one is found.
 
 ## Hitting a target
+
+::: math
+\[ \frac{gX^2}{2v^2}\,u^2 - X\,u + \left(Y + \frac{gX^2}{2v^2}\right) = 0, \qquad u = \tan\theta \]
+- discriminant $b^2 - 4ac$: positive gives two angles, zero gives one, negative gives none
+- $u = \dfrac{-b \pm \sqrt{b^2 - 4ac}}{2a}$, then $\theta = \arctan u$
+In code: `a = g * X ** 2 / (2 * v ** 2)`, `b = -X`, `c = Y + a`, `disc = b * b - 4 * a * c`
+:::
+
 
 To hit a point (X, Y), substitute t = X/(v cos θ) into the y equation. Using 1/cos²θ = 1 + tan²θ gives a quadratic in u = tan θ:
 
@@ -125,6 +157,14 @@ print("check the flat shot: height at x = 40 is", round(25 * math.sin(th) * t_hi
 The target at (40, 10) can be hit with a flat shot at about 36.2° or a lob at about 67.8°. (60, 0) is just inside the 63.7 m level range, so two angles again, one either side of 45°. (60, 10) is out of reach at 25 m/s. Substituting the flat-shot angle back into the equations confirms the projectile passes through the target.
 
 ## Air resistance
+
+::: math
+\[ \mathbf{a} = (0, -g) - k\,|\mathbf{v}|\,\mathbf{v}, \qquad \mathbf{v} \leftarrow \mathbf{v} + \mathbf{a}\,\Delta t, \qquad \mathbf{p} \leftarrow \mathbf{p} + \mathbf{v}\,\Delta t \]
+- drag force $\tfrac{1}{2}\rho C_d A v^2$ opposes the velocity; $k$ is that constant divided by the mass
+- no formula exists, so step through time until the ball lands
+In code: `acc = np.array([0.0, -g]) - k * speed * vel`, then `pos + vel * dt` and `vel + acc * dt`
+:::
+
 
 Real projectiles feel **drag**, a force opposing the velocity whose size grows roughly with the square of the speed: F = ½ ρ C_d A v². With drag, the horizontal and vertical motions are no longer independent (the drag depends on the total speed), and no simple formula exists. Time stepping, from the motion lesson, handles it: at each small step, compute the acceleration (gravity plus drag, which points against the velocity vector), update the velocity, update the position.
 

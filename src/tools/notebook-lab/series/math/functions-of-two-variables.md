@@ -13,6 +13,14 @@ This lesson covers:
 
 ## Evaluating on a grid
 
+::: math
+\[ T(x, y) = 20 + 160\,e^{-\left((x - 300)^2 + (y - 200)^2\right)/(2 \cdot 90^2)}, \qquad T_{ji} = T(x_i, y_j) \]
+- a grid evaluates $T$ at every pair $(x_i, y_j)$
+- row $j$ follows $y$, column $i$ follows $x$, like an image
+In code: `X, Y = np.meshgrid(xs, ys)`, then `T = plate_temp(X, Y)` and `T[j, i]`
+:::
+
+
 A function of two variables takes a point (x, y) and returns a number. To see it, evaluate it at every point of a **grid**. `np.meshgrid(xs, ys)` turns two 1D coordinate arrays into two 2D arrays X and Y holding the x and y coordinate of every grid point; any formula written with NumPy operations then evaluates at all of them at once. Row j, column i of the result is the value at (xs[i], ys[j]), so rows run along y and columns along x, the same layout as an image.
 
 A 600 × 400 mm plate in a 20 °C room is heated at the point (300, 200) mm; its steady temperature is modelled as a bell-shaped hot spot. Predict before running: how hot is the plate's corner?
@@ -40,6 +48,14 @@ print(f"hottest grid point: x = {xs[i]:.0f} mm, y = {ys[j]:.0f} mm, {T[j, i]:.1f
 The grid has 81 rows (y) and 121 columns (x). The centre is at 180 °C, the far corner barely above room temperature at 20.05 °C, and the midpoint of the right-hand edge, 300 mm from the torch, at 20.6 °C. Index carefully: `T[j, i]` is row j (the y index) and column i (the x index), the opposite order to (x, y).
 
 ## Seeing a surface
+
+::: math
+\[ \{(x, y) : T(x, y) = c\} \quad \text{for } c = 30, 60, 90, \dots \]
+- each contour (isotherm) is the set of points at one temperature
+- crowded contours mean the function changes fast there
+In code: `ax1.pcolormesh(X, Y, T)`, a `contour` plot, and `plot_surface` on 3D axes
+:::
+
 
 Three standard pictures show a function of two variables, each with its strengths:
 
@@ -77,6 +93,14 @@ The isotherms are circles around the torch. Each 30 °C step moves the radius ou
 
 ## Slices
 
+::: math
+\[ g(x) = T(x, 200), \qquad h(t) = T\big(P + t\,(Q - P)\big), \quad 0 \le t \le 1 \]
+- fixing one variable, or following a line, leaves a function of one variable
+- every one-variable tool then applies
+In code: `plate_temp(x_line, 200.0)` and `path = P + t[:, None] * (Q - P)`
+:::
+
+
 Fixing one variable turns a function of two variables into an ordinary function of one: a **slice** or cross-section. Fixing y = 200 gives the temperature along the plate's centre line, T(x, 200), a curve that can be plotted, differentiated or searched with every tool from earlier lessons. Slicing along any straight path works the same way: parametrise the path as P + t(Q − P) and evaluate along it. Predict before running: along the diagonal from corner to corner, where is the temperature highest?
 
 ```python
@@ -104,6 +128,14 @@ plt.show()
 The diagonal from (0, 0) to (600, 400) passes exactly through the torch point at its midpoint, so it peaks at 180 °C at t = 0.5, (300, 200). A slice along a line that misses the centre would peak lower. Slices are how engineers usually report 2D results: a temperature profile along a weld, a stress profile across a section.
 
 ## Interpolating measured data
+
+::: math
+\[ f(x, y) \approx (1 - u)(1 - v)\,f_{00} + u(1 - v)\,f_{10} + (1 - u)\,v\,f_{01} + u\,v\,f_{11}, \qquad u = \frac{x - x_0}{x_1 - x_0}, \; v = \frac{y - y_0}{y_1 - y_0} \]
+- $f_{00}, f_{10}, f_{01}, f_{11}$: the four corner readings of the cell
+- linear along $x$ on two edges, then linear along $y$ between them
+In code: `bilinear(xs, ys, Z, x, y)`
+:::
+
 
 A model gives values everywhere; measurements give values only at sensor positions. With sensors on a regular grid, **bilinear interpolation** estimates values in between: inside a grid cell, interpolate linearly along x on the cell's bottom and top edges, then linearly along y between those two results. It reproduces the measurements exactly at the grid points and is continuous across cells. Predict before running: a 4 × 3 array of thermocouples on the plate. How close is the interpolated temperature at (250, 170) mm to the model's?
 
@@ -133,6 +165,14 @@ print(f"at (250, 170): interpolated {est:.1f} °C, model {plate_temp(250, 170):.
 The interpolated value, about 94 °C, is far below the model's 150 °C. With sensors 200 mm apart and a hot spot only about 90 mm wide, straight-line interpolation cannot follow the peak: it flattens it. Interpolation is only as good as the sensor spacing relative to the features being measured, the same lesson as sampling in time, now in space.
 
 ## Adding up over an area
+
+::: math
+\[ \iint_R f\,dA \approx \sum_{i,j} f(x_i, y_j)\,\Delta x\,\Delta y, \qquad \bar{f} = \frac{1}{\text{area}}\iint_R f\,dA \]
+- evaluate at each cell centre, multiply by the cell area $\Delta x\,\Delta y$, add
+- area where a condition holds: count those cells times $\Delta x\,\Delta y$
+In code: `(TT * cell).sum() / (600 * 400)` with `cell = dx * dy`, and `(TT > 45).sum() * cell`
+:::
+
 
 Integrating over an area extends the Riemann sums of the accumulation lesson to two dimensions: split the region into small cells of area ΔA, evaluate the function at each cell's centre, multiply and add. This **double sum** approximates the **double integral** ∬ f dA, which the multivariable block develops. Averages over an area are the integral divided by the area; the area of a region where a condition holds is the sum of the cell areas where it holds. Predict before running: what is the plate's average temperature, and how much of it is too hot to touch (above 45 °C)?
 

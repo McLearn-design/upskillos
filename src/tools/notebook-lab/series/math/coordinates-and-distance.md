@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Points on a plate
 
+::: math
+\[ P = (x, y), \qquad \text{distance from a corner } C:\; \sqrt{(x - x_C)^2 + (y - y_C)^2} \]
+- a point is an ordered pair: $(20, 15) \ne (15, 20)$
+- $n$ points form an $n \times 2$ array: column 0 holds every $x$, column 1 every $y$
+In code: `holes[:, 0]` is all the x coordinates; `np.hypot(*(holes - corner).T)` gives every distance to the corner
+:::
+
+
 A **coordinate system** fixes an origin and two perpendicular axes with a scale. Engineering drawings usually put the origin at a corner of the part (a **datum**), with x to the right and y up, in millimetres. A point is then an ordered pair (x, y): the order matters, since (20, 15) and (15, 20) are different holes.
 
 In code a point is a tuple, and a set of points is naturally a 2-column NumPy array, one row per point, so `pts[:, 0]` is every x and `pts[:, 1]` every y. Predict before running: which hole is nearest the plate's top-right corner?
@@ -44,6 +52,14 @@ H2 at (100, 65) is nearest the corner (120, 80). The last line used the distance
 
 ## The distance formula
 
+::: math
+\[ d(P, Q) = \sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2} \qquad \text{(in 3D add } (z_2 - z_1)^2) \]
+- Pythagoras on the right triangle with legs $\Delta x$ and $\Delta y$
+- symmetric: $d(P, Q) = d(Q, P)$, because the differences are squared
+In code: `math.sqrt(sum((b - a) ** 2 for a, b in zip(p, q)))`, or `math.dist(p, q)`
+:::
+
+
 Two points (x₁, y₁) and (x₂, y₂) are the ends of the hypotenuse of a right triangle whose legs run along the axes, with lengths Δx = x₂ − x₁ and Δy = y₂ − y₁. Pythagoras gives the distance:
 
 \[ d = \sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2} \]
@@ -65,6 +81,14 @@ print("symmetric:", distance(holes[1], holes[4]) == distance(holes[4], holes[1])
 H0 to H2 is the plate's diagonal between hole centres: √(80² + 50²) ≈ 94.34 mm. The gripper moves exactly 1300 mm, since 300, 400 and 1200 come from the Pythagorean triples 3-4-5 and 5-12-13: √(300² + 400²) = 500 and √(500² + 1200²) = 1300.
 
 ## Midpoints and points along a segment
+
+::: math
+\[ R(t) = P + t\,(Q - P), \qquad M = \frac{P + Q}{2} \;\;(t = \tfrac{1}{2}) \]
+- $t = 0$ gives $P$, $t = 1$ gives $Q$; values in between lie on the segment
+- the midpoint $M$ averages the coordinates
+In code: `p + t * (q - p)` with NumPy arrays
+:::
+
 
 The **midpoint** of two points averages their coordinates: ((x₁ + x₂)/2, (y₁ + y₂)/2). More generally, the point a fraction t of the way from P to Q is
 
@@ -90,6 +114,14 @@ The midpoint of the diagonal is (60, 40), the plate's centre, where H4 sits. Fiv
 
 ## Every distance at once
 
+::: math
+\[ D_{ij} = \sqrt{(x_i - x_j)^2 + (y_i - y_j)^2}, \qquad D_{ij} = D_{ji}, \quad D_{ii} = 0 \]
+- $D$: the $n \times n$ distance matrix, symmetric with zeros on its diagonal
+- the closest pair minimises $D_{ij}$ over $i \ne j$
+In code: `diff = pts[:, None, :] - pts[None, :, :]`, then `np.sqrt((diff ** 2).sum(axis=2))`
+:::
+
+
 Design rules often limit the spacing of features: holes closer than about two diameters weaken the plate between them. Checking every pair of n points means n(n − 1)/2 distances. NumPy computes them all with one subtraction: `pts[:, None, :] - pts[None, :, :]` subtracts every point from every other, producing an n × n × 2 array of differences (**broadcasting** in two dimensions), and the hypotenuse of each gives an n × n **distance matrix**. Predict before running: which pair of holes is closest, and does it break a 20 mm minimum spacing?
 
 ```python
@@ -109,6 +141,14 @@ The diagonal of the matrix is each hole's distance to itself, 0, so adding infin
 The matrix is symmetric, because distance is. The closest pair is H4 and H5, 16.97 mm apart, which breaks a 20 mm spacing rule: H5 at (48, 52) needs to move. With 6 holes the matrix has 36 entries, which is nothing; with 10,000 points it would have 100 million, so large problems use cleverer search structures, such as spatial grids and k-d trees.
 
 ## Other ways to measure distance
+
+::: math
+\[ d_2 = \sqrt{\Delta x^2 + \Delta y^2}, \qquad d_1 = |\Delta x| + |\Delta y|, \qquad d_\infty = \max(|\Delta x|, |\Delta y|) \]
+- $d_2$: straight line (Euclidean); $d_1$: one axis at a time (Manhattan); $d_\infty$: all axes together (Chebyshev)
+- every one obeys the triangle inequality $d(P, R) \le d(P, Q) + d(Q, R)$
+In code: `math.dist`, `sum(abs(b - a) ...)` and `max(abs(b - a) ...)`
+:::
+
 
 The straight-line (Euclidean) distance is not always the one that matters. A machine whose axes move **one at a time** travels the **Manhattan distance** |Δx| + |Δy|, named after a grid of city streets. A machine whose axes move **simultaneously at the same top speed** arrives when the axis with the longer move does, so its travel time follows the **Chebyshev distance** max(|Δx|, |Δy|). All three are legitimate distances: each is zero only for the same point, symmetric, and obeys the **triangle inequality** (going via a third point is never shorter). Predict before running: for a move of 60 mm in x and 25 mm in y at 100 mm/s per axis, how long do the two kinds of machine take?
 

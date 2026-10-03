@@ -12,6 +12,14 @@ This lesson covers:
 
 ## From formula to curve
 
+::: math
+\[ T(t) = T_\text{room} + (T_0 - T_\text{room})\, e^{-k t} \]
+- $T_0$: starting temperature; $T_\text{room}$: room temperature; $k$: cooling rate (per minute)
+- a plot samples $t_0, t_1, \ldots, t_{n-1}$ evenly and joins the points $(t_i, T(t_i))$ with straight lines
+In code: `sample(f, start, stop, n)` builds the points, and `ax.plot(ts, temps)` joins them
+:::
+
+
 A plot is a list of points joined by straight lines. To draw a function, **sample** it: choose many inputs across a range, compute each output, and hand both lists to `plt.plot`. The more samples, the smoother the curve looks, though the computer only ever draws straight segments.
 
 A hot part left to cool in a workshop follows **Newton's law of cooling**: its temperature T approaches the room temperature T_room exponentially,
@@ -52,6 +60,14 @@ The curve is steep at the start and flattens as it nears the dashed room line, w
 
 ## Reading values off a graph
 
+::: math
+\[ t = t_1 + \frac{\text{level} - y_1}{y_2 - y_1}\,(t_2 - t_1), \qquad t_\text{exact} = \frac{1}{k}\ln\frac{T_0 - T_\text{room}}{\text{level} - T_\text{room}} \]
+- $(t_1, y_1)$, $(t_2, y_2)$: the samples either side of the level
+- linear interpolation assumes a straight line between the two samples
+In code: find the first sample at or below the level with `next(...)`, then interpolate
+:::
+
+
 A common question is when a curve crosses a level: when is the part cool enough to handle, at 60 °C? On the plot it is roughly where the curve crosses the 60 line, a little after 10 minutes. A graph gives a quick estimate; a calculation confirms it.
 
 With data rather than a formula, there is no equation to solve. The usual method is **linear interpolation**: find the two samples on either side of the level and assume a straight line between them. If the samples at times t₁ and t₂ have values y₁ and y₂, the crossing is at
@@ -78,6 +94,14 @@ The interpolated time, 11.31 minutes, is a little later than the exact 11.19. Th
 
 ## When sampling lies
 
+::: math
+\[ y(t) = \sin(2\pi f t), \qquad t_n = \frac{n}{f_s} \;\Rightarrow\; y(t_n) = \sin\!\left(2\pi n \frac{f}{f_s}\right) \]
+- $f$: the signal's frequency (50 Hz); $f_s$: samples per second
+- when $f_s = f$, every sample is $\sin(2\pi n) = 0$: the vibration vanishes from the record
+In code: `sample(vibration, 0, 0.1, 6)` samples 0.1 s at 50 per second
+:::
+
+
 Joining samples with straight lines assumes nothing interesting happens between them. If the step is too large, a plot can show a completely wrong shape. A motor shaft carries a vibration at 50 cycles per second (50 Hz): its displacement is y = sin(2π · 50 t). Predict before running: what does a data logger sampling exactly 50 times a second record?
 
 ```python
@@ -103,6 +127,14 @@ Adding `0.0` to a rounded value turns a `-0.0` into `0.0`, which keeps the print
 Sampled at exactly its own frequency, the vibration catches every cycle at the same phase, every value is zero, and the plot shows a perfectly still shaft. At 40 Hz the samples run 0, 1, 0, −1, 0: a clean 10 Hz wave, which is not there at all. This effect, **aliasing**, returns in the signals block. The practical rule: sample at least several times per feature you care about, and when a plot looks surprising, resample more finely before believing it.
 
 ## Comparing relationships, and log scales
+
+::: math
+\[ y = c\,x^p \;\Longrightarrow\; \log y = \log c + p \log x \]
+- on log–log axes a power law is a straight line with slope $p$
+- the log–log slope between two points is $\dfrac{\log(y_2/y_1)}{\log(x_2/x_1)}$
+In code: `ax.loglog(xs, ys)` and `math.log(y2 / y1) / math.log(x2 / x1)`
+:::
+
 
 Different relationships have characteristic shapes. A straight line (y = ax + b) changes at a constant rate. A power law (y = xᵖ) curves up when p > 1 and bends over, growing ever more slowly, when 0 < p < 1. An exponential eventually outgrows any power. Plotting candidates on one set of axes is a quick way to see which one data resembles.
 

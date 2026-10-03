@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Work by a constant force
 
+::: math
+\[ W = F\,d\cos\theta = \mathbf{F} \cdot \mathbf{d} = F_x d_x + F_y d_y, \qquad W_\text{lift} = m g h \]
+- $\theta$: angle between force and motion; only the component along the motion does work
+- $\theta = 90°$ gives $W = 0$; a force against the motion does negative work
+In code: `force_vec = F * np.array([math.cos(th), math.sin(th)])`, dotted with the displacement
+:::
+
+
 A constant force F that moves its point of application a distance d in the direction of the force does **work** W = F d, measured in joules (1 J = 1 N·m). If the force acts at an angle θ to the motion, only its component along the motion does work: W = F d cos θ. A force perpendicular to the motion does no work at all; a force against the motion does negative work, taking energy away.
 
 In vector form this is the **dot product** of force and displacement, F · d = F_x d_x + F_y d_y, which equals |F||d| cos θ, the projection idea from the vectors lessons. Lifting a mass m through a height h against gravity takes W = m g h. Predict before running: pulling a 60 kg crate 12 m along the floor with a 150 N force on a rope angled 30° above horizontal, how much work does the rope do, and how much would it do pulling horizontally?
@@ -36,6 +44,14 @@ print(f"lifting 60 kg onto a 1.5 m shelf: m g h = {60 * g * 1.5:.0f} J")
 Pulling horizontally the rope does 1,800 J; at 30° it does 1,559 J, because the upward part of the pull does nothing to move the crate along (though it does reduce the floor's friction, which is why ropes are angled). At 90° the work is zero (up to rounding). Lifting the crate onto a 1.5 m shelf takes 883 J, whatever route it takes up, a hint of the potential energy to come.
 
 ## Work by a varying force
+
+::: math
+\[ W = \int_{x_1}^{x_2} F(x)\,dx, \qquad \text{linear spring: } \int_0^x k s\,ds = \tfrac{1}{2} k x^2 \]
+- the work is the area under the force–displacement curve
+- measured data: integrate with the trapezoid rule
+In code: `np.trapezoid(force_n, x_m)` against `0.5 * k_start * x_m[-1] ** 2`
+:::
+
 
 When the force changes along the way, split the path into short pieces, treat the force as constant on each, and add up F Δx: the same Riemann sum as before. In the limit,
 
@@ -70,6 +86,14 @@ The measured spring stiffens as it compresses (the curve bends upward), so the w
 
 ## Kinetic energy and the work–energy theorem
 
+::: math
+\[ W_\text{net} = \tfrac{1}{2} m v_2^2 - \tfrac{1}{2} m v_1^2, \qquad s = \frac{\tfrac{1}{2} m v^2}{F_b} \]
+- work–energy theorem: net work changes the kinetic energy
+- braking removes $F_b\,s$ of kinetic energy, so stopping distance grows with $v^2$
+In code: `ke = 0.5 * m_car * v ** 2`, then `ke / F_brake`
+:::
+
+
 A mass m moving at speed v carries **kinetic energy** ½mv². The **work–energy theorem** says the net work done on an object equals its change in kinetic energy:
 
 \[ W_\text{net} = \tfrac{1}{2} m v_2^2 - \tfrac{1}{2} m v_1^2 \]
@@ -87,6 +111,14 @@ for kmh in [50, 100]:
 Twice the speed means four times the kinetic energy: 145 kJ at 50 km/h against 579 kJ at 100 km/h, so four times the stopping distance (16.1 m against 64.3 m, ignoring reaction time) and four times the heat in the brakes. Kinetic energy, not speed, is what the brakes have to destroy.
 
 ## Conservation of energy
+
+::: math
+\[ \tfrac{1}{2} m v^2 = m g h \qquad\Longrightarrow\qquad v = \sqrt{2 g h} \]
+- with only gravity doing work, kinetic plus potential energy stays constant
+- the shape of the chute does not matter, only the drop $h$
+In code: `math.sqrt(2 * g * h)` against `slide()`, which steps along the curve with $g\sin\alpha$
+:::
+
 
 For forces like gravity and springs, the work depends only on where the object starts and ends, not on the path: lifting 883 J onto the shelf by any route stores 883 J. Such forces have a **potential energy**: m g h for gravity near the ground, ½kx² for a spring. When only these forces do work, the total mechanical energy, kinetic plus potential, stays constant. Friction and drag are different: they turn mechanical energy into heat.
 
@@ -114,6 +146,14 @@ The simulation follows the part along the curved chute: the component of gravity
 Both give about 6.26 m/s for the 2 m drop. The simulation needed a curve, a slope, a time step and a loop; conservation needed one line. The trade-off is that energy gives the speed at a place, not the time to get there.
 
 ## Power and efficiency
+
+::: math
+\[ P = \frac{dW}{dt} = F\,v, \qquad \eta = \frac{P_\text{out}}{P_\text{in}}, \qquad P_\text{in} = \frac{P_\text{out}}{\eta} \]
+- power in watts: $1\ \text{W} = 1\ \text{J/s}$; efficiency $\eta < 1$
+- lost power: $P_\text{in} - P_\text{out}$, turned into heat
+In code: `useful_power = m_load * g * height / seconds`, then `useful_power / efficiency`
+:::
+
 
 **Power** is the rate of doing work, P = dW/dt, in watts (1 W = 1 J/s). For a constant force moving at speed v, P = F v. Real machines lose some energy to friction and heat, so the **efficiency** η = useful power out / power in is below 1, and the input power must be larger: P_in = P_out / η. Predict before running: a hoist lifts 500 kg by 8 m in 20 s through a gearbox and motor with a combined efficiency of 72%. What motor power is needed?
 

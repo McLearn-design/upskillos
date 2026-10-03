@@ -13,6 +13,14 @@ This lesson covers:
 
 ## Slope and intercept
 
+::: math
+\[ y = m x + b, \qquad m = \frac{y_2 - y_1}{x_2 - x_1}, \qquad b = y_1 - m x_1 \]
+- $m$: slope (here bar per mA); $b$: intercept, the value of $y$ at $x = 0$
+- the 4–20 mA transmitter: $p = 0.625\,c - 2.5$ bar
+In code: `line_through((4, 0), (20, 10))` returns `m, b`
+:::
+
+
 A line is the graph of y = mx + b. The **slope** m is the change in y per unit change in x, the same everywhere along the line: m = Δy / Δx between any two points on it. The **intercept** b is the value of y when x = 0. In applications both carry units: a slope in bar per milliamp, an intercept in bar.
 
 Given two points (x₁, y₁) and (x₂, y₂), the slope is (y₂ − y₁)/(x₂ − x₁) and then b = y₁ − m x₁. If x₁ = x₂ the line is vertical and has no slope (the division is by zero); it cannot be written as y = mx + b.
@@ -38,6 +46,14 @@ The slope is 0.625 bar per mA, since 16 mA of span covers 10 bar, and the interc
 
 ## Two-point calibration
 
+::: math
+\[ c = m\,p + b \quad\Longleftrightarrow\quad p = \frac{c - b}{m} \]
+- the sensor maps pressure $p$ to current $c$; calibration maps $c$ back to $p$
+- the inverse line has slope $1/m$
+In code: `line_through((4.08, 0), (19.92, 10))` builds the calibrated line from two reference readings
+:::
+
+
 The ideal 4–20 mA line assumes a perfect transmitter. A real one is slightly off: at 0 bar it might read 4.08 mA, at 10 bar 19.92 mA. **Two-point calibration** applies known reference pressures (from a dead-weight tester, say), records the raw readings, and builds the line through those two points instead of the ideal one. Every later reading is converted with the calibrated line.
 
 Calibration needs a line in each direction. The sensor maps pressure to current; the conversion maps current back to pressure. The two are **inverse functions**: if c = m p + b then p = (c − b)/m, whose slope is 1/m. Predict before running: how big is the error at 12 mA if the ideal line is used on this transmitter?
@@ -57,6 +73,14 @@ print("round trip 7.3 bar ->", round(calibrated(sensor_m * 7.3 + sensor_b), 12),
 At 12 mA the two lines agree, because this transmitter's errors are symmetric about mid-scale; at the ends the ideal line is off by 0.05 bar, 0.5% of full scale. The sensor model, the inverse line, has slope 1.584 mA per bar instead of the ideal 1.6. The round trip through both lines returns 7.3 bar.
 
 ## How linear is it?
+
+::: math
+\[ r_i = \hat{y}_i - y_i, \qquad \text{non-linearity} = \frac{\max_i |r_i|}{\text{full scale}} \times 100\% \]
+- $\hat{y}_i$: the line's prediction; $y_i$: the true value; $r_i$: the residual
+- residuals scattered around zero mean the line fits; a pattern means it does not
+In code: `residual = calibrated(read_mA) - true_bar`, then `np.abs(residual).max() / 10`
+:::
+
 
 Two-point calibration assumes the sensor really is a straight line between the reference points. Checking that assumption takes more points: apply several known pressures, convert the readings with the calibrated line, and look at the **residuals**, the differences between the line's prediction and the true value. Instrument datasheets quote the largest residual as the **non-linearity**, as a percentage of full scale. Predict before running: is this transmitter better than 0.25% non-linearity?
 
@@ -83,6 +107,14 @@ The residuals are up to about 10 mbar, largest mid-range, giving a non-linearity
 
 ## The best line through noisy data
 
+::: math
+\[ m = \frac{\sum_i (x_i - \bar{x})(y_i - \bar{y})}{\sum_i (x_i - \bar{x})^2}, \qquad b = \bar{y} - m\,\bar{x} \]
+- this least-squares line minimises $\sum_i \big(y_i - (m x_i + b)\big)^2$
+- it always passes through the point of means $(\bar{x}, \bar{y})$
+In code: `((x - xbar) * (y - ybar)).sum() / ((x - xbar) ** 2).sum()`, the same as `np.polyfit(x, y, 1)`
+:::
+
+
 With many noisy points there is no single line through all of them. The standard choice is the **least-squares line**: the m and b that make the sum of squared residuals, Σ(yᵢ − (m xᵢ + b))², as small as possible. Calculus (or the linear algebra block) shows the minimum is at
 
 \[ m = \frac{\sum (x_i - \bar{x})(y_i - \bar{y})}{\sum (x_i - \bar{x})^2}, \qquad b = \bar{y} - m \bar{x} \]
@@ -108,6 +140,14 @@ The data come from a simulated load cell whose true line is 163.4 counts per kg 
 The least-squares slope comes out close to the true 163.4, and `polyfit` gives the same slope and intercept (829.0 and 828.999 are the same number printed to different precisions). Its sum of squared residuals is smaller than the two-point line's, as it must be: least squares is the minimum. The two-point line trusts its two points completely, so the noise on those two readings goes straight into the slope. Least squares averages the noise across every point. Statistics later says how precise the fitted slope is.
 
 ## Where two lines meet
+
+::: math
+\[ m_1 x + b_1 = m_2 x + b_2 \quad\Longrightarrow\quad x = \frac{b_2 - b_1}{m_1 - m_2} \]
+- defined only when $m_1 \ne m_2$; parallel lines never meet
+- break-even: $2000 + 3.5\,n = 500 + 5\,n$ at $n = 1000$ parts
+In code: `x = (b2 - b1) / (m1 - m2)`, after checking `m1 == m2`
+:::
+
 
 Two non-parallel lines cross at exactly one point, found by setting their y values equal: m₁x + b₁ = m₂x + b₂ gives x = (b₂ − b₁)/(m₁ − m₂). Parallel lines (equal slopes) never meet; identical lines meet everywhere.
 

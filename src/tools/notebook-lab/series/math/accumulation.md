@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Area under a rate
 
+::: math
+\[ \int_a^b v(t)\,dt \approx \sum_{i=0}^{n-1} v(t_i^*)\,\Delta t, \qquad \Delta t = \frac{b - a}{n} \]
+- $t_i^*$: the sample point in strip $i$ (left end, right end or midpoint)
+- for $v(t) = 0.3t^2$ the exact distance over 10 s is 100 m
+In code: `riemann(f, a, b, n, rule)` with `rule` set to `"left"`, `"right"` or `"midpoint"`
+:::
+
+
 If a car travels at a constant 20 m/s for 30 s, it covers 20 × 30 = 600 m: the area of the rectangle under the flat speed graph. When the speed varies, cut time into short intervals, treat the speed as constant within each, and add up speed × time for every interval. Each term is the area of a thin rectangle, and their sum, a **Riemann sum**, approximates the area under the curve. As the intervals shrink, the sum approaches the exact total, the **definite integral**
 
 \[ \int_a^b v(t)\,dt \]
@@ -52,6 +60,14 @@ The car speeds up throughout, so each left rectangle uses the slowest speed in i
 
 ## Trapezoids and convergence
 
+::: math
+\[ \int_a^b f(x)\,dx \approx h\left(\frac{y_0 + y_n}{2} + y_1 + \dots + y_{n-1}\right), \qquad h = \frac{b - a}{n} \]
+- trapezoid rule: straight lines between samples, error proportional to $h^2$
+- left and right sums have error proportional to $h$
+In code: `(b - a) / n * (ys.sum() - (ys[0] + ys[-1]) / 2)`, or `np.trapezoid(ys, xs)`
+:::
+
+
 Averaging the left and right sums gives the **trapezoid rule**: join neighbouring points with straight lines instead of flat tops, so each strip is a trapezoid of area h (y_i + y_{i+1})/2. It only needs the samples themselves, which makes it the standard tool for logged data. NumPy provides it as `np.trapezoid`.
 
 How fast do the methods converge? Left and right sums have errors proportional to h, like forward differences. The midpoint and trapezoid rules have errors proportional to h², so doubling the number of strips quarters their error. Predict before running: integrating sin x from 0 to π (exactly 2), how many strips does each rule need for an error below 10⁻⁶?
@@ -74,6 +90,14 @@ For sin x on [0, π] the left error happens to look second order too, because th
 
 ## Running totals
 
+::: math
+\[ x_i = x_0 + \sum_{j=0}^{i-1} \Delta t_j\,\frac{v_j + v_{j+1}}{2} \]
+- the running total: position at every moment, not only at the end
+- it undoes differencing; summing averages noise away
+In code: `strips = np.diff(t_log) * (speed_log[:-1] + speed_log[1:]) / 2`, then `np.cumsum(strips)`
+:::
+
+
 Often the whole history matters, not just the final total: position at every moment, not only the end of the trip. The **running total**, or cumulative integral, adds strip after strip and records the sum so far. With samples (t_i, v_i), the cumulative trapezoid gives x_i = x_0 + Σ over the strips so far of Δt (v_{j} + v_{j+1})/2. This is the reverse of the `np.diff` of the arrays lesson: differences turn positions into speeds, and running totals turn speeds back into positions.
 
 A delivery van's GPS fails, but its speedometer logs every 2 seconds. Predict before running: how far does it travel in 3 minutes, and where was it after 1 minute?
@@ -95,6 +119,14 @@ The speed log is simulated: a varying cruise, slowing from 2 minutes onward, plu
 The van covers about 1,980 m in three minutes and is about 980 m along after one. Differencing the running total gives back the average speed of each strip exactly: accumulation and differencing are inverse operations. Noise in the speed matters much less here than in the derivative lesson, because summing averages the noise out, while differencing amplifies it. Integration smooths; differentiation roughens.
 
 ## Antiderivatives and the fundamental theorem
+
+::: math
+\[ \int_a^b f(t)\,dt = F(b) - F(a) \quad \text{whenever } F' = f, \qquad \int t^n\,dt = \frac{t^{n+1}}{n + 1} \;\;(n \ne -1) \]
+- $F$: an antiderivative of $f$; this is the fundamental theorem of calculus
+- $\int_0^{10} 0.3t^2\,dt = 0.1 \times 10^3 - 0 = 100$
+In code: `sp.integrate(expr, t)` for the antiderivative, `sp.integrate(expr, (t, a, b))` for the area
+:::
+
 
 Exact areas come from running the derivative backwards. A function F whose derivative is f is an **antiderivative** of f. The **fundamental theorem of calculus** says the total change of F equals the accumulated rate:
 

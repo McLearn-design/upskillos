@@ -13,6 +13,14 @@ This lesson covers:
 
 ## The sinusoid
 
+::: math
+\[ y(t) = A\sin(2\pi f t + \varphi), \qquad T = \frac{1}{f}, \qquad \omega = 2\pi f \]
+- $A$: amplitude (peak); $f$: frequency in Hz; $\varphi$: phase at $t = 0$
+- sampled at $f_s$ per second, one cycle holds $f_s / f$ samples
+In code: `t = np.arange(0, 0.06, 1 / fs)`, then `A * np.sin(2 * math.pi * f * t)`
+:::
+
+
 A sinusoidal signal is
 
 \[ y(t) = A \sin(2\pi f t + \varphi) \]
@@ -49,6 +57,14 @@ One cycle lasts 20 ms, 200 samples. The voltage peaks at 325 V at 5 ms, a quarte
 
 ## RMS: the effective value
 
+::: math
+\[ V_\text{rms} = \sqrt{\overline{v^2}}, \qquad \text{sine: } V_\text{rms} = \frac{A}{\sqrt{2}} \]
+- $\sin^2$ averages to $\tfrac{1}{2}$ over a whole cycle
+- a square wave's RMS equals its peak; a triangle's is $A/\sqrt{3}$
+In code: `rms(x)` is `math.sqrt(np.mean(np.asarray(x) ** 2))`
+:::
+
+
 What makes 325 V peak "230 V"? A heater's power is V²/R, which keeps changing as the voltage swings, so the useful measure is the steady voltage that would deliver the same average power: the **root mean square** (RMS), the square root of the mean of the squares,
 
 \[ V_\text{rms} = \sqrt{\overline{v^2}} \]
@@ -76,6 +92,14 @@ print(f"a 26.45 Ω heater: average power {np.mean(v ** 2 / 26.45):.0f} W = V_rms
 The sine's RMS is 0.7071 (1/√2), the square's is 1 (0.9992 here, because the sample at t = 0 is exactly zero) and the triangle's 0.5774 (1/√3). The sampled mains gives 229.81 V, as expected for 325 V peak, and a heater rated 2 kW at 230 V draws its average power of about 1,997 W. Measurements taken over whole cycles get RMS right; over part of a cycle they do not, which is why meters average over many cycles.
 
 ## Phase and time shift
+
+::: math
+\[ \Delta t = \frac{\Delta\varphi}{2\pi f}, \qquad P = V_\text{rms}\,I_\text{rms}\cos\Delta\varphi \]
+- current lagging by $\Delta\varphi$ peaks $\Delta t$ later
+- $\cos\Delta\varphi$: the power factor; at $90°$ no average power flows
+In code: `np.mean(v * i)` against `230 * I_rms * math.cos(math.radians(lag_deg))`
+:::
+
 
 Two sinusoids of the same frequency can be shifted relative to each other. A phase difference Δφ corresponds to a time shift Δt = Δφ/(2πf): at 50 Hz, a quarter cycle (90°) is 5 ms. In a motor or transformer the current **lags** the voltage: it peaks later. Phase difference has a direct cost. The average power delivered is
 
@@ -106,6 +130,14 @@ The current peaks 2.06 ms after the voltage. The real power is about 1,835 W whi
 
 ## Adding waves of one frequency: phasors
 
+::: math
+\[ \sum_k A_k\sin(\omega t + \varphi_k) = A\sin(\omega t + \varphi), \qquad A\,(\cos\varphi, \sin\varphi) = \sum_k A_k\,(\cos\varphi_k, \sin\varphi_k) \]
+- each sinusoid is a phasor: an arrow of length $A_k$ at angle $\varphi_k$
+- same frequency: add the arrows as vectors
+In code: `total_vec = sum(a * np.array([cos, sin]) ...)`, then `np.hypot` and `math.atan2`
+:::
+
+
 Adding two sinusoids of the **same** frequency always gives another sinusoid of that frequency, with a new amplitude and phase. Finding them by trigonometric identities is painful; the rotation picture makes it easy. Each sinusoid A sin(ωt + φ) is the shadow of a rotating arrow of length A at angle φ, a **phasor**; all rotate together at ω, so their sum is the shadow of the **vector sum** of the arrows, from the vectors lesson. Two vibration sources of equal strength can reinforce each other or cancel completely, depending on their phases. Predict before running: two 3 mm/s vibrations 120° apart, plus a 2 mm/s one at 240°: what is the total?
 
 ```python
@@ -126,6 +158,14 @@ Each phasor is a 2D vector of length A at angle φ; their sum's length and angle
 The three components add to an amplitude of 1.0 at 60°, smaller than any of them, because they point in different directions. Two equal waves give 6 in phase, 3√2 ≈ 4.24 at 90°, and zero at 180°: complete cancellation, the principle of noise-cancelling headphones and of balancing rotating machinery.
 
 ## Beats
+
+::: math
+\[ \sin a + \sin b = 2\sin\frac{a + b}{2}\cos\frac{a - b}{2}, \qquad f_\text{beat} = |f_2 - f_1| \]
+- a fast wave at the average frequency inside a slow envelope
+- envelope $2\,|\cos(\pi(f_2 - f_1)t)|$: loud moments every $1/|f_2 - f_1|$ seconds
+In code: `envelope = 2 * np.abs(np.cos(math.pi * (f2 - f1) * tb))`
+:::
+
 
 Waves of slightly **different** frequencies do not settle into one sinusoid. They drift in and out of phase, so their sum swells and fades: **beats**, at a rate equal to the difference of the frequencies. Two machines nominally at the same speed but actually 50.0 Hz and 51.5 Hz make the floor throb 1.5 times a second, a common clue in vibration troubleshooting. Mathematically, sin a + sin b = 2 sin((a + b)/2) cos((a − b)/2): a fast wave at the average frequency, inside a slow envelope. Predict before running: how far apart are the loud moments?
 
@@ -148,6 +188,14 @@ The envelope 2|cos(π(f₂ − f₁)t)| is the slow factor of the identity; its 
 The loud moments come every 0.667 s, 1/1.5 Hz, matching the frequency difference. The beat rate tells a technician the speed difference between two machines without touching either one.
 
 ## Measuring a sinusoid from noisy samples
+
+::: math
+\[ A\sin(\omega t + \varphi) = a\sin\omega t + b\cos\omega t, \qquad a = A\cos\varphi, \;\; b = A\sin\varphi \]
+- linear in $a$ and $b$, so least squares fits them
+- then $A = \sqrt{a^2 + b^2}$ and $\varphi = \operatorname{atan2}(b, a)$
+In code: `X = np.column_stack([np.ones_like(ts), sin, cos])`, then `np.linalg.lstsq(X, noisy, rcond=None)`
+:::
+
 
 Given noisy samples of a signal at a known frequency, what are its amplitude and phase? Expanding A sin(ωt + φ) = (A cos φ) sin ωt + (A sin φ) cos ωt shows it is a combination of sin ωt and cos ωt with coefficients a = A cos φ and b = A sin φ. That is **linear** in a and b, so least squares fits them directly with a design matrix of columns [1, sin ωt, cos ωt] (the 1 for any offset), as in the line-fitting lesson; then A = √(a² + b²) and φ = atan2(b, a). Predict before running: from 300 noisy samples of the motor current, how close are the estimates to 14.14 A and −37°?
 

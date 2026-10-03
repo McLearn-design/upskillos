@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Probability as long-run frequency
 
+::: math
+\[ P(A) \approx \frac{\text{number of times } A \text{ happens}}{n}, \qquad \text{typical error} \approx \sqrt{\frac{p(1 - p)}{n}} \]
+- the frequency approaches the probability as the number of trials $n$ grows
+- error shrinks like $1/\sqrt{n}$: 100 times the trials for one more decimal place
+In code: `(rolls == 6).mean()` with `rolls = rng.integers(1, 7, size=n)`
+:::
+
+
 The probability of an event is the fraction of times it happens in a long run of repetitions. A fair die shows a six with probability 1/6: roll it 600 times and you expect about 100 sixes, though rarely exactly 100. A computer simulates randomness with a **pseudo-random number generator**: a deterministic algorithm whose output passes statistical tests for randomness. Seeding it makes a run reproducible, which matters for checking work.
 
 How close does the frequency get to the true probability? Simulation's error shrinks like 1/√n: a hundred times as many trials buys only ten times the accuracy. Predict before running: with 100 rolls the frequency of sixes can easily be off by 0.03. How far off with a million?
@@ -45,6 +53,14 @@ The frequency wanders widely at first and settles towards 1/6; with a million ro
 
 ## At least one defective
 
+::: math
+\[ P(\text{at least one}) = 1 - P(\text{none}) = 1 - (1 - p)^n \]
+- complement rule: $P(A) = 1 - P(\text{not } A)$
+- independent events multiply: $P(\text{none}) = 0.98^{50}$
+In code: `1 - (1 - p) ** box` against `(rng.random((100_000, box)) < p).any(axis=1).mean()`
+:::
+
+
 Parts come off a machine with a 2% chance of each being defective, independently. For a box of 50, the chance that **at least one** is defective is awkward to count directly (exactly one, or two, or ...). Its **complement**, "none defective", is easy: each part is good with probability 0.98, and for independent events the probabilities multiply, so P(none) = 0.98⁵⁰. Then
 
 \[ P(\text{at least one}) = 1 - 0.98^{50} \]
@@ -67,6 +83,14 @@ for n in [10, 50, 100, 200]:
 About 63.6% of boxes contain a bad part, although each part is 98% good. The average box holds exactly one defective (50 × 0.02), yet over a third of boxes hold none, which balances the boxes holding two or more. Small probabilities applied many times add up: with 200 parts per box, 98% of boxes contain a defective.
 
 ## Sampling without replacement
+
+::: math
+\[ \binom{n}{k} = \frac{n!}{k!\,(n - k)!}, \qquad P(\text{detect}) = 1 - \frac{\binom{N - D}{n}}{\binom{N}{n}} \]
+- $N$: batch size; $D$: defectives in it; $n$: sample size, drawn without replacement
+- all samples of size $n$ are equally likely, so probability is a ratio of counts
+In code: `1 - math.comb(N - D, n) / math.comb(N, n)`, checked by `rng.choice(batch, size=n, replace=False)`
+:::
+
 
 An inspector draws 5 parts from a batch of 100, of which 4 are defective, and rejects the batch if any sampled part is defective. The draws are **not** independent: after removing a good part, the remaining batch is slightly more defective. Exact counting handles this. The number of ways to choose k items from n is the **binomial coefficient** C(n, k) = n!/(k!(n − k)!), `math.comb(n, k)`. All samples of 5 are equally likely, so
 
@@ -100,6 +124,14 @@ print(f"smallest sample with a 90% chance of detection: {n90}")
 A sample of 5 catches the bad batch only about 19% of the time; inspection by small samples is weak against low defect rates. Treating the draws as independent gives nearly the same answer here (18.5%), because removing 5 parts barely changes a batch of 100. To reach 90% detection the inspector must check 44 parts, almost half the batch. Exact counting and simulation agree, which is the point: either one checks the other.
 
 ## Independence and reliability
+
+::: math
+\[ R_\text{series} = R_1 R_2 \cdots, \qquad R_\text{parallel} = 1 - (1 - R_1)(1 - R_2)\cdots \]
+- independent: $P(A \text{ and } B) = P(A)\,P(B)$
+- the station: $R = R_\text{ctrl}\,\big(1 - (1 - R_\text{pump})^2\big)$
+In code: `R_ctrl * (1 - (1 - R_pump) ** 2)`, and `ctrl_ok & pumps_ok.any(axis=1)` in simulation
+:::
+
 
 Two events are **independent** when one happening does not change the chance of the other; then P(A and B) = P(A) P(B). Reliability engineering is built on this. A **series** system (every component must work, like links in a chain) works with probability R₁R₂...: always less reliable than its weakest part. A **parallel** system (it works if any component works, like redundant pumps) fails only if all fail: R = 1 − (1 − R₁)(1 − R₂)....
 

@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Sample mean and spread
 
+::: math
+\[ \bar{x} = \frac{1}{n}\sum_{i=1}^{n} x_i, \qquad s = \sqrt{\frac{\sum_i (x_i - \bar{x})^2}{n - 1}} \]
+- dividing by $n$ underestimates the variance by the factor $\dfrac{n - 1}{n}$; $n - 1$ is Bessel's correction
+- $s$: sample standard deviation, an estimate of the true $\sigma$
+In code: `readings.mean()` and `readings.std(ddof=1)`; plain `std()` divides by $n$
+:::
+
+
 Ten readings x₁, ..., x_n of the same quantity estimate its true mean μ by the **sample mean** x̄ = Σxᵢ/n. The spread is estimated by the **sample standard deviation**
 
 \[ s = \sqrt{\frac{\sum (x_i - \bar{x})^2}{n - 1}} \]
@@ -38,6 +46,14 @@ The gauge readings average 25.00325 mm with a sample standard deviation of 0.000
 
 ## Averaging and the standard error
 
+::: math
+\[ \text{Var}(\bar{x}) = \frac{\sigma^2}{n}, \qquad \text{SE} = \frac{\sigma}{\sqrt{n}} \approx \frac{s}{\sqrt{n}} \]
+- the mean of $n$ readings scatters $\sqrt{n}$ times less than one reading
+- averaging cannot remove a systematic error
+In code: `readings.std(ddof=1) / math.sqrt(len(readings))`
+:::
+
+
 Individual readings scatter with standard deviation σ, but their **mean** scatters much less. Variances of independent readings add, so the sum of n readings has variance nσ², and the mean (the sum divided by n) has variance σ²/n. Its standard deviation, the **standard error**
 
 \[ \text{SE} = \frac{\sigma}{\sqrt{n}} \approx \frac{s}{\sqrt{n}} \]
@@ -57,6 +73,14 @@ Each row simulates 50,000 sets of n readings and measures how much their means s
 The scatter of the mean follows σ/√n exactly: a hundred readings make the mean ten times more precise than one. For the ten gauge readings the standard error is 0.00031 mm. Note what averaging cannot fix: a gauge that reads 0.002 mm high reads high in every reading, and averaging keeps that **systematic error** intact. Only calibration against a reference removes it.
 
 ## Confidence intervals
+
+::: math
+\[ \bar{x} \pm t_{n-1}\,\frac{s}{\sqrt{n}}, \qquad t_{n-1} \approx 2.26 \;(n = 10), \quad 2.78 \;(n = 5) \]
+- the $t$ multiplier allows for estimating $\sigma$ by $s$; for large $n$ it approaches 1.96
+- a 95% interval contains the true mean in 95% of repeated experiments
+In code: `t_interval(x)` uses `stats.t.ppf(0.5 + level / 2, n - 1)`
+:::
+
 
 A **confidence interval** puts the standard error to work: an interval computed from the data that, over many repetitions of the measurement, contains the true mean a chosen fraction of the time (say 95%). For large samples it is x̄ ± 1.96 SE. For small samples, using s in place of the unknown σ adds uncertainty, and the multiplier comes from the **t distribution** with n − 1 degrees of freedom, which is wider than the normal: about 2.26 for n = 10, 2.78 for n = 5. Predict before running: do 95% intervals really contain the true value 95% of the time?
 
@@ -87,6 +111,14 @@ The shaft's 95% interval is 25.00255 to 25.00395 mm. With samples of 5, the t in
 
 ## Outliers and robust statistics
 
+::: math
+\[ \text{MAD} = \operatorname{median}_i |x_i - \tilde{x}|, \qquad z_i = \frac{0.6745\,(x_i - \tilde{x})}{\text{MAD}} \]
+- $\tilde{x}$: the median, robust to a wild value; $\sigma \approx \text{MAD}/0.6745$ for normal data
+- $|z_i| > 3.5$ flags a likely outlier
+In code: `mad = np.median(np.abs(bad - np.median(bad)))`, then `z = 0.6745 * (bad - np.median(bad)) / mad`
+:::
+
+
 One mistyped reading can wreck a mean: 25.0035 typed as 25.035 shifts the average of ten readings by 0.003 mm, more than the whole spread. The **median**, the middle value of the sorted data, barely moves, and so is called **robust**. A robust spread measure is the **median absolute deviation** (MAD): the median of |xᵢ − median|. For normal data σ ≈ MAD/0.6745, so a reading whose **modified z-score**, 0.6745 (x − median)/MAD, exceeds about 3.5 in size is a likely outlier. Predict before running: with one typing error, how far off are the mean and the median?
 
 ```python
@@ -105,6 +137,14 @@ The modified z-score is like a standard score, but built from the median and MAD
 One bad value moves the mean by 0.0033 mm and inflates the standard deviation more than tenfold, to 0.0107 mm, while the median does not move at all (the changed reading was already above the middle) and the MAD-based spread, 0.00133 mm, stays the same order as the clean data's 0.00097 mm, while the standard deviation grows elevenfold. The typing error scores a modified z of about 25, far beyond 3.5, and is flagged immediately. The right response is to investigate and correct it, not to delete inconvenient data silently.
 
 ## Checking a gauge and reporting
+
+::: math
+\[ \text{bias} = \bar{x} - x_\text{ref}, \qquad \text{significant if } x_\text{ref} \notin \left[\bar{x} - t\,\text{SE},\; \bar{x} + t\,\text{SE}\right] \]
+- report value ± uncertainty, the uncertainty to one or two significant figures
+- round the value to the same decimal place as the uncertainty
+In code: `t_interval(block)`, then `lo <= 25.0 <= hi`
+:::
+
 
 To check a gauge for **bias**, measure a reference standard of known size several times. If the confidence interval for the mean reading excludes the reference value, the gauge is biased by more than chance would explain. Results are then reported as value ± uncertainty, with the uncertainty rounded to one or two significant figures and the value rounded to the same decimal place: more digits would claim precision the data do not have. Predict before running: a 25.0000 mm gauge block reads as below. Is the gauge biased?
 

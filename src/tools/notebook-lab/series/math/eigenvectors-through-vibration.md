@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Two masses on springs
 
+::: math
+\[ M\mathbf{x}'' = -K\mathbf{x}, \qquad M = \begin{pmatrix} m_1 & 0 \\ 0 & m_2 \end{pmatrix}, \quad K = \begin{pmatrix} k_1 + k_2 & -k_2 \\ -k_2 & k_2 \end{pmatrix}, \quad A = M^{-1}K \]
+- $x_1, x_2$: displacements of the two masses from rest
+- $\mathbf{x}'' = -A\mathbf{x}$ couples them: each acceleration depends on both positions
+In code: `A = np.linalg.solve(M, K)`, then `simulate(x0)` steps it with semi-implicit Euler
+:::
+
+
 A machine of mass m₁ = 2 kg sits on a mount of stiffness k₁ = 400 N/m; on top of it, a sub-assembly of mass m₂ = 1 kg sits on a spring of stiffness k₂ = 200 N/m. Let x₁ and x₂ be their displacements from rest. The lower spring stretches by x₁ and the upper one by x₂ − x₁, so Newton's second law for each mass gives
 
 \[ m_1 x_1'' = -k_1 x_1 + k_2 (x_2 - x_1), \qquad m_2 x_2'' = -k_2 (x_2 - x_1) \]
@@ -56,6 +64,14 @@ The motion is not a single sine wave: each mass traces a lumpy, uneven shape wit
 
 ## Special starting shapes
 
+::: math
+\[ \mathbf{x}(t) = \mathbf{v}\cos(\omega t) \;\Longrightarrow\; -\omega^2\mathbf{v} = -A\mathbf{v} \;\Longrightarrow\; A\mathbf{v} = \omega^2\mathbf{v} \]
+- for special shapes $\mathbf{v}$ the masses keep a fixed ratio and move as one pure cosine
+- $A(1, 2) = 100\,(1, 2)$ and $A(1, -1) = 400\,(1, -1)$
+In code: `A @ v` for each starting shape, and the ratio `xs[:, 1] / xs[:, 0]` over time
+:::
+
+
 Try different starting shapes. Most give the same kind of mess, but two special ones do something remarkable: the masses move **together**, keeping the same ratio of displacements at every instant, each tracing a pure cosine. For such a shape v, the motion is x(t) = v cos(ωt), and substituting into x″ = −Ax gives −ω²v cos(ωt) = −Av cos(ωt), so
 
 \[ A\mathbf{v} = \omega^2 \mathbf{v} \]
@@ -75,6 +91,14 @@ The ratio x₂/x₁ is computed only where x₁ is not near zero, to avoid divid
 Starting from (1, 0) the ratio swings wildly, because the shape keeps changing. Starting from (1, 2), the ratio stays at 2 throughout: the masses move in step, the upper one twice as far. Starting from (1, −1) it stays at −1: they move in opposite directions. And indeed A(1, 2) = (100, 200) = 100 × (1, 2), and A(1, −1) = (400, −400) = 400 × (1, −1). These two shapes are the system's **normal modes**.
 
 ## Eigenvalues and eigenvectors
+
+::: math
+\[ A\mathbf{v} = \lambda\mathbf{v}, \qquad \det(A - \lambda I) = 0, \qquad \omega = \sqrt{\lambda}, \quad f = \frac{\omega}{2\pi} \]
+- $\mathbf{v} \ne \mathbf{0}$: eigenvector (a mode shape); $\lambda$: eigenvalue
+- here $\lambda^2 - 500\lambda + 40000 = 0$, so $\lambda = 100$ and $\lambda = 400$
+In code: `eigvals, eigvecs = np.linalg.eig(A)`; the columns of `eigvecs` are the eigenvectors
+:::
+
 
 A non-zero vector v with A v = λ v is an **eigenvector** of A, and the number λ is its **eigenvalue**. Most vectors change direction when multiplied by a matrix; eigenvectors only stretch (or shrink or flip). Any multiple of an eigenvector is also one, so they are directions rather than single vectors. An n × n matrix has at most n eigenvalues; they are the roots of det(A − λI) = 0, because (A − λI)v = 0 has a non-zero solution only when A − λI is singular.
 
@@ -96,6 +120,14 @@ The eigenvalues are 100 and 400, so the natural frequencies are 10 and 20 rad/s,
 
 ## The same calculation in OpenMAT
 
+::: math
+\[ AV = VD, \qquad D = \begin{pmatrix} \lambda_1 & 0 \\ 0 & \lambda_2 \end{pmatrix} \]
+- the columns of $V$ are the eigenvectors; the diagonal of $D$ holds the eigenvalues
+- eigenvectors are directions: divide by the first entry to compare
+In code: `[V, D] = eig(M \ K)`, then `omega = sqrt(diag(D))`
+:::
+
+
 Eigenvalue problems are classic MATLAB territory. In OpenMAT, `[V, D] = eig(A)` returns the eigenvectors as the columns of V and the eigenvalues on the diagonal of D, and `M \ K` computes M⁻¹K. The cell shares nothing with the Python cells. Predict before running: do the frequencies and shapes agree with NumPy's?
 
 ```openmat
@@ -113,6 +145,14 @@ mode2 = V(:, 2) / V(1, 2)
 OpenMAT gives the same natural frequencies, 10 and 20 rad/s (1.592 and 3.183 Hz), and the same mode shapes (1, 2) and (1, −1). The scaling of eigenvectors is arbitrary (only the direction matters), which is why both tools' results are normalised before being compared.
 
 ## Every motion is a mixture of modes
+
+::: math
+\[ \mathbf{x}(t) = c_1\mathbf{v}_1\cos(\omega_1 t) + c_2\mathbf{v}_2\cos(\omega_2 t), \qquad V\mathbf{c} = \mathbf{x}_0 \]
+- any motion from rest is a mixture of the modes (superposition)
+- the amounts $c_1, c_2$ solve a linear system built from the mode shapes
+In code: `c = np.linalg.solve(V, x0)`, then each mode times `np.cos(omega * t)`, summed
+:::
+
 
 The modes do more than describe special starts. Because the equation x″ = −Ax is linear, sums of solutions are solutions, so any motion is a **superposition** of the modes: with zero starting velocity,
 

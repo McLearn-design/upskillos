@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Arrows and components
 
+::: math
+\[ \mathbf{a} = (a_x, a_y), \qquad \mathbf{a} + \mathbf{b} = (a_x + b_x,\; a_y + b_y) = \mathbf{b} + \mathbf{a} \]
+- a vector is its components; adding vectors adds matching components
+- $(3, 4) + (-2, 1) = (1, 5)$: the diagonal of the parallelogram
+In code: `a = np.array([3.0, 4.0])`, then `a + b`
+:::
+
+
 Draw a vector as an arrow: its length is the **magnitude**, its orientation the **direction**. Where the arrow is drawn does not matter; two arrows with the same length and direction are the same vector. A displacement of "3 m east and 4 m north" is the same vector whether it starts at the door or at the window.
 
 In a coordinate system a vector is given by its **components**, its extent along each axis: v = (3, 4) means 3 units in x and 4 in y. A NumPy array is the natural representation, because arithmetic on arrays is already component by component. Predict before running: how are the arrows for (3, 4), (−2, 1) and their sum related on the plot?
@@ -46,6 +54,14 @@ To add vectors, place them **tip to tail**: draw b starting where a ends, and th
 
 ## Subtracting and scaling
 
+::: math
+\[ k\,\mathbf{a} = (k a_x,\; k a_y), \qquad \overrightarrow{PQ} = \mathbf{q} - \mathbf{p}, \qquad \mathbf{p} + t\,(\mathbf{q} - \mathbf{p}) \]
+- $k$: a scalar; it scales the length by $|k|$ and reverses the direction if negative
+- $\mathbf{q} - \mathbf{p}$: the displacement from $P$ to $Q$
+In code: `d = q - p`, then `p + 0.25 * d`
+:::
+
+
 Multiplying a vector by a number k, a **scalar**, scales its length by |k|; a negative k also reverses its direction. So 2a is twice as long as a, and −a points the opposite way.
 
 Subtraction is adding the negative: a − b = a + (−b). Its most useful meaning is "the vector **from** B **to** A": if points P and Q have position vectors p and q (arrows from the origin), the displacement from P to Q is q − p. That is how the coordinates lesson computed Δx and Δy. Predict before running: a robot at (2, 1) must reach (7, 13). What displacement does it need, and where is it after 25% of the way?
@@ -63,6 +79,14 @@ print("2a =", 2 * a, "  -a =", -a, "  a - b =", a - b, " = a + (-b):", np.array_
 The displacement is (5, 12), of length 13, the 5-12-13 triangle. A quarter of the way is p + 0.25 d = (3.25, 4), the "P + t(Q − P)" formula of the coordinates lesson, now read as vector arithmetic: start at p and add a scaled displacement.
 
 ## Magnitude, direction and unit vectors
+
+::: math
+\[ |\mathbf{v}| = \sqrt{v_x^2 + v_y^2}, \qquad \hat{\mathbf{u}} = \frac{\mathbf{v}}{|\mathbf{v}|}, \qquad \mathbf{v} = m\,(\cos\theta,\; \sin\theta) \]
+- $|\mathbf{v}|$: magnitude; $\hat{\mathbf{u}}$: unit vector, length 1, same direction
+- direction angle $\theta = \operatorname{atan2}(v_y, v_x)$
+In code: `np.linalg.norm(v)`, `v / mag`, and `from_polar(magnitude, angle_deg)`
+:::
+
 
 The **magnitude** |v| of v = (v_x, v_y) is √(v_x² + v_y²), Pythagoras once more, and in 3D a third squared term joins. Its **direction angle**, measured anticlockwise from the positive x axis, is atan2(v_y, v_x), as in the sine and cosine lesson.
 
@@ -89,6 +113,14 @@ print(f"250 N at 30°: components ({F[0]:.2f}, {F[1]:.2f}) N, back to magnitude 
 The unit vector along (3, 4) is (0.6, 0.8), of length 1. The 250 N force splits into 216.51 N horizontally and 125.00 N vertically: the vertical part is exactly half, since sin 30° = 0.5. Splitting forces into components like this is the subject of the next lesson.
 
 ## Relative velocity
+
+::: math
+\[ \mathbf{v}_\text{ground} = \mathbf{v}_\text{air} + \mathbf{w} \]
+- $\mathbf{v}_\text{air}$: the drone's velocity relative to the air; $\mathbf{w}$: the wind's velocity
+- the ground track angle is $\operatorname{atan2}(v_y, v_x)$ of the sum
+In code: `ground = air + wind`, with each built by `from_polar`
+:::
+
 
 Velocities are vectors and add like displacements. A drone flies through air; the air itself moves (the wind). The drone's velocity over the ground is its velocity **relative to the air** plus the **wind's** velocity:
 

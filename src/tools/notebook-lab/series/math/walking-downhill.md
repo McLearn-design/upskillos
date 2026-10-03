@@ -12,6 +12,14 @@ This lesson covers:
 
 ## A landscape of two variables
 
+::: math
+\[ \text{SSE}(c_0, c_1) = \sum_{i=1}^{n} \big(y_i - c_0 - c_1 x_i\big)^2 \]
+- one number for every pair $(c_0, c_1)$: a surface over the plane
+- contours join points of equal SSE; the minimum is inside the innermost ring
+In code: `sse(c0, c1)`; the grid `Z` of SSE values is drawn with `ax.contour(C0, C1, Z, ...)`
+:::
+
+
 Fitting a line y ≈ c₀ + c₁x means choosing two numbers to minimise the sum of squared errors, SSE(c₀, c₁). For every pair (c₀, c₁) there is one SSE value, so SSE is a **function of two variables**, a surface over the (c₀, c₁) plane. A **contour plot** draws it like a map: each curve joins points of equal SSE, and the minimum sits in the middle of the innermost ring. Predict before running: for the load-cell calibration, what shape are the contours?
 
 ```python
@@ -44,6 +52,14 @@ The contours are long, thin ellipses, tilted, with the least-squares answer (c�
 
 ## The gradient
 
+::: math
+\[ \nabla f = \left(\frac{\partial f}{\partial x_1}, \frac{\partial f}{\partial x_2}, \dots\right), \qquad \frac{\partial\,\text{SSE}}{\partial c_0} = -2\sum_i r_i, \quad \frac{\partial\,\text{SSE}}{\partial c_1} = -2\sum_i x_i r_i \]
+- $r_i = y_i - c_0 - c_1 x_i$: the residuals
+- $\nabla f$ points uphill fastest; $-\nabla f$ points downhill; $\nabla f = \mathbf{0}$ at a minimum
+In code: `grad_sse(c)` against `numeric_grad(f, c)` (central differences, one input at a time)
+:::
+
+
 On a surface f(x₁, x₂, ...), the **partial derivative** ∂f/∂xᵢ is the ordinary derivative with respect to xᵢ, holding the others fixed: the slope of the surface in the xᵢ direction. Collected into a vector they form the **gradient**
 
 \[ \nabla f = \left( \frac{\partial f}{\partial x_1}, \frac{\partial f}{\partial x_2}, \dots \right) \]
@@ -75,6 +91,14 @@ The two agree to many digits: at (1.0, 0.12) the gradient is about (−3.1, −1
 
 ## Gradient descent
 
+::: math
+\[ \mathbf{c}_{k+1} = \mathbf{c}_k - \eta\,\nabla f(\mathbf{c}_k) \]
+- $\eta$: the learning rate (step size)
+- too small: slow; too large: each step overshoots and the iteration diverges
+In code: `descend(grad, start, lr, steps)` repeats `c = c - lr * grad(c)`
+:::
+
+
 The algorithm: start somewhere, then repeat x ← x − η ∇f(x). The **learning rate** (step size) η decides everything. Too small, and progress is glacial. Too large, and each step overshoots the valley floor and lands higher up the opposite wall, so the iteration **diverges**. Between the two the method converges, but on a narrow valley the safe step is set by the steep direction, which makes progress along the gentle direction painfully slow. Predict before running: which of four learning rates reaches the answer within 2,000 steps?
 
 ```python
@@ -99,6 +123,14 @@ With 10⁻⁵ the descent quickly drops onto the valley floor but then crawls al
 
 ## Rescaling turns valleys into bowls
 
+::: math
+\[ z_i = \frac{x_i - \bar{x}}{s_x}, \qquad y \approx c_0' + c_1' z \;\;\Longrightarrow\;\; c_1 = \frac{c_1'}{s_x}, \quad c_0 = c_0' - c_1\,\bar{x} \]
+- standardising makes the contours nearly circular, so one learning rate suits every direction
+- the fitted line is the same; only its parameters change
+In code: `z = (x - x.mean()) / x.std()`, then `descend(grad_z, [0.0, 0.0], 0.05, 200)`
+:::
+
+
 The valley is narrow because x runs from 0 to 35: the slope coefficient multiplies large numbers, the intercept multiplies 1. **Standardising** the input, z = (x − x̄)/s_x, puts both on the same scale and centres x, which also makes the two coefficients independent (the valley's tilt disappears). The contours become nearly circular, one learning rate suits every direction, and descent heads straight for the bottom. The fitted line is the same; only its parameterisation changes, and the original coefficients are recovered afterwards. Predict before running: how many steps does descent need after standardising?
 
 ```python
@@ -121,6 +153,14 @@ Undoing the standardisation: y ≈ a + b z with z = (x − x̄)/s_x means y ≈ 
 After standardising, descent converges to the least-squares answer in about a dozen steps instead of thousands. Rescaling inputs before gradient descent is standard practice in machine learning for exactly this reason. The general lesson: the speed of gradient methods depends on the shape of the landscape, measured by the ratio of steepest to gentlest curvature, the **condition number** met in the two-equation lesson.
 
 ## Momentum
+
+::: math
+\[ \mathbf{v}_{k+1} = \beta\,\mathbf{v}_k - \eta\,\nabla f(\mathbf{c}_k), \qquad \mathbf{c}_{k+1} = \mathbf{c}_k + \mathbf{v}_{k+1} \]
+- $\beta \approx 0.9$: the velocity remembers past gradients
+- steady gradients build speed; zigzag components cancel
+In code: `v = beta * v - lr * grad(c)` then `c = c + v`, in `descend_momentum`
+:::
+
 
 When rescaling is not possible, **momentum** helps. Instead of stepping along the current gradient alone, keep a running velocity that accumulates past gradients: v ← βv − η∇f, then x ← x + v, with β around 0.9 to 0.95. In a narrow valley the gradient keeps pointing the same way along the gentle direction, so v builds up speed there, like a ball rolling down a gutter; and when the step is large enough to make plain descent zigzag across the valley, the alternating cross-valley components cancel out in v. It costs nothing extra per step. Predict before running: on the original, unscaled problem, how much does momentum help?
 

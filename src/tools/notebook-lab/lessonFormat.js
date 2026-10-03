@@ -29,8 +29,16 @@
 //   :::
 //
 //   ```openmat
-//   an OpenMAT (MATLAB-style) demo cell, run by the in-browser OpenMAT engine
+//   an OpenMAT (MATLAB-style) demo cell, shown as an embedded OpenMAT notebook
 //   ```
+//
+//   ::: math
+//   \[ F_x = F\cos\theta \]
+//   - $F$: the force (N)
+//   In code: `F * math.cos(theta)`
+//   :::
+//   the concept's mathematics, drawn as a box in the prose before the code
+//   (not allowed inside a challenge, whose ":::" would close it)
 //
 // Prose after the last cell becomes a text-only cell. A ```lang block that is
 // not ```python or ```openmat (e.g. ```text) stays part of the prose and is
@@ -58,6 +66,17 @@ export function proseItems(lines) {
   }
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
+    // ::: math ... ::: — the concept's mathematics, shown as a box before
+    // the code. Kept as one string starting "::: math\n" so prose stays an
+    // array of strings.
+    if (line.trim() === '::: math') {
+      flush()
+      const block = []
+      i++
+      while (i < lines.length && lines[i].trim() !== ':::') block.push(lines[i++])
+      items.push(['::: math', ...block].join('\n'))
+      continue
+    }
     if (line.trimStart().startsWith('```')) {
       flush()
       const block = [line]

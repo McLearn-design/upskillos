@@ -12,6 +12,14 @@ This lesson covers:
 
 ## The secant slope
 
+::: math
+\[ \frac{\Delta s}{\Delta t} = \frac{s(b) - s(a)}{b - a}, \qquad \frac{s(1 + h) - s(1)}{h} = 9.8 + 4.9\,h \;\;\text{for } s(t) = 4.9\,t^2 \]
+- the average rate is the slope of the secant line through $(a, s(a))$ and $(b, s(b))$
+- the excess $4.9\,h$ shrinks to zero with $h$
+In code: `(f(b) - f(a)) / (b - a)` with `b = 1 + h`
+:::
+
+
 The **average rate of change** of a function f between a and b is
 
 \[ \frac{f(b) - f(a)}{b - a} \]
@@ -39,6 +47,14 @@ The averages fall from 14.7 m/s over the interval [1, 2] toward 9.8 m/s, and the
 
 ## The instantaneous rate
 
+::: math
+\[ s'(t) = \lim_{h \to 0} \frac{s(t + h) - s(t)}{h}, \qquad \text{tangent at } t_0:\; y = s(t_0) + s'(t_0)\,(t - t_0) \]
+- the derivative $s'(t_0)$ is the instantaneous rate, the slope of the tangent line
+- for $s(t) = 4.9\,t^2$: $s'(1) = 9.8$
+In code: each secant is drawn as `fall(1) + slope * (ts - 1)`; the tangent uses slope 9.8
+:::
+
+
 The number the averages approach as h shrinks to zero is the **instantaneous rate of change** at t = 1, the speed at that instant: 9.8 m/s. Calculus calls it the **derivative** and writes it s′(1). Here it can be found exactly, because the excess 4.9h visibly goes to zero, but even when it cannot, shrinking intervals give a numerical estimate.
 
 Geometrically, as the second point slides toward the first, the secant lines swing toward a limiting line that just touches the curve at that point: the **tangent line**, whose slope is the derivative. Predict before running: how do the secants look on the graph as h shrinks?
@@ -64,6 +80,14 @@ The secants pivot on the point (1, 4.9) and flatten toward the red tangent. Near
 
 ## Forward and central differences
 
+::: math
+\[ \text{forward: } \frac{f(x+h) - f(x)}{h} = f'(x) + O(h), \qquad \text{central: } \frac{f(x+h) - f(x-h)}{2h} = f'(x) + O(h^2) \]
+- $O(h)$: error proportional to $h$; $O(h^2)$: proportional to $h^2$
+- halving $h$ halves the forward error but quarters the central error
+In code: `(math.sin(x0 + h) - math.sin(x0)) / h` against `(math.sin(x0 + h) - math.sin(x0 - h)) / (2 * h)`
+:::
+
+
 Estimating a derivative from function values is called **numerical differentiation**. The secant over [x, x + h] is the **forward difference**. A better choice is usually the **central difference**, which uses points on both sides:
 
 \[ f'(x) \approx \frac{f(x + h) - f(x - h)}{2h} \]
@@ -83,6 +107,14 @@ for h in [0.1, 0.05, 0.01, 0.005, 0.001]:
 The forward error halves when h halves and drops tenfold when h drops tenfold: proportional to h. The central error drops fourfold and a hundredfold: proportional to h². At h = 0.01 the central difference is about 470 times more accurate, for the same two function evaluations. The orders come from the Taylor expansion in the calculus block, where the h² term's coefficient turns out to depend on the third derivative.
 
 ## When smaller is worse
+
+::: math
+\[ \text{total error} \approx \underbrace{C\,h^p}_{\text{method}} + \underbrace{\frac{\varepsilon\,|f|}{h}}_{\text{rounding}}, \qquad \varepsilon \approx 10^{-16} \]
+- small $h$ shrinks the method error but magnifies rounding error
+- the best $h$ balances them: about $\sqrt{\varepsilon} \approx 10^{-8}$ for forward differences
+In code: `np.logspace(-15, -1, 57)` tries $h$ across 14 orders of magnitude
+:::
+
 
 Shrinking h should make the estimate ever better, but in floating point it does not. f(x + h) and f(x) agree in more and more leading digits as h shrinks, so subtracting them cancels those digits and leaves mostly rounding error, about 10⁻¹⁶ times f's size. Dividing by a tiny h then magnifies it. The total error is the method error (falling with h) plus the rounding error (growing like 10⁻¹⁶/h), so there is a best h in between. Predict before running: roughly where is the best h for the forward difference?
 
@@ -105,6 +137,14 @@ print(f"best forward h ≈ {hs[np.argmin(fwd_err)]:.0e} (error {min(fwd_err):.1e
 The forward difference is best near h ≈ 10⁻⁸, the square root of the float precision, with an error of a few times 10⁻⁹; the central difference is best at a larger h, around 10⁻⁵, with an error below 10⁻¹². At h = 10⁻¹⁵ both are wrong in the first or second digit. A sensible default for central differences is h ≈ 10⁻⁵ times the scale of x.
 
 ## Rates from noisy data
+
+::: math
+\[ v_i \approx \frac{x_{i+k} - x_{i-k}}{t_{i+k} - t_{i-k}}, \qquad \text{noise in } v_i \propto \frac{\sigma}{k\,\Delta t} \]
+- $\sigma$: the noise in each position reading; $k$: samples on each side
+- wider intervals average noise away but blur genuine changes in speed
+In code: `(x[2 * k:] - x[:-2 * k]) / (t[2 * k:] - t[:-2 * k])`
+:::
+
 
 Measured data adds a second source of trouble. Every reading carries noise, and differencing two readings Δt apart divides that noise by Δt: halving the interval doubles the noise in the speed. For data, the "too small h" problem appears at a far larger h than float rounding, set by the sensor's noise.
 

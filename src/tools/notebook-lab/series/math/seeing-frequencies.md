@@ -13,6 +13,14 @@ This lesson covers:
 
 ## From projection to the FFT
 
+::: math
+\[ X_k = \sum_{n=0}^{N-1} x_n\,e^{-2\pi i k n / N}, \qquad f_k = \frac{k\,f_s}{N}, \qquad |X_k| = \frac{A N}{2} \]
+- the DFT measures the content at each frequency $f_k$; the FFT computes it in about $N\log_2 N$ steps
+- amplitude of a tone: $\dfrac{2\,|X_k|}{N}$
+In code: `2 * np.abs(np.fft.rfft(x)) / len(x)` and `np.fft.rfftfreq(len(x), 1 / fs)`
+:::
+
+
 The previous lesson multiplied a signal by sin and cos of one harmonic and averaged. The **discrete Fourier transform** (DFT) does this for N equally spaced frequencies at once: for N samples taken at rate f_s, it measures the content at frequencies k f_s / N for k = 0, 1, ..., N − 1. Computed directly that is N² multiplications; the **fast Fourier transform** reorganises the arithmetic to take about N log₂ N, which for a million samples is the difference between hours and a fraction of a second. For real signals, `np.fft.rfft` returns the frequencies from 0 up to f_s/2, with matching frequencies from `np.fft.rfftfreq`. Each result is a complex number whose size measures the amplitude: for a sinusoid of amplitude A that fits a whole number of cycles in the record, |X_k| = A N/2. Predict before running: does the FFT find the two tones at their true amplitudes?
 
 ```python
@@ -46,6 +54,14 @@ print(f"direct DFT matches the FFT: {np.allclose(direct, X)};  direct {slow * 10
 The spectrum shows exactly two peaks: 2.0000 at 50 Hz and 0.5000 at 120 Hz, the amplitudes put in. The direct sum over every frequency agrees with the FFT, but takes far longer even for 1,000 samples; the gap grows rapidly with N.
 
 ## Diagnosing a gearbox
+
+::: math
+\[ \text{order} = \frac{f}{f_0}, \qquad f_\text{mesh} = z\,f_0 \]
+- $f_0$: shaft speed in revolutions per second; $z$: number of gear teeth
+- whole-number orders come from the shaft; a non-integer order points to a bearing
+In code: `f0 = 1450 / 60`, then the peaks of the amplitude spectrum divided by `f0`
+:::
+
 
 Every rotating machine has characteristic frequencies. A shaft turning at f₀ revolutions per second produces vibration at f₀ (**1×**, usually from imbalance), 2× (misalignment), and gear mesh frequency (teeth × f₀). Rolling bearings with damage produce their own defect frequencies, and electrical machines hum at the supply frequency and twice it. A spectrum turns a vibration recording into a list of these. Predict before running: a shaft at 1,450 rpm (24.17 Hz) drives a 23-tooth pinion. Which peaks will the spectrum show, and which one is not a multiple of the shaft speed?
 
@@ -82,6 +98,14 @@ The raw signal is dominated by noise, but the spectrum separates five peaks clea
 
 ## Frequency resolution
 
+::: math
+\[ \Delta f = \frac{f_s}{N} = \frac{1}{\text{duration}} \]
+- two tones closer than about $\Delta f$ merge into one peak
+- only a longer record improves the resolution
+In code: the 50 Hz and 50.6 Hz tones with `duration` 1.0 and 5.0
+:::
+
+
 The DFT's frequencies are spaced Δf = f_s / N = 1 / duration apart: a 1-second record resolves 1 Hz, a 10-second record 0.1 Hz. Two tones closer than about Δf merge into one peak. Sampling faster does **not** help; only recording longer does. Predict before running: can a 1-second record separate tones at 50 Hz and 50.6 Hz? Can a 5-second one?
 
 ```python
@@ -101,6 +125,14 @@ The two tones are 0.6 Hz apart, less than the 1 Hz resolution of a 1-second reco
 With 1 second the two tones merge into one broad peak at 50 Hz (the beats of the waves lesson, viewed in frequency). With 5 seconds, two peaks appear, at 50.0 and 50.6 Hz. Diagnosing two machines running at nearly the same speed needs a record long enough to tell them apart.
 
 ## Leakage and windows
+
+::: math
+\[ w_n = \tfrac{1}{2}\left(1 - \cos\frac{2\pi n}{N - 1}\right), \quad n = 0, \dots, N - 1, \qquad \text{corrected amplitude} = \frac{2\,|X_k^{(w)}|}{N\,\bar{w}} \]
+- the window tapers the record to zero at both ends, removing the jump that causes leakage
+- $\bar{w} \approx 0.5$: divide by the window's mean to restore amplitudes
+In code: `w = np.hanning(N)`, then `np.fft.rfft(x * w)` divided by `N * w.mean()`
+:::
+
 
 The DFT treats the record as if it repeated forever. When a tone does not complete a whole number of cycles in the record, the repetition has a jump at the join, and the tone's energy **leaks** into neighbouring frequencies: the peak is lower and spread out, with skirts that can hide small nearby peaks. Multiplying the record by a **window** that tapers smoothly to zero at both ends, such as the **Hann window** ½(1 − cos(2πn/(N − 1))) for n = 0, ..., N − 1 (the form `np.hanning` uses), removes the jump. The peak becomes a little wider but the skirts fall away dramatically. The window also lowers amplitudes, by its average value (very nearly 0.5 for Hann), which is corrected by dividing by it. Predict before running: a 3.0 tone at 50.5 Hz (not a whole number of cycles in 1 s) next to a 0.02 tone at 70 Hz. Is the small tone visible?
 
@@ -130,6 +162,14 @@ A logarithmic amplitude axis shows small peaks next to large ones. `np.hanning(N
 Without a window, the 50.5 Hz tone falls between bins, its peak reads only about 1.9 instead of 3, and its leakage at 65–70 Hz is around 0.06: the 0.02 tone at 70 Hz is buried. With the Hann window the main peak reads about 2.5 (closer, though a tone between bins is still underestimated), the skirt at 65 Hz falls to well below 0.001, and the 70 Hz tone stands clear at about 0.02. Vibration analysers apply a Hann window by default for this reason.
 
 ## Aliasing and the Nyquist limit
+
+::: math
+\[ f_\text{Nyquist} = \frac{f_s}{2}, \qquad f_\text{alias} = \left| f - f_s \cdot \operatorname{round}\!\left(\frac{f}{f_s}\right) \right| \]
+- a tone above $f_s/2$ appears at a false, lower frequency
+- sampled at 1000 Hz: 700 Hz shows at 300 Hz, 1050 Hz at 50 Hz
+In code: the largest peak of `np.fft.rfft(np.sin(2 * math.pi * f_true * t))` for each `f_true`
+:::
+
 
 A sampled signal cannot represent frequencies above half the sampling rate, the **Nyquist frequency** f_s/2. A higher frequency does not disappear: it shows up at a false, lower frequency, **aliased** by folding about multiples of f_s/2. This is the plotting lesson's still-looking shaft, made quantitative. The only cure is to remove high frequencies **before** sampling, with an analogue anti-aliasing filter, which is why every data acquisition card has one. Predict before running: sampled at 1 kHz, where do tones at 700 Hz and 1,050 Hz appear?
 

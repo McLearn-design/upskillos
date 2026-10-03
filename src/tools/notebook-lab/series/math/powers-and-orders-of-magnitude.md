@@ -11,6 +11,14 @@ This lesson covers:
 
 ## The rules of powers
 
+::: math
+\[ x^a x^b = x^{a+b}, \qquad (x^a)^b = x^{ab}, \qquad x^0 = 1, \quad x^{-n} = \frac{1}{x^n}, \quad x^{1/n} = \sqrt[n]{x} \]
+- every rule follows from the first: exponents add when powers multiply
+- a fractional power of a negative number has no real value in general, so Python returns a complex number
+In code: `x ** a`; `math.cbrt(x)` gives the real cube root
+:::
+
+
 xⁿ means n copies of x multiplied together. Three rules follow, and every other rule comes from them:
 
 - xᵃ · xᵇ = xᵃ⁺ᵇ (multiplying adds the exponents);
@@ -36,6 +44,14 @@ print("math.cbrt(-27) =", math.cbrt(-27))
 
 ## Scientific and engineering notation
 
+::: math
+\[ x = m \times 10^{e}, \qquad 1 \le |m| < 10 \;\;(\text{scientific}), \qquad e \in \{\ldots, -3, 0, 3, 6, \ldots\} \;\;(\text{engineering}) \]
+- $e = \lfloor \log_{10} |x| \rfloor$ for scientific notation
+- for engineering notation round $e$ down to a multiple of 3, to match the SI prefixes
+In code: `3 * math.floor(math.log10(abs(value)) / 3)` is the engineering exponent
+:::
+
+
 **Scientific notation** writes a number as a mantissa between 1 and 10 times a power of ten: 0.0000124 m is 1.24 × 10⁻⁵ m. **Engineering notation** restricts the power to multiples of 3, matching the SI prefixes, so the same length reads 12.4 × 10⁻⁶ m, which is 12.4 µm. That is why engineers say "12 microns", not "1.24 × 10⁻⁵ metres".
 
 The SI prefixes step by factors of 1,000: kilo (k, 10³), mega (M, 10⁶), giga (G, 10⁹), and milli (m, 10⁻³), micro (µ, 10⁻⁶), nano (n, 10⁻⁹). Predict before running: how are a bore tolerance and a motor's power shown in each notation?
@@ -60,6 +76,14 @@ for value, unit in [(0.0000124, "m"), (7_500, "W"), (2.2e9, "Hz"), (0.047, "s"),
 
 ## Orders of magnitude
 
+::: math
+\[ \text{order}(x) = \lfloor \log_{10} x \rfloor, \qquad \frac{a}{b} \approx 10^{n} \;\Rightarrow\; n \text{ orders of magnitude apart} \]
+- $\lfloor \cdot \rfloor$: round down to a whole number
+- $5 \times 10^{-6}$ m has order $-6$; 300 m has order 2
+In code: `math.floor(math.log10(abs(x)))`
+:::
+
+
 The **order of magnitude** of a positive number is its power of ten, the floor of log₁₀ of it: 340 has order 2, 0.004 has order −3. Two quantities differ by n orders of magnitude when their ratio is about 10ⁿ. Thinking in orders of magnitude answers questions like "does this matter?": a 1 µm thermal expansion in a 10 m frame is a ratio of 10⁻⁷, irrelevant for a building and decisive for a precision stage. It is also how to read a log-scale chart. Predict before running: how many orders of magnitude separate a micrometre tolerance from the length of a factory?
 
 ```python
@@ -75,6 +99,14 @@ print("factory / tolerance spans", order(scales["factory"]) - order(scales["mach
 From a 5 µm tolerance (order −6) to a 300 m factory (order 2) is 8 orders of magnitude, and from an atom to the Earth is 16. A single plot with a linear axis cannot show such ranges; a logarithmic one can, as the logarithms lesson shows.
 
 ## Estimating before computing
+
+::: math
+\[ \text{estimate} = \prod_i f_i, \qquad \text{middle of } [a, b] \text{ on a log scale} = \sqrt{a\,b} \]
+- $f_i$: the guessable factors; their errors partly cancel in the product
+- the geometric mean $\sqrt{ab}$ is halfway between $a$ and $b$ in orders of magnitude
+In code: `math.sqrt(low * high)` for each range, then multiply the factors
+:::
+
 
 A **Fermi estimate**, named after the physicist Enrico Fermi, gets an answer to within an order of magnitude by breaking a question into factors you can guess, then multiplying them. It is the best defence against a computation that is wrong by a factor of 1,000 because of a units slip: if the estimate says "about 10⁴" and the computer says 10⁷, something is wrong.
 

@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Conditional probability and total probability
 
+::: math
+\[ P(A \mid B) = \frac{P(A \text{ and } B)}{P(B)}, \qquad P(D) = \sum_i P(D \mid M_i)\,P(M_i) \]
+- $M_i$: machine $i$; $P(M_i)$: its share of output; $P(D \mid M_i)$: its defect rate
+- the overall rate is the share-weighted average of the rates
+In code: `(share * defect_rate).sum()`
+:::
+
+
 The **conditional probability** P(A | B), "A given B", is the probability of A among the cases where B happens: P(A | B) = P(A and B) / P(B). Counting makes it concrete. Of 10,000 bearings, the new line makes 5,000 with 1% defective (50 bad), the old line 3,000 with 2% (60 bad), the worn machine 2,000 with 5% (100 bad). The overall defect rate is the weighted sum, the **law of total probability**:
 
 \[ P(D) = \sum_i P(D \mid M_i)\,P(M_i) \]
@@ -44,6 +52,14 @@ The overall defect rate is 2.1%. Of every 210 defective bearings, 50 come from t
 
 ## Bayes' theorem
 
+::: math
+\[ P(M_i \mid D) = \frac{P(D \mid M_i)\,P(M_i)}{\sum_j P(D \mid M_j)\,P(M_j)} \]
+- prior $P(M_i)$ times likelihood $P(D \mid M_i)$, divided by the total so the posteriors sum to 1
+- new independent evidence: multiply by its likelihoods and renormalise again
+In code: `bayes(prior, likelihood)` returns `joint / joint.sum()`
+:::
+
+
 The count above already did the reversal: P(worn | defective) = 100/210. In general, writing P(M and D) two ways, P(M | D) P(D) = P(D | M) P(M), gives **Bayes' theorem**:
 
 \[ P(M_i \mid D) = \frac{P(D \mid M_i)\,P(M_i)}{\sum_j P(D \mid M_j)\,P(M_j)} \]
@@ -69,6 +85,14 @@ Given only that the bearing is defective, the worn machine is the likeliest sour
 
 ## The base-rate fallacy
 
+::: math
+\[ P(\text{fault} \mid \text{alarm}) = \frac{s\,p}{s\,p + (1 - c)(1 - p)} \]
+- $s$: sensitivity; $c$: specificity; $p$: prevalence (the base rate)
+- when $p$ is small, false alarms from healthy bearings outnumber true ones
+In code: `sens * prevalence / (sens * prevalence + (1 - spec) * (1 - prevalence))`
+:::
+
+
 A vibration monitor detects a developing bearing fault with probability 99% (its **sensitivity**) and stays silent on a healthy bearing with probability 95% (its **specificity**). Only 0.5% of bearings are actually developing a fault. When the alarm sounds, how likely is a real fault? Intuition says about 95%. Bayes says otherwise, because the 5% false-alarm rate applies to the huge number of healthy bearings. **Natural frequencies** make it obvious: of 10,000 bearings, 50 are faulty and 49.5 of those trigger the alarm; 9,950 are healthy and 497.5 of those trigger it too. Predict before running: what fraction of alarms is real?
 
 ```python
@@ -86,6 +110,14 @@ The denominator is the total probability of an alarm: true alarms plus false one
 Only about 9% of alarms are real: 49.5 true alarms drown in 497.5 false ones. The test is excellent, yet when the condition is rare, most positives are false. This is the **base-rate fallacy**, ignoring the prior, and it matters in medical screening, fraud detection and maintenance alike. The fix is not a better guess but a better prior or more evidence: where faults are common (20% prevalence), the same alarm is 83% reliable.
 
 ## Odds and accumulating evidence
+
+::: math
+\[ \text{odds} = \frac{P}{1 - P}, \qquad \text{posterior odds} = \text{prior odds} \times \text{LR}, \qquad \text{LR} = \frac{P(E \mid \text{fault})}{P(E \mid \text{no fault})} \]
+- independent evidence multiplies the odds, so log-odds add
+- back to probability: $P = \dfrac{\text{odds}}{1 + \text{odds}}$
+In code: `odds *= lr` per alarm, then `odds / (1 + odds)`
+:::
+
 
 Repeated updates are simplest in **odds** form. The odds of an event are P/(1 − P). Bayes' theorem becomes: posterior odds = prior odds × **likelihood ratio**, where the likelihood ratio of the evidence is P(evidence | fault)/P(evidence | no fault). For the alarm it is 0.99/0.05 = 19.8. Independent pieces of evidence multiply their ratios, so their **logarithms add**: each alarm adds log₁₀ 19.8 ≈ 1.3 to the log-odds. Predict before running: how many independent alarms (from separate sensors) are needed before a fault is more likely than not?
 
@@ -105,6 +137,14 @@ A silent sensor is evidence too: its likelihood ratio, P(silent | fault)/P(silen
 One alarm takes the probability to 9%, a second (from an independent sensor) to 66%, a third to 97.5%. Two agreeing sensors make a fault more likely than not. A silent sensor divides the odds by about 95. Evidence adds up on a log scale, the same logarithm that turned multiplication into addition in the logarithms lesson; Bayesian classifiers and many machine-learning models score evidence exactly this way.
 
 ## Beliefs about a number
+
+::: math
+\[ p(r \mid \text{data}) \propto p(r)\cdot r^3(1 - r)^{197} \]
+- a grid of candidate rates $r$; the binomial coefficient cancels on normalising
+- the 95% credible interval runs between the 2.5% and 97.5% points of the cumulative posterior
+In code: `belief = prior * likelihood`, `belief /= belief.sum()`, `cdf = np.cumsum(belief)`
+:::
+
 
 Bayes' theorem works just as well when the unknown is a number rather than a choice among causes. A new process has an unknown defect rate r. Before any data, every rate between 0 and 10% seems equally plausible. Inspection finds 3 defectives in 200 parts. The likelihood of that, for each candidate r, is binomial: C(200, 3) r³(1 − r)¹⁹⁷. On a **grid** of candidate rates, the posterior is prior × likelihood, renormalised, a whole curve of belief. From it come a best estimate and a **credible interval**: the range that contains the true rate with 95% probability given the data. Predict before running: is the rate likely to be below the 2.5% contract limit?
 

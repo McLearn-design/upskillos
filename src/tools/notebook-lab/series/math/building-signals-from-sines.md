@@ -13,6 +13,14 @@ This lesson covers:
 
 ## A square wave from sines
 
+::: math
+\[ \text{square}(t) = \frac{4}{\pi}\sum_{n = 1, 3, 5, \dots} \frac{\sin n\omega t}{n} \]
+- odd harmonics only, amplitudes falling as $1/n$
+- partial sums overshoot near each jump by about 9% of the full jump, however many terms (Gibbs)
+In code: `square_partial(t, f, n_terms)` adds the first `n_terms` odd harmonics
+:::
+
+
 A signal that repeats every T seconds has **fundamental frequency** f = 1/T. Its **harmonics** are sinusoids at 2f, 3f, 4f and so on. Fourier showed that a square wave of height ±1 is
 
 \[ \text{square}(t) = \frac{4}{\pi}\left( \sin\omega t + \frac{\sin 3\omega t}{3} + \frac{\sin 5\omega t}{5} + \cdots \right) \]
@@ -51,6 +59,14 @@ One term is a plain sine with peak 4/π ≈ 1.27. With more terms the sum hugs t
 
 ## Finding the coefficients: orthogonality
 
+::: math
+\[ \overline{\sin m\omega t\,\sin n\omega t} = \begin{cases} \tfrac{1}{2} & m = n \\ 0 & m \ne n \end{cases}, \qquad a_n = 2\,\overline{x\cos n\omega t}, \quad b_n = 2\,\overline{x\sin n\omega t} \]
+- the bar means the average over one period
+- multiplying by one harmonic and averaging removes all the others: orthogonality
+In code: `b = 2 * np.mean(sq * np.sin(2 * math.pi * n * f * ts))`
+:::
+
+
 How did Fourier know the coefficients? The key fact is **orthogonality**: over one period, the average of sin(mωt) sin(nωt) is zero unless m = n, when it is ½, and the same holds for cosines; sines and cosines are always orthogonal to each other. So to find how much sin(nωt) a signal contains, multiply the signal by sin(nωt) and average over a period: every other harmonic averages away. For a signal
 
 \[ x(t) = a_0 + \sum_{n=1}^{\infty} \big(a_n \cos n\omega t + b_n \sin n\omega t\big) \]
@@ -73,6 +89,14 @@ The samples cover exactly one period (`np.arange` stops just short of T), which 
 The averages confirm orthogonality (0 for different harmonics, ½ for the same one), and the projected coefficients match Fourier's: bₙ = 4/(πn) for odd n and 0 for even n, with all aₙ zero (to within sampling accuracy), because the square wave is an odd function (like sine). Even harmonics vanish because the wave's second half is the negative of its first half, a symmetry every motor drive engineer relies on.
 
 ## Smoothness and how fast harmonics fade
+
+::: math
+\[ |c_n| = \sqrt{a_n^2 + b_n^2} \;\propto\; \frac{1}{n} \;(\text{jump}), \qquad \frac{1}{n^2} \;(\text{corner}) \]
+- the smoother the signal, the faster its harmonics fade
+- on log–log axes the decay shows as a line of slope $-1$ or $-2$
+In code: `coeff_mag(x, n)` for the square, sawtooth and triangle
+:::
+
 
 A signal's shape decides how quickly its harmonics die away. A jump (square wave, sawtooth) gives amplitudes falling as 1/n. A corner without a jump (triangle wave) gives 1/n². A smooth signal gives faster still. This matters in practice: a fast-switching square wave contains strong high harmonics, which radiate electrical interference, so motor drives deliberately soften their edges. Predict before running: how much weaker is the 27th harmonic than the fundamental for each shape?
 
@@ -105,6 +129,14 @@ At the 27th harmonic the square wave and sawtooth still have about 1/27 of their
 
 ## Power in the harmonics: distortion
 
+::: math
+\[ \overline{x^2} = a_0^2 + \tfrac{1}{2}\sum_{n \ge 1}\big(a_n^2 + b_n^2\big), \qquad \text{THD} = \frac{\sqrt{\sum_{n \ge 2} |c_n|^2}}{|c_1|} \]
+- Parseval: each harmonic contributes its own mean square, no cross terms
+- THD: harmonic content relative to the fundamental
+In code: `math.sqrt(0.5 * (mags ** 2).sum())` against the direct RMS; `thd = math.sqrt((mags[1:] ** 2).sum()) / mags[0]`
+:::
+
+
 Orthogonality has another consequence: the power of a signal splits cleanly among its harmonics. The mean square (RMS²) of a periodic signal equals a₀² + ½ Σ(aₙ² + bₙ²), **Parseval's theorem**: each harmonic contributes its own RMS², with no cross terms. Power quality is measured this way. The **total harmonic distortion** (THD) of a supply is the RMS of all the harmonics above the fundamental, as a fraction of the fundamental's RMS. Predict before running: mains voltage with a 5th harmonic of 4% and a 7th of 3% (typical near rectifier loads): what is the THD, and does Parseval hold?
 
 ```python
@@ -123,6 +155,14 @@ The harmonic amplitudes are their peaks; dividing each squared peak by 2 gives i
 Projection finds exactly the 5th and 7th harmonics put in (13 V and 9.75 V peak), Parseval's sum reproduces the RMS measured directly, and the THD is √(0.04² + 0.03²) = 5.00%. Grid codes typically limit voltage THD to around 5–8%, so this supply is at the edge.
 
 ## Filtering a square wave
+
+::: math
+\[ |H(\omega)| = \frac{1}{\sqrt{1 + (\omega RC)^2}}, \qquad \angle H(\omega) = -\arctan(\omega RC) \]
+- a linear system scales and shifts each harmonic separately
+- the output is the sum of the filtered harmonics
+In code: `gain, phase_lag = 1 / math.sqrt(1 + (w * RC) ** 2), -math.atan(w * RC)`, then `out += 4 / (math.pi * n) * gain * np.sin(w * t_out + phase_lag)`
+:::
+
 
 A system that is linear treats each harmonic separately: the output is the sum of each input harmonic, multiplied by the system's **gain** at that frequency and shifted by its **phase**. A resistor–capacitor (RC) low-pass filter has gain 1/√(1 + (ωRC)²) and phase −atan(ωRC): it passes low frequencies and suppresses high ones. Feed it a square wave and, once the start-up transient has died away, it removes the high harmonics that make the corners sharp, leaving a rounded wave. Predict before running: with a cutoff at the square wave's fundamental frequency, which harmonics survive?
 

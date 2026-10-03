@@ -12,6 +12,14 @@ This lesson covers:
 
 ## A two-link arm
 
+::: math
+\[ x = l_1\cos\theta_1 + l_2\cos(\theta_1 + \theta_2), \qquad y = l_1\sin\theta_1 + l_2\sin(\theta_1 + \theta_2) \]
+- $\theta_1$: shoulder angle from the $x$ axis; $\theta_2$: elbow angle relative to the upper link
+- workspace: the ring $|l_1 - l_2| \le r \le l_1 + l_2$
+In code: `forward(t1, t2)` returns the array `[x, y]`
+:::
+
+
 A planar arm has an upper link of length l₁ from the shoulder at the origin, and a forearm of length l₂. The shoulder angle θ₁ is measured from the x axis; the elbow angle θ₂ is measured from the direction of the upper link. Adding the link vectors gives the gripper position, the **forward kinematics**:
 
 \[ x = l_1\cos\theta_1 + l_2\cos(\theta_1 + \theta_2), \qquad y = l_1\sin\theta_1 + l_2\sin(\theta_1 + \theta_2) \]
@@ -50,6 +58,14 @@ The gripper is at (0.3464, 0.5000) m, 0.6083 m from the shoulder. With the elbow
 
 ## The Jacobian matrix
 
+::: math
+\[ J = \begin{pmatrix} \dfrac{\partial x}{\partial\theta_1} & \dfrac{\partial x}{\partial\theta_2} \\[2mm] \dfrac{\partial y}{\partial\theta_1} & \dfrac{\partial y}{\partial\theta_2} \end{pmatrix}, \qquad \text{column } j \approx \frac{\mathbf{f}(\boldsymbol{\theta} + h\mathbf{e}_j) - \mathbf{f}(\boldsymbol{\theta} - h\mathbf{e}_j)}{2h} \]
+- row $i$: the gradient of output $i$; column $j$: how every output responds to input $j$
+- the length of column $j$ is the tip speed per radian of joint $j$
+In code: `jacobian(t1, t2)` against `numerical_jacobian(f, inputs)`
+:::
+
+
 For a function from n inputs to m outputs, the **Jacobian** J is the m × n matrix of all partial derivatives: row i holds the gradient of output i, column j holds the effect of input j on every output.
 
 \[ J = \begin{pmatrix} \partial x/\partial\theta_1 & \partial x/\partial\theta_2 \\ \partial y/\partial\theta_1 & \partial y/\partial\theta_2 \end{pmatrix} = \begin{pmatrix} -l_1\sin\theta_1 - l_2\sin(\theta_1+\theta_2) & -l_2\sin(\theta_1+\theta_2) \\ l_1\cos\theta_1 + l_2\cos(\theta_1+\theta_2) & l_2\cos(\theta_1+\theta_2) \end{pmatrix} \]
@@ -85,6 +101,14 @@ The two Jacobians agree. One degree at the shoulder moves the tip 10.6 mm, while
 
 ## Linearisation and joint errors
 
+::: math
+\[ \Delta\mathbf{p} \approx J\,\Delta\boldsymbol{\theta}, \qquad \sigma_x = \sigma\sqrt{J_{11}^2 + J_{12}^2}, \quad \sigma_y = \sigma\sqrt{J_{21}^2 + J_{22}^2} \]
+- $\sigma$: each joint's independent angle error, in radians
+- the linear prediction is checked by simulating many random joint errors
+In code: `sigma * np.sqrt((J ** 2).sum(axis=1))`
+:::
+
+
 Near a pose, the Jacobian is the best linear approximation of the map: a small change in the inputs Δθ produces an output change
 
 \[ \Delta\mathbf{p} \approx J\,\Delta\boldsymbol{\theta} \]
@@ -109,6 +133,14 @@ The linear prediction (about 0.51 mm in x and 0.30 mm in y) matches the simulati
 
 ## Singular poses
 
+::: math
+\[ \det J = l_1 l_2 \sin\theta_2, \qquad J\,\dot{\boldsymbol{\theta}} = \dot{\mathbf{p}} \;\Longrightarrow\; \dot{\boldsymbol{\theta}} = J^{-1}\dot{\mathbf{p}} \]
+- $\det J = 0$ at $\theta_2 = 0$ or $180°$: the arm is singular
+- near a singular pose the joint speeds $\dot{\boldsymbol{\theta}}$ needed for a modest tip speed grow huge
+In code: `np.linalg.solve(Jp, outward)` for elbow angles approaching 0
+:::
+
+
 The determinant of J measures how a small square of joint changes maps to an area of tip movement, the area-scale factor of the transformations lesson. Here det J = l₁l₂ sin θ₂. When the elbow is straight (θ₂ = 0) or folded back (θ₂ = 180°), det J = 0 and J is **singular**: its columns are parallel, so both joints move the tip in the same direction, and no combination of joint speeds can move it along the arm. At the edge of the workspace, the arm cannot move outwards, which makes sense: it is already fully stretched. Near such poses, moving the tip slowly in the weak direction would need huge joint speeds. Predict before running: as the elbow straightens, what happens to the joint speeds needed to move the tip outward at 10 mm/s?
 
 ```python
@@ -126,6 +158,14 @@ for deg in [90, 30, 10, 2, 0.5]:
 As the elbow straightens, det J shrinks with sin θ₂ and the joint speeds needed for a modest 10 mm/s outward motion explode, from a couple of degrees per second at 90° to hundreds of degrees per second at 0.5°. Robot controllers watch for this and avoid singular poses, or slow down near them.
 
 ## Running it backwards: inverse kinematics
+
+::: math
+\[ J(\boldsymbol{\theta}_k)\,\Delta\boldsymbol{\theta} = \mathbf{p}_\text{target} - \mathbf{f}(\boldsymbol{\theta}_k), \qquad \boldsymbol{\theta}_{k+1} = \boldsymbol{\theta}_k + \Delta\boldsymbol{\theta} \]
+- Newton's method: linearise, solve the linear system, repeat
+- near a solution the number of correct digits roughly doubles each step
+In code: `error = target - forward(*theta)`, then `theta = theta + np.linalg.solve(jacobian(*theta), error)`
+:::
+
 
 The useful question is usually the reverse: which joint angles put the gripper at a target? That is solving two non-linear equations, f(θ) = target. **Newton's method** solves it with the Jacobian: at the current guess, the linearisation says f(θ + Δθ) ≈ f(θ) + JΔθ, so choose Δθ to make this equal the target, J Δθ = target − f(θ), solve, update θ, and repeat. Near a solution each step roughly doubles the number of correct digits. Predict before running: from a rough guess, how many Newton steps reach the target to within a micrometre?
 

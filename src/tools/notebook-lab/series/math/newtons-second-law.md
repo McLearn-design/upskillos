@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Net force and acceleration
 
+::: math
+\[ F_\text{net} = \sum_i F_i = m\,a \qquad\Longrightarrow\qquad a = \frac{F_\text{net}}{m}, \qquad t = \frac{v}{a} \]
+- forces carry signs for direction: $120 + (-30) = 90$ N
+- the same net force gives a heavier object a smaller acceleration
+In code: `acceleration(forces, mass)` is `sum(forces) / mass`
+:::
+
+
 The F in F = ma is the **net** force: the sum of every force acting, with signs for direction along the line. A cart pushed forward with 120 N against 30 N of rolling resistance has a net force of 90 N. With a mass of 45 kg its acceleration is a = F/m = 2 m/s². Forces that balance (net force zero) give zero acceleration: constant velocity, not necessarily rest.
 
 Mass appears in the denominator: the same force accelerates a heavier object less. Units fit together: a newton is defined as the force giving 1 kg an acceleration of 1 m/s². Predict before running: how long does the cart take to reach walking pace, 1.5 m/s, empty and with 135 kg of bricks?
@@ -35,6 +43,14 @@ The empty cart reaches walking pace in 0.75 s; four times the mass takes four ti
 
 ## Simulating a constant force
 
+::: math
+\[ \frac{dx}{dt} = v, \quad \frac{dv}{dt} = \frac{F}{m} \qquad\Longrightarrow\qquad x_{k+1} = x_k + v_k\,\Delta t, \quad v_{k+1} = v_k + \frac{F}{m}\,\Delta t \]
+- the **state** $(x, v)$ is stepped forward by its rates of change (Euler's method)
+- exact answer for comparison: $x = \tfrac{1}{2} a t^2$; Euler's error is proportional to $\Delta t$
+In code: `x, v = x + v * dt, v + F / m * dt` inside `simulate_constant`
+:::
+
+
 To prepare for forces that are not constant, simulate the simple case and check it against the exact answer. The **state** of the cart is its position and velocity, (x, v). Their rates of change are dx/dt = v and dv/dt = F/m. Euler's method from the motion lesson steps the state: over a small Δt, x grows by v Δt and v grows by (F/m) Δt. Predict before running: after 4 s, how far off is the stepped position with Δt = 0.1 s?
 
 ```python
@@ -55,6 +71,14 @@ Writing `x, v = x + v * dt, v + ...` updates both from the **old** values at onc
 The velocity comes out exactly right, since the acceleration really is constant, but the position is short by 0.4 m (2.5%) at Δt = 0.1 s and 0.04 m at 0.01 s. Each step moves the cart at the speed it had at the start of the step, which is always a little too slow. The error is proportional to Δt, the first-order behaviour seen before.
 
 ## Drag and terminal speed
+
+::: math
+\[ m\frac{dv}{dt} = F - c\,v, \qquad v_T = \frac{F}{c}, \qquad v(t) = v_T\big(1 - e^{-ct/m}\big) \]
+- terminal speed $v_T$: set the rate of change to zero
+- time constant $\tau = m/c$: 95% of $v_T$ after $3\tau$
+In code: `vs[i] = vs[i - 1] + (F - c * vs[i - 1]) / m * dt`
+:::
+
 
 Real forces often depend on the motion itself. Air or fluid **drag** opposes velocity: at low speeds it is roughly proportional to speed, F_drag = −c v. A boat or a cart in a viscous situation then obeys
 
@@ -89,6 +113,14 @@ The boat approaches 5 m/s and reaches 95% of it after about 7.5 s; the simulatio
 
 ## A general simulator
 
+::: math
+\[ \mathbf{s}_{k+1} = \mathbf{s}_k + \mathbf{f}(t_k, \mathbf{s}_k)\,\Delta t, \qquad \mathbf{s} = \begin{pmatrix} x \\ v \end{pmatrix}, \quad \mathbf{f} = \begin{pmatrix} v \\ F(v)/m \end{pmatrix} \]
+- one stepper for every system; only the derivative function $\mathbf{f}$ changes
+- the cart: $F(v) = F_\text{drive} - c_{rr}\,m g - k\,v|v|$
+In code: `cart(t, state)` is $\mathbf{f}$; `euler(deriv, state0, dt, T)` repeats `state + deriv(k * dt, state) * dt`
+:::
+
+
 Every simulation so far had the same structure: a state, a function giving the state's rate of change, and a loop. Writing that structure once gives a tool for any system. The state becomes a NumPy array, and the **derivative function** `deriv(t, state)` returns the array of rates. This is exactly the form that professional ODE solvers (such as SciPy's `solve_ivp`, later in the series) expect. Predict before running: with forward drive, rolling resistance and quadratic air drag, what top speed does an electric cart reach?
 
 ```python
@@ -116,6 +148,14 @@ The air drag k v|v| always opposes the motion, whichever way the cart moves. Rol
 The cart settles at about 37.3 m/s, where drive balances rolling resistance plus air drag: setting the rate of change to zero gives the terminal speed directly, matching the simulation. Changing the physics means changing only the derivative function; the stepper never changes.
 
 ## When the force depends on position
+
+::: math
+\[ F = -kx, \qquad E = \tfrac{1}{2} m v^2 + \tfrac{1}{2} k x^2, \qquad v_{k+1} = v_k - \frac{k}{m}x_k\,\Delta t, \quad x_{k+1} = x_k + v_{k+1}\,\Delta t \]
+- Hooke's law; without friction the energy $E$ should stay constant
+- semi-implicit Euler updates $v$ first, then uses the **new** $v$ for $x$
+In code: `energy(x, v)` measures the drift of each method over 20 periods
+:::
+
 
 A mass on a spring feels a force pulling it back towards rest, proportional to the stretch: F = −kx (Hooke's law). It oscillates, and with no friction its energy ½mv² + ½kx² should stay constant forever. Plain Euler fails this test: the energy grows every step, and the oscillation spirals outward. A tiny change fixes it: update the velocity first, then use the **new** velocity to update the position. This **semi-implicit Euler** method costs nothing extra and keeps the energy bounded, which is why game engines use it (molecular simulations use its second-order cousin, the Verlet method). Predict before running: after 20 periods, how much has each method's energy changed?
 

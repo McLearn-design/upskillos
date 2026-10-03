@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Apparent frequencies, forwards and backwards
 
+::: math
+\[ f_\text{apparent} = f - f_s \cdot \operatorname{round}\!\left(\frac{f}{f_s}\right) \in \left(-\frac{f_s}{2}, \frac{f_s}{2}\right] \]
+- $f$, $f + f_s$, $f + 2f_s, \dots$ give identical samples
+- a negative apparent frequency looks like rotation backwards
+In code: `apparent(f, fs)` computes `f - fs * math.floor(f / fs + 0.5)`
+:::
+
+
 Sampling at rate f_s cannot distinguish a frequency f from f + f_s, f + 2f_s and so on: their samples are identical. For rotation, direction matters, so it is natural to fold f into the interval (−f_s/2, f_s/2]: the **apparent frequency** is f minus the nearest whole multiple of f_s. A negative apparent frequency means apparent rotation **backwards**. This is the signed version of the spectrum lesson's folding. Predict before running: a point on a disc spins at 23 revolutions per second and is photographed at 24 frames per second. Which way does it appear to turn, and how fast?
 
 ```python
@@ -40,6 +48,14 @@ At 23 rev/s the disc appears to turn backwards at 1 rev/s: each frame it has gon
 
 ## Wagon wheels and strobes
 
+::: math
+\[ f_\text{spoke} = S \cdot f_\text{rev}, \qquad f_\text{rev} = \frac{v}{\pi D}, \qquad \text{apparent rotation} = \frac{f_\text{apparent}(S f_\text{rev},\, \text{fps})}{S} \]
+- $S$ identical spokes look the same after $1/S$ of a turn
+- frozen whenever $S f_\text{rev}$ is a whole multiple of the frame rate
+In code: `wheel_apparent_rev_per_s(speed_kmh)` with `rev = speed_kmh / 3.6 / circ`
+:::
+
+
 A wheel with S identical spokes looks the same after 1/S of a turn, so what the camera samples is the **spoke-passing frequency**, S times the rotation rate, not the rotation itself. That is why film wheels misbehave at modest speeds. The same trick is useful: a **stroboscope** flashing at exactly the spoke-passing frequency (or the rotation frequency, for a single mark) freezes the image, and the flash rate then gives the speed. Predict before running: a 12-spoke wheel on a film at 24 frames per second. At what road speeds does it look frozen, and how does it look at 50 km/h?
 
 ```python
@@ -62,6 +78,14 @@ The apparent spoke frequency, divided by the number of spokes, is the apparent r
 The wheel looks frozen whenever the spokes advance exactly one spoke-gap (or a whole number of them) per frame: at about 15.8, 31.7, 47.5 and 63.3 km/h. Just below each of those it seems to roll slowly backwards; at 50 km/h, just above 47.5, it creeps forwards slowly. The real wheel turns 6.3 times a second, but no camera at 24 frames per second can show that.
 
 ## The sampling theorem and reconstruction
+
+::: math
+\[ x(t) = \sum_n x[n]\,\operatorname{sinc}\big(f_s t - n\big), \qquad \operatorname{sinc}(u) = \frac{\sin \pi u}{\pi u} \]
+- exact when the signal has no frequencies at or above $f_s/2$ (the sampling theorem)
+- each sinc is 1 at its own sample and 0 at every other one
+In code: `reconstruct(samples, fs, t)` sums `samples * np.sinc(fs * t - n)`
+:::
+
 
 Aliasing sounds like a disaster, but the **sampling theorem** (Nyquist, Shannon) gives the precise condition for safety: if a signal contains no frequencies at or above f_s/2, its samples determine it **completely**, including every value between them. The reconstruction formula adds a **sinc** pulse, sinc(x) = sin(πx)/(πx), centred on each sample and scaled by it:
 
@@ -101,6 +125,14 @@ Away from the ends of the record, sinc reconstruction rebuilds the signal betwee
 
 ## Downsampling: filter first
 
+::: math
+\[ y[m] = \frac{1}{M}\sum_{j=0}^{M-1} x[mM + j] \qquad (\text{keep 1 rate in } M) \]
+- picking every $M$-th sample lets everything above the new Nyquist frequency fold down
+- averaging each block first weakens those frequencies
+In code: `x[::factor]` against `x[: len(x) // factor * factor].reshape(-1, factor).mean(axis=1)`
+:::
+
+
 Data systems often sample fast and then reduce the rate to save storage: **downsampling** or **decimation**. Keeping every 10th sample of a 1 kHz signal gives 100 Hz, but anything between 50 and 500 Hz in the original then aliases into the new 0–50 Hz band. The fix is to **low-pass filter first**: even simply averaging each block of 10 samples, rather than picking one, reduces the high frequencies before they can fold down. Block averaging is only a weak low-pass filter, though: it removes some frequencies almost completely (multiples of 100 Hz here) but still passes about half the amplitude just above the new Nyquist frequency, which is why real decimators use proper filters. Predict before running: a 2 Hz temperature trend with 470 Hz electrical interference, logged at 1 kHz and reduced to 100 Hz. Where does the interference end up?
 
 ```python
@@ -125,6 +157,14 @@ print("peaks in the naive record (Hz, amplitude):", [(float(freqs[k]), round(flo
 Naive decimation turns the 470 Hz interference into a fake 30 Hz wave of the full 0.5 amplitude, sitting beside the real 2 Hz trend and indistinguishable from a real signal. Averaging blocks of 10 reduces the error from about 0.48 to about 0.04, helped by 470 Hz lying close to one of the averaging's blind spots. A proper digital low-pass filter would do better still; every downsampling routine in signal-processing libraries (such as `scipy.signal.decimate`) filters first.
 
 ## Quantisation
+
+::: math
+\[ \Delta = \frac{R}{2^N}, \qquad \text{noise RMS} = \frac{\Delta}{\sqrt{12}}, \qquad \text{SNR} \approx 6.02\,N + 1.76 \text{ dB} \]
+- $N$: number of bits; $R$: full-scale range
+- each extra bit halves the step and adds about 6 dB
+In code: `quantise(x, bits, full_scale)` returns `np.round(x / step) * step`
+:::
+
 
 Sampling discretises time; an analogue-to-digital converter (ADC) also discretises each **value**, rounding it to one of 2ᴺ levels for an N-bit converter. Over a full-scale range R the step is Δ = R/2ᴺ. The rounding error is spread evenly over ±Δ/2, so it behaves like added noise with RMS Δ/√12 (the uniform distribution's standard deviation). For a full-scale sine wave, the ratio of signal power to quantisation noise is about 6.02N + 1.76 dB: each extra bit buys 6 dB, a factor of 2 in amplitude. Predict before running: how many bits does a 10 V sensor input need to resolve 1 mV?
 

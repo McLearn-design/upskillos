@@ -12,11 +12,14 @@ This lesson covers:
 
 ## Resolving a force
 
-A force F at angle θ from the x axis has components
-
+::: math
 \[ F_x = F\cos\theta, \qquad F_y = F\sin\theta \]
+- $F$: the size of the force (N); $\theta$: its angle from the x axis
+- on a slope at angle $\alpha$, a weight $W$ splits into $W\sin\alpha$ along the slope and $W\cos\alpha$ into it
+In code: `W * math.sin(math.radians(alpha))`, converting degrees to radians first
+:::
 
-the vector-from-polar formula of the previous lesson. Each component is the part of the force acting along one axis; together they have exactly the same effect as F.
+A force F at angle θ from the x axis has these components, the vector-from-polar formula of the previous lesson. Each component is the part of the force acting along one axis; together they have exactly the same effect as F.
 
 The axes need not be horizontal and vertical. For an object on a slope inclined at α, the natural axes run **along** the slope and **perpendicular** to it. The weight W = mg points straight down, at angle α from the perpendicular axis, so it splits into W sin α pulling down the slope and W cos α pressing into it. Predict before running: for a 120 kg pallet on a 15° ramp, which component is larger?
 
@@ -39,9 +42,15 @@ On a 15° ramp only about a quarter of the weight, 304.7 N, pulls the pallet dow
 
 ## The resultant of several forces
 
-The **resultant** of several forces is their vector sum: the single force with the same effect. Adding arrows head to tail by drawing is slow and imprecise; adding components is exact. Resolve every force, sum the x components and the y components separately, then convert back to a magnitude and direction:
+The **resultant** of several forces is their vector sum: the single force with the same effect. Adding arrows head to tail by drawing is slow and imprecise; adding components is exact. Resolve every force, sum the x components and the y components separately, then convert back to a magnitude and direction.
 
+::: math
 \[ R_x = \sum F_x, \quad R_y = \sum F_y, \quad |R| = \sqrt{R_x^2 + R_y^2}, \quad \theta_R = \operatorname{atan2}(R_y, R_x) \]
+- $R_x, R_y$: the resultant's components, each a plain sum
+- $|R|$: its magnitude, by Pythagoras; $\theta_R$: its direction
+- the **equilibrant** $-R$ is the force that would balance them
+In code: one row of `[Fx, Fy]` per force, then `comps.sum(axis=0)`
+:::
 
 A bracket bolted to a wall carries three forces: 400 N horizontally (0°) from a tie, 250 N at 120° from a strut, and 300 N at 225° from a hanging load's cable. Predict before running: is the resultant large or small compared with the individual forces?
 
@@ -61,13 +70,15 @@ The three forces, each hundreds of newtons, nearly cancel: the resultant is only
 
 ## Equilibrium
 
-An object at rest, or moving at constant velocity, has zero resultant force: by Newton's first law, any non-zero resultant would accelerate it. In two dimensions that is two equations, one per axis:
-
+::: math
 \[ \sum F_x = 0, \qquad \sum F_y = 0 \]
+\[ -T_1\cos 40° + T_2 \cos 60° = 0, \qquad T_1 \sin 40° + T_2 \sin 60° = 2000 \]
+- $T_1, T_2$: the unknown cable tensions (N)
+- two equations, two unknowns: a linear system $A\mathbf{t} = \mathbf{b}$
+In code: `np.linalg.solve(A, b)` with the cosines and sines as the rows of `A`
+:::
 
-Two equations can determine two unknowns. A classic case is a load hung from two cables. A 2,000 N load hangs from a ring held by cable 1, pulling up and to the left at 40° above the horizontal, and cable 2, pulling up and to the right at 60° above the horizontal. With T₁ and T₂ the unknown tensions:
-
-\[ -T_1\cos 40° + T_2 \cos 60° = 0, \qquad T_1 \sin 40° + T_2 \sin 60° - 2000 = 0 \]
+An object at rest, or moving at constant velocity, has zero resultant force: by Newton's first law, any non-zero resultant would accelerate it. In two dimensions that is two equations, one per axis, so they can determine two unknowns. A classic case is a load hung from two cables. A 2,000 N load hangs from a ring held by cable 1, pulling up and to the left at 40° above the horizontal, and cable 2, pulling up and to the right at 60° above the horizontal; the box above writes the two balance equations for the tensions T₁ and T₂.
 
 The first equation gives T₁ in terms of T₂; substituting into the second leaves one unknown. A computer solves such systems directly: written as a matrix equation A t = b, `np.linalg.solve` finds t. The next block of lessons explains how. Predict before running: which cable carries more tension, the shallower one or the steeper one?
 
@@ -90,6 +101,11 @@ for angle in [30, 15, 5, 1]:
 The steeper cable, T₂ at 60°, carries more: 1,555.7 N against T₁'s 1,015.4 N, because it is closer to vertical and so better placed to hold the load up. Both tensions together exceed the 2,000 N load, since their horizontal components fight each other. The symmetric table shows the danger of shallow cables: at 5° each carries more than 11 kN, and at 1° over 57 kN, for the same 2,000 N load. A cable can never be pulled perfectly straight under a load, which is why riggers keep sling angles well above 30°.
 
 ## The same system in OpenMAT
+
+::: math
+\[ A\mathbf{t} = \mathbf{b}, \qquad A = \begin{pmatrix} -\cos 40° & \cos 60° \\ \sin 40° & \sin 60° \end{pmatrix}, \quad \mathbf{b} = \begin{pmatrix} 0 \\ 2000 \end{pmatrix} \]
+In code: `A = [-cosd(40) cosd(60); sind(40) sind(60)]` and `T = A \ b`
+:::
 
 Linear systems like this one are where MATLAB-style notation shines, and OpenMAT, the in-browser MATLAB-like environment, runs it here. Matrices are written row by row in square brackets with rows separated by `;`, `cosd` and `sind` take degrees directly, and `A \ b` solves A t = b. The cell runs on its own: it shares no variables with the Python cells. Predict before running: do the tensions match the Python result?
 

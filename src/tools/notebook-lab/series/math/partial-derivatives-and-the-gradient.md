@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Partial derivatives
 
+::: math
+\[ \frac{\partial f}{\partial x} \approx \frac{f(x + h, y) - f(x - h, y)}{2h}, \qquad \frac{\partial T}{\partial x} = -\frac{x - 300}{s^2}\,(T - 20) \]
+- $\partial f/\partial x$: the slope in the $x$ direction with $y$ held fixed
+- every one-variable rule applies, treating the other variable as a constant
+In code: `sp.diff(T_expr, x)` and `sp.diff(T_expr, y)`, turned into functions with `sp.lambdify`
+:::
+
+
 The **partial derivative** ∂f/∂x is the derivative of f with respect to x with y held fixed: the slope of the slice through the surface in the x direction. ∂f/∂y holds x fixed. All the one-variable rules apply, treating the other variable as a constant. Numerically, nudge one variable at a time: ∂f/∂x ≈ (f(x + h, y) − f(x − h, y))/(2h).
 
 For the plate temperature T(x, y) = 20 + 160 e^(−r²/(2s²)) with r² = (x − 300)² + (y − 200)², the chain rule gives ∂T/∂x = −(x − 300)/s² × (T − 20). Predict before running: at the point (400, 250), is the plate getting hotter or colder as x increases, and which partial is larger in size?
@@ -41,6 +49,14 @@ print(f"∂T/∂y = {Ty_f(px, py):.4f} °C/mm (numerical {(T(px, py + h) - T(px,
 At (400, 250) both partials are negative: moving east or north takes you away from the hot spot, so it gets colder. ∂T/∂x, about −0.91 °C/mm, is twice ∂T/∂y, about −0.46 °C/mm, because the point is 100 mm east of the centre but only 50 mm north. Symbolic and numerical values agree to four decimals.
 
 ## The gradient and the contours
+
+::: math
+\[ \nabla T = \left(\frac{\partial T}{\partial x}, \frac{\partial T}{\partial y}\right), \qquad D_{\mathbf{u}} T = \nabla T \cdot \mathbf{u} \;\;(|\mathbf{u}| = 1) \]
+- $\nabla T$ points in the direction of fastest increase; its length is that rate
+- it is perpendicular to the contours, where $D_{\mathbf{u}} T = 0$
+In code: `grad = np.array([gx, gy])`, `np.linalg.norm(grad)`, and `grad @ u` for each direction
+:::
+
 
 The **gradient** ∇f = (∂f/∂x, ∂f/∂y) combines both partials into a vector. Two facts make it central to multivariable calculus:
 
@@ -76,6 +92,14 @@ The steepest rise points at −153.4° (that is, 206.6°), exactly towards the h
 
 ## Gradients of measured data and heat flow
 
+::: math
+\[ \mathbf{q} = -k\,\nabla T, \qquad |\mathbf{q}| = k\sqrt{\left(\frac{\partial T}{\partial x}\right)^2 + \left(\frac{\partial T}{\partial y}\right)^2} \]
+- Fourier's law: heat flows down the gradient; $k$: thermal conductivity
+- gridded data: central differences in each direction
+In code: `dT_dy, dT_dx = np.gradient(TT, dy_m, dx_m)` (rows first), then `k_steel * np.hypot(dT_dx, dT_dy)`
+:::
+
+
 A thermal camera gives temperatures on a grid of pixels, not a formula. `np.gradient(Z, dy, dx)` estimates both partials at every grid point with central differences inside and one-sided differences at the edges; with the grid spacings supplied, the results are in physical units. Note the order: it returns the derivative along the rows (y) first, then along the columns (x).
 
 Heat flows from hot to cold, down the gradient. **Fourier's law** makes it quantitative: the heat flux (power per unit area through the material) is q = −k ∇T, where k is the thermal conductivity (about 50 W/(m·K) for steel). Predict before running: where on the plate is the heat flux largest, and how large?
@@ -98,6 +122,14 @@ Spacings are converted to metres so the gradient is in kelvin per metre and the 
 The flux peaks about 90 mm from the centre, the radius where the temperature falls most steeply (it equals the hot spot's width parameter s), at roughly 54 kW/m². The grid estimate of the partial derivative at (400, 250) is within a fraction of a percent of the exact value. Engineers find hot spots this way from thermal images and use the flux to size cooling.
 
 ## Linear approximation and uncertainty
+
+::: math
+\[ \Delta f \approx \frac{\partial f}{\partial x_1}\Delta x_1 + \frac{\partial f}{\partial x_2}\Delta x_2, \qquad \sigma_f^2 \approx \left(\frac{\partial f}{\partial x_1}\sigma_1\right)^2 + \left(\frac{\partial f}{\partial x_2}\sigma_2\right)^2 \]
+- for $P = V^2/R$: $\dfrac{\partial P}{\partial V} = \dfrac{2V}{R}$ and $\dfrac{\partial P}{\partial R} = -\dfrac{V^2}{R^2}$
+- each term is one input's contribution to the uncertainty
+In code: `math.hypot(dP_dV * sV, dP_dR * sR)`
+:::
+
 
 Near a point, a smooth surface looks like its **tangent plane**: f(x + Δx, y + Δy) ≈ f(x, y) + f_x Δx + f_y Δy, the two-variable version of the tangent line. The partials say how sensitive the output is to each input.
 

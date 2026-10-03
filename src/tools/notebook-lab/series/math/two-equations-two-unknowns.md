@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Equations as lines
 
+::: math
+\[ a_1 x + b_1 y = c_1, \qquad a_2 x + b_2 y = c_2 \]
+- each equation is a line; the solution is the point on both
+- one crossing: one solution; parallel lines: none; the same line: infinitely many
+In code: each equation is a tuple `(a, b, c)`, plotted as $y = (c - a x)/b$
+:::
+
+
 An equation a x + b y = c, with a and b not both zero, holds for every point on a straight line, the general form from the lines lesson. A **system** of two such equations asks for the points on both lines, so the solution is where the lines cross. Three things can happen:
 
 - the lines cross at one point: exactly **one solution**;
@@ -49,6 +57,14 @@ The middle system has no solution: 2x + 4y = 12 is the same as x + 2y = 6, paral
 
 ## Elimination and Cramer's rule
 
+::: math
+\[ D = a_1 b_2 - a_2 b_1, \qquad x = \frac{c_1 b_2 - c_2 b_1}{D}, \qquad y = \frac{a_1 c_2 - a_2 c_1}{D} \]
+- $D$: the determinant; $D = 0$ means the lines are parallel and there is no unique solution
+- check any answer by substituting it back into both equations
+In code: `cramer(a1, b1, c1, a2, b2, c2)` raises `ValueError` when `D == 0`
+:::
+
+
 The hand method is **elimination**: multiply the equations so that one unknown has matching coefficients, then subtract to remove it. For x + y = 10 and 2x − y = 2, adding the equations eliminates y: 3x = 12, so x = 4, and then y = 6.
 
 Doing elimination once with letters in place of numbers gives a formula for every 2 × 2 system. For a₁x + b₁y = c₁ and a₂x + b₂y = c₂, with determinant D = a₁b₂ − a₂b₁:
@@ -77,6 +93,14 @@ Both give x = 4, y = 6. Always substitute a solution back into the original equa
 
 ## Mixtures
 
+::: math
+\[ p + q = V, \qquad c_1\,p + c_2\,q = c_\text{target}\,V \]
+- $p$ and $q$: litres of each stock; $V$: total volume; $c_1$ and $c_2$: their concentrations
+- a negative $p$ or $q$ means the target cannot be blended from these stocks
+In code: `blend(c1, c2, target, total)` calls `cramer(1, 1, total, c1, c2, target * total)`
+:::
+
+
 A machine shop keeps two coolant concentrates in stock, one at 8% and one at 2%, and needs 50 litres at 5%. Two unknowns, the litres of each (call them p and q), and two facts:
 
 - total volume: p + q = 50;
@@ -98,6 +122,14 @@ print(f"10%: {p:.2f} L of 8% and {q:.2f} L of 2%  <- a negative amount: impossib
 
 ## A two-loop circuit
 
+::: math
+\[ (R_1 + R_3)\,I_1 - R_3\,I_2 = V_1, \qquad -R_3\,I_1 + (R_2 + R_3)\,I_2 = -V_2 \]
+- $I_1$ and $I_2$: loop currents; the shared resistor $R_3$ carries $I_1 - I_2$
+- power check: $\sum I^2 R = V_1 I_1 - V_2 I_2$
+In code: `cramer(R1 + R3, -R3, V1, -R3, R2 + R3, -V2)`
+:::
+
+
 Circuits give systems directly. Two batteries share a resistor: battery 1 (V₁ = 12 V) drives a loop through R₁ = 4 Ω and the shared R₃ = 6 Ω; battery 2 (V₂ = 6 V) drives a second loop through R₂ = 2 Ω and the same R₃. Assign a **loop current** to each loop, I₁ and I₂, both taken clockwise. The shared resistor carries their difference, I₁ − I₂. **Kirchhoff's voltage law** says the voltage changes around any loop sum to zero:
 
 \[ (R_1 + R_3) I_1 - R_3 I_2 = V_1, \qquad -R_3 I_1 + (R_2 + R_3) I_2 = -V_2 \]
@@ -118,6 +150,14 @@ A resistor carrying current I dissipates I²R watts; a battery delivers V × I w
 The loop currents are 1.3636 A and 0.2727 A, both clockwise. In loop 2 that is against battery 2's own push, so the stronger battery 1 is forcing current backwards through battery 2: it is being charged, absorbing 6 × 0.2727 = 1.64 W of the 16.36 W battery 1 delivers. The shared resistor carries the difference, 1.0909 A. Power balances: the net 14.73 W supplied equals the 14.73 W the resistors turn into heat. A balance check like this tests the whole model, signs included.
 
 ## Ill-conditioning
+
+::: math
+\[ x + y = 2, \qquad x + 1.001\,y = 2.001, \qquad D = 0.001 \]
+- a determinant small compared with the coefficients means nearly parallel lines
+- then a tiny change in the right-hand side moves $(x, y)$ a long way: the system is **ill-conditioned**
+In code: `cramer(1, 1, 2, 1, 1.001, 2.001)` against the same with `2.002`
+:::
+
 
 When two lines are nearly parallel, their crossing point is very sensitive: tilt either line slightly and the crossing slides a long way. Measured coefficients always carry some error, so a nearly singular system can give answers that are mathematically correct and practically meaningless. The determinant hints at this: it is small compared with the coefficients. Predict before running: two nearly parallel lines, and a change of 0.001 in one right-hand side. How far does the solution move?
 

@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Formulas on whole arrays
 
+::: math
+\[ \mathbf{T} = 20 + 70\, e^{-0.05\,\mathbf{t}}, \qquad (\mathbf{a} + \mathbf{b})_i = a_i + b_i, \qquad (c\,\mathbf{a})_i = c\,a_i \]
+- $\mathbf{t} = (t_0, t_1, \ldots)$: a whole array of times; the formula applies to each element
+- a single number combined with an array applies to every element (broadcasting)
+In code: `20 + 70 * np.exp(-0.05 * t)` with `t = np.linspace(0, 60, 7)`
+:::
+
+
 An array holds many numbers of one type. Arithmetic on arrays works **element by element**: `a + b` adds matching elements, `a * 2` doubles every element, and `np.exp(a)` takes the exponential of each. Combining an array with a single number applies the number to every element (this is called **broadcasting**). No loop is written, yet every value is computed.
 
 `np.linspace(start, stop, n)` makes n evenly spaced values with both ends included, the array version of the previous lesson's `sample`. Predict before running: how much faster is NumPy than a Python loop over a million values?
@@ -42,6 +50,14 @@ The cooling formula from the previous lesson is written exactly as in mathematic
 
 ## Summarising a log
 
+::: math
+\[ \bar{x} = \frac{1}{n}\sum_{i=1}^{n} x_i, \qquad \sigma = \sqrt{\frac{1}{n}\sum_{i=1}^{n} (x_i - \bar{x})^2} \]
+- $\bar{x}$: the mean; $\sigma$: the standard deviation (spread)
+- $\arg\max_i x_i$: the position $i$ of the largest value
+In code: `log.mean()`, `log.std()`, `log.argmax()`
+:::
+
+
 A sensor log is summarised by a few numbers: the **mean** (the average level), the **minimum** and **maximum**, and the **standard deviation**, a measure of spread covered properly in the statistics block. `argmax` and `argmin` give the **position** of the extreme, which is often the more useful fact: not just "the peak was 81 °C" but "the peak was at 14:02".
 
 To have realistic data, the demo simulates a bearing's temperature: a slow warm-up plus random sensor noise from a seeded random generator, so every run gives the same numbers. Predict before running: is the mean of the noisy log close to the mean of the smooth trend?
@@ -63,6 +79,14 @@ The noisy mean, 52.19 °C, is within about 0.1 °C of the trend's 52.30, althoug
 
 ## Selecting with masks
 
+::: math
+\[ \text{count} = \sum_i [x_i > c], \qquad \text{fraction} = \frac{1}{n}\sum_i [x_i > c] \]
+- $[x_i > c]$ is 1 when the condition holds and 0 otherwise: a mask
+- gaps ($\text{nan}$) are excluded from the mean: $\bar{x} = \text{mean of the non-nan } x_i$
+In code: `(log > 60).sum()`, `(log > 60).mean()` and `np.nanmean(gappy)`
+:::
+
+
 Comparing an array with a value gives an array of `True` and `False`, a **boolean mask**. Using a mask as an index selects the elements where it is `True`. Because `True` counts as 1, `mask.sum()` counts them and `mask.mean()` gives the fraction. This one idea replaces most filtering loops.
 
 Real logs have gaps: a sensor that drops out records `nan`, "not a number". Any arithmetic with `nan` gives `nan`, so a plain `mean()` of a log with one gap is `nan`. `np.isnan` builds a mask of the gaps, and `np.nanmean` and friends ignore them. Predict before running: for how many seconds was the bearing above 60 °C, and what is the mean after two dropouts?
@@ -82,6 +106,14 @@ Combine masks with `&` (and), `|` (or) and `~` (not), with parentheses around ea
 The bearing was above 60 °C for 176 seconds, 29.3% of the log, first at 375 s. Two `nan` gaps turn the plain mean into `nan`, while `nanmean` still gives 52.2. In real data analysis, counting the gaps (`np.isnan(x).sum()`) before averaging is a basic check.
 
 ## Differences and running totals
+
+::: math
+\[ v_i = \frac{x_{i+1} - x_i}{t_{i+1} - t_i}, \qquad E_k = \sum_{i=0}^{k} P_i\,\Delta t \]
+- differences turn positions into speeds; running totals turn power into energy
+- the two undo each other: $x_0 + \sum_{i<k} (x_{i+1} - x_i) = x_k$
+In code: `np.diff(position) / np.diff(times)` and `np.cumsum(power_kw * 0.5)`
+:::
+
 
 Two operations connect a log to rates and totals, and they are the computational heart of calculus, which arrives in a few lessons. `np.diff(x)` gives the differences between neighbours, x[1] − x[0], x[2] − x[1], and so on, an array one shorter. Dividing the differences of position by the differences of time gives speed. `np.cumsum(x)` gives the **running total**: adding up a power reading each second gives the energy used so far. The two undo each other, as subtraction undoes addition.
 
@@ -105,6 +137,14 @@ print("cumsum undoes diff:", np.allclose(position[0] + np.cumsum(np.diff(positio
 The speed rises to 0.8 m/s, holds it from 2.0 to 4.0 s (four equal values), and falls back to 0.1 m/s at the end. The rounding matters: the computed differences carry tiny floating-point errors, so the four 0.8s are not all exactly equal, which is why the demo finds the top speed with `np.isclose` rather than `==`. `times[:-1]` is the start time of each interval. The belt's total travel is the last position minus the first, 3.2 m. The energy total climbs to 9.35 kJ. Putting the running total of the differences back on the starting value recovers every position exactly, the discrete version of the fundamental theorem of calculus.
 
 ## Tables of readings, and the dtype trap
+
+::: math
+\[ \bar{x}_j = \frac{1}{n}\sum_{i} X_{ij} \;(\text{axis}=0), \qquad 200 + 100 \equiv 300 - 256 = 44 \pmod{256} \]
+- $X_{ij}$: row $i$ (time), column $j$ (sensor); `axis=0` averages down each column
+- an 8-bit unsigned integer stores results modulo 256, so large sums wrap around
+In code: `three.mean(axis=0)`; convert with `.astype(int)` before arithmetic that may overflow
+:::
+
 
 Several sensors logged together form a **two-dimensional array**: one row per time, one column per sensor. `data[:, 2]` is the third sensor's column, `data[10]` is the eleventh row. Summaries take an **axis**: `axis=0` collapses the rows, giving one value per sensor (per column); `axis=1` collapses the columns, giving one value per time.
 

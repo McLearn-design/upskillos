@@ -3,7 +3,7 @@
 // Detects opencalc Figure output and renders it via FigureRenderer.
 // Drop-in replacement for the provided PythonNotebook component.
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from "react";
 import Editor from "@monaco-editor/react";
 import Prism from "prismjs";
 import "prismjs/themes/prism-tomorrow.css";
@@ -562,6 +562,10 @@ const CellComponent = React.memo(
                 <style>{NB_PROSE_CSS}</style>
                 {(Array.isArray(cell.prose) ? cell.prose : [cell.prose]).map(
                   (p, i, all) => {
+                    // ::: math box — the concept's mathematics before its code
+                    if (typeof p === "string" && p.startsWith("::: math")) {
+                      return <MathBox key={i} text={p} C={C} first={i === 0} />;
+                    }
                     // ## Header line
                     if (typeof p === "string" && p.startsWith("## ")) {
                       return (
@@ -858,8 +862,15 @@ const CellComponent = React.memo(
           </div>
         )}
 
+        {/* An OpenMAT cell is shown as an embedded OpenMAT (MATLAB-style) notebook. */}
+        {cell.lang === "openmat" && !cell.proseOnly && (
+          <div style={{ padding: "4px 16px 16px" }}>
+            <EmbeddedOpenMat code={cell.code} C={C} />
+          </div>
+        )}
+
         {/* A prose-only cell is lesson text: no editor, run button or output. */}
-        {!cell.proseOnly && (<>
+        {!cell.proseOnly && cell.lang !== "openmat" && (<>
         {/* ── Cell header (In [n] label + buttons) ────────────────────────── */}
         <div
           style={{
@@ -882,9 +893,6 @@ const CellComponent = React.memo(
               </span>
             ) : (
               <span>In [{cell.executionCount ?? " "}]</span>
-            )}
-            {cell.lang === "openmat" && (
-              <span style={{ marginLeft: 8, color: C.teal, fontWeight: 600 }}>OpenMAT</span>
             )}
           </span>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
@@ -941,7 +949,7 @@ const CellComponent = React.memo(
         <Editor
           height={editorHeight}
           beforeMount={setupOpenCalcMonaco}
-          defaultLanguage={cell.lang === "openmat" ? "openmat" : "python"}
+          defaultLanguage="python"
           theme={monacoTheme || (C.dark ? "open-calc-dark" : "open-calc-light")}
           value={cell.code}
           onChange={(val) => onUpdate(cell.id, val || "")}
@@ -1061,6 +1069,76 @@ function fixPythonBrokenStrings(src) {
   return out.join("\n");
 }
 
+// OpenMAT notebook embedded in a lesson. Loaded on demand, and its cells are
+// memoised on the code so re-renders of the lesson keep the cell's output.
+const OpenMatNotebookLazy = lazy(() => import("./OpenMatNotebook"));
+function EmbeddedOpenMat({ code, C }) {
+  const initialCells = useMemo(() => [{ id: 1, cellTitle: "OpenMAT", prose: [], code }], [code]);
+  return (
+    <Suspense fallback={<div style={{ padding: 12, fontSize: 13, color: C.muted }}>Loading OpenMAT…</div>}>
+      <OpenMatNotebookLazy params={{ initialCells }} />
+    </Suspense>
+  );
+}
+
+// "The math" box: lines inside a ::: math block. "- " lines are a list of
+// symbols, an "In code:" line bridges to the code, other lines (usually
+// display math) are paragraphs.
+function MathBox({ text, C, first }) {
+  const lines = text.split("\n").slice(1);
+  const blocks = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) { blocks.push(null); continue; }
+    const last = blocks[blocks.length - 1];
+    if (line.startsWith("- ")) {
+      if (last && last.kind === "list") last.items.push(line.slice(2));
+      else blocks.push({ kind: "list", items: [line.slice(2)] });
+    } else if (/^in code:/i.test(line)) {
+      blocks.push({ kind: "code", text: line.replace(/^in code:\s*/i, "") });
+    } else if (last && last.kind === "para") {
+      last.text += " " + line;
+    } else {
+      blocks.push({ kind: "para", text: line });
+    }
+  }
+  return (
+    <div
+      style={{
+        margin: first ? "0 0 4px" : "16px 0 4px",
+        padding: "12px 16px 12px",
+        borderRadius: 10,
+        background: C.purpleBg,
+        border: `1px solid ${withAlpha(C.purpleBd, "44")}`,
+        borderLeft: `4px solid ${C.purple}`,
+        color: C.text,
+        fontSize: 15,
+        lineHeight: 1.7,
+      }}
+    >
+      <span style={{ display: "block", marginBottom: 4, fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: C.purple }}>
+        The math
+      </span>
+      {blocks.filter(Boolean).map((b, j) =>
+        b.kind === "list" ? (
+          <ul key={j} style={{ margin: "6px 0 0", paddingLeft: 22, listStyleType: "disc" }}>
+            {b.items.map((it, k) => (
+              <li key={k} style={{ marginBottom: 3 }}>{parseProse(it)}</li>
+            ))}
+          </ul>
+        ) : b.kind === "code" ? (
+          <div key={j} style={{ marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${withAlpha(C.purpleBd, "55")}`, fontSize: 14 }}>
+            <span style={{ fontWeight: 700, color: C.purple }}>In code: </span>
+            {parseProse(b.text)}
+          </div>
+        ) : (
+          <div key={j} style={{ marginTop: j === 0 ? 0 : 6 }}>{parseProse(b.text)}</div>
+        ),
+      )}
+    </div>
+  );
+}
+
 // Inline colours for lesson prose; the values come from CSS variables set on
 // the prose container, so they follow the light/dark theme.
 const NB_PROSE_CSS = `
@@ -1152,31 +1230,8 @@ export default function PythonNotebook({ params, onParamChange, onCellsChange })
   // ── Run a cell ─────────────────────────────────────────────────────────────
   const runCell = useCallback(
     async (cellId) => {
-      // OpenMAT (MATLAB-style) cells run in the in-browser OpenMAT engine,
-      // not Python: no Pyodide needed, and each cell runs on its own. The
-      // engine is loaded on first use, so Python-only lessons never fetch it.
-      const target = cells.find((c) => c.id === cellId);
-      if (target?.lang === "openmat") {
-        if (isExecuting) return;
-        setIsExecuting(true);
-        setCells((prev) => prev.map((c) => (c.id === cellId ? { ...c, status: "running", output: "", figureJson: null, matplotlibImages: [] } : c)));
-        execCounterRef.current += 1;
-        const count = execCounterRef.current;
-        try {
-          const { runOpenMatScript } = await import("../../engines/openmat/openmatEngine.js");
-          const result = runOpenMatScript(target.code);
-          setCells((prev) => prev.map((c) => (c.id === cellId
-            ? { ...c, status: "idle", executionCount: count, output: result.logs.join("\n").trimEnd(), figureJson: result.figureJson, matplotlibImages: [], testResult: null }
-            : c)));
-        } catch (err) {
-          setCells((prev) => prev.map((c) => (c.id === cellId
-            ? { ...c, status: "error", executionCount: count, output: "Error: " + err.message, figureJson: null, matplotlibImages: [] }
-            : c)));
-        } finally {
-          setIsExecuting(false);
-        }
-        return;
-      }
+      // OpenMAT cells run inside their embedded OpenMAT notebook, not here.
+      if (cells.find((c) => c.id === cellId)?.lang === "openmat") return;
       if (!pyodide || isExecuting) return;
       // Python runs on the page's thread, so code that never finishes freezes
       // the tab before React renders again. Hand the host the current cells
@@ -1347,7 +1402,7 @@ export default function PythonNotebook({ params, onParamChange, onCellsChange })
   // Challenge cells hold unfinished starter code, so Run All skips them;
   // learners run each challenge themselves once they have written it.
   const runAll = useCallback(async () => {
-    for (const cell of cells.filter((c) => !c.challengeType && !c.proseOnly)) {
+    for (const cell of cells.filter((c) => !c.challengeType && !c.proseOnly && c.lang !== "openmat")) {
       await new Promise((resolve) => {
         // Small delay between cells so state updates render
         setTimeout(resolve, 50);

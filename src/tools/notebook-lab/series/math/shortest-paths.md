@@ -12,6 +12,14 @@ This lesson covers:
 
 ## The Bellman equations
 
+::: math
+\[ d(s) = 0, \qquad d(v) = \min_{(u, v) \in E} \big(d(u) + w(u, v)\big) \]
+- $d(v)$: shortest distance from the source $s$; $w(u, v)$: edge length
+- relaxation applies the equation to every edge, repeatedly; $n - 1$ rounds suffice
+In code: `if d[u] + w < d[v]: d[v] = d[u] + w` inside the round loop
+:::
+
+
 In a **weighted graph** each edge has a length (or time, or cost). The distance d(v) from a source s to a vertex v is the length of the shortest path. Any shortest path to v arrives from some neighbour u, and its part up to u must itself be a shortest path to u (otherwise a shorter route to u would give a shorter route to v). This **principle of optimality** gives the **Bellman equations**:
 
 \[ d(s) = 0, \qquad d(v) = \min_{u} \big( d(u) + w(u, v) \big) \]
@@ -52,6 +60,14 @@ Here every distance is already correct after the first round, because the aisles
 
 ## Shortest paths as matrix powers
 
+::: math
+\[ (D \otimes W)_{ij} = \min_k \big(D_{ik} + W_{kj}\big), \qquad W^{\otimes k}_{ij} = \text{shortest } i \to j \text{ using at most } k \text{ edges} \]
+- the matrix product with $\times \to +$ and $\sum \to \min$
+- $W$: 0 on the diagonal, $\infty$ where there is no edge
+In code: `min_plus(D, E)` is `(D[:, :, None] + E[None, :, :]).min(axis=1)`
+:::
+
+
 The previous lesson counted walks with powers of the adjacency matrix, where (A²)_ij = Σ_k A_ik A_kj. Replace multiplication with addition and the sum with a minimum, and the same formula computes shortest distances. In this **min-plus** product,
 
 \[ (D \otimes W)_{ij} = \min_k \big( D_{ik} + W_{kj} \big) \]
@@ -82,6 +98,14 @@ print("distance row from the dock:", D[0])
 With at most 2 edges the dock cannot reach the picking station at all (∞); with 3 edges it is 44 m (Dock–A1–A2 and A2's direct aisle to Pick); with 4 edges it falls to 37 m; one more product changes nothing. The min-plus view is more than a curiosity: it lets all the tools of linear algebra (repeated squaring, for example) work on routing problems, and the same structure, the **tropical semiring**, appears in scheduling and in speech recognition.
 
 ## Dijkstra and all-pairs tables
+
+::: math
+\[ \text{Dijkstra: settle } \arg\min_{v \text{ unsettled}} d(v), \qquad \text{Floyd–Warshall: } D_{ij} \leftarrow \min(D_{ij},\, D_{ik} + D_{kj}) \]
+- Dijkstra needs non-negative lengths; a priority queue picks the nearest vertex
+- Floyd–Warshall tries each vertex $k$ in turn as a stopover, for all pairs
+In code: `dijkstra(n, edges, source)` with `heapq`; a triple loop over `k`, `i`, `j`
+:::
+
 
 Bellman–Ford checks every edge in every round. When all lengths are non-negative, **Dijkstra's algorithm** is far faster: it settles vertices in order of distance, using a priority queue, so each edge is relaxed only once. It solves the same Bellman equations, in a clever order. For a table of distances between **every** pair of locations, the **Floyd–Warshall** algorithm lets each vertex in turn act as a possible stopover: D_ij ← min(D_ij, D_ik + D_kj) for k = 1, ..., n. Predict before running: do all three methods agree?
 
@@ -118,6 +142,14 @@ All three agree. The full table also answers planning questions directly: the lo
 
 ## Negative lengths and negative cycles
 
+::: math
+\[ \text{negative cycle: } \sum_{e \in C} w(e) < 0 \;\Longrightarrow\; \text{no shortest path} \]
+- after $n - 1$ rounds, if any edge still satisfies $d(u) + w < d(v)$, a negative cycle is reachable
+- Bellman–Ford handles negative edges; textbook Dijkstra does not
+In code: `bellman_ford_distances(n, edges, source)` checks one extra round
+:::
+
+
 Some problems have negative edge lengths: a downhill run that recovers energy for an electric vehicle, or a trade that makes money. Bellman–Ford still works. Textbook Dijkstra, which finalises each vertex when it is first taken from the queue, does not: a later negative edge can undercut a distance already finalised. (The version above re-processes a vertex whenever its distance improves, so it stays correct, but it can take exponentially long, and on a negative cycle it never stops: do not run it on one.) A **negative cycle**, a loop with negative total length, is worse: going round it again and again makes distances fall without limit, so no shortest path exists. Bellman–Ford detects it: if anything still improves in an n-th round, a negative cycle is reachable. Predict before running: an electric tug gains charge running downhill. Is the cycle Top → Mid → Bottom → Top a negative cycle?
 
 ```python
@@ -145,6 +177,14 @@ Energy use is positive, regeneration negative. Going round a negative-total loop
 With a 6 kWh climb back up, the loop costs +1 kWh in total, so there is no negative cycle, and Bellman–Ford finds the energy to reach each point (−5 kWh to the bottom, a net gain). The re-processing Dijkstra agrees here; a textbook Dijkstra that finalised vertices on first removal could get such graphs wrong. With a 4 kWh climb the loop totals −1 kWh: going round forever would produce unlimited energy, Bellman–Ford reports the negative cycle, and the model needs fixing (real regeneration is never that efficient).
 
 ## Searching a grid with A*
+
+::: math
+\[ \text{A*: expand } \arg\min_v \big(d(v) + h(v)\big), \qquad h(v) = |x_v - x_g| + |y_v - y_g| \]
+- $h$: a guess of the remaining distance; admissible if it never overestimates
+- Manhattan distance is admissible for up/down/left/right moves
+In code: `grid_search(grid, start, goal, use_heuristic)` with the heuristic on and off
+:::
+
 
 A warehouse floor is naturally a **grid**: cells that are open floor or rack, with moves between neighbouring open cells. Dijkstra explores outwards in all directions equally. **A*** adds a guess h(v) of the remaining distance to the goal and expands cells in order of d(v) + h(v), heading towards the goal first. If the guess never overestimates (it is **admissible**), A* still finds a shortest path. On a grid with moves up, down, left and right, the Manhattan distance |Δx| + |Δy| from the coordinates lesson is admissible. Predict before running: how many fewer cells does A* expand than Dijkstra?
 

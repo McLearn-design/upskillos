@@ -12,6 +12,14 @@ This lesson covers:
 
 ## Transforming a shape
 
+::: math
+\[ R(\theta) = \begin{pmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{pmatrix}, \quad \begin{pmatrix} s_x & 0 \\ 0 & s_y \end{pmatrix}, \quad \begin{pmatrix} 1 & 0 \\ 0 & -1 \end{pmatrix}, \quad \begin{pmatrix} 1 & k \\ 0 & 1 \end{pmatrix} \]
+- rotate, scale, reflect, shear; each column of $P$ is one corner $(x, y)$
+- $AP$ transforms every corner at once
+In code: `rotation(deg)` builds $R$; `M @ L` moves the whole letter
+:::
+
+
 Store a shape's corners as the **columns** of a 2 × n array P. Then A P multiplies every corner by A at once, and plotting the result shows what A does. Four basic matrices cover most needs:
 
 \[ \text{scale } \begin{pmatrix} s_x & 0 \\ 0 & s_y \end{pmatrix}, \quad \text{rotate } \begin{pmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{pmatrix}, \quad \text{reflect in } x \text{ axis } \begin{pmatrix} 1 & 0 \\ 0 & -1 \end{pmatrix}, \quad \text{shear } \begin{pmatrix} 1 & k \\ 0 & 1 \end{pmatrix} \]
@@ -55,6 +63,14 @@ The shear slides each point sideways in proportion to its height: points on the 
 
 ## Reading a matrix from its columns
 
+::: math
+\[ A\mathbf{e}_1 = \text{column 1}, \qquad A\mathbf{e}_2 = \text{column 2}, \qquad A\begin{pmatrix} x \\ y \end{pmatrix} = x\,(\text{col } 1) + y\,(\text{col } 2) \]
+- $\mathbf{e}_1 = (1, 0)$ and $\mathbf{e}_2 = (0, 1)$: the unit vectors
+- the columns of a matrix are where the unit vectors land
+In code: `np.column_stack([[2, 1], [1, 1]])`, then `M @ [3, -1]`
+:::
+
+
 Where does a matrix send the unit vectors e₁ = (1, 0) and e₂ = (0, 1)? A e₁ is A's first column and A e₂ its second. Every other point (x, y) = x e₁ + y e₂ goes to x (column 1) + y (column 2), the column view from the last lesson. So **the columns of a matrix are the images of the unit vectors**, and those two arrows determine everything the matrix does: the unit square becomes the parallelogram they span, and the whole grid of the plane follows.
 
 This gives a way to build matrices by thinking, not memorising. A 90° anticlockwise rotation sends (1, 0) to (0, 1) and (0, 1) to (−1, 0), so its columns are those two vectors. Predict before running: what matrix sends e₁ to (2, 1) and e₂ to (1, 1), and where does it send the point (3, −1)?
@@ -72,6 +88,14 @@ print("M (3, -1) =", M @ [3, -1], "= 3 × column 1 − 1 × column 2 =", 3 * M[:
 The matrix with columns (2, 1) and (1, 1) sends (3, −1) to 3(2, 1) − (1, 1) = (5, 2). The formula's rotation(90) has tiny rounding residues where the exact matrix has zeros, which `.round(12)` removes here. Reading columns is the quickest way to understand an unfamiliar matrix.
 
 ## Combining transformations
+
+::: math
+\[ A(B\mathbf{p}) = (AB)\,\mathbf{p}, \qquad AB \ne BA \text{ in general} \]
+- "$B$ first, then $A$" is the single matrix $AB$: the first transformation sits on the right
+- rotations combine by adding angles: $R(\alpha)R(\beta) = R(\alpha + \beta)$
+In code: `R @ S` is scale then rotate; `S @ R` is rotate then scale
+:::
+
 
 Doing B first and then A sends p to A(B p). Matrix multiplication is defined so that this equals (AB) p: the product AB is the **single matrix** for "B, then A". Its columns are A applied to B's columns. Note the order: the transformation applied first is written on the **right**.
 
@@ -93,6 +117,14 @@ print("rotating by 30° then 45° is rotating by 75°:", np.allclose(rotation(45
 Scaling first stretches the square to 2 wide and 1 tall, and rotating stands it up: 1 wide and 2 tall. Rotating first and then stretching x widens the already rotated square: 2 wide and 1 tall. Different matrices, different shapes. Rotations about the same point do commute with each other, and their angles add: rotating by 30° then by 45° is rotating by 75°. That fact contains the angle-addition formulas of trigonometry.
 
 ## Translation and homogeneous coordinates
+
+::: math
+\[ \begin{pmatrix} x' \\ y' \\ 1 \end{pmatrix} = \begin{pmatrix} 1 & 0 & d_x \\ 0 & 1 & d_y \\ 0 & 0 & 1 \end{pmatrix} \begin{pmatrix} x \\ y \\ 1 \end{pmatrix}, \qquad \text{rotate about } \mathbf{c}: \; T(\mathbf{c})\,R\,T(-\mathbf{c}) \]
+- homogeneous coordinates add a third entry 1 so that translation becomes a matrix
+- the 2 × 2 transformation sits in the top-left corner
+In code: `translate(dx, dy)` and `rotate_h(deg)`, combined with `@`
+:::
+
 
 Moving every point by a fixed offset, a **translation**, is the most common transformation of all, but no 2 × 2 matrix can do it: A times the origin is always the origin. The standard fix is **homogeneous coordinates**: write the point (x, y) as (x, y, 1) and use 3 × 3 matrices. A translation by (d_x, d_y) becomes
 
@@ -122,6 +154,14 @@ The corner (3, 1), one unit to the right of the pivot, swings to (2, 2), one uni
 
 ## Areas, determinants and inverses
 
+::: math
+\[ \det\begin{pmatrix} a & b \\ c & d \end{pmatrix} = ad - bc, \qquad \begin{pmatrix} a & b \\ c & d \end{pmatrix}^{-1} = \frac{1}{ad - bc}\begin{pmatrix} d & -b \\ -c & a \end{pmatrix} \]
+- every area is multiplied by $|\det A|$; a negative determinant flips orientation
+- shoelace area: $\tfrac{1}{2}\sum_i (x_i y_{i+1} - x_{i+1} y_i)$
+In code: `shoelace(M @ L)` against `np.linalg.det(M)` times the original area
+:::
+
+
 A 2 × 2 matrix turns the unit square into the parallelogram spanned by its columns, and every shape's area is multiplied by the same factor: the **absolute value of the determinant** ad − bc. A **negative** determinant means the transformation also flips orientation (a mirror image, the L turned backwards). A determinant of zero squashes the plane onto a line, which cannot be undone.
 
 When det ≠ 0 the transformation can be reversed by the **inverse matrix** A⁻¹, with A⁻¹A = I, the identity. For 2 × 2 it has a formula:
@@ -148,6 +188,14 @@ The **shoelace formula** gives the area of a polygon from its corners listed in 
 The scale multiplies the area by 0.75 (1.5 × 0.5), rotation and shear keep it at 5 (determinant 1), and the reflection keeps the size but flips the sign: −5, a mirror image. Each area is exactly the original times the determinant. The inverse of the matrix with columns (2, 1) and (1, 1) is (1, −1; −1, 2), and multiplying gives the identity.
 
 ## The same moves in OpenMAT
+
+::: math
+\[ \det(RS) = \det R \cdot \det S = 1 \times 2 = 2 \]
+- $RS$ and $SR$ differ as matrices but share a determinant
+- `cosd` and `sind` take degrees
+In code: `R * S` and `S * R` (in OpenMAT `*` is the matrix product), then `det`
+:::
+
 
 MATLAB-style notation keeps transformation code very compact: `cosd` and `sind` take degrees, `*` is the matrix product, and `P(1, :)` takes the first row (all x coordinates). This cell composes a scaling and a rotation both ways round and plots the unit square. Predict before running: which product has determinant 2?
 
