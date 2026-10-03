@@ -21,6 +21,7 @@ You don't need to understand all of it yet. Notice three things:
 - `TEST(name) { ... }` defines a test: a function with a name.
 - `CHECK_EQ(a, b)` fails the test if `a` and `b` differ, and reports both values.
 - `run_all()` runs every test and prints `[ RUN ]`, `[ OK ]` or `[ FAILED ]` for each.
+- The `[ RUN ]` line ends with `std::endl`, which *flushes* the output: it goes to the screen now instead of waiting in a buffer. If a test crashes the program, the last line you see names the test that crashed.
 
 There's no magic in testing frameworks. Come back and read it properly once you've met macros and templates.
 
@@ -88,7 +89,9 @@ inline int run_all()
     int failed = 0;
     std::cout << "[==========] Running " << tests.size() << " tests\n";
     for (const auto& test : tests) {
-        std::cout << "[ RUN      ] " << test.name << '\n';
+        // std::endl flushes: if this test crashes the program, the output
+        // still shows which test was running.
+        std::cout << "[ RUN      ] " << test.name << std::endl;
         try {
             test.body();
             std::cout << "[       OK ] " << test.name << '\n';

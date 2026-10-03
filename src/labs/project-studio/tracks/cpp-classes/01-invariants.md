@@ -164,7 +164,9 @@ inline int run_all()
     int failed = 0;
     std::cout << "[==========] Running " << tests.size() << " tests\n";
     for (const auto& test : tests) {
-        std::cout << "[ RUN      ] " << test.name << '\n';
+        // std::endl flushes: if this test crashes the program, the output
+        // still shows which test was running.
+        std::cout << "[ RUN      ] " << test.name << std::endl;
         try {
             test.body();
             std::cout << "[       OK ] " << test.name << '\n';
