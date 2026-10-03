@@ -58,6 +58,26 @@ describe('run checks', () => {
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(path.join(root, 'hello.js'), 'console.log("Hello from Node")\n');
     fs.writeFileSync(path.join(root, 'fail.js'), 'console.error("bad things"); process.exit(3)\n');
+    // Reads two numbers from the keyboard, the way a C++ program using std::cin would.
+    fs.writeFileSync(path.join(root, 'add.js'), [
+      'let text = ""',
+      'process.stdin.on("data", (d) => { text += d })',
+      'process.stdin.on("end", () => {',
+      '  const [a, b] = text.trim().split(/\\s+/).map(Number)',
+      '  console.log(`${a} + ${b} = ${a + b}`)',
+      '})',
+    ].join('\n') + '\n');
+  });
+
+  it('types stdin= into the program', async () => {
+    const r = await check(root, [
+      'run "node add.js" stdin="3 4\\n" stdout="3 + 4 = 7"',
+      'run "node add.js" stdin="10\\n-2\\n" stdout="10 + -2 = 8"',
+      'run "node add.js" stdin="1 1\\n" stdout="1 + 1 = 3"',
+    ].join('\n'));
+    expect(r.map((x) => x.pass)).toEqual([true, true, false]);
+    expect(r[2].detail).toContain('with the input "1 1\\n"');
+    expect(r[2].detail).toContain('1 + 1 = 2');
   });
 
   it('checks the exit code and the output', async () => {
@@ -74,11 +94,57 @@ describe('run checks', () => {
     expect(r[2].detail).toContain('bad things');
   });
 
+  it('fails when the output includes without= text', async () => {
+    const r = await check(root, 'run "node hello.js" without="Goodbye"\nrun "node hello.js" without="from Node"');
+    expect(r.map((x) => x.pass)).toEqual([true, false]);
+    expect(r[1].detail).toContain('its output still includes "from Node"');
+  });
+
   it('stops a command that runs too long', async () => {
     const r = await check(root, 'run "node -e \\"setTimeout(() => {}, 20000)\\"" timeout=1');
     expect(r[0].pass).toBe(false);
     expect(r[0].detail).toMatch(/still running after 1 seconds/);
   }, 20000);
+});
+
+describe('tests checks', () => {
+  const root = path.join(tmp, 'tests');
+  // Stand-ins for compiled test programs: each prints what studio_test.hpp (or GoogleTest) would.
+  const program = (name, lines, code = 0) => fs.writeFileSync(path.join(root, name),
+    `console.log(${JSON.stringify(lines.join('\n'))}); process.exit(${code})\n`);
+  beforeAll(() => {
+    fs.mkdirSync(root, { recursive: true });
+    program('green.js', ['[==========] Running 2 tests', '[ RUN      ] adds', '[       OK ] adds',
+      '[ RUN      ] subtracts', '[       OK ] subtracts (0 ms)', '[==========] 2 tests ran, 2 passed, 0 failed']);
+    program('red.js', ['[ RUN      ] adds', '[       OK ] adds', '[ RUN      ] divides',
+      'calc_test.cpp:12: CHECK_EQ(divide(6, 3), 2) failed: 3 != 2', '[  FAILED  ] divides',
+      '[==========] 2 tests ran, 1 passed, 1 failed', '[  FAILED  ] 1 test, listed below:', '[  FAILED  ] divides'], 1);
+    program('crash.js', ['[ RUN      ] adds', '[       OK ] adds', '[ RUN      ] copies'], 134);
+    program('none.js', ['nothing here'], 0);
+  });
+
+  it('passes a green test program and names what failed in a red one', async () => {
+    const r = await check(root, [
+      'tests "node green.js"',
+      'tests "node green.js" require="adds subtracts"',
+      'tests "node green.js" require="adds,multiplies"',
+      'tests "node red.js"',
+    ].join('\n'));
+    expect(r.map((x) => x.pass)).toEqual([true, true, false, false]);
+    expect(r[2].detail).toContain('✗ multiplies');
+    expect(r[2].detail).toContain('No test with this name ran');
+    expect(r[3].detail).toContain('1 of 2 tests passed');
+    expect(r[3].detail).toContain('✗ divides\n    calc_test.cpp:12: CHECK_EQ(divide(6, 3), 2) failed: 3 != 2');
+  });
+
+  it('points at the test a crash happened in, and at a program that ran no tests', async () => {
+    const r = await check(root, 'tests "node crash.js"\ntests "node none.js"\ntests "node missing.js"');
+    expect(r.map((x) => x.pass)).toEqual([false, false, false]);
+    expect(r[0].detail).toContain('1 of 2 tests passed');
+    expect(r[0].detail).toContain('✗ copies\n    The program stopped during this test (exit code 134)');
+    expect(r[1].detail).toContain('it ran no tests. Has the test program been built?');
+    expect(r[2].detail).toMatch(/ran no tests and exited with code [1-9]/);
+  });
 });
 
 describe.skipIf(!hasGit)('git checks', () => {

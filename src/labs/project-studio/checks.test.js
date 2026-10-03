@@ -50,6 +50,29 @@ describe('parseCheckLine', () => {
   });
 });
 
+describe('run with stdin', () => {
+  it('describes the input it types', () => {
+    const c = parseCheckLine('run "./calc" stdin="3 4\\n" stdout="7"');
+    expect(c.opts.stdin).toBe('3 4\n');
+    expect(c.label).toBe('`./calc` given the input “3 4” succeeds and prints “7”');
+  });
+});
+
+describe('run with without=', () => {
+  it('describes the text that must not appear', () => {
+    expect(parseCheckLine('run "./t" stdout="a" without="b"').label).toBe('`./t` succeeds and prints “a” and doesn\'t print “b”');
+  });
+});
+
+describe('tests', () => {
+  it('describes the test program and the tests it must include', () => {
+    expect(parseCheckLine('tests "./build/calc_tests"').label).toBe('every test in `./build/calc_tests` passes');
+    const c = parseCheckLine('tests "./build/calc_tests" require="adds, divides" -- Rebuild first.');
+    expect(c.label).toBe('every test in `./build/calc_tests` passes, including adds, divides');
+    expect(c.hint).toBe('Rebuild first.');
+  });
+});
+
 describe('parseChecks', () => {
   it('skips blank lines and # comments, and accepts CRLF', () => {
     const checks = parseChecks('# the file\r\nfile a.txt\r\n\r\n  git-repo  \r\n');

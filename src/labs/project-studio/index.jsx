@@ -14,6 +14,7 @@
 // Running needs the desktop app — it needs real filesystem and real process access. In a
 // browser tab the lessons can still be read, and followed in your own editor and terminal.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useThemeColors } from '../../hooks/useThemeColors';
 import { useGlobalTheme } from '../../context/ThemeContext.jsx';
 import { useProjectFs } from './useProjectFs.js';
@@ -25,6 +26,7 @@ import LessonPanel from './LessonPanel.jsx';
 import OutputPanel from './OutputPanel.jsx';
 import TerminalPanel from './TerminalPanel.jsx';
 import CppProjectRuntime from './CppProjectRuntime.jsx';
+import { canTrace, handOffToCodeLens, inlineLocalHeaders } from './codeLensHandoff.js';
 import { useProgress } from './progress.js';
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -315,6 +317,20 @@ export default function ProjectStudio() {
     if (stopRequestedRef.current) await window.openCalcDesktop.stopRun(res.runId);
   }, [lesson, step, fs, flushActive, trackKey]);
 
+  // Step through the active C++ file in CodeLens: every line's variables, the call stack and
+  // the heap. Project Studio keeps its place (progress.js), and CodeLens's Back returns here.
+  const navigate = useNavigate();
+  const traceInCodeLens = useCallback(async () => {
+    if (!activeFile || !(await flushActive())) return;
+    const read = async (rel) => {
+      const res = await fs.api?.read(rel);
+      return res?.ok && !res.missing ? res.content : null;
+    };
+    const code = await inlineLocalHeaders(buffers[activeFile] ?? '', activeFile, read);
+    handOffToCodeLens(code);
+    navigate('/codelens');
+  }, [activeFile, buffers, flushActive, fs, navigate]);
+
   const stopProject = useCallback(async () => {
     stopRequestedRef.current = true;
     if (!runIdRef.current) {
@@ -527,6 +543,15 @@ export default function ProjectStudio() {
             }}
           >
             {running ? 'Running…' : `▶ Run ${lesson.run}`}
+          </button>
+        )}
+        {canTrace(lesson, activeFile) && (
+          <button
+            onClick={traceInCodeLens}
+            title="Step through this file line by line in CodeLens: variables, the call stack and the heap at every step. Needs GDB. Traces one .cpp file (its own headers are included)."
+            style={{ fontSize: 12, padding: '5px 12px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surface2, color: C.text, cursor: 'pointer' }}
+          >
+            🔬 Trace in CodeLens
           </button>
         )}
         {running && (
