@@ -58,6 +58,15 @@ describe('run with stdin', () => {
   });
 });
 
+describe('tests', () => {
+  it('describes the test program and the tests it must include', () => {
+    expect(parseCheckLine('tests "./build/calc_tests"').label).toBe('every test in `./build/calc_tests` passes');
+    const c = parseCheckLine('tests "./build/calc_tests" require="adds, divides" -- Rebuild first.');
+    expect(c.label).toBe('every test in `./build/calc_tests` passes, including adds, divides');
+    expect(c.hint).toBe('Rebuild first.');
+  });
+});
+
 describe('parseChecks', () => {
   it('skips blank lines and # comments, and accepts CRLF', () => {
     const checks = parseChecks('# the file\r\nfile a.txt\r\n\r\n  git-repo  \r\n');

@@ -43,4 +43,4 @@ Tracks 0 and 1 are needed by everything else. After Track 2, the learner can tak
 | Track walkthrough tests with wrong answers | `walkCppTrack.js` | ✅ |
 | AddressSanitizer / UBSan builds for memory lessons | Track 2 lessons show `-fsanitize=address,undefined` builds and a `SANITIZE` CMake option; checks never depend on a sanitizer, because not every Windows toolchain ships one | ✅ |
 | CodeLens with lldb, for learners who only have the app's compiler | `runtimes/codelens.cjs` | 📋 |
-| A check kind that reads a test program's results directly (passed, failed, names), instead of matching output text | `project-checks.cjs` | 📋 |
+| `tests` check: runs a GoogleTest-style test program and reports each failed test with its message, the test a crash happened in, and required tests that didn't run | `project-checks.cjs` (`parseTestOutput`) | ✅ |

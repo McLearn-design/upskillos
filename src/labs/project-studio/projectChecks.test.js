@@ -101,6 +101,46 @@ describe('run checks', () => {
   }, 20000);
 });
 
+describe('tests checks', () => {
+  const root = path.join(tmp, 'tests');
+  // Stand-ins for compiled test programs: each prints what studio_test.hpp (or GoogleTest) would.
+  const program = (name, lines, code = 0) => fs.writeFileSync(path.join(root, name),
+    `console.log(${JSON.stringify(lines.join('\n'))}); process.exit(${code})\n`);
+  beforeAll(() => {
+    fs.mkdirSync(root, { recursive: true });
+    program('green.js', ['[==========] Running 2 tests', '[ RUN      ] adds', '[       OK ] adds',
+      '[ RUN      ] subtracts', '[       OK ] subtracts (0 ms)', '[==========] 2 tests ran, 2 passed, 0 failed']);
+    program('red.js', ['[ RUN      ] adds', '[       OK ] adds', '[ RUN      ] divides',
+      'calc_test.cpp:12: CHECK_EQ(divide(6, 3), 2) failed: 3 != 2', '[  FAILED  ] divides',
+      '[==========] 2 tests ran, 1 passed, 1 failed', '[  FAILED  ] 1 test, listed below:', '[  FAILED  ] divides'], 1);
+    program('crash.js', ['[ RUN      ] adds', '[       OK ] adds', '[ RUN      ] copies'], 134);
+    program('none.js', ['nothing here'], 0);
+  });
+
+  it('passes a green test program and names what failed in a red one', async () => {
+    const r = await check(root, [
+      'tests "node green.js"',
+      'tests "node green.js" require="adds subtracts"',
+      'tests "node green.js" require="adds,multiplies"',
+      'tests "node red.js"',
+    ].join('\n'));
+    expect(r.map((x) => x.pass)).toEqual([true, true, false, false]);
+    expect(r[2].detail).toContain('✗ multiplies');
+    expect(r[2].detail).toContain('No test with this name ran');
+    expect(r[3].detail).toContain('1 of 2 tests passed');
+    expect(r[3].detail).toContain('✗ divides\n    calc_test.cpp:12: CHECK_EQ(divide(6, 3), 2) failed: 3 != 2');
+  });
+
+  it('points at the test a crash happened in, and at a program that ran no tests', async () => {
+    const r = await check(root, 'tests "node crash.js"\ntests "node none.js"\ntests "node missing.js"');
+    expect(r.map((x) => x.pass)).toEqual([false, false, false]);
+    expect(r[0].detail).toContain('1 of 2 tests passed');
+    expect(r[0].detail).toContain('✗ copies\n    The program stopped during this test (exit code 134)');
+    expect(r[1].detail).toContain('it ran no tests. Has the test program been built?');
+    expect(r[2].detail).toMatch(/ran no tests and exited with code [1-9]/);
+  });
+});
+
 describe.skipIf(!hasGit)('git checks', () => {
   const outer = path.join(tmp, 'outer');
   const root = path.join(outer, 'project');

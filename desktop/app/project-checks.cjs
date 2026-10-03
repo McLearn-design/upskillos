@@ -122,6 +122,29 @@ function short(text, n = 600) {
 
 const normalize = (s) => String(s ?? '').replace(/\r\n/g, '\n')
 
+// Reads GoogleTest-style output: "[ RUN      ] name", then "[       OK ] name" or the failure
+// message followed by "[  FAILED  ] name". A test that started but never finished is where
+// the program crashed. GoogleTest's own summary lines ("[  FAILED  ] 1 test, listed below:"
+// and the repeated names after it) come after the last test and are ignored.
+function parseTestOutput(text) {
+  const tests = []
+  let current = null
+  let message = []
+  for (const line of normalize(text).split('\n')) {
+    const m = /^\[\s*(RUN|OK|FAILED)\s*\]\s+(.*?)(?: \(\d+ ms\))?\s*$/.exec(line)
+    if (m && m[1] === 'RUN') {
+      current = m[2]
+      message = []
+    } else if (m && current && m[2] === current) {
+      tests.push({ name: current, status: m[1] === 'OK' ? 'passed' : 'failed', message: message.join('\n').trim() })
+      current = null
+    } else if (current) {
+      message.push(line)
+    }
+  }
+  return { tests, unfinished: current }
+}
+
 // ── the checks ───────────────────────────────────────────────────────────────
 // Each returns { pass, detail? }. `detail` is what the learner sees when it fails: the real
 // output or state that was found, so they can work out what's wrong.
@@ -179,6 +202,42 @@ const CHECKS = {
     const shown = [out && `Output:\n${short(out)}`, err && `Errors:\n${short(err)}`].filter(Boolean).join('\n\n')
     const typed = opts.stdin != null ? ` with the input ${JSON.stringify(opts.stdin)}` : ''
     return { pass: false, detail: `When the check ran \`${cmd}\`${typed}, ${problems.join(', and ')}.${shown ? '\n\n' + shown : ''}` }
+  },
+
+  // tests "<test program>" [require="name other_name"] [timeout=seconds]
+  // Runs a test program that prints GoogleTest-style lines ([ RUN      ], [       OK ],
+  // [  FAILED  ]) and reports which tests failed and why, instead of the raw output.
+  async tests(ctx, [cmd], opts) {
+    const seconds = Number(opts.timeout) || 60
+    const r = await shellRun(cmd, { cwd: ctx.root, env: ctx.env, timeoutMs: seconds * 1000 })
+    const out = normalize(r.stdout)
+    const err = normalize(r.stderr)
+    const report = parseTestOutput(out)
+    const shown = () => [out && `Output:\n${short(out)}`, err && `Errors:\n${short(err)}`].filter(Boolean).join('\n\n')
+    if (r.timedOut) {
+      const inside = report.unfinished ? `, inside the test ${report.unfinished}` : ''
+      return { pass: false, detail: `\`${cmd}\` was still running after ${seconds} seconds${inside}, so it was stopped. Look for a loop that never ends.` }
+    }
+    if (report.tests.length === 0) {
+      const why = r.code === 0 ? 'it ran no tests' : `it ran no tests and exited with code ${r.code}`
+      return { pass: false, detail: `When the check ran \`${cmd}\`, ${why}. Has the test program been built?${shown() ? '\n\n' + shown() : ''}` }
+    }
+    const lines = []
+    for (const t of report.tests.filter((t) => t.status === 'failed')) {
+      lines.push(`✗ ${t.name}${t.message ? '\n' + short(t.message, 300).replace(/^/gm, '    ') : ''}`)
+    }
+    if (report.unfinished) {
+      lines.push(`✗ ${report.unfinished}\n    The program stopped during this test (exit code ${r.code}): a crash, or a call to exit or abort.${err ? '\n' + short(err, 300).replace(/^/gm, '    ') : ''}`)
+    }
+    const ran = new Set(report.tests.map((t) => t.name))
+    for (const name of String(opts.require ?? '').split(/[\s,]+/).filter(Boolean)) {
+      if (!ran.has(name)) lines.push(`✗ ${name}\n    No test with this name ran. Is its file in the tests folder, and did you rebuild?`)
+    }
+    if (lines.length === 0 && r.code !== 0) lines.push(`Every test passed, but the program exited with code ${r.code}.`)
+    if (lines.length === 0) return { pass: true }
+    const passed = report.tests.filter((t) => t.status === 'passed').length
+    const total = report.tests.length + (report.unfinished ? 1 : 0)
+    return { pass: false, detail: `${passed} of ${total} test${total === 1 ? '' : 's'} passed.\n\n${lines.join('\n')}` }
   },
 
   async 'git-repo'(ctx) {
@@ -430,4 +489,4 @@ async function runAll(ctx, checks) {
   return { ok: true, results }
 }
 
-module.exports = { runChecks, CHECK_KINDS: Object.keys(CHECKS), shellRun }
+module.exports = { runChecks, CHECK_KINDS: Object.keys(CHECKS), shellRun, parseTestOutput }

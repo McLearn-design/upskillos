@@ -9,6 +9,7 @@
 //   contains index.html "<table"
 //   run "node hello.js" stdout="Hello from Node" -- Save the file, then run it once yourself.
 //   run "./calc" stdin="3 4\n" stdout="3 + 4 = 7"      (stdin= is typed into the program)
+//   tests "./build/calc_tests" require="adds negatives"  (a GoogleTest-style test program)
 //   git-commits 2
 //   page index.html "document.querySelectorAll('td').length" 26
 //
@@ -18,7 +19,7 @@
 // hint shown when the check fails. Lines starting with # are comments.
 
 export const CHECK_KINDS = new Set([
-  'file', 'dir', 'missing', 'contains', 'lacks', 'matches', 'run',
+  'file', 'dir', 'missing', 'contains', 'lacks', 'matches', 'run', 'tests',
   'git-repo', 'git-commits', 'git-clean', 'git-tracked', 'git-untracked', 'git-ignored',
   'git-branch', 'git-has-branch', 'git-no-branch', 'git-merged', 'git-remote', 'git-pushed', 'git-config',
   'git-message', 'git-tag', 'page',
@@ -27,7 +28,7 @@ export const CHECK_KINDS = new Set([
 // How many positional arguments each kind needs, so a typo in a lesson fails loudly at
 // parse time (and in the lesson tests) instead of silently checking the wrong thing.
 const ARITY = {
-  file: 1, dir: 1, missing: 1, contains: 2, lacks: 2, matches: 2, run: 1,
+  file: 1, dir: 1, missing: 1, contains: 2, lacks: 2, matches: 2, run: 1, tests: 1,
   'git-repo': 0, 'git-commits': 1, 'git-clean': 0, 'git-tracked': 1, 'git-untracked': 1, 'git-ignored': 1,
   'git-branch': 1, 'git-has-branch': 1, 'git-no-branch': 1, 'git-merged': [1, 2], 'git-remote': [0, 1], 'git-pushed': 0, 'git-config': 1,
   'git-message': 1, 'git-tag': 1, page: 3,
@@ -116,6 +117,10 @@ export function describeCheck(kind, args, opts = {}) {
       if (opts.stdout != null) parts.push(`prints “${opts.stdout}”`);
       if (opts.stderr != null) parts.push(`reports “${opts.stderr}”`);
       return parts.join(' and ');
+    }
+    case 'tests': {
+      const required = String(opts.require ?? '').split(/[\s,]+/).filter(Boolean);
+      return `every test in \`${a}\` passes${required.length ? `, including ${required.join(', ')}` : ''}`;
     }
     case 'git-repo': return 'the project folder is a Git repository';
     case 'git-commits': return Number(a) === 1 ? 'there is at least one commit' : `there are at least ${a} commits`;
