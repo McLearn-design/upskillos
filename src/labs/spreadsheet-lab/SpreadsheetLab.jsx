@@ -572,6 +572,36 @@ export default function SpreadsheetLab() {
     focusGrid()
   }
 
+  // Excel files replace the workbook (as opening a file does in Excel); CSV
+  // files come in as a new sheet.
+  const importFile = async (file) => {
+    if (/\.xls$/i.test(file.name)) { setNotice('Older .xls files cannot be opened here. In Excel, use File → Save As → Excel Workbook (.xlsx), then open that.'); return }
+    if (!/\.(xlsx|xlsm)$/i.test(file.name)) { importCSV(file); return }
+    if (!confirmReplace()) return
+    try {
+      const { importXlsx } = await import('./engine/xlsx.js')
+      const { wb: next, notes } = importXlsx(new Uint8Array(await file.arrayBuffer()))
+      replaceBook(next, 'Opened ' + file.name + ' (' + next.sheets.length + ' sheet' + (next.sheets.length === 1 ? '' : 's') + '). ' + notes.join(' '))
+    } catch (e) {
+      setNotice(e.message)
+    }
+  }
+
+  const download = (blob, name) => {
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = name
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+  }
+  const exportXlsx = async () => {
+    const { writeXlsx } = await import('./engine/xlsx.js')
+    const { bytes, notes } = writeXlsx(wb)
+    const name = (wb.sheets.length === 1 ? wb.sheets[0].name : 'Workbook').replace(/[\\/:*?"<>|]/g, ' ') + '.xlsx'
+    download(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), name)
+    setNotice('Downloaded ' + name + ', with every sheet, formula and format. ' + notes.join(' '))
+  }
+
   const exportCSV = () => {
     const b = sheet.bounds()
     const rows = []
@@ -583,12 +613,8 @@ export default function SpreadsheetLab() {
       }
       rows.push(row)
     }
-    const blob = new Blob([toCSV(rows)], { type: 'text/csv' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = sheet.name + '.csv'
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    download(new Blob([toCSV(rows)], { type: 'text/csv' }), sheet.name + '.csv')
+    setNotice('Downloaded ' + sheet.name + '.csv. A CSV file holds one sheet\'s values only: no formulas or formatting. Use the Excel download to keep those.')
   }
 
   const jumpTo = (text) => {
@@ -659,15 +685,15 @@ export default function SpreadsheetLab() {
         onNew={() => { if (confirmReplace()) replaceBook(new Workbook(), 'A new, empty workbook.') }}
         onOpenTour={() => { if (confirmReplace()) replaceBook(sampleWorkbook('tour'), 'The tour workbook is open.') }}
         onImport={() => fileRef.current?.click()}
-        onExport={exportCSV}
+        onExport={exportCSV} onExportXlsx={exportXlsx}
         onInsertCode={(lang) => setCode(sel.active.row, sel.active.col, lang, LANGUAGES[lang].starter)}
         onInsertChart={insertChart}
         onColourRules={() => { setInspectorOpen(true); setInspectorTab('rules') }}
         onSort={sortBy} onToggleFilter={toggleFilter} filterOn={!!sheet.filter} onRemoveDuplicates={dedupe}
         tracing={tracing} onToggleTracing={() => { setTracing((t) => !t); focusGrid() }}
       />
-      <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,text/csv" className="hidden"
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) importCSV(f); e.target.value = '' }} />
+      <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv,.tsv,.txt,text/csv" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = '' }} />
 
       {/* Formula bar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 px-2 py-1 dark:border-slate-800">

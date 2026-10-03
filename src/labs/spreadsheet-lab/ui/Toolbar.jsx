@@ -41,9 +41,10 @@ function Palette({ label, icon, colors, onPick, onClear }) {
 
 const Divider = () => <div className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
 
-export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onClearFormat, onUndo, onRedo, inspectorOpen, onToggleInspector, onNew, onOpenTour, onImport, onExport, onInsertCode, onInsertChart, onColourRules, onSort, onToggleFilter, filterOn, onRemoveDuplicates, tracing, onToggleTracing }) {
+export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onClearFormat, onUndo, onRedo, inspectorOpen, onToggleInspector, onNew, onOpenTour, onImport, onExport, onExportXlsx, onInsertCode, onInsertChart, onColourRules, onSort, onToggleFilter, filterOn, onRemoveDuplicates, tracing, onToggleTracing }) {
   const [codeMenu, setCodeMenu] = useState(false)
   const [dataMenu, setDataMenu] = useState(false)
+  const [saveMenu, setSaveMenu] = useState(false)
   const style = cell?.style ?? {}
   const format = cell?.format ?? 'General'
   const known = PRESET_FORMATS.some((p) => p.code === format)
@@ -121,8 +122,23 @@ export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onCle
       <Divider />
       <Button label="New blank workbook" onClick={onNew}><FilePlus2 size={15} /></Button>
       <Button label="Open the tour workbook" onClick={onOpenTour}><BookOpen size={15} /></Button>
-      <Button label="Import a CSV file as a new sheet" onClick={onImport}><Upload size={15} /></Button>
-      <Button label="Download this sheet as CSV" onClick={onExport}><Download size={15} /></Button>
+      <Button label="Open an Excel workbook (.xlsx), or bring in a CSV file as a new sheet" onClick={onImport}><Upload size={15} /></Button>
+      <div className="relative">
+        <Button label="Download" active={saveMenu} onClick={() => setSaveMenu((o) => !o)}><Download size={15} /></Button>
+        {saveMenu && (
+          <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-md border border-slate-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900" onPointerDown={(e) => e.preventDefault()}>
+            {[
+              ['Excel workbook (.xlsx)', 'Every sheet, with formulas, formats and filters. Opens in Excel, Google Sheets and LibreOffice.', onExportXlsx],
+              ['This sheet as CSV', 'Plain values of the current sheet, for any program that reads tables.', onExport],
+            ].map(([label, note, action]) => (
+              <button key={label} type="button" onClick={() => { setSaveMenu(false); action() }} className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800">
+                <span className="font-semibold">{label}</span>
+                <span className="block text-[11px] text-slate-500">{note}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="flex-1" />
       <Button label={tracing ? 'Hide the arrows' : 'Trace: draw arrows from the cells the selected cell reads (blue) and to the cells that read it (green)'} active={tracing} onClick={onToggleTracing}><Waypoints size={15} /></Button>
       <Button label={inspectorOpen ? 'Hide the inspector' : 'Show the inspector'} active={inspectorOpen} onClick={onToggleInspector}><PanelRight size={15} /></Button>

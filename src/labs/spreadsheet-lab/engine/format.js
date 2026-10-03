@@ -78,6 +78,9 @@ export function formatValue(value, code = 'General') {
 
 export const formatText = (value, code) => formatValue(value, code).text
 
+// Whether a format shows numbers as dates or times.
+export const isDateFormat = (code) => !!code && code !== 'General' && isDateCode(splitSections(code)[0].replace(/\[[^\]]*\]/g, ''))
+
 function formatNumber(value, section) {
   // Split into literal text and the numeric pattern.
   const tokens = []
