@@ -10,7 +10,8 @@ import { canInsertReference } from './engine/editing.js'
 import { adjustDecimals } from './engine/format.js'
 import { parseCSV, toCSV } from './engine/csv.js'
 import { formatGeneral } from './engine/values.js'
-import Grid from './ui/Grid.jsx'
+import Grid, { DEFAULT_COL_W, DEFAULT_ROW_H } from './ui/Grid.jsx'
+import { CHART_TYPES, currentRegion, recommendChart } from './engine/chart.js'
 import FormulaInput from './ui/FormulaInput.jsx'
 import Inspector from './ui/Inspector.jsx'
 import Toolbar from './ui/Toolbar.jsx'
@@ -62,6 +63,7 @@ export default function SpreadsheetLab() {
   const [menu, setMenu] = useState(null)
   const [notice, setNotice] = useState(null)
   const [tracing, setTracing] = useState(false)
+  const [selectedChart, setSelectedChart] = useState(null)
   const [nameBox, setNameBox] = useState(null)
   const gridRef = useRef(null)
   const fileRef = useRef(null)
@@ -107,6 +109,62 @@ export default function SpreadsheetLab() {
       elsewhere: reads.filter((r) => r.sheetId !== sheet.id).length + readBy.filter((g) => !here(g)).length,
     }
   }, [tracing, edit, sel.active.row, sel.active.col, sheet, version]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Charts ───────────────────────────────────────────────────────────
+  const chart = sheet.charts.find((c) => c.id === selectedChart) ?? null
+  useEffect(() => { setSelectedChart(null) }, [sheet.id])
+  useEffect(() => {
+    if (selectedChart) { setInspectorOpen(true); setInspectorTab('chart') }
+    else setInspectorTab((t) => (t === 'chart' ? (activeIsCode ? 'code' : 'cell') : t))
+  }, [selectedChart]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Each chart's cells, read once per change to the workbook rather than on
+  // every redraw while scrolling.
+  const chartCache = useMemo(() => new Map(), [version, sheet]) // eslint-disable-line react-hooks/exhaustive-deps
+  const chartValues = (c) => {
+    if (!chartCache.has(c.source)) chartCache.set(c.source, wb.rangeValues(sheet, c.source))
+    return chartCache.get(c.source)
+  }
+  const offset = (sizes, index, size) => { let p = 0; for (let i = 0; i < index; i++) p += sizes[i] ?? size; return p }
+  const insertChart = () => {
+    // One cell selected: chart the block of data around it, as Excel does.
+    let rg = clipped(range)
+    if (rg.r1 === rg.r2 && rg.c1 === rg.c2) rg = currentRegion((r, c) => wb.valueAt(sheet, r, c) !== null, rg.r1, rg.c1)
+    const values = wb.rangeValues(sheet, formatRange(rg))
+    if (!values || !values.flat().some((v) => typeof v === 'number')) {
+      setNotice('Select the numbers to chart first (with their headings), or click a cell inside a table of numbers.')
+      return
+    }
+    const rec = recommendChart(values)
+    const source = formatRange(rg)
+    const { x, y } = chartSpot(rg, 480, 300)
+    const id = wb.addChart(sheet.id, { type: rec.type, source, x, y, w: 480, h: 300 })
+    setSelectedChart(id)
+    setNotice('Made a ' + CHART_TYPES[rec.type].label.toLowerCase() + ' chart of ' + source + '. ' + rec.why)
+  }
+  // Beside the data, in the first place that covers no filled cells and no
+  // other chart, so a new chart never hides something.
+  const chartSpot = (rg, w, h) => {
+    const y = offset(sheet.rowHeights, rg.r1, DEFAULT_ROW_H)
+    const rowsCovered = Math.ceil(h / DEFAULT_ROW_H) + 1
+    const overlapsChart = (x) => sheet.charts.some((c) => x < c.x + c.w + 8 && c.x < x + w + 8 && y < c.y + c.h + 8 && c.y < y + h + 8)
+    const last = sheet.bounds().cols
+    for (let col = rg.c2 + 1; col <= last + 20; col++) {
+      const x = offset(sheet.colWidths, col, DEFAULT_COL_W) + 16
+      let c2 = col, width = 16
+      while (width < w + 16) width += sheet.colWidths[c2++] ?? DEFAULT_COL_W
+      let empty = true
+      for (let r = rg.r1; r < rg.r1 + rowsCovered && empty; r++) for (let c = col; c < c2 && empty; c++) if (wb.valueAt(sheet, r, c) !== null) empty = false
+      if (empty && !overlapsChart(x)) return { x, y }
+    }
+    // Everything to the right is taken: go below the data instead.
+    return { x: offset(sheet.colWidths, rg.c1, DEFAULT_COL_W) + 24 * sheet.charts.length, y: offset(sheet.rowHeights, rg.r2 + 2, DEFAULT_ROW_H) }
+  }
+  const deleteChart = (id) => {
+    wb.removeChart(sheet.id, id)
+    setSelectedChart(null)
+    focusGrid()
+    setNotice('Deleted the chart. Undo (Ctrl+Z) brings it back.')
+  }
 
   const openCode = () => { setInspectorOpen(true); setInspectorTab('code') }
   const setCode = (row, col, lang, source) => {
@@ -213,6 +271,7 @@ export default function SpreadsheetLab() {
       setEdit(null)
     }
     setSel(next)
+    setSelectedChart(null)
   }
 
   const hasValue = (r, c) => wb.valueAt(sheet, r, c) !== null
@@ -516,6 +575,7 @@ export default function SpreadsheetLab() {
         onImport={() => fileRef.current?.click()}
         onExport={exportCSV}
         onInsertCode={(lang) => setCode(sel.active.row, sel.active.col, lang, LANGUAGES[lang].starter)}
+        onInsertChart={insertChart}
         tracing={tracing} onToggleTracing={() => { setTracing((t) => !t); focusGrid() }}
       />
       <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,text/csv" className="hidden"
@@ -568,6 +628,10 @@ export default function SpreadsheetLab() {
             onPoint={(rg) => insertReference(rg)}
             refHighlights={refHighlights}
             traces={traces}
+            charts={sheet.charts} chartValues={chartValues} selectedChart={selectedChart}
+            onSelectChart={(id) => { if (id && edit && !pointMode) commit([0, 0]); setSelectedChart(id) }}
+            onChangeChart={(id, patch) => wb.updateChart(sheet.id, id, patch)}
+            onDeleteChart={deleteChart}
             onStartEdit={(row, col, initial, mode) => startEdit(row, col, initial, mode)}
             onFill={fill}
             onContextMenu={openMenu}
@@ -596,6 +660,9 @@ export default function SpreadsheetLab() {
         {inspectorOpen && (
           <Inspector wb={wb} sheet={sheet} sel={sel} version={version} tab={inspectorTab} onTab={setInspectorTab} runtime={runtime}
             onApplyCode={(source) => wb.setCells([{ sheetId: sheet.id, row: sel.active.row, col: sel.active.col, code: { lang: activeCell.code.lang, source } }])}
+            chart={chart} chartValues={chartValues}
+            onChangeChart={(id, patch) => wb.updateChart(sheet.id, id, patch)}
+            onDeleteChart={deleteChart}
             onMakeCode={(lang, source) => {
               // Beside the formula, so the two values can be compared.
               const { row } = sel.active

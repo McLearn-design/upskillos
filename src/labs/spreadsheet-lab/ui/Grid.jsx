@@ -5,6 +5,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { cellKey, indexToCol } from '../engine/address.js'
 import { displayCell, FORMAT_COLORS, textOn } from './display.js'
 import { MAX_GRID_COLS, MAX_GRID_ROWS, selectionRange } from './selection.js'
+import ChartView from './ChartView.jsx'
 
 export const DEFAULT_COL_W = 96
 export const DEFAULT_ROW_H = 24
@@ -33,13 +34,14 @@ function indexAt(starts, pos) {
 
 export default function Grid({
   wb, sheet, version, sel, onSelect, editing, renderEditor, pointMode, onPoint,
-  refHighlights = [], traces = null, onStartEdit, onFill, onContextMenu, onKeyDown, gridRef,
+  refHighlights = [], traces = null, charts = [], chartValues, selectedChart = null, onSelectChart, onChangeChart, onDeleteChart, onStartEdit, onFill, onContextMenu, onKeyDown, gridRef,
 }) {
   const scrollerRef = useRef(null)
   const [scroll, setScroll] = useState({ top: 0, left: 0 })
   const [viewport, setViewport] = useState({ w: 800, h: 500 })
   const [liveSize, setLiveSize] = useState(null) // { axis, index, size } while dragging a header edge
   const [fillTarget, setFillTarget] = useState(null)
+  const [chartDrag, setChartDrag] = useState(null) // { id, x, y, w, h } while moving or resizing
 
   // How much of the sheet the scroll area covers: what is used plus room to
   // grow, extended as the learner scrolls towards the edge.
@@ -74,6 +76,18 @@ export default function Grid({
     if (left < el.scrollLeft) el.scrollLeft = left
     else if (right > el.scrollLeft + el.clientWidth) el.scrollLeft = right - el.clientWidth
   }, [sel.focus.row, sel.focus.col]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Bring a chart into view when it is selected (a new chart may be placed
+  // beyond the visible part of the sheet).
+  useLayoutEffect(() => {
+    const el = scrollerRef.current
+    const chart = charts.find((c) => c.id === selectedChart)
+    if (!el || !chart) return
+    if (chart.x + chart.w > el.scrollLeft + el.clientWidth) el.scrollLeft = Math.max(0, chart.x + chart.w - el.clientWidth + 16)
+    if (chart.x < el.scrollLeft) el.scrollLeft = Math.max(0, chart.x - 16)
+    if (chart.y + chart.h > el.scrollTop + el.clientHeight) el.scrollTop = Math.max(0, chart.y + chart.h - el.clientHeight + 16)
+    if (chart.y < el.scrollTop) el.scrollTop = Math.max(0, chart.y - 16)
+  }, [selectedChart]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const frame = useRef(0)
   const handleScroll = (e) => {
@@ -315,6 +329,59 @@ export default function Grid({
     )
   })()
 
+  // Charts float over the cells; dragging one moves it, its corner resizes it.
+  const chartDown = (chart, mode) => (e) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    onSelectChart(chart.id)
+    e.currentTarget.closest('.ss-chart-box')?.focus({ preventScroll: true })
+    const sx = e.clientX, sy = e.clientY
+    let next = null
+    drag((m) => {
+      const dx = m.clientX - sx, dy = m.clientY - sy
+      if (!next && Math.hypot(dx, dy) < 3) return // a click, not a drag
+      next = mode === 'move'
+        ? { id: chart.id, x: Math.max(0, chart.x + dx), y: Math.max(0, chart.y + dy), w: chart.w, h: chart.h }
+        : { id: chart.id, x: chart.x, y: chart.y, w: Math.max(220, chart.w + dx), h: Math.max(160, chart.h + dy) }
+      setChartDrag(next)
+    }, () => {
+      setChartDrag(null)
+      if (next) onChangeChart(chart.id, { x: Math.round(next.x), y: Math.round(next.y), w: Math.round(next.w), h: Math.round(next.h) })
+    })(e)
+  }
+  const chartKeyDown = (chart) => (e) => {
+    const ctrl = e.ctrlKey || e.metaKey
+    if (ctrl && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
+      e.preventDefault()
+      if (e.key.toLowerCase() === 'y' || e.shiftKey) wb.redo()
+      else wb.undo()
+    } else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); onDeleteChart(chart.id) }
+    else if (e.key === 'Escape') { e.preventDefault(); onSelectChart(null); gridRef?.current?.focus({ preventScroll: true }) }
+    else if (e.key.startsWith('Arrow')) {
+      // Nudge: 8px, or 1px with Alt.
+      e.preventDefault()
+      const d = e.altKey ? 1 : 8
+      const dx = e.key === 'ArrowLeft' ? -d : e.key === 'ArrowRight' ? d : 0
+      const dy = e.key === 'ArrowUp' ? -d : e.key === 'ArrowDown' ? d : 0
+      onChangeChart(chart.id, { x: Math.max(0, chart.x + dx), y: Math.max(0, chart.y + dy) })
+    }
+    e.stopPropagation()
+  }
+  const chartBoxes = charts.map((chart) => {
+    const live = chartDrag?.id === chart.id ? { ...chart, ...chartDrag } : chart
+    const selected = selectedChart === chart.id
+    return (
+      <div key={chart.id} className={'ss-chart-box' + (selected ? ' is-selected' : '')} tabIndex={0}
+        style={{ left: live.x, top: live.y, width: live.w, height: live.h }}
+        role="group" aria-label={(chart.title || chart.type + ' chart') + ' of ' + chart.source + '. Drag to move; Delete removes it.'}
+        onPointerDown={chartDown(chart, 'move')} onKeyDown={chartKeyDown(chart)}
+        onDoubleClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+        <ChartView chart={chart} values={chartValues(chart)} width={live.w - 2} height={live.h - 2} />
+        {selected && <div className="ss-chart-resize" onPointerDown={chartDown(chart, 'resize')} title="Drag to resize" />}
+      </div>
+    )
+  })
+
   const editorBox = editing?.where === 'cell' ? rect({ r1: sel.active.row, c1: sel.active.col, r2: sel.active.row, c2: sel.active.col }) : null
 
   return (
@@ -346,6 +413,7 @@ export default function Grid({
           })()}
           {fillTarget && <div className="ss-fill-preview" style={rect(fillTarget)} />}
           {traceLayer}
+          {chartBoxes}
           {editorBox && renderEditor({ ...editorBox, width: Math.max(editorBox.width, 180) })}
         </div>
       </div>

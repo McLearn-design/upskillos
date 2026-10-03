@@ -359,3 +359,40 @@ describe('code cells', () => {
     expect([get('A1'), get('B1'), get('A2'), get('B2')]).toEqual(['x', 'y', 1, 2])
   })
 })
+
+describe('charts', () => {
+  it('adds, changes and removes a chart, with undo for each', () => {
+    const wb = new Workbook()
+    const s = wb.sheets[0]
+    const id = wb.addChart(s.id, { type: 'column', source: 'A1:B5', x: 0, y: 0, w: 400, h: 300 })
+    wb.updateChart(s.id, id, { type: 'line' })
+    expect(s.charts[0].type).toBe('line')
+    wb.undo()
+    expect(s.charts[0].type).toBe('column')
+    wb.undo()
+    expect(s.charts).toEqual([])
+    wb.redo()
+    expect(s.charts).toHaveLength(1)
+    wb.removeChart(s.id, id)
+    expect(s.charts).toEqual([])
+  })
+
+  it('moves a chart\'s data range when rows are inserted or deleted above it', () => {
+    const wb = new Workbook()
+    const s = wb.sheets[0]
+    wb.addChart(s.id, { type: 'column', source: 'A3:B6' })
+    wb.insertRows(s.id, 0, 2)
+    expect(s.charts[0].source).toBe('A5:B8')
+    wb.deleteRows(s.id, 5, 2) // rows 6 and 7 of the range
+    expect(s.charts[0].source).toBe('A5:B6')
+    wb.undo() // restores a snapshot: the sheet is a new object
+    expect(wb.sheets[0].charts[0].source).toBe('A5:B8')
+  })
+
+  it('saves charts with the workbook', () => {
+    const wb = new Workbook()
+    wb.addChart(wb.sheets[0].id, { type: 'pie', source: 'A1:B3', title: 'Share' })
+    const back = Workbook.fromJSON(JSON.parse(JSON.stringify(wb.toJSON())))
+    expect(back.sheets[0].charts[0]).toMatchObject({ type: 'pie', source: 'A1:B3', title: 'Share' })
+  })
+})

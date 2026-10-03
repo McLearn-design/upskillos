@@ -18,7 +18,7 @@ import { evaluate, evalNode } from './evaluate.js'
 import { parse, references, walk } from './parser.js'
 import { parseInput } from './input.js'
 import { FUNCTIONS } from './functions/index.js'
-import { Matrix, err, isMatrix } from './values.js'
+import { Matrix, err, isError, isMatrix } from './values.js'
 import { cellKey, keyToPos, rangeContains } from './address.js'
 import { adjustForCols, adjustForRows, renameSheetRefs } from './rewrite.js'
 import { codeReferences, plainValue, shapeForCode, sheetValue } from './code.js'
@@ -40,6 +40,8 @@ export class Sheet {
     this.ownerNum = new Map()
     this.colWidths = {}
     this.rowHeights = {}
+    // Charts float over the sheet: { id, type, source: 'A1:C10', x, y, w, h, … }.
+    this.charts = []
   }
 
   // The last row and column that hold anything, so whole-column references
@@ -693,7 +695,7 @@ export class Workbook {
   // These change many cells at once, so their undo restores a snapshot.
   snapshot() {
     return this.sheets.map((s) => ({
-      id: s.id, name: s.name, colWidths: { ...s.colWidths }, rowHeights: { ...s.rowHeights },
+      id: s.id, name: s.name, colWidths: { ...s.colWidths }, rowHeights: { ...s.rowHeights }, charts: s.charts.map((c) => ({ ...c })),
       cells: [...s.cells].map(([k, c]) => [k, { input: c.input, format: c.format, style: c.style, code: c.code }]),
     }))
   }
@@ -704,6 +706,7 @@ export class Workbook {
       sheet.id = d.id
       sheet.colWidths = { ...d.colWidths }
       sheet.rowHeights = { ...d.rowHeights }
+      sheet.charts = (d.charts ?? []).map((c) => ({ ...c }))
       return sheet
     })
     snap.forEach((d, i) => { for (const [k, c] of d.cells) { const p = keyToPos(k); this.writeCell(this.sheets[i], p.row, p.col, c) } })
@@ -764,6 +767,8 @@ export class Workbook {
     this.structural(() => {
       this.rewriteFormulas((input, sheet) => adjust(input, { formulaSheet: sheet.name, sheetName: target.name, at, count }))
       this.shiftCells(target, axis, at, count)
+      // A chart's data range moves with its cells, as a formula's would.
+      for (const chart of target.charts) chart.source = adjust('=' + chart.source, { formulaSheet: target.name, sheetName: target.name, at, count }).slice(1)
     })
   }
 
@@ -800,6 +805,43 @@ export class Workbook {
     return null
   }
 
+  // ── Charts ────────────────────────────────────────────────────────────
+  // The values in a range such as "A1:C10" on a sheet, row by row, or null if
+  // the text is not a range (a chart whose rows were all deleted reads #REF!).
+  rangeValues(sheet, text) {
+    let v
+    try { v = evalNode(parse(text), this.context(sheet, 0, 0)) } catch { return null }
+    if (isMatrix(v)) return v.rows
+    return isError(v) ? null : [[v]]
+  }
+
+  // Every change replaces the sheet's list of charts, so undo puts the old
+  // list back.
+  setCharts(sheetId, next, { record = true } = {}) {
+    const sheet = this.sheet(sheetId)
+    if (!sheet) return
+    if (record) this.pushHistory({ type: 'charts', sheetId, charts: sheet.charts })
+    sheet.charts = next
+    this.notify()
+  }
+
+  addChart(sheetId, chart) {
+    const id = 'chart' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    this.setCharts(sheetId, [...(this.sheet(sheetId)?.charts ?? []), { ...chart, id }])
+    return id
+  }
+
+  updateChart(sheetId, id, patch) {
+    const sheet = this.sheet(sheetId)
+    if (!sheet?.charts.some((c) => c.id === id)) return
+    this.setCharts(sheetId, sheet.charts.map((c) => (c.id === id ? { ...c, ...patch } : c)))
+  }
+
+  removeChart(sheetId, id) {
+    const sheet = this.sheet(sheetId)
+    if (sheet) this.setCharts(sheetId, sheet.charts.filter((c) => c.id !== id))
+  }
+
   // ── Undo / redo ───────────────────────────────────────────────────────
   pushHistory(entry) {
     this.undoStack.push(entry)
@@ -820,6 +862,9 @@ export class Workbook {
       const now = this.snapshot()
       this.restoreSnapshot(entry.snap)
       to.push({ type: 'snapshot', snap: now })
+    } else if (entry.type === 'charts') {
+      const sheet = this.sheet(entry.sheetId)
+      if (sheet) { to.push({ type: 'charts', sheetId: sheet.id, charts: sheet.charts }); this.setCharts(sheet.id, entry.charts, { record: false }) }
     } else if (entry.type === 'addSheet') {
       const index = this.sheets.findIndex((s) => s.id === entry.sheetId)
       const [sheet] = this.sheets.splice(index, 1)
@@ -848,6 +893,7 @@ export class Workbook {
         name: s.name,
         colWidths: s.colWidths,
         rowHeights: s.rowHeights,
+        ...(s.charts.length ? { charts: s.charts } : {}),
         cells: Object.fromEntries([...s.cells].map(([k, c]) => [k, Object.fromEntries(Object.entries({ input: c.input || undefined, format: c.format, style: c.style, code: c.code }).filter(([, v]) => v !== undefined))])),
       })),
     }
@@ -859,6 +905,7 @@ export class Workbook {
       const sheet = new Sheet(s.name)
       sheet.colWidths = { ...s.colWidths }
       sheet.rowHeights = { ...s.rowHeights }
+      sheet.charts = Array.isArray(s.charts) ? s.charts.map((c) => ({ ...c })) : []
       wb.sheets.push(sheet)
     }
     if (!wb.sheets.length) wb.sheets.push(new Sheet('Sheet1'))

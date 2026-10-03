@@ -10,6 +10,7 @@ import { PRESET_FORMATS } from '../engine/format.js'
 import { displayCell } from './display.js'
 import CodePanel from './CodePanel.jsx'
 import FormulaLearn from './FormulaLearn.jsx'
+import ChartPanel from './ChartPanel.jsx'
 
 const TYPE_TEXT = {
   blank: 'Empty',
@@ -158,10 +159,10 @@ function FunctionBrowser() {
   )
 }
 
-export default function Inspector({ wb, sheet, sel, onJump, tab, onTab, runtime, onApplyCode, onMakeCode }) {
+export default function Inspector({ wb, sheet, sel, onJump, tab, onTab, runtime, onApplyCode, onMakeCode, chart, chartValues, onChangeChart, onDeleteChart }) {
   const isCode = sheet.cells.get(cellKey(sel.active.row, sel.active.col))?.kind === 'code'
-  const tabs = [...(isCode ? [['code', 'Code']] : []), ['cell', 'This cell'], ['functions', 'Functions']]
-  const current = tab === 'code' && !isCode ? 'cell' : tab
+  const tabs = [...(chart ? [['chart', 'Chart']] : []), ...(isCode ? [['code', 'Code']] : []), ['cell', 'This cell'], ['functions', 'Functions']]
+  const current = (tab === 'code' && !isCode) || (tab === 'chart' && !chart) ? 'cell' : tab
   return (
     <aside className="flex h-full w-80 shrink-0 flex-col border-l border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950" aria-label="Inspector">
       <div className="flex shrink-0 border-b border-slate-200 text-xs dark:border-slate-800" role="tablist">
@@ -171,6 +172,7 @@ export default function Inspector({ wb, sheet, sel, onJump, tab, onTab, runtime,
         ))}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {current === 'chart' && <ChartPanel key={chart.id} chart={chart} values={chartValues(chart)} onChange={(patch) => onChangeChart(chart.id, patch)} onDelete={() => onDeleteChart(chart.id)} />}
         {current === 'code' && <CodePanel wb={wb} sheet={sheet} row={sel.active.row} col={sel.active.col} runtime={runtime} onApply={onApplyCode} />}
         {current === 'cell' && <CellView wb={wb} sheet={sheet} row={sel.active.row} col={sel.active.col} onJump={onJump} onMakeCode={onMakeCode} />}
         {current === 'functions' && <FunctionBrowser />}

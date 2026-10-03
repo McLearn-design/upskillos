@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   AlignCenter, AlignLeft, AlignRight, Baseline, Bold, BookOpen, Code2, DecimalsArrowLeft, DecimalsArrowRight, Download,
-  Eraser, FilePlus2, Italic, PaintBucket, PanelRight, Redo2, Underline, Undo2, Upload, Waypoints,
+  ChartColumnBig, Eraser, FilePlus2, Italic, PaintBucket, PanelRight, Redo2, Underline, Undo2, Upload, Waypoints,
 } from 'lucide-react'
 import { PRESET_FORMATS } from '../engine/format.js'
 
@@ -41,7 +41,7 @@ function Palette({ label, icon, colors, onPick, onClear }) {
 
 const Divider = () => <div className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
 
-export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onClearFormat, onUndo, onRedo, inspectorOpen, onToggleInspector, onNew, onOpenTour, onImport, onExport, onInsertCode, tracing, onToggleTracing }) {
+export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onClearFormat, onUndo, onRedo, inspectorOpen, onToggleInspector, onNew, onOpenTour, onImport, onExport, onInsertCode, onInsertChart, tracing, onToggleTracing }) {
   const [codeMenu, setCodeMenu] = useState(false)
   const style = cell?.style ?? {}
   const format = cell?.format ?? 'General'
@@ -89,6 +89,11 @@ export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onCle
           </div>
         )}
       </div>
+      <button type="button" onClick={onInsertChart} onPointerDown={(e) => e.preventDefault()}
+        title="Chart the selected cells (or the table around the selected cell)"
+        className="flex h-7 items-center gap-1 rounded px-2 text-xs font-semibold text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-900/30">
+        <ChartColumnBig size={15} /> Chart
+      </button>
       <Divider />
       <Button label="New blank workbook" onClick={onNew}><FilePlus2 size={15} /></Button>
       <Button label="Open the tour workbook" onClick={onOpenTour}><BookOpen size={15} /></Button>
