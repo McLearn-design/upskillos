@@ -290,7 +290,12 @@ export default function ProjectStudio() {
     runIdRef.current = res.runId;
     const early = earlyOutputRef.current.filter(evt => evt.runId === res.runId);
     earlyOutputRef.current = [];
-    setOutput(prev => [...prev, { stream: 'meta', text: lesson.runtime === 'cpp' ? 'Game launched in a separate window. Use Escape in the game or Stop here to close it.\n' : 'Project launched.\n' },
+    // `console: true` in a lesson's frontmatter: a terminal program whose output appears here,
+    // not a game in its own window.
+    const launched = lesson.meta.console === 'true' ? 'Program started. Its output appears below.\n'
+      : lesson.runtime === 'cpp' ? 'Game launched in a separate window. Use Escape in the game or Stop here to close it.\n'
+      : 'Project launched.\n';
+    setOutput(prev => [...prev, { stream: 'meta', text: launched },
       ...early.map(evt => evt.stream === 'exit' ? { stream: 'meta', text: `\n[process exited with code ${evt.code}]` } : evt)]);
     if (early.some(evt => evt.stream === 'exit')) setRunning(false);
     if (stopRequestedRef.current) await window.openCalcDesktop.stopRun(res.runId);

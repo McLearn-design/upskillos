@@ -9,6 +9,7 @@
 // 35.7.5). It is required lazily so a missing or broken binary only disables the terminal,
 // not the whole app.
 const { execFile } = require('node:child_process')
+const path = require('node:path')
 
 let pty = null
 let loadError = null
@@ -41,7 +42,9 @@ function freshWindowsPath() {
   })
 }
 
-async function shellEnv() {
+// `extraPath`: folders appended after the learner's own PATH, such as the app-managed C++
+// toolchain. Appended, not prepended, so a tool the learner installed themselves still wins.
+async function shellEnv({ extraPath = [] } = {}) {
   const env = { ...process.env }
   // Set inside VS Code's terminals; it would make any Electron-based tool the learner runs
   // behave as plain Node.
@@ -54,6 +57,11 @@ async function shellEnv() {
       for (const k of Object.keys(env)) if (k.toLowerCase() === 'path') delete env[k]
       env.Path = fresh
     }
+  }
+  const extra = extraPath.filter(Boolean)
+  if (extra.length) {
+    const key = Object.keys(env).find((k) => k.toLowerCase() === 'path') ?? 'PATH'
+    env[key] = [env[key], ...extra].filter(Boolean).join(path.delimiter)
   }
   env.TERM = env.TERM || 'xterm-256color'
   env.COLORTERM = 'truecolor'
@@ -73,7 +81,7 @@ function killOwner(owner) {
   for (const [id, o] of owners) if (o === owner) kill(id)
 }
 
-async function start({ cwd, cols, rows, owner }, send) {
+async function start({ cwd, cols, rows, owner, extraPath }, send) {
   const lib = loadPty()
   if (!lib) return { ok: false, reason: `The terminal couldn't start: ${loadError?.message ?? 'node-pty is missing'}` }
   if (!cwd) return { ok: false, reason: 'No project folder is open' }
@@ -84,7 +92,7 @@ async function start({ cwd, cols, rows, owner }, send) {
       cols: Math.max(20, cols | 0 || 80),
       rows: Math.max(5, rows | 0 || 24),
       cwd,
-      env: await shellEnv(),
+      env: await shellEnv({ extraPath }),
     })
     const id = `term-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     terminals.set(id, proc)

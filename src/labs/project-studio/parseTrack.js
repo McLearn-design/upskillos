@@ -1,7 +1,9 @@
 // parseTrack.js
 // Turns a lesson markdown file into ordered steps.
 //
-// Format (see tracks/*/*.md):
+// Format (see tracks/*/*.md). Optional frontmatter keys: `reference: optional` collapses full
+// files, `support:` supplies infrastructure files, `console: true` marks a terminal program
+// whose output appears in the output pane (see index.jsx).
 //
 //   ---
 //   title: A Window That Stays Open
