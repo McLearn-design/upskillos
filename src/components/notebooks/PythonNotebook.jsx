@@ -825,6 +825,9 @@ const CellComponent = React.memo(
             ) : (
               <span>In [{cell.executionCount ?? " "}]</span>
             )}
+            {cell.lang === "openmat" && (
+              <span style={{ marginLeft: 8, color: C.teal, fontWeight: 600 }}>OpenMAT</span>
+            )}
           </span>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
             <button
@@ -880,7 +883,7 @@ const CellComponent = React.memo(
         <Editor
           height={editorHeight}
           beforeMount={setupOpenCalcMonaco}
-          defaultLanguage="python"
+          defaultLanguage={cell.lang === "openmat" ? "openmat" : "python"}
           theme={monacoTheme || (C.dark ? "open-calc-dark" : "open-calc-light")}
           value={cell.code}
           onChange={(val) => onUpdate(cell.id, val || "")}
@@ -1080,6 +1083,31 @@ export default function PythonNotebook({ params, onParamChange, onCellsChange })
   // ── Run a cell ─────────────────────────────────────────────────────────────
   const runCell = useCallback(
     async (cellId) => {
+      // OpenMAT (MATLAB-style) cells run in the in-browser OpenMAT engine,
+      // not Python: no Pyodide needed, and each cell runs on its own. The
+      // engine is loaded on first use, so Python-only lessons never fetch it.
+      const target = cells.find((c) => c.id === cellId);
+      if (target?.lang === "openmat") {
+        if (isExecuting) return;
+        setIsExecuting(true);
+        setCells((prev) => prev.map((c) => (c.id === cellId ? { ...c, status: "running", output: "", figureJson: null, matplotlibImages: [] } : c)));
+        execCounterRef.current += 1;
+        const count = execCounterRef.current;
+        try {
+          const { runOpenMatScript } = await import("../../engines/openmat/openmatEngine.js");
+          const result = runOpenMatScript(target.code);
+          setCells((prev) => prev.map((c) => (c.id === cellId
+            ? { ...c, status: "idle", executionCount: count, output: result.logs.join("\n").trimEnd(), figureJson: result.figureJson, matplotlibImages: [], testResult: null }
+            : c)));
+        } catch (err) {
+          setCells((prev) => prev.map((c) => (c.id === cellId
+            ? { ...c, status: "error", executionCount: count, output: "Error: " + err.message, figureJson: null, matplotlibImages: [] }
+            : c)));
+        } finally {
+          setIsExecuting(false);
+        }
+        return;
+      }
       if (!pyodide || isExecuting) return;
       // Python runs on the page's thread, so code that never finishes freezes
       // the tab before React renders again. Hand the host the current cells

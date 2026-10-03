@@ -28,8 +28,13 @@
 //   Hint: one paragraph.
 //   :::
 //
+//   ```openmat
+//   an OpenMAT (MATLAB-style) demo cell, run by the in-browser OpenMAT engine
+//   ```
+//
 // Prose after the last cell becomes a text-only cell. A ```lang block that is
-// not ```python (e.g. ```text) stays part of the prose and is shown as-is.
+// not ```python or ```openmat (e.g. ```text) stays part of the prose and is
+// shown as-is.
 
 export class LessonFormatError extends Error {
   constructor(message, line) {
@@ -109,6 +114,13 @@ export function parseLesson(source) {
         // notebook labels the error as expected when its type matches.
         if (errorDemo) cell.expectError = errorDemo[1]
         push(cell)
+        prose = []
+      } else if (info === 'openmat') {
+        // An OpenMAT (MATLAB-style) demo cell, run by the in-browser OpenMAT
+        // engine instead of Python. Each OpenMAT cell runs on its own: it
+        // shares no variables with Python cells or other OpenMAT cells.
+        if (!body.trim()) throw new LessonFormatError('empty openmat block', i + 1)
+        push({ prose: proseItems(prose), code: body, cellTitle: '', lang: 'openmat' })
         prose = []
       } else if (info.startsWith('python')) {
         throw new LessonFormatError(`"${info}" blocks belong inside a ::: challenge`, i + 1)

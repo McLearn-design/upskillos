@@ -22,7 +22,7 @@
 
 import { existsSync, readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 import { loadPyodide } from 'pyodide'
 import { SERIES_MANIFEST } from '../src/tools/notebook-lab/series/manifest.js'
 import { parseLesson } from '../src/tools/notebook-lab/lessonFormat.js'
@@ -138,6 +138,20 @@ async function run(code, ns) {
   return { stdout: captured, shown }
 }
 
+// OpenMAT cells run in the app's OpenMAT engine. The app imports its
+// TypeScript source through a Vite alias; here it is bundled once with esbuild
+// (which Vite already depends on) and imported, the first time a lesson needs it.
+let openMat = null
+async function runOpenMat(code) {
+  if (!openMat) {
+    const { build } = await import('esbuild')
+    const out = resolve(root, 'node_modules/.cache/openmat-check/engine.mjs')
+    await build({ entryPoints: [resolve(root, 'packages/openmat/src/index.ts')], bundle: true, platform: 'node', format: 'esm', outfile: out, logLevel: 'error' })
+    openMat = await import(pathToFileURL(out).href)
+  }
+  return openMat.runOpenMatScript(code)
+}
+
 async function figuresOpen(ns) {
   return py.runPythonAsync(`
 import sys as _sys
@@ -211,6 +225,17 @@ for (const { series, lesson, file } of lessons) {
             if (!(cell.expectError || part === 'starter')) problems.push(`${where} ${part}: does not parse: ${lastLine(err)}`)
           }
         }
+      }
+
+      if (cell.lang === 'openmat') {
+        if (!cell.prose?.length) problems.push(`${where}: no prose before the code; say what it shows`)
+        try {
+          const result = await runOpenMat(cell.code)
+          if (!result.logs.join('').trim() && !result.figureJson) problems.push(`${where} (OpenMAT): runs but shows nothing`)
+        } catch (err) {
+          problems.push(`${where} (OpenMAT): ${lastLine(err)}`)
+        }
+        continue
       }
 
       if (!cell.challengeType) {
