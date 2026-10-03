@@ -15,7 +15,7 @@ export default function SheetTabs({ wb, activeId, onActivate, onAdd, onRename, o
   }
 
   return (
-    <div className="relative flex h-8 shrink-0 items-stretch border-t border-slate-200 bg-slate-50 text-xs dark:border-slate-800 dark:bg-slate-900">
+    <div data-sheet-tabs className="relative flex h-8 shrink-0 items-stretch border-t border-slate-200 bg-slate-50 text-xs dark:border-slate-800 dark:bg-slate-900">
       <div className="flex min-w-0 items-stretch overflow-x-auto" role="tablist" aria-label="Sheets">
         {wb.sheets.map((s) => (
           renaming?.id === s.id ? (
@@ -31,7 +31,7 @@ export default function SheetTabs({ wb, activeId, onActivate, onAdd, onRename, o
             <button key={s.id} type="button" role="tab" aria-selected={s.id === activeId}
               onClick={() => onActivate(s.id)}
               onDoubleClick={() => setRenaming({ id: s.id, name: s.name, problem: null })}
-              onContextMenu={(e) => { e.preventDefault(); setMenu({ id: s.id, x: e.clientX, y: e.clientY }) }}
+              onContextMenu={(e) => { e.preventDefault(); setMenu({ id: s.id, x: e.clientX - e.currentTarget.closest('[data-sheet-tabs]').getBoundingClientRect().left }) }}
               title="Double-click to rename, right-click for more"
               className={'whitespace-nowrap border-r border-slate-200 px-4 dark:border-slate-800 ' + (s.id === activeId
                 ? 'bg-white font-semibold text-sky-800 shadow-[inset_0_2px_0_#0284c7] dark:bg-slate-950 dark:text-sky-200'
@@ -48,7 +48,8 @@ export default function SheetTabs({ wb, activeId, onActivate, onAdd, onRename, o
       {menu && (
         <>
           <div className="fixed inset-0 z-40" onPointerDown={() => setMenu(null)} />
-          <div className="fixed z-50 w-40 rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900" style={{ left: menu.x, top: menu.y - 70 }}>
+          {/* Placed against the tab bar, not the screen: the window around the lab may be moved by a transform. */}
+          <div className="absolute bottom-full z-50 mb-1 w-40 rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900" style={{ left: menu.x }}>
             <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
               onClick={() => { setRenaming({ id: menu.id, name: wb.sheet(menu.id).name, problem: null }); setMenu(null) }}>Rename</button>
             <button type="button" className="block w-full px-3 py-1.5 text-left text-red-700 hover:bg-slate-100 disabled:opacity-40 dark:text-red-300 dark:hover:bg-slate-800"

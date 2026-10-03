@@ -34,7 +34,7 @@ function indexAt(starts, pos) {
 
 export default function Grid({
   wb, sheet, version, sel, onSelect, editing, renderEditor, pointMode, onPoint,
-  refHighlights = [], traces = null, charts = [], chartValues, selectedChart = null, onSelectChart, onChangeChart, onDeleteChart, onStartEdit, onFill, onContextMenu, onKeyDown, gridRef,
+  refHighlights = [], traces = null, hiddenRows = null, filter = null, onFilterButton, charts = [], chartValues, selectedChart = null, onSelectChart, onChangeChart, onDeleteChart, onStartEdit, onFill, onContextMenu, onKeyDown, gridRef,
 }) {
   const scrollerRef = useRef(null)
   const [scroll, setScroll] = useState({ top: 0, left: 0 })
@@ -50,9 +50,11 @@ export default function Grid({
   const colCount = Math.min(MAX_GRID_COLS, Math.max(30, bounds.cols + 10, Math.ceil((scroll.left + viewport.w * 2) / DEFAULT_COL_W)))
 
   const colSizes = liveSize?.axis === 'col' ? { ...sheet.colWidths, [liveSize.index]: liveSize.size } : sheet.colWidths
-  const rowSizes = liveSize?.axis === 'row' ? { ...sheet.rowHeights, [liveSize.index]: liveSize.size } : sheet.rowHeights
+  let rowSizes = liveSize?.axis === 'row' ? { ...sheet.rowHeights, [liveSize.index]: liveSize.size } : sheet.rowHeights
+  // Rows hidden by a filter take no space.
+  if (hiddenRows?.size) { rowSizes = { ...rowSizes }; for (const r of hiddenRows) rowSizes[r] = 0 }
   const cols = useMemo(() => prefixSums(colCount, colSizes, DEFAULT_COL_W), [colCount, colSizes, version])
-  const rows = useMemo(() => prefixSums(rowCount, rowSizes, DEFAULT_ROW_H), [rowCount, rowSizes, version])
+  const rows = useMemo(() => prefixSums(rowCount, rowSizes, DEFAULT_ROW_H), [rowCount, rowSizes, version, hiddenRows])
 
   useLayoutEffect(() => {
     const el = scrollerRef.current
@@ -219,6 +221,7 @@ export default function Grid({
   // ── Cells ────────────────────────────────────────────────────────────
   const cells = []
   for (let r = r0; r <= r1; r++) {
+    if (rows[r + 1] === rows[r]) continue // hidden
     for (let c = c0; c <= c1; c++) {
       const key = cellKey(r, c)
       const cell = sheet.cells.get(key)
@@ -280,11 +283,12 @@ export default function Grid({
   }
   const headRows = []
   for (let r = r0; r <= r1; r++) {
+    if (rows[r + 1] === rows[r]) continue // hidden
     const active = r >= range.r1 && r <= range.r2
     headRows.push(
       <div key={r} className={'ss-head' + (active ? ' is-active' : '')} style={{ left: 0, top: rows[r], width: HEAD_W, height: rows[r + 1] - rows[r] }}
         onPointerDown={headerDown('row', r)} onContextMenu={(e) => onContextMenu(e, { kind: 'row', index: r })}>
-        {r + 1}
+        <span className={hiddenRows?.size && filter && r > filter.r1 && r <= filter.r2 ? 'ss-row-filtered' : undefined}>{r + 1}</span>
         <div className="ss-resize-row" onPointerDown={resizeDown('row', r)} />
       </div>,
     )
@@ -412,6 +416,18 @@ export default function Grid({
             return <div className="ss-fill-handle" style={{ left: b.left + b.width - 4, top: b.top + b.height - 4 }} onPointerDown={handleFillDown} title="Drag to fill: copies formulas, continues series such as 1, 2, 3 or Jan, Feb" />
           })()}
           {fillTarget && <div className="ss-fill-preview" style={rect(fillTarget)} />}
+          {filter && Array.from({ length: filter.c2 - filter.c1 + 1 }, (_, i) => filter.c1 + i).filter((c) => c >= c0 && c <= c1).map((c) => {
+            const active = (filter.hidden?.[c - filter.c1] ?? []).length > 0
+            return (
+              <button key={'f' + c} type="button" className={'ss-filter-button' + (active ? ' is-active' : '')}
+                style={{ left: cols[c + 1] - 20, top: rows[filter.r1] + (rows[filter.r1 + 1] - rows[filter.r1] - 18) / 2 }}
+                aria-label={'Filter and sort column ' + indexToCol(c) + (active ? ' (filtered)' : '')} title={active ? 'Filtered: click to change' : 'Filter or sort by this column'}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => onFilterButton(c, e.currentTarget.getBoundingClientRect())}>
+                {active ? '⏷' : '▾'}
+              </button>
+            )
+          })}
           {traceLayer}
           {chartBoxes}
           {editorBox && renderEditor({ ...editorBox, width: Math.max(editorBox.width, 180) })}

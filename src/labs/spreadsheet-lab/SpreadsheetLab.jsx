@@ -12,6 +12,8 @@ import { parseCSV, toCSV } from './engine/csv.js'
 import { formatGeneral } from './engine/values.js'
 import Grid, { DEFAULT_COL_W, DEFAULT_ROW_H } from './ui/Grid.jsx'
 import { CHART_TYPES, currentRegion, recommendChart } from './engine/chart.js'
+import { hiddenRows, looksLikeHeader, removeDuplicates, sortRows } from './engine/data.js'
+import FilterMenu from './ui/FilterMenu.jsx'
 import FormulaInput from './ui/FormulaInput.jsx'
 import Inspector from './ui/Inspector.jsx'
 import Toolbar from './ui/Toolbar.jsx'
@@ -64,9 +66,15 @@ export default function SpreadsheetLab() {
   const [notice, setNotice] = useState(null)
   const [tracing, setTracing] = useState(false)
   const [selectedChart, setSelectedChart] = useState(null)
+  const [filterMenu, setFilterMenu] = useState(null) // { col, anchor } while a filter menu is open
   const [nameBox, setNameBox] = useState(null)
   const gridRef = useRef(null)
   const fileRef = useRef(null)
+  // Pop-up menus are placed relative to the lab: the window around it may be
+  // transformed, which would move anything positioned against the screen.
+  const rootRef = useRef(null)
+  const toRoot = (x, y) => { const b = rootRef.current?.getBoundingClientRect() ?? { left: 0, top: 0 }; return { x: x - b.left, y: y - b.top } }
+  const rootSize = () => ({ width: rootRef.current?.clientWidth ?? window.innerWidth, height: rootRef.current?.clientHeight ?? window.innerHeight })
   const clipboard = useRef(null)
 
   // Save after each change (debounced), in this browser only.
@@ -109,6 +117,54 @@ export default function SpreadsheetLab() {
       elsewhere: reads.filter((r) => r.sheetId !== sheet.id).length + readBy.filter((g) => !here(g)).length,
     }
   }, [tracing, edit, sel.active.row, sel.active.col, sheet, version]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Sort, filter, remove duplicates ──────────────────────────────────
+  const read = useCallback((r, c) => wb.valueAt(sheet, r, c), [wb, sheet, version]) // eslint-disable-line react-hooks/exhaustive-deps
+  const filterRange = sheet.filter ? parseRange(sheet.filter.source) : null
+  const hidden = useMemo(() => (filterRange ? hiddenRows(sheet.filter, filterRange, read) : null), [sheet.filter, read]) // eslint-disable-line react-hooks/exhaustive-deps
+  const isHidden = hidden?.size ? (r) => hidden.has(r) : null
+  const cellAt = (r, c) => wb.getCell(sheet.id, r, c)
+  const inside = (rg, p) => p.row >= rg.r1 && p.row <= rg.r2 && p.col >= rg.c1 && p.col <= rg.c2
+  // The table to work on: the selection, or the block of data around a single
+  // selected cell, as Excel does.
+  const tableAround = () => {
+    const rg = clipped(range)
+    if (rg.r1 !== rg.r2 || rg.c1 !== rg.c2) return rg
+    return currentRegion((r, c) => wb.valueAt(sheet, r, c) !== null, rg.r1, rg.c1)
+  }
+  const single = range.r1 === range.r2 && range.c1 === range.c2
+  const sortBy = (descending, col = sel.active.col) => {
+    let target, header
+    // Inside a filtered table, sort the whole table under its headings.
+    if (filterRange && single && inside(filterRange, sel.active)) { target = filterRange; header = true }
+    else { target = tableAround(); header = looksLikeHeader(wb.rangeValues(sheet, formatRange(target)) ?? []) }
+    if (col < target.c1 || col > target.c2) col = target.c1
+    const { changes, message } = sortRows({ sheetId: sheet.id, range: target, keys: [{ col, descending }], header, read, cellAt })
+    if (changes.length) wb.setCells(changes)
+    setNotice(message)
+  }
+  const toggleFilter = () => {
+    if (sheet.filter) { wb.setFilter(sheet.id, null); setNotice('Filter removed: every row shows again.'); return }
+    const rg = tableAround()
+    if (rg.r1 === rg.r2) { setNotice('A filter needs a row of headings with data below it. Select the table, or a cell in it, first.'); return }
+    wb.setFilter(sheet.id, { source: formatRange(rg), hidden: {} })
+    setNotice('Added a filter to ' + formatRange(rg) + '. Row ' + (rg.r1 + 1) + ' is treated as the headings: click ▾ on a heading to choose which rows show.')
+  }
+  const dedupe = () => {
+    const inFilter = filterRange && single && inside(filterRange, sel.active)
+    const rg = inFilter ? filterRange : tableAround()
+    const header = inFilter || looksLikeHeader(wb.rangeValues(sheet, formatRange(rg)) ?? [])
+    const { changes, message } = removeDuplicates({ sheetId: sheet.id, range: rg, header, read, cellAt })
+    if (changes.length) wb.setCells(changes)
+    setNotice(message + (changes.length ? ' Undo (Ctrl+Z) puts them back.' : ''))
+  }
+  const applyFilter = (col, keys) => {
+    const next = { ...sheet.filter, hidden: { ...sheet.filter.hidden, [col - filterRange.c1]: keys } }
+    if (!keys.length) delete next.hidden[col - filterRange.c1]
+    wb.setFilter(sheet.id, next)
+    setFilterMenu(null)
+    focusGrid()
+  }
 
   // ── Charts ───────────────────────────────────────────────────────────
   const chart = sheet.charts.find((c) => c.id === selectedChart) ?? null
@@ -208,7 +264,7 @@ export default function SpreadsheetLab() {
     }
     if (edit.sheetId !== sheet.id) setSheetId(edit.sheetId)
     setEdit(null)
-    if (!fillSelection) setSel(moveSelection(cellSelection(edit.row, edit.col), move[0], move[1], false))
+    if (!fillSelection) setSel(moveSelection(cellSelection(edit.row, edit.col), move[0], move[1], false, isHidden))
     focusGrid()
   }
 
@@ -446,14 +502,14 @@ export default function SpreadsheetLab() {
           const from = e.shiftKey ? sel.focus : sel.active
           const p = jumpTarget(hasValue, from, arrow[0], arrow[1], { rows: Math.max(b.rows, from.row + 1), cols: Math.max(b.cols, from.col + 1) })
           setSel(e.shiftKey ? { ...sel, focus: p } : cellSelection(p.row, p.col))
-        } else setSel(moveSelection(sel, arrow[0], arrow[1], e.shiftKey))
+        } else setSel(moveSelection(sel, arrow[0], arrow[1], e.shiftKey, isHidden))
       })
     }
     if (e.key === 'Home') return run(() => setSel(ctrl ? cellSelection(0, 0) : cellSelection(sel.active.row, 0)))
     if (e.key === 'End' && ctrl) return run(() => { const b = sheet.bounds(); setSel(cellSelection(Math.max(0, b.rows - 1), Math.max(0, b.cols - 1))) })
-    if (e.key === 'PageDown') return run(() => setSel(moveSelection(sel, 20, 0, e.shiftKey)))
-    if (e.key === 'PageUp') return run(() => setSel(moveSelection(sel, -20, 0, e.shiftKey)))
-    if (e.key === 'Enter') return run(() => setSel(moveSelection(sel, e.shiftKey ? -1 : 1, 0, false)))
+    if (e.key === 'PageDown') return run(() => setSel(moveSelection(sel, 20, 0, e.shiftKey, isHidden)))
+    if (e.key === 'PageUp') return run(() => setSel(moveSelection(sel, -20, 0, e.shiftKey, isHidden)))
+    if (e.key === 'Enter') return run(() => setSel(moveSelection(sel, e.shiftKey ? -1 : 1, 0, false, isHidden)))
     if (e.key === 'Tab') return run(() => setSel(moveSelection(sel, 0, e.shiftKey ? -1 : 1, false)))
     if (e.key === 'F2') return run(() => startEdit(sel.active.row, sel.active.col, null, 'edit'))
     if (e.key === 'Delete' || e.key === 'Backspace') return run(clearContents)
@@ -522,7 +578,9 @@ export default function SpreadsheetLab() {
       const inside = target.row >= range.r1 && target.row <= range.r2 && target.col >= range.c1 && target.col <= range.c2
       if (!inside) setSel(cellSelection(target.row, target.col))
     }
-    setMenu({ x: e.clientX, y: e.clientY, target })
+    const p = toRoot(e.clientX, e.clientY)
+    const { width, height } = rootSize()
+    setMenu({ x: Math.min(p.x, width - 230), y: Math.min(p.y, height - 240), target })
   }
 
   const menuItems = () => {
@@ -564,7 +622,7 @@ export default function SpreadsheetLab() {
   const fmt = (n) => formatGeneral(+n.toPrecision(10))
 
   return (
-    <div className="ss-root flex h-full min-h-0 flex-col bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div ref={rootRef} className="ss-root relative flex h-full min-h-0 flex-col bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <Toolbar
         wb={wb} cell={activeCell}
         onStyle={applyStyle} onFormat={applyFormat} onDecimals={changeDecimals} onClearFormat={clearFormat}
@@ -576,6 +634,7 @@ export default function SpreadsheetLab() {
         onExport={exportCSV}
         onInsertCode={(lang) => setCode(sel.active.row, sel.active.col, lang, LANGUAGES[lang].starter)}
         onInsertChart={insertChart}
+        onSort={sortBy} onToggleFilter={toggleFilter} filterOn={!!sheet.filter} onRemoveDuplicates={dedupe}
         tracing={tracing} onToggleTracing={() => { setTracing((t) => !t); focusGrid() }}
       />
       <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,text/csv" className="hidden"
@@ -628,6 +687,8 @@ export default function SpreadsheetLab() {
             onPoint={(rg) => insertReference(rg)}
             refHighlights={refHighlights}
             traces={traces}
+            hiddenRows={hidden} filter={filterRange && { ...filterRange, hidden: sheet.filter.hidden }}
+            onFilterButton={(col, rect) => { const p = toRoot(rect.left, rect.bottom); setFilterMenu({ col, anchor: { left: p.x, bottom: p.y }, bounds: rootSize() }) }}
             charts={sheet.charts} chartValues={chartValues} selectedChart={selectedChart}
             onSelectChart={(id) => { if (id && edit && !pointMode) commit([0, 0]); setSelectedChart(id) }}
             onChangeChart={(id, patch) => wb.updateChart(sheet.id, id, patch)}
@@ -692,6 +753,11 @@ export default function SpreadsheetLab() {
         }}
       >
         <div className="flex h-full items-center justify-end gap-4 px-3 text-[11px] text-slate-500 dark:text-slate-400" aria-live="polite">
+          {hidden && filterRange && (
+            <span title="Rows hidden by the filter are still there: formulas such as SUM still include them.">
+              Filter: showing <b>{filterRange.r2 - filterRange.r1 - hidden.size}</b> of {filterRange.r2 - filterRange.r1} rows
+            </span>
+          )}
           {traces && (
             <span>
               <span style={{ color: 'var(--ss-trace-reads)' }}>■</span> reads {traces.precedents.length}
@@ -712,10 +778,22 @@ export default function SpreadsheetLab() {
         </div>
       </SheetTabs>
 
+      {filterMenu && filterRange && (
+        <FilterMenu
+          key={filterMenu.col}
+          anchor={filterMenu.anchor} bounds={filterMenu.bounds}
+          heading={String(wb.valueAt(sheet, filterRange.r1, filterMenu.col) ?? indexToCol(filterMenu.col))}
+          range={filterRange} col={filterMenu.col} read={read}
+          hidden={sheet.filter.hidden?.[filterMenu.col - filterRange.c1] ?? []}
+          onApply={(keys) => applyFilter(filterMenu.col, keys)}
+          onSort={(descending) => { setFilterMenu(null); sortBy(descending, filterMenu.col); focusGrid() }}
+          onClose={() => { setFilterMenu(null); focusGrid() }}
+        />
+      )}
       {menu && (
         <>
-          <div className="fixed inset-0 z-[60]" onPointerDown={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null) }} />
-          <div role="menu" className="fixed z-[61] w-56 rounded-md border border-slate-200 bg-white py-1 text-xs shadow-xl dark:border-slate-700 dark:bg-slate-900" style={{ left: menu.x, top: menu.y }}>
+          <div className="absolute inset-0 z-[60]" onPointerDown={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null) }} />
+          <div role="menu" className="absolute z-[61] w-56 rounded-md border border-slate-200 bg-white py-1 text-xs shadow-xl dark:border-slate-700 dark:bg-slate-900" style={{ left: menu.x, top: menu.y }}>
             {menuItems().map(([label, action, danger]) => (
               <button key={label} type="button" role="menuitem"
                 className={'block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800 ' + (danger ? 'text-red-700 dark:text-red-300' : '')}

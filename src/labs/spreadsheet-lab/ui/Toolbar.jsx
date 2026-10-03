@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   AlignCenter, AlignLeft, AlignRight, Baseline, Bold, BookOpen, Code2, DecimalsArrowLeft, DecimalsArrowRight, Download,
-  ChartColumnBig, Eraser, FilePlus2, Italic, PaintBucket, PanelRight, Redo2, Underline, Undo2, Upload, Waypoints,
+  ChartColumnBig, ChevronDown, Eraser, FilePlus2, Italic, PaintBucket, PanelRight, Redo2, Underline, Undo2, Upload, Waypoints,
 } from 'lucide-react'
 import { PRESET_FORMATS } from '../engine/format.js'
 
@@ -41,8 +41,9 @@ function Palette({ label, icon, colors, onPick, onClear }) {
 
 const Divider = () => <div className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
 
-export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onClearFormat, onUndo, onRedo, inspectorOpen, onToggleInspector, onNew, onOpenTour, onImport, onExport, onInsertCode, onInsertChart, tracing, onToggleTracing }) {
+export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onClearFormat, onUndo, onRedo, inspectorOpen, onToggleInspector, onNew, onOpenTour, onImport, onExport, onInsertCode, onInsertChart, onSort, onToggleFilter, filterOn, onRemoveDuplicates, tracing, onToggleTracing }) {
   const [codeMenu, setCodeMenu] = useState(false)
+  const [dataMenu, setDataMenu] = useState(false)
   const style = cell?.style ?? {}
   const format = cell?.format ?? 'General'
   const known = PRESET_FORMATS.some((p) => p.code === format)
@@ -83,6 +84,28 @@ export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onCle
             {[['py', 'Python', 'numpy, pandas, scikit-learn, matplotlib'], ['js', 'JavaScript', 'the language of the web'], ['matlab', 'MATLAB', 'matrices and numerical maths']].map(([id, label, note]) => (
               <button key={id} type="button" onClick={() => { setCodeMenu(false); onInsertCode(id) }} className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800">
                 <span className="font-semibold">{label} cell</span>
+                <span className="block text-[11px] text-slate-500">{note}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="relative">
+        <button type="button" onClick={() => setDataMenu((o) => !o)} onPointerDown={(e) => e.preventDefault()} aria-expanded={dataMenu}
+          title="Sort, filter and clean up a table"
+          className="flex h-7 items-center gap-0.5 rounded px-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-800">
+          Data <ChevronDown size={13} />
+        </button>
+        {dataMenu && (
+          <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-md border border-slate-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900" onPointerDown={(e) => e.preventDefault()}>
+            {[
+              ['Sort A → Z', 'Smallest to largest by the selected cell\'s column. Whole rows move together.', () => onSort(false)],
+              ['Sort Z → A', 'Largest to smallest.', () => onSort(true)],
+              [filterOn ? 'Remove filter' : 'Filter', filterOn ? 'Show every row again.' : 'Adds ▾ buttons to the headings to choose which rows show.', onToggleFilter],
+              ['Remove duplicates', 'Deletes rows that repeat an earlier row exactly.', onRemoveDuplicates],
+            ].map(([label, note, action]) => (
+              <button key={label} type="button" onClick={() => { setDataMenu(false); action() }} className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800">
+                <span className="font-semibold">{label}</span>
                 <span className="block text-[11px] text-slate-500">{note}</span>
               </button>
             ))}

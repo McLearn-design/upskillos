@@ -130,3 +130,9 @@
 .ss-chart-tip-row b { color: var(--ss-chart-ink); font-weight: 600; }
 .ss-chart-tip-row span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .ss-chart-key { display: inline-block; width: 10px; height: 2px; border-radius: 1px; flex: none; }
+
+/* Filter */
+.ss-filter-button { position: absolute; z-index: 4; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--ss-grid); border-radius: 4px; background: var(--ss-header-bg); color: var(--ss-header-text); font-size: 11px; line-height: 1; cursor: pointer; }
+.ss-filter-button:hover { border-color: var(--ss-select-border); color: var(--ss-text); }
+.ss-filter-button.is-active { background: var(--ss-select-border); border-color: var(--ss-select-border); color: #ffffff; }
+.ss-row-filtered { color: var(--ss-select-border); font-weight: 600; }

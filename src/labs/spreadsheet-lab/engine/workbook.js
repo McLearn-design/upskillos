@@ -19,7 +19,7 @@ import { parse, references, walk } from './parser.js'
 import { parseInput } from './input.js'
 import { FUNCTIONS } from './functions/index.js'
 import { Matrix, err, isError, isMatrix } from './values.js'
-import { cellKey, keyToPos, rangeContains } from './address.js'
+import { cellKey, keyToPos, parseRange, rangeContains } from './address.js'
 import { adjustForCols, adjustForRows, renameSheetRefs } from './rewrite.js'
 import { codeReferences, plainValue, shapeForCode, sheetValue } from './code.js'
 
@@ -42,6 +42,8 @@ export class Sheet {
     this.rowHeights = {}
     // Charts float over the sheet: { id, type, source: 'A1:C10', x, y, w, h, … }.
     this.charts = []
+    // An AutoFilter: { source: 'A1:D20', hidden: { [column offset]: [value keys] } } or null.
+    this.filter = null
   }
 
   // The last row and column that hold anything, so whole-column references
@@ -695,7 +697,7 @@ export class Workbook {
   // These change many cells at once, so their undo restores a snapshot.
   snapshot() {
     return this.sheets.map((s) => ({
-      id: s.id, name: s.name, colWidths: { ...s.colWidths }, rowHeights: { ...s.rowHeights }, charts: s.charts.map((c) => ({ ...c })),
+      id: s.id, name: s.name, colWidths: { ...s.colWidths }, rowHeights: { ...s.rowHeights }, charts: s.charts.map((c) => ({ ...c })), filter: s.filter,
       cells: [...s.cells].map(([k, c]) => [k, { input: c.input, format: c.format, style: c.style, code: c.code }]),
     }))
   }
@@ -707,6 +709,7 @@ export class Workbook {
       sheet.colWidths = { ...d.colWidths }
       sheet.rowHeights = { ...d.rowHeights }
       sheet.charts = (d.charts ?? []).map((c) => ({ ...c }))
+      sheet.filter = d.filter ?? null
       return sheet
     })
     snap.forEach((d, i) => { for (const [k, c] of d.cells) { const p = keyToPos(k); this.writeCell(this.sheets[i], p.row, p.col, c) } })
@@ -769,6 +772,19 @@ export class Workbook {
       this.shiftCells(target, axis, at, count)
       // A chart's data range moves with its cells, as a formula's would.
       for (const chart of target.charts) chart.source = adjust('=' + chart.source, { formulaSheet: target.name, sheetName: target.name, at, count }).slice(1)
+      if (target.filter) {
+        const source = adjust('=' + target.filter.source, { formulaSheet: target.name, sheetName: target.name, at, count }).slice(1)
+        // Columns inserted or deleted inside the filter shift which column each condition is on.
+        const hidden = {}
+        const was = parseRange(target.filter.source)
+        for (const [offset, keys] of Object.entries(target.filter.hidden ?? {})) {
+          let c = was.c1 + Number(offset)
+          if (axis === 'col') { if (count < 0 && c >= at && c < at - count) continue; if (c >= at) c += count }
+          const now = parseRange(source)
+          if (now) hidden[c - now.c1] = keys
+        }
+        target.filter = source.includes('#REF!') ? null : { source, hidden }
+      }
     })
   }
 
@@ -842,6 +858,15 @@ export class Workbook {
     if (sheet) this.setCharts(sheetId, sheet.charts.filter((c) => c.id !== id))
   }
 
+  // ── Filter ────────────────────────────────────────────────────────────
+  setFilter(sheetId, filter, { record = true } = {}) {
+    const sheet = this.sheet(sheetId)
+    if (!sheet) return
+    if (record) this.pushHistory({ type: 'filter', sheetId, filter: sheet.filter })
+    sheet.filter = filter
+    this.notify()
+  }
+
   // ── Undo / redo ───────────────────────────────────────────────────────
   pushHistory(entry) {
     this.undoStack.push(entry)
@@ -865,6 +890,9 @@ export class Workbook {
     } else if (entry.type === 'charts') {
       const sheet = this.sheet(entry.sheetId)
       if (sheet) { to.push({ type: 'charts', sheetId: sheet.id, charts: sheet.charts }); this.setCharts(sheet.id, entry.charts, { record: false }) }
+    } else if (entry.type === 'filter') {
+      const sheet = this.sheet(entry.sheetId)
+      if (sheet) { to.push({ type: 'filter', sheetId: sheet.id, filter: sheet.filter }); this.setFilter(sheet.id, entry.filter, { record: false }) }
     } else if (entry.type === 'addSheet') {
       const index = this.sheets.findIndex((s) => s.id === entry.sheetId)
       const [sheet] = this.sheets.splice(index, 1)
@@ -894,6 +922,7 @@ export class Workbook {
         colWidths: s.colWidths,
         rowHeights: s.rowHeights,
         ...(s.charts.length ? { charts: s.charts } : {}),
+        ...(s.filter ? { filter: s.filter } : {}),
         cells: Object.fromEntries([...s.cells].map(([k, c]) => [k, Object.fromEntries(Object.entries({ input: c.input || undefined, format: c.format, style: c.style, code: c.code }).filter(([, v]) => v !== undefined))])),
       })),
     }
@@ -906,6 +935,7 @@ export class Workbook {
       sheet.colWidths = { ...s.colWidths }
       sheet.rowHeights = { ...s.rowHeights }
       sheet.charts = Array.isArray(s.charts) ? s.charts.map((c) => ({ ...c })) : []
+      sheet.filter = s.filter?.source ? { source: s.filter.source, hidden: s.filter.hidden ?? {} } : null
       wb.sheets.push(sheet)
     }
     if (!wb.sheets.length) wb.sheets.push(new Sheet('Sheet1'))

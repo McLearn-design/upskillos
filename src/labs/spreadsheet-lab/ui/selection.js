@@ -17,9 +17,16 @@ export function clampPos(row, col) {
   return { row: Math.max(0, Math.min(MAX_GRID_ROWS - 1, row)), col: Math.max(0, Math.min(MAX_GRID_COLS - 1, col)) }
 }
 
-export function moveSelection(sel, dRow, dCol, extend) {
-  if (extend) return { ...sel, focus: clampPos(sel.focus.row + dRow, sel.focus.col + dCol) }
-  const p = clampPos(sel.active.row + dRow, sel.active.col + dCol)
+// isHidden(row): rows hidden by a filter are stepped over, as in Excel.
+export function moveSelection(sel, dRow, dCol, extend, isHidden = null) {
+  const from = extend ? sel.focus : sel.active
+  let p = clampPos(from.row + dRow, from.col + dCol)
+  if (isHidden && dRow) {
+    const step = Math.sign(dRow)
+    while (isHidden(p.row) && p.row + step >= 0 && p.row + step < MAX_GRID_ROWS) p = { ...p, row: p.row + step }
+    if (isHidden(p.row)) p = clampPos(from.row, p.col) // nothing visible that way
+  }
+  if (extend) return { ...sel, focus: p }
   return cellSelection(p.row, p.col)
 }
 

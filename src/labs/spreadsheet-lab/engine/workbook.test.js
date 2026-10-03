@@ -396,3 +396,22 @@ describe('charts', () => {
     expect(back.sheets[0].charts[0]).toMatchObject({ type: 'pie', source: 'A1:B3', title: 'Share' })
   })
 })
+
+describe('filter', () => {
+  it('is undoable, saved, and follows inserted and deleted columns', () => {
+    const wb = new Workbook()
+    const id = wb.sheets[0].id
+    wb.setFilter(id, { source: 'B2:D9', hidden: { 2: ['York'] } })
+    wb.insertCols(id, 2, 1) // a column inside the filter, left of the condition's column
+    expect(wb.sheets[0].filter).toEqual({ source: 'B2:E9', hidden: { 3: ['York'] } })
+    wb.deleteCols(id, 4, 1) // the condition's column itself
+    expect(wb.sheets[0].filter).toEqual({ source: 'B2:D9', hidden: {} })
+    wb.undo(); wb.undo()
+    expect(wb.sheets[0].filter).toEqual({ source: 'B2:D9', hidden: { 2: ['York'] } })
+    const back = Workbook.fromJSON(JSON.parse(JSON.stringify(wb.toJSON())))
+    expect(back.sheets[0].filter).toEqual({ source: 'B2:D9', hidden: { 2: ['York'] } })
+    wb.setFilter(id, null)
+    wb.undo()
+    expect(wb.sheets[0].filter.source).toBe('B2:D9')
+  })
+})
