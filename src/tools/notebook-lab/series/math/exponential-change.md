@@ -115,7 +115,7 @@ The gap falls from 158 °C to 110 °C in 4 minutes, which fixes k. The same form
 k is about 0.091 per minute, a time constant of 11 minutes, and the shaft is safe to handle after about 21 minutes. Two measurements were enough to predict the whole curve, but only because the model's form was known. Real cooling deviates when radiation matters (very hot parts) or the air flow changes, so a third measurement is a good check.
 
 ::: challenge Half-lives [easy]
-Write `rate_from_half_life(half_life)`, the decay constant k = ln 2 / t½ (raise `ValueError` if t½ is not positive). Write `remaining(N0, half_life, t)`, the amount left after time t, N₀ (½)^(t / t½). Then write `time_to_fraction(half_life, fraction)`, the time until the given fraction remains, rounded to 4 decimal places, raising `ValueError` unless 0 < fraction ≤ 1. Finally write `doubling_time(rate_percent)`, the exact number of periods to double at a growth rate of `rate_percent` percent per period, rounded to 2 decimal places (raise `ValueError` if the rate is not positive).
+Write `rate_from_half_life(half_life)`, the decay constant k = ln 2 / t½ (raise `ValueError` if t½ is not positive). Write `remaining(N0, half_life, t)`, the amount left after time t, N₀ (½)^(t / t½). Then write `time_to_fraction(half_life, fraction)`, the time until the given fraction remains, rounded to 4 decimal places, raising `ValueError` unless 0 < fraction ≤ 1 and the half-life is positive. Finally write `doubling_time(rate_percent)`, the exact number of periods to double at a growth rate of `rate_percent` percent per period, rounded to 2 decimal places (raise `ValueError` if the rate is not positive).
 
 ```python starter
 def rate_from_half_life(half_life):

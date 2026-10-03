@@ -1,6 +1,6 @@
 # Logarithms and log scales
 
-A whisper and a jet engine differ in sound power by a factor of about a hundred trillion. Lemon juice is a hundred thousand times more acidic than tap water. The 2011 Tōhoku earthquake released about a thousand times the energy of a typical "strong" magnitude-7 quake. Ranges this vast are unmanageable as plain numbers, so science measures them on **logarithmic scales**: decibels, pH, earthquake magnitude, octaves. The logarithm turns multiplication into addition and huge ranges into small ones. It is also the inverse of the exponential, which makes it the tool for solving every "how long until..." question of the previous lesson. This lesson builds the logarithm, its laws, and the log scales engineers use every day.
+The faintest sound a person can hear and a jet engine close up differ in sound power by a factor of about a hundred trillion. Lemon juice is a hundred thousand times more acidic than tap water. The 2011 Tōhoku earthquake released about a thousand times the energy of a typical "strong" magnitude-7 quake. Ranges this vast are unmanageable as plain numbers, so science measures them on **logarithmic scales**: decibels, pH, earthquake magnitude, octaves. The logarithm turns multiplication into addition and huge ranges into small ones. It is also the inverse of the exponential, which makes it the tool for solving every "how long until..." question of the previous lesson. This lesson builds the logarithm, its laws, and the log scales engineers use every day.
 
 This lesson covers:
 
@@ -61,7 +61,7 @@ print("product of 400 probabilities of 0.1:", product)
 print("sum of their log10:", sum(math.log10(p) for p in probs), "-> the product is 10 to that power")
 ```
 
-Floats cannot represent numbers below about 10⁻³⁰⁸, so the product **underflows** to exactly 0.0, losing all information. The logarithm, −400, is perfectly representable: the product is 10⁻⁴⁰⁰. Statistics and machine learning work with log-probabilities for exactly this reason.
+Floats cannot represent numbers below about 10⁻³⁰⁸ (about 10⁻³²⁴ with reduced precision), so the product **underflows** to exactly 0.0, losing all information. The logarithm, −400, is perfectly representable: the product is 10⁻⁴⁰⁰. Statistics and machine learning work with log-probabilities for exactly this reason.
 
 ## Decibels
 
@@ -134,7 +134,7 @@ for name, ys in curves.items():
 
 `straightness` compares the smallest and largest slope between neighbouring points: 1.000 means a perfectly straight line.
 
-The exponential is straight on semi-log axes (straightness 1.000) and the power law on log-log axes (1.000). The linear function is straight on neither log plot except log-log, where t¹ is a power law with exponent 1. Choosing axes so that the expected model becomes a straight line is one of the most useful habits in data analysis.
+The exponential is straight on semi-log axes (straightness 1.000) and the power law on log-log axes (1.000). The linear function is curved on semi-log axes but straight on log-log, since t¹ is a power law with exponent 1. Choosing axes so that the expected model becomes a straight line is one of the most useful habits in data analysis.
 
 ## Logarithms of small changes
 
