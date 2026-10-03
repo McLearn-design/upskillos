@@ -60,7 +60,7 @@ export const LEARNING: GameTask[] = [
         check: { kind: 'editor', test: (v) => [v.training?.draft, ...(v.training?.runs ?? []).map((r) => r.spec)].some((spec) => cuts(reading(spec, 'Ball:velocity.y')).length > 0) || (v.training?.draft ? 'Add "bins": [0] to the reading with "path": "Ball:velocity.y".' : 'Open Run › Train an agent… to see the environment.') },
       },
       {
-        text: 'With Q-learning chosen, press Train: 100 episodes, α 0.2, γ 0.97, ε falling from 0.3. Watch the faint line (each episode’s return) and the blue one (the last 10 averaged) climb above random play, and the green greedy checks. Then read the table: each row a state, the green number the action it takes there.',
+        text: 'With Q-learning chosen, press Train (headless, about 15 seconds), or ▶ Train in view to watch every episode in the game, with a speed control: 100 episodes, α 0.2, γ 0.97, ε falling from 0.3. Watch the faint line (each episode’s return) and the blue one (the last 10 averaged) climb above random play, and the green greedy checks. Then read the table: each row a state, the green number the action it takes there.',
         check: { kind: 'editor', test: (v) => !!goodRun(v.training?.runs ?? []) || ((v.training?.runs ?? []).some((r) => r.method === 'q') ? 'Trained, but not on 14 states, or it did not beat random play by much: check the bins and train again.' : 'Press Train with Q-learning chosen, and wait for "Trained."') },
       },
       {

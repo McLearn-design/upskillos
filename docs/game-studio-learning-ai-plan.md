@@ -96,6 +96,22 @@ real bottleneck is measuring each lesson's claims (training runs over seeds), no
     action bootstrapped from that same state, and it could not learn in 80 episodes.
   - With the offset in 60 px units cut into 5 bins per axis (25 states), it learns in 200.
 
+**Train in view: done (2026-10-03).** The user wanted to see the machine learn, not only the result.
+- **One learner:** Q-learning is now a step-at-a-time `QLearner` (`ml/qlearning.ts`). The worker runs it flat out,
+  and the game's runtime runs it inside the visible game, a few ticks per drawn frame.
+  - Speeds are real time, 4×, 16×, 64× and Max (game frames per drawn frame).
+  - Only the last frame of each burst is drawn.
+  - Random play and the final score are measured headless.
+- **The same draws in the same order.** Watching learns exactly what headless training learns:
+  - `trainview.acceptance.mjs` checks the same score and the same greedy checks, in both;
+  - `qlearning.test.ts` locks Breakout's ten greedy checks, 48 44 44 43 44 −5 13 22 −2 48, unchanged by the refactor.
+- **The panel:** a strip under the game (the game shrinks to fit above it, so nothing is covered). It shows:
+  - what the learner is doing: the episode and how much it explores, or a greedy check game;
+  - the speed buttons and the live learning curve;
+  - when it is done, Watch it play and the way to Save as brain.
+- **Scope:** the player's keys are ignored while it trains; Pause pauses training; Stop ends it.
+- **Pictures:** `$TMPDIR/game-studio-train-in-view.png`, `game-studio-train-hud.png`.
+
 **Next:**
 - step 2: shared brains, several NPCs learning one table, and a scripted opponent in an example;
 - step 3: the overlay;

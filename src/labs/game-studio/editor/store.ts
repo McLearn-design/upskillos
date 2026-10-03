@@ -25,7 +25,8 @@ import { gameHtmlFile, gameZip, projectZip, readProjectZip } from '../core/archi
 import { loadRuntimeSource } from './runner';
 import type { EnvSpec } from '../ml/env';
 import type { CemOptions, Generation } from '../ml/cem';
-import type { QEpisode, QOptions } from '../ml/qlearning';
+import type { QEpisode, QLive, QOptions } from '../ml/qlearning';
+import type { TrainInView } from '../runtime/protocol';
 import { isQPolicy, type AgentPolicy } from '../ml/policy';
 
 import { EXAMPLES } from '../examples';
@@ -806,9 +807,11 @@ export class Store {
 
   // ── running ─────────────────────────────────────────────────────────────
 
-  async run(which: 'project' | 'scene', container: HTMLElement, opts: { agent?: boolean } = {}): Promise<void> {
+  async run(which: 'project' | 'scene', container: HTMLElement, opts: { agent?: boolean; train?: TrainInView } = {}): Promise<void> {
     if (!this.doc) return;
     this.watchingAgent = !!opts.agent && !!this.training.policy;
+    this.trainLive = null;
+    if (!opts.train) this.inView = false;
     // Scripts are saved into the project before running, so the game runs what you see.
     for (const path of [...this.buffers.keys()]) if (this.isScriptDirty(path)) this.saveScript(path);
     const p = this.doc.project;
@@ -825,7 +828,7 @@ export class Store {
     }
     this.output = [{ level: 'system', text: `▶ Running ${scene}` }];
     const assets = await Promise.all(p.assets.map(async (a) => ({ path: a.path, mime: a.mime, bytes: await (this.blobs.get(a.id) ?? new Blob()).arrayBuffer() })));
-    const game = await runGame({ project: p, scene, assets, container, onMessage: (m) => this.onRuntime(m) });
+    const game = await runGame({ project: p, scene, assets, container, onMessage: (m) => this.onRuntime(m), ...(opts.train ? { train: opts.train } : {}) });
     this.running = { game, scene, paused: false, live: null };
     if (this.task && !this.task.ran) { this.task = { ...this.task, ran: true }; this.scheduleCheck(0); }
     if (this.task && this.watchingAgent && !this.task.watched) { this.task = { ...this.task, watched: true }; this.scheduleCheck(0); }
@@ -839,6 +842,15 @@ export class Store {
     else if (m.type === 'error') this.output.push({ level: 'error', text: m.message, file: m.file, line: m.line, column: m.column, node: m.node });
     else if (m.type === 'paused') this.running.paused = m.paused;
     else if (m.type === 'state') this.running.live = m.props;
+    else if (m.type === 'trainStart') this.training = { ...this.training, described: { actions: m.actions, observation: m.observation, bins: m.bins }, random: m.random };
+    else if (m.type === 'trainLive') this.trainLive = m.live;
+    else if (m.type === 'trainEpisode') {
+      const e = m.episode, t = this.training;
+      const ep: QEpisode = { episode: e.episode, total: e.total, epsilon: e.epsilon, visited: e.visited, steps: e.steps, ...(e.greedy === undefined ? {} : { greedy: e.greedy }) };
+      this.training = { ...t, episodes: [...t.episodes, ep], table: e.table ?? t.table, visits: e.visits ?? t.visits };
+    }
+    else if (m.type === 'trainDone') this.trainingFinished(m.policy, m.score);
+    else if (m.type === 'trainError') { this.training = { ...this.training, running: false, error: m.message }; this.trainLive = null; }
     else if (m.type === 'running') {
       this.inspectLive();
       // Watching a trained agent: it takes the controls as soon as the game is running.
@@ -860,6 +872,11 @@ export class Store {
     /** What the agent can do and sees, by name, and its bins (from the trainer: a script agent's come from its script). */
     described: { actions: string[]; observation: string[]; bins: number[][] } | null;
   } = { running: false, method: 'q', spec: null, random: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, error: null, total: 0, described: null };
+  /** Train in view: what the learner in the visible game is doing now, and how fast it plays. */
+  trainLive: QLive | null = null;
+  trainSpeed = 4;
+  /** The latest training ran in view (in the game), not in the worker. */
+  inView = false;
   /** The game running from "Watch it play": the trained agent holds the controls. */
   watchingAgent = false;
   private trainer: Worker | null = null;
@@ -889,6 +906,7 @@ export class Store {
     this.stopTraining();
     for (const path of [...this.buffers.keys()]) if (this.isScriptDirty(path)) this.saveScript(path);
     const total = job.method === 'q' ? job.options.episodes : job.options.generations;
+    this.inView = false;
     this.training = { running: true, method: job.method, spec, random: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, error: null, total, described: null };
     const w = this.trainer = new Worker(new URL('../ml/train.worker.ts', import.meta.url), { type: 'module' });
     w.onmessage = (e: MessageEvent) => {
@@ -901,16 +919,39 @@ export class Store {
         const ep: QEpisode = { episode: m.episode, total: m.total, epsilon: m.epsilon, visited: m.visited, steps: m.steps, ...(m.greedy === undefined ? {} : { greedy: m.greedy }) };
         this.training = { ...t, episodes: [...t.episodes, ep], table: m.table ?? t.table, visits: m.visits ?? t.visits };
       }
-      else if (m.type === 'done') {
-        this.training = { ...t, running: false, policy: m.policy!, score: m.score!, table: isQPolicy(m.policy!) ? m.policy.table : t.table, visits: isQPolicy(m.policy!) ? m.policy.visits ?? null : t.visits };
-        this.stopTraining(false);
-        if (this.task) { this.task = { ...this.task, runs: [...this.task.runs, { method: t.method, spec, score: m.score!, random: t.random ?? 0 }] }; this.scheduleCheck(0); }
-      }
+      else if (m.type === 'done') { this.stopTraining(false); this.trainingFinished(m.policy!, m.score!); }
       else if (m.type === 'error') { this.training = { ...t, running: false, error: m.message! }; this.stopTraining(false); }
       this.changed();
     };
     w.onerror = (e) => { this.training = { ...this.training, running: false, error: e.message || 'The trainer stopped' }; this.stopTraining(false); this.changed(); };
     w.postMessage({ project: JSON.parse(JSON.stringify(this.doc.project)), spec, ...job });
+    this.changed();
+  }
+
+  /** Training finished (in the worker, or in view): keep the policy, and tell a task's checks. */
+  private trainingFinished(policy: AgentPolicy, score: number): void {
+    const t = this.training;
+    this.training = { ...t, running: false, policy, score, table: isQPolicy(policy) ? policy.table : t.table, visits: isQPolicy(policy) ? policy.visits ?? null : t.visits };
+    this.trainLive = null;
+    if (this.task && t.spec) { this.task = { ...this.task, runs: [...this.task.runs, { method: t.method, spec: t.spec, score, random: t.random ?? 0 }] }; this.scheduleCheck(0); }
+    this.changed();
+  }
+
+  /** Train in view: Q-learning inside the visible game, every episode drawn. `speed` is game frames per drawn frame. */
+  async trainInView(spec: EnvSpec, options: QOptions, container: HTMLElement, speed = 4): Promise<void> {
+    if (!this.doc) return;
+    this.stopTraining();
+    this.training = { running: true, method: 'q', spec, random: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, error: null, total: options.episodes, described: null };
+    this.trainSpeed = speed;
+    this.inView = true;
+    await this.run('project', container, { train: { spec, options, speed } });
+    this.changed();
+  }
+
+  /** Train in view's speed: game frames per drawn frame (1 is real time). */
+  setTrainSpeed(speed: number): void {
+    this.trainSpeed = speed;
+    this.running?.game.send({ type: 'trainSpeed', speed });
     this.changed();
   }
 
@@ -956,6 +997,9 @@ export class Store {
     if (!this.running) return;
     this.running.game.stop();
     this.running = null;
+    // Training in view stops with the game; what it learned so far is in the last table it reported.
+    if (this.inView && this.training.running) this.training = { ...this.training, running: false };
+    this.trainLive = null;
     this.output.push({ level: 'system', text: '■ Stopped' });
     this.changed();
   }

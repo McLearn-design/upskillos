@@ -7,6 +7,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Store, type ArtMessage } from './editor/store';
 import { TrainDialog } from './editor/TrainDialog';
+import { TrainHud, TRAIN_HUD_HEIGHT, trainHudShown } from './editor/TrainHud';
 import { Btn, C, useStore } from './editor/kit';
 import { Viewport } from './editor/Viewport';
 import { SceneTree } from './editor/SceneTree';
@@ -264,7 +265,8 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
           {/* Shown while the game runs too, so a step like "run the game" ticks where you can see it. */}
           <TaskPanel store={store} onBack={(route) => { navigate(route); desktop?.minimizeWindow?.('game-studio'); }} />
           {!running && store.tab.kind === 'script' && <div style={{ position: 'absolute', inset: 0 }}><ScriptEditor key={store.tab.path} store={store} path={store.tab.path} /></div>}
-          <div ref={gameBox} data-testid="game-box" style={{ position: 'absolute', inset: 0, display: running ? 'block' : 'none', background: '#000' }} />
+          <div ref={gameBox} data-testid="game-box" style={{ position: 'absolute', inset: 0, bottom: running && trainHudShown(store) ? TRAIN_HUD_HEIGHT : 0, display: running ? 'block' : 'none', background: '#000' }} />
+          {running && <TrainHud store={store} onOpenDialog={() => setDialog('train')} onWatch={() => { if (gameBox.current) void store.run('project', gameBox.current, { agent: true }); }} />}
         </div>
         {store.reference !== null && <Reference store={store} />}
         </div>
@@ -291,7 +293,7 @@ export default function GameStudio({ onBack }: { onBack?: () => void }) {
       {dialog === 'projects' && <ProjectsDialog store={store} onClose={store.project ? () => setDialog(null) : undefined} onDone={() => setDialog(null)} />}
       {dialog === 'settings' && <SettingsDialog store={store} onClose={() => setDialog(null)} />}
       {dialog === 'tutorials' && <TutorialsDialog store={store} onClose={() => setDialog(null)} />}
-      {dialog === 'train' && <TrainDialog store={store} onClose={() => setDialog(null)} onWatch={() => { setDialog(null); if (gameBox.current) void store.run('project', gameBox.current, { agent: true }); }} />}
+      {dialog === 'train' && <TrainDialog store={store} onClose={() => setDialog(null)} onWatch={() => { setDialog(null); if (gameBox.current) void store.run('project', gameBox.current, { agent: true }); }} onTrainInView={(spec, options) => { setDialog(null); if (gameBox.current) void store.trainInView(spec, options, gameBox.current, store.trainSpeed); }} />}
       <QuestionDialog store={store} />
       <input ref={importFile} data-testid="import-project-file" type="file" accept=".zip,application/zip" style={{ display: 'none' }}
         onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f && await store.importProject(f)) setDialog(null); }} />

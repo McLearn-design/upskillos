@@ -8,7 +8,7 @@ import type { Store, TrainMethod } from './store';
 import { Btn, C, useStore } from './kit';
 import { Modal } from './Dialogs';
 import type { EnvSpec } from '../ml/env';
-import type { QEpisode } from '../ml/qlearning';
+import type { QEpisode, QOptions } from '../ml/qlearning';
 import { isQPolicy } from '../ml/policy';
 
 const W = 460, H = 150, PAD = 26;
@@ -51,7 +51,7 @@ function CemCurve({ points, random, total }: { points: { best: number; eliteMean
 }
 
 /** Q-learning: each training episode's return (faint), their average over the last 10 (blue), and the greedy checks (green). */
-function QCurve({ episodes, random, total }: { episodes: QEpisode[]; random: number | null; total: number }) {
+export function QCurve({ episodes, random, total }: { episodes: QEpisode[]; random: number | null; total: number }) {
   const avg = episodes.map((_, i) => { const w = episodes.slice(Math.max(0, i - 9), i + 1); return w.reduce((s, e) => s + e.total, 0) / w.length; });
   const checks = episodes.filter((e) => e.greedy !== undefined);
   const { lo, hi, y } = frame([...episodes.map((e) => e.total), ...checks.map((e) => e.greedy!)], random);
@@ -111,7 +111,10 @@ function QTable({ described, table, visits }: { described: Described; table: num
 /** Where to save a brain: brains/ and the agent's name (or the project's), lower case. */
 const brainPathFor = (spec: EnvSpec | null, project: string) => `brains/${((spec?.agent ?? project).split('/').pop() ?? 'agent').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '') || 'agent'}.json`;
 
-export function TrainDialog({ store, onClose, onWatch }: { store: Store; onClose: () => void; onWatch: () => void }) {
+/** The Q-learning settings the dialog trains with (in the worker, or in view). */
+export const qOptions = (episodes: number, alpha: number, gamma: number, epsilon: number): QOptions => ({ episodes, alpha, gamma, epsilon, epsilonEnd: 0.02, seed: 3, checkEvery: 10 });
+
+export function TrainDialog({ store, onClose, onWatch, onTrainInView }: { store: Store; onClose: () => void; onWatch: () => void; onTrainInView: (spec: EnvSpec, options: QOptions) => void }) {
   useStore(store);
   const t = store.training;
   const [text, setText] = useState(() => JSON.stringify(t.spec ?? store.defaultAgentSpec(), null, 2));
@@ -155,7 +158,7 @@ export function TrainDialog({ store, onClose, onWatch }: { store: Store; onClose
   const lastCheck = [...t.episodes].reverse().find((e) => e.greedy !== undefined);
   const start = () => {
     if (!('spec' in parsed)) return;
-    if (method === 'q') store.startTraining(parsed.spec, { method: 'q', options: { episodes, alpha, gamma, epsilon, epsilonEnd: 0.02, seed: 3, checkEvery: 10 } });
+    if (method === 'q') store.startTraining(parsed.spec, { method: 'q', options: qOptions(episodes, alpha, gamma, epsilon) });
     else store.startTraining(parsed.spec, { method: 'cem', options: { generations, population, elite: 0.2, noise: 1, seed: 3 } });
   };
   const status = t.error ? `Could not train: ${t.error}`
@@ -197,7 +200,10 @@ export function TrainDialog({ store, onClose, onWatch }: { store: Store; onClose
             <span style={{ flex: 1 }} />
             {t.running
               ? <Btn testid="train-stop" onClick={() => store.stopTraining()}>Stop</Btn>
-              : <Btn testid="train-start" disabled={!('spec' in parsed)} onClick={start}>Train</Btn>}
+              : <>
+                {method === 'q' && <Btn testid="train-in-view" disabled={!('spec' in parsed)} title="Train inside the running game: watch every episode as it learns (slower; set the speed while it runs)" onClick={() => 'spec' in parsed && onTrainInView(parsed.spec, qOptions(episodes, alpha, gamma, epsilon))}>▶ Train in view</Btn>}
+                <Btn testid="train-start" disabled={!('spec' in parsed)} title="Train headless, as fast as it can go" onClick={start}>Train</Btn>
+              </>}
           </div>
         </div>
         <div style={{ width: 470 }}>
