@@ -63,6 +63,15 @@ async function resolveCompiler(app) {
   return null
 }
 
+// The folder holding the app-managed toolchain's g++, lldb, mingw32-make and libc++.dll, or
+// null when it isn't installed. Terminals and step checks append it to PATH (terminal.cjs), so
+// `g++ hello.cpp` typed in the terminal finds the same compiler the Run button uses, and the
+// programs it builds find libc++.dll when they start.
+async function toolchainBinDir(app) {
+  const gpp = await gppPath(app)
+  return gpp ? path.dirname(gpp) : null
+}
+
 async function getStatus(app) {
   const compiler = await resolveCompiler(app)
   const system = await systemCpp()
@@ -215,4 +224,4 @@ async function projectCommand(app, absFile, projectRoot = path.dirname(absFile))
   return { command: exePath, args: [], windowsHide: false }
 }
 
-module.exports = { getStatus, install, runCode, killRun, killAllScripts, projectCommand }
+module.exports = { getStatus, install, runCode, killRun, killAllScripts, projectCommand, toolchainBinDir }

@@ -316,11 +316,17 @@ ipcMain.handle('project:run', async (_event, runtime, relPath) => {
   return projectFs.runProjectFile(app, RUNTIMES, runtime, relPath, emit)
 })
 
+// Folders the app installed tools into, added to the PATH of terminals and step checks so the
+// commands a lesson tells the learner to type find them (see terminal.cjs shellEnv).
+async function learnerToolPaths() {
+  return [await cppRuntime.toolchainBinDir(app).catch(() => null)].filter(Boolean)
+}
+
 // A lesson step's checks (project-checks.cjs). Commands run with the same fresh PATH a new
 // terminal gets, so a tool the learner just installed is found.
 ipcMain.handle('project:check', async (_event, checks) => {
   const { root } = await projectFs.getProject(app)
-  return projectChecks.runChecks(root, checks, { env: await terminal.shellEnv(), evalInPage })
+  return projectChecks.runChecks(root, checks, { env: await terminal.shellEnv({ extraPath: await learnerToolPaths() }), evalInPage })
 })
 
 // A real terminal in the project folder (terminal.cjs).
@@ -341,7 +347,7 @@ ipcMain.handle('terminal:start', async (event, opts) => {
     sender.once('destroyed', () => { terminal.killOwner(owner); terminalOwners.delete(owner) })
   }
   const send = (channel, payload) => { if (!sender.isDestroyed()) sender.send(channel, payload) }
-  return terminal.start({ cwd: root, cols: opts?.cols, rows: opts?.rows, owner }, send)
+  return terminal.start({ cwd: root, cols: opts?.cols, rows: opts?.rows, owner, extraPath: await learnerToolPaths() }, send)
 })
 ipcMain.on('terminal:write', (_event, id, data) => terminal.write(id, data))
 ipcMain.on('terminal:resize', (_event, id, cols, rows) => terminal.resize(id, cols, rows))
