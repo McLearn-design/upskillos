@@ -50,6 +50,15 @@ function evalInner(node, ctx) {
     case 'name': {
       if (ctx.scope?.has(node.name)) return ctx.scope.get(node.name)
       if (ctx.names?.has(node.name)) return evalNode(ctx.names.get(node.name), ctx)
+      // A function's name on its own is the function as a value, to pass to
+      // GROUPBY, MAP or BYROW: =GROUPBY(A1:A9, B1:B9, SUM). (Excel calls this an
+      // eta-reduced lambda.)
+      const def = ctx.functions?.[node.name]
+      if (def && !def.lazy) {
+        const fn = (...values) => (def.scalar ? scalarCall(def, values, ctx) : def.fn(values, ctx))
+        fn.isLambda = true
+        return fn
+      }
       return err('#NAME?', '"' + node.name + '" is not a function, a LET variable or a defined name. Text must be in double quotes.')
     }
     case 'unary': {

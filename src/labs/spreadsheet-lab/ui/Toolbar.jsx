@@ -41,7 +41,7 @@ function Palette({ label, icon, colors, onPick, onClear }) {
 
 const Divider = () => <div className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
 
-export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onClearFormat, onUndo, onRedo, inspectorOpen, onToggleInspector, onNew, onOpenTour, onImport, onExport, onExportXlsx, onInsertCode, onInsertChart, onColourRules, onSort, onToggleFilter, filterOn, onRemoveDuplicates, tracing, onToggleTracing }) {
+export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onClearFormat, onUndo, onRedo, inspectorOpen, onToggleInspector, onNew, onOpenTour, onImport, onExport, onExportXlsx, onInsertCode, onInsertChart, onColourRules, onPivot, onSort, onToggleFilter, filterOn, onRemoveDuplicates, tracing, onToggleTracing }) {
   const [codeMenu, setCodeMenu] = useState(false)
   const [dataMenu, setDataMenu] = useState(false)
   const [saveMenu, setSaveMenu] = useState(false)
@@ -105,6 +105,7 @@ export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onCle
               ['Sort Z → A', 'Largest to smallest.', () => onSort(true)],
               [filterOn ? 'Remove filter' : 'Filter', filterOn ? 'Show every row again.' : 'Adds ▾ buttons to the headings to choose which rows show.', onToggleFilter],
               ['Remove duplicates', 'Deletes rows that repeat an earlier row exactly.', onRemoveDuplicates],
+              ['Pivot table…', 'Summarise the table: totals, averages or counts for each group.', onPivot],
             ].map(([label, note, action]) => (
               <button key={label} type="button" onClick={() => { setDataMenu(false); action() }} className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800">
                 <span className="font-semibold">{label}</span>

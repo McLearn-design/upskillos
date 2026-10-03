@@ -68,6 +68,7 @@ export default function SpreadsheetLab() {
   const [tracing, setTracing] = useState(false)
   const [selectedChart, setSelectedChart] = useState(null)
   const [filterMenu, setFilterMenu] = useState(null) // { col, anchor } while a filter menu is open
+  const [pivotTable, setPivotTable] = useState(null) // the table the pivot panel summarises
   const [nameBox, setNameBox] = useState(null)
   const gridRef = useRef(null)
   const fileRef = useRef(null)
@@ -158,6 +159,37 @@ export default function SpreadsheetLab() {
     const { changes, message } = removeDuplicates({ sheetId: sheet.id, range: rg, header, read, cellAt })
     if (changes.length) wb.setCells(changes)
     setNotice(message + (changes.length ? ' Undo (Ctrl+Z) puts them back.' : ''))
+  }
+  // Pivot tables are GROUPBY / PIVOTBY formulas, built in the inspector.
+  const openPivot = () => {
+    const rg = tableAround()
+    const rows = wb.rangeValues(sheet, formatRange(rg)) ?? []
+    const ok = rg.r2 > rg.r1 && looksLikeHeader(rows)
+    setPivotTable(ok ? {
+      range: rg,
+      headers: rows[0].map((v) => String(v ?? '')),
+      numeric: rows[0].map((_, c) => rows.slice(1).some((r) => typeof r[c] === 'number')),
+    } : null)
+    setInspectorOpen(true)
+    setInspectorTab('pivot')
+  }
+  const evaluatePivot = useCallback((text) => wb.previewFormula(sheet, text), [wb, sheet, version]) // eslint-disable-line react-hooks/exhaustive-deps
+  const insertPivot = (formula) => {
+    const rg = pivotTable.range
+    const v = wb.previewFormula(sheet, formula)
+    const h = v?.height ?? 1, w = v?.width ?? 1
+    // The first place beside the table with room for the whole result.
+    const free = (r0, c0) => {
+      for (let r = r0; r < r0 + h; r++) for (let c = c0; c < c0 + w; c++) if (wb.getCell(sheet.id, r, c) || sheet.spillOwner.has(cellKey(r, c))) return false
+      return true
+    }
+    let col = rg.c2 + 2
+    while (!free(rg.r1, col) && col < 16000) col++
+    wb.setCells([{ sheetId: sheet.id, row: rg.r1, col, input: formula }])
+    setSel(cellSelection(rg.r1, col))
+    setInspectorTab('cell')
+    setNotice('Inserted the pivot table at ' + indexToCol(col) + (rg.r1 + 1) + '. It is a formula, so it updates when the table changes. Click it to see how it is worked out.')
+    focusGrid()
   }
   const applyFilter = (col, keys) => {
     const next = { ...sheet.filter, hidden: { ...sheet.filter.hidden, [col - filterRange.c1]: keys } }
@@ -689,6 +721,7 @@ export default function SpreadsheetLab() {
         onInsertCode={(lang) => setCode(sel.active.row, sel.active.col, lang, LANGUAGES[lang].starter)}
         onInsertChart={insertChart}
         onColourRules={() => { setInspectorOpen(true); setInspectorTab('rules') }}
+        onPivot={openPivot}
         onSort={sortBy} onToggleFilter={toggleFilter} filterOn={!!sheet.filter} onRemoveDuplicates={dedupe}
         tracing={tracing} onToggleTracing={() => { setTracing((t) => !t); focusGrid() }}
       />
@@ -778,6 +811,7 @@ export default function SpreadsheetLab() {
           <Inspector wb={wb} sheet={sheet} sel={sel} version={version} tab={inspectorTab} onTab={setInspectorTab} runtime={runtime}
             onApplyCode={(source) => wb.setCells([{ sheetId: sheet.id, row: sel.active.row, col: sel.active.col, code: { lang: activeCell.code.lang, source } }])}
             chart={chart} chartValues={chartValues}
+            pivotTable={pivotTable} evaluatePivot={evaluatePivot} onInsertPivot={insertPivot}
             rules={sheet.rules} ruleTarget={formatRange(clipped(range))}
             onAddRule={addRule}
             onRemoveRule={(id) => wb.setRules(sheet.id, sheet.rules.filter((r) => r.id !== id))}

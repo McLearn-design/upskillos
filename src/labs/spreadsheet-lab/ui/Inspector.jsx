@@ -12,6 +12,7 @@ import CodePanel from './CodePanel.jsx'
 import FormulaLearn from './FormulaLearn.jsx'
 import ChartPanel from './ChartPanel.jsx'
 import RulesPanel from './RulesPanel.jsx'
+import PivotPanel from './PivotPanel.jsx'
 
 const TYPE_TEXT = {
   blank: 'Empty',
@@ -160,9 +161,9 @@ function FunctionBrowser() {
   )
 }
 
-export default function Inspector({ wb, sheet, sel, onJump, tab, onTab, runtime, onApplyCode, onMakeCode, chart, chartValues, onChangeChart, onDeleteChart, rules = [], ruleTarget, onAddRule, onRemoveRule, onSelectRule }) {
+export default function Inspector({ wb, sheet, sel, onJump, tab, onTab, runtime, onApplyCode, onMakeCode, chart, chartValues, onChangeChart, onDeleteChart, rules = [], ruleTarget, onAddRule, onRemoveRule, onSelectRule, pivotTable, evaluatePivot, onInsertPivot }) {
   const isCode = sheet.cells.get(cellKey(sel.active.row, sel.active.col))?.kind === 'code'
-  const tabs = [...(chart ? [['chart', 'Chart']] : []), ...(isCode ? [['code', 'Code']] : []), ['cell', 'This cell'], ...(rules.length || tab === 'rules' ? [['rules', 'Rules']] : []), ['functions', 'Functions']]
+  const tabs = [...(chart ? [['chart', 'Chart']] : []), ...(isCode ? [['code', 'Code']] : []), ['cell', 'This cell'], ...(rules.length || tab === 'rules' ? [['rules', 'Rules']] : []), ...(tab === 'pivot' ? [['pivot', 'Pivot']] : []), ['functions', 'Functions']]
   const current = (tab === 'code' && !isCode) || (tab === 'chart' && !chart) ? 'cell' : tab
   return (
     <aside className="flex h-full w-80 shrink-0 flex-col border-l border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950" aria-label="Inspector">
@@ -177,6 +178,7 @@ export default function Inspector({ wb, sheet, sel, onJump, tab, onTab, runtime,
         {current === 'code' && <CodePanel wb={wb} sheet={sheet} row={sel.active.row} col={sel.active.col} runtime={runtime} onApply={onApplyCode} />}
         {current === 'cell' && <CellView wb={wb} sheet={sheet} row={sel.active.row} col={sel.active.col} onJump={onJump} onMakeCode={onMakeCode} />}
         {current === 'functions' && <FunctionBrowser />}
+        {current === 'pivot' && <PivotPanel key={pivotTable ? formatRange(pivotTable.range) : 'none'} table={pivotTable} evaluate={evaluatePivot} onInsert={onInsertPivot} />}
         {current === 'rules' && <RulesPanel rules={rules} target={ruleTarget} onAdd={onAddRule} onRemove={onRemoveRule} onSelect={onSelectRule} />}
       </div>
     </aside>

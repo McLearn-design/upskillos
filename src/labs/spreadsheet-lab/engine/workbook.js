@@ -76,6 +76,8 @@ const isEmptyCell = (cell) => !cell || (cell.input === '' && !cell.code && !cell
 // (=A1 with A1 empty shows 0).
 function settle(v) {
   if (v === null || v === undefined) return 0
+  // A function on its own (=SUM, or a LAMBDA never called) is not a value.
+  if (typeof v === 'function') return err('#CALC!', 'This formula gives a function rather than a value. To call it, add brackets and its inputs, such as SUM(A1:A5)' + (v.params ? ', or give the LAMBDA its inputs: =LAMBDA(x, x*2)(5).' : '.'))
   if (isMatrix(v)) return v.height === 1 && v.width === 1 ? settle(v.get(0, 0)) : v.map((x) => (x === null || x === undefined ? 0 : x))
   return v
 }
@@ -828,6 +830,12 @@ export class Workbook {
   }
 
   // ── Charts ────────────────────────────────────────────────────────────
+  // A formula's result without putting it in a cell (for previews), as a
+  // cell would show it: errors explained, a lone function as #CALC!.
+  previewFormula(sheet, text, row = 0, col = 0) {
+    try { return settle(evaluate(parse(text.replace(/^=/, '')), this.context(sheet, row, col))) } catch (e) { return err('#NAME?', e.message) }
+  }
+
   // The values in a range such as "A1:C10" on a sheet, row by row, or null if
   // the text is not a range (a chart whose rows were all deleted reads #REF!).
   rangeValues(sheet, text) {

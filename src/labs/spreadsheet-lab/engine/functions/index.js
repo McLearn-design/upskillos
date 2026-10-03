@@ -7,8 +7,9 @@ import text from './text.js'
 import info from './info.js'
 import dates from './dates.js'
 import financial from './financial.js'
+import pivot from './pivot.js'
 
-const library = { ...math, ...stats, ...logic, ...lookup, ...text, ...info, ...dates, ...financial }
+const library = { ...math, ...stats, ...logic, ...lookup, ...text, ...info, ...dates, ...financial, ...pivot }
 
 // Older names (STDEV, VAR, RANK…) run the same code as their modern ones, and
 // their help says which name to prefer.

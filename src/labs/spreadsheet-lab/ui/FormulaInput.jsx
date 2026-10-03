@@ -13,6 +13,10 @@ export default function FormulaInput({
   const [caret, setCaret] = useState(value.length)
   const [pick, setPick] = useState(0)
   const [dismissed, setDismissed] = useState(null)
+  // Suggestions and syntax help only while typing here: the formula bar shows
+  // the selected cell's formula without being edited, and a pop-up then would
+  // cover the sheet.
+  const [focused, setFocused] = useState(false)
   const pendingCaret = useRef(null)
 
   // The parent moves the caret when it inserts text itself (a clicked cell's
@@ -36,8 +40,8 @@ export default function FormulaInput({
 
   const completion = completionAt(value, caret)
   const options = completion ? matchingFunctions(functions, completion.prefix) : []
-  const open = options.length > 0 && dismissed !== value
-  const call = callAt(value, caret)
+  const open = focused && options.length > 0 && dismissed !== value
+  const call = focused ? callAt(value, caret) : null
   const hint = call ? functions[call.name] : null
 
   const report = (el) => {
@@ -74,7 +78,8 @@ export default function FormulaInput({
         aria-label={ariaLabel}
         className={className}
         style={style}
-        onFocus={onFocus}
+        onFocus={(e) => { setFocused(true); onFocus?.(e) }}
+        onBlur={() => setFocused(false)}
         onChange={(e) => { setPick(0); report(e.target) }}
         onKeyDown={handleKeyDown}
         onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
