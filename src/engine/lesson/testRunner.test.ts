@@ -1,5 +1,6 @@
+// @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
-import { buildTestHarness, parseTestResults, runSqlTests } from './testRunner'
+import { buildTestHarness, parseTestResults, runSqlTests, runTests, runCSSTests } from './testRunner'
 import { runJSInline } from '../../utils/inlineRunner.js'
 import type { Executor } from './types'
 
@@ -161,6 +162,11 @@ assert q.includes('from courses')`
 })
 
 describe('parseTestResults', () => {
+  it('preserves JS labels with pipes, backslashes, backticks and template interpolation', () => {
+    const tests = 'assert true // C:\\temp | `${missing}`'
+    const results = parseTestResults(runJSHarness(buildTestHarness('', tests, 'js')))
+    expect(results).toEqual([{ label: tests, passed: true }])
+  })
   it('parses PASS/FAIL/ERROR-tagged lines and ignores everything else', () => {
     const results = parseTestResults([
       'unrelated program output',
@@ -173,5 +179,38 @@ describe('parseTestResults', () => {
       { label: 'assert 1 === 2', passed: false, detail: 'Assertion failed' },
       { label: 'assert f()', passed: false, detail: 'Error: f is not defined' },
     ])
+  })
+})
+
+describe('runTests completion', () => {
+  it('retains runtime failures after an earlier assertion passed', async () => {
+    const executor: Executor = async () => ({ lines: [
+      { kind: 'stdout', text: '__OC_TEST__PASS|assert true' },
+      { kind: 'error', text: 'setup failed' },
+    ] })
+    expect(await runTests('', '', 'js', executor)).toEqual([
+      { label: 'assert true', passed: true, detail: undefined },
+      { label: 'setup failed', passed: false, detail: 'Runtime error' },
+    ])
+  })
+
+  it('fails explicitly when the executor produces no assertion results', async () => {
+    const results = await runTests('', '', 'js', async () => ({ lines: [] }))
+    expect(results).toEqual([{ label: 'No test results', passed: false, detail: 'The test run produced no assertions.' }])
+  })
+})
+
+describe('CSS iframe results', () => {
+  it('ignores another frame and malformed messages, then cleans up its own frame', async () => {
+    const pending = runCSSTests('', '<div></div>', 'assert true')
+    const frame = document.querySelector('iframe')!
+    const results = [{ label: 'assert true', passed: true }]
+    window.dispatchEvent(new MessageEvent('message', { source: window, data: { type: '__OC_CSS__', results } }))
+    expect(frame.isConnected).toBe(true)
+    window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: { type: '__OC_CSS__', results: null } }))
+    expect(frame.isConnected).toBe(true)
+    window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: { type: '__OC_CSS__', results } }))
+    expect(await pending).toEqual(results)
+    expect(frame.isConnected).toBe(false)
   })
 })

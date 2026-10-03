@@ -59,6 +59,8 @@ These 14 are the only findings left; the `la8-001` collision and the Guttag Pyth
 
 ### P1 — Content rendering defects found during the Help review (2026-10-01)
 
+- [x] **Challenge grading robustness (2026-10-03):** JavaScript assertion labels serialize safely, runtime failures after passing assertions remain failures, empty runs fail explicitly, and CSS/JSX results must originate from their test frame. The Run Tests control recovers from rejected execution. Focused engine/progress checks passed; remaining course priorities and audit scope are in [the lesson engine audit](lesson-engine-audit-2026-10-03.md).
+
 Each was confirmed against the renderer; none is fixed yet.
 
 - [ ] **Visualization id collisions.** `VizFrame` keys course visualizations by file name, so when two courses have a file with the same name only one is used everywhere. 32 names are duplicated; 12 have *different* implementations (`UnitCircle` ×3, `SecantToTangent`, `ScienceNotebook` ×6, and several calculus/physics pairs), so some courses show another course's version. Decide per name which version is canonical, or rename, and add an inventory check that fails on differing duplicates.

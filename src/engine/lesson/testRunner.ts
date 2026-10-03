@@ -69,13 +69,12 @@ function buildJSHarness(userCode: string, testCode: string): string {
       continue
     }
     const expr = stripTrailingLineComment(line.slice('assert '.length))
-    const escaped = line.replace(/`/g, '\\`')
+    const label = JSON.stringify(line)
     out.push(`try {`)
     out.push(`  const __ok = !!(${expr});`)
-    out.push(`  if (__ok) console.log(\`${OC_PREFIX}PASS|${escaped}\`)`)
-    out.push(`  else      console.log(\`${OC_PREFIX}FAIL|${escaped}|\`)`)
+    out.push(`  console.log('${OC_PREFIX}' + JSON.stringify({label:${label},passed:__ok,detail:__ok?undefined:'Assertion failed'}));`)
     out.push(`} catch(__e) {`)
-    out.push(`  console.log(\`${OC_PREFIX}FAIL|${escaped}|\` + __e.message)`)
+    out.push(`  console.log('${OC_PREFIX}' + JSON.stringify({label:${label},passed:false,detail:String(__e?.message ?? __e)}));`)
     out.push(`}`)
   }
   return out.join('\n')
@@ -254,6 +253,16 @@ export function parseTestResults(output: string[]): TestResult[] {
   return output
     .filter(l => l.startsWith(OC_PREFIX))
     .map(l => {
+      // JS uses JSON so pipes, escapes and template syntax survive as labels.
+      // Keep the legacy protocol for the compiled-language and Python harnesses.
+      const payload = l.slice(OC_PREFIX.length)
+      if (payload.startsWith('{')) {
+        try {
+          const result = JSON.parse(payload)
+          if (typeof result.label === 'string' && typeof result.passed === 'boolean') return result as TestResult
+        } catch {}
+        return { label: 'Invalid test result', passed: false, detail: payload }
+      }
       const parts = l.slice(OC_PREFIX.length).split('|')
       const status = parts[0]
       const label = parts[1] ?? ''
@@ -276,10 +285,11 @@ export async function runTests(
   const result = await executor(harness, lang)
   const stdout = result.lines.filter(l => l.kind === 'stdout').map(l => l.text)
   const errors = result.lines.filter(l => l.kind === 'error')
-  if (errors.length && !stdout.some(l => l.startsWith(OC_PREFIX))) {
-    return [{ label: errors[0].text, passed: false, detail: 'Runtime error' }]
-  }
-  return parseTestResults(stdout)
+  const results = parseTestResults(stdout)
+  // A later setup failure must not turn an incomplete run into a passing run.
+  for (const error of errors) results.push({ label: error.text, passed: false, detail: 'Runtime error' })
+  if (!results.length) results.push({ label: 'No test results', passed: false, detail: 'The test run produced no assertions.' })
+  return results
 }
 
 // For challenges where there's nothing callable to test directly — either the concept
@@ -377,7 +387,7 @@ window.parent.postMessage({type:'__OC_JSX__',results:results},'*');
     }, 8000)
 
     function onMsg(e: MessageEvent) {
-      if (e.data?.type !== '__OC_JSX__') return
+      if (e.source !== frame.contentWindow || e.data?.type !== '__OC_JSX__' || !Array.isArray(e.data.results)) return
       if (done) return
       done = true
       clearTimeout(timer)
@@ -434,7 +444,7 @@ window.parent.postMessage({type:'__OC_CSS__',results:results},'*');
     }, 5000)
 
     function onMsg(e: MessageEvent) {
-      if (e.data?.type !== '__OC_CSS__') return
+      if (e.source !== frame.contentWindow || e.data?.type !== '__OC_CSS__' || !Array.isArray(e.data.results)) return
       if (done) return
       done = true
       clearTimeout(timer)

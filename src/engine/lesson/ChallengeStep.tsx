@@ -89,56 +89,59 @@ export default function ChallengeStep({ step, executor, ui, onTrace, onSeek, onR
   async function handleRun() {
     if (!tests) return
     setRunning(true)
-    setTraceEvents([])
-    setTraceStep(0)
+    try {
+      setTraceEvents([])
+      setTraceStep(0)
 
-    const norm = lang.toLowerCase()
-    const isCSSChallenge = norm === 'css'
-    const isJSXChallenge = norm === 'jsx' || norm === 'react'
-    const isVueChallenge = norm === 'vue'
-    const isSqlChallenge = norm === 'sql' || norm === 'sqlite'
-    const programOutputLang = norm.endsWith('-program') ? norm.slice(0, -'-program'.length) : null
-    const htmlStructure = isCSSChallenge
-      ? (step.examples.find(e => e.lang.toLowerCase() === 'html')?.code ?? '')
-      : ''
+      const norm = lang.toLowerCase()
+      const isCSSChallenge = norm === 'css'
+      const isJSXChallenge = norm === 'jsx' || norm === 'react'
+      const isVueChallenge = norm === 'vue'
+      const isSqlChallenge = norm === 'sql' || norm === 'sqlite'
+      const programOutputLang = norm.endsWith('-program') ? norm.slice(0, -'-program'.length) : null
+      const htmlStructure = isCSSChallenge
+        ? (step.examples.find(e => e.lang.toLowerCase() === 'html')?.code ?? '')
+        : ''
 
-    const testResults = isCSSChallenge
-      ? await runCSSTests(code, htmlStructure, tests)
-      : isJSXChallenge
-        ? await runJSXTests(code, tests, 'react')
-        : isVueChallenge
-          ? await runJSXTests(code, tests, 'vue')
-          : isSqlChallenge
-            ? await runSqlTests(code, tests, executor)
-            : programOutputLang
-              ? await runProgramOutputTest(code, tests, programOutputLang, executor)
-              : await runTests(code, tests, lang, executor)
-    if (onResults) onResults(testResults)
+      const testResults = isCSSChallenge
+        ? await runCSSTests(code, htmlStructure, tests)
+        : isJSXChallenge
+          ? await runJSXTests(code, tests, 'react')
+          : isVueChallenge
+            ? await runJSXTests(code, tests, 'vue')
+            : isSqlChallenge
+              ? await runSqlTests(code, tests, executor)
+              : programOutputLang
+                ? await runProgramOutputTest(code, tests, programOutputLang, executor)
+                : await runTests(code, tests, lang, executor)
+      if (onResults) onResults(testResults)
 
-    // For CSS challenges: emit a live DOM preview so the DOM tab shows the result
-    if ((isCSSChallenge || isJSXChallenge || isVueChallenge) && onOutput && htmlStructure) {
-      const previewDoc = `<!DOCTYPE html><html><head><style>${code}</style></head><body>${htmlStructure}</body></html>`
-      onOutput([{ text: previewDoc, kind: 'preview' }])
+      // For CSS challenges: emit a live DOM preview so the DOM tab shows the result
+      if ((isCSSChallenge || isJSXChallenge || isVueChallenge) && onOutput && htmlStructure) {
+        const previewDoc = `<!DOCTYPE html><html><head><style>${code}</style></head><body>${htmlStructure}</body></html>`
+        onOutput([{ text: previewDoc, kind: 'preview' }])
+      }
+
+      if (debugOn) {
+        try {
+          const norm = lang.toLowerCase()
+          if (!['python', 'py', 'javascript', 'js'].includes(norm)) {
+            return
+          }
+          const harness = buildTestHarness(code, tests, lang)
+          const traced = (norm === 'python' || norm === 'py')
+            ? await runPython(harness)
+            : runJS(harness)
+          setTraceEvents(traced.events)
+          setTraceStep(0)
+          if (traced.events.length > 0) onTrace(traced.events, code, 0)
+        } catch { /* trace failure doesn't break test results */ }
+      }
+    } catch (error) {
+      onResults?.([{ label: 'Test execution failed', passed: false, detail: error instanceof Error ? error.message : String(error) }])
+    } finally {
+      setRunning(false)
     }
-
-    if (debugOn) {
-      try {
-        const norm = lang.toLowerCase()
-        if (!['python', 'py', 'javascript', 'js'].includes(norm)) {
-          setRunning(false)
-          return
-        }
-        const harness = buildTestHarness(code, tests, lang)
-        const traced = (norm === 'python' || norm === 'py')
-          ? await runPython(harness)
-          : runJS(harness)
-        setTraceEvents(traced.events)
-        setTraceStep(0)
-        if (traced.events.length > 0) onTrace(traced.events, code, 0)
-      } catch { /* trace failure doesn't break test results */ }
-    }
-
-    setRunning(false)
   }
 
   const isTracing = traceEvents.length > 0
