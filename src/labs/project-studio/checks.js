@@ -9,6 +9,7 @@
 //   contains index.html "<table"
 //   run "node hello.js" stdout="Hello from Node" -- Save the file, then run it once yourself.
 //   run "./calc" stdin="3 4\n" stdout="3 + 4 = 7"      (stdin= is typed into the program)
+//   run "./tracer" without="destroy b"                (the output must not include the text)
 //   tests "./build/calc_tests" require="adds negatives"  (a GoogleTest-style test program)
 //   git-commits 2
 //   page index.html "document.querySelectorAll('td').length" 26
@@ -115,6 +116,7 @@ export function describeCheck(kind, args, opts = {}) {
       const given = opts.stdin != null ? ` given the input “${opts.stdin.trim().replace(/\n/g, ' ⏎ ')}”` : '';
       const parts = [`\`${a}\`${given} ${opts.exit != null && opts.exit !== '0' ? `exits with code ${opts.exit}` : 'succeeds'}`];
       if (opts.stdout != null) parts.push(`prints “${opts.stdout}”`);
+      if (opts.without != null) parts.push(`doesn't print “${opts.without}”`);
       if (opts.stderr != null) parts.push(`reports “${opts.stderr}”`);
       return parts.join(' and ');
     }

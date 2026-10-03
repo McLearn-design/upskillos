@@ -187,7 +187,7 @@ const CHECKS = {
     return new RegExp(pattern, 'm').test(content) ? { pass: true } : { pass: false, detail: `${rel} doesn't match the expected pattern.` }
   },
 
-  // run "<command>" [stdin="text"] [exit=N] [stdout="text"] [stderr="text"] [timeout=seconds]
+  // run "<command>" [stdin="text"] [exit=N] [stdout="text"] [without="text"] [stderr="text"] [timeout=seconds]
   async run(ctx, [cmd], opts) {
     const r = await shellRun(cmd, { cwd: ctx.root, env: ctx.env, timeoutMs: (Number(opts.timeout) || 60) * 1000, input: opts.stdin })
     if (r.timedOut) return { pass: false, detail: `\`${cmd}\` was still running after ${Number(opts.timeout) || 60} seconds, so it was stopped.` }
@@ -197,6 +197,7 @@ const CHECKS = {
     const problems = []
     if (r.code !== wantExit) problems.push(`it exited with code ${r.code} (expected ${wantExit})`)
     if (opts.stdout != null && !out.includes(normalize(opts.stdout))) problems.push(`its output doesn't include ${JSON.stringify(opts.stdout)}`)
+    if (opts.without != null && out.includes(normalize(opts.without))) problems.push(`its output still includes ${JSON.stringify(opts.without)}`)
     if (opts.stderr != null && !(err + out).includes(normalize(opts.stderr))) problems.push(`its error output doesn't include ${JSON.stringify(opts.stderr)}`)
     if (problems.length === 0) return { pass: true }
     const shown = [out && `Output:\n${short(out)}`, err && `Errors:\n${short(err)}`].filter(Boolean).join('\n\n')

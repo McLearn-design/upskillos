@@ -94,6 +94,12 @@ describe('run checks', () => {
     expect(r[2].detail).toContain('bad things');
   });
 
+  it('fails when the output includes without= text', async () => {
+    const r = await check(root, 'run "node hello.js" without="Goodbye"\nrun "node hello.js" without="from Node"');
+    expect(r.map((x) => x.pass)).toEqual([true, false]);
+    expect(r[1].detail).toContain('its output still includes "from Node"');
+  });
+
   it('stops a command that runs too long', async () => {
     const r = await check(root, 'run "node -e \\"setTimeout(() => {}, 20000)\\"" timeout=1');
     expect(r[0].pass).toBe(false);

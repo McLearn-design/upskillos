@@ -58,6 +58,12 @@ describe('run with stdin', () => {
   });
 });
 
+describe('run with without=', () => {
+  it('describes the text that must not appear', () => {
+    expect(parseCheckLine('run "./t" stdout="a" without="b"').label).toBe('`./t` succeeds and prints “a” and doesn\'t print “b”');
+  });
+});
+
 describe('tests', () => {
   it('describes the test program and the tests it must include', () => {
     expect(parseCheckLine('tests "./build/calc_tests"').label).toBe('every test in `./build/calc_tests` passes');
