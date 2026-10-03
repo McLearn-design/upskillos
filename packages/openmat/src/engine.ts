@@ -768,6 +768,15 @@ export function createExecutionEngine(options: EngineOptions = {}): {
     }))
   })
   parser.set("transpose", (A: any) => toPlain(math.transpose(A)))
+  // A(:): every element, column by column (MATLAB stores matrices by column).
+  parser.set("colonall", (A: any) => {
+    const v = toPlain(A) as any
+    if (!Array.isArray(v)) return [v]
+    if (!Array.isArray(v[0])) return v.slice()
+    const out: any[] = []
+    for (let c = 0; c < v[0].length; c++) for (let r = 0; r < v.length; r++) out.push(v[r][c])
+    return out
+  })
   parser.set("ctranspose",(A: any) => toPlain(math.ctranspose ? math.ctranspose(A) : math.transpose(A)))
   parser.set("fliplr",   (A: any) => {
     const p = toPlain(A)
@@ -1553,6 +1562,27 @@ export function executeScript(source: string, options: EngineOptions = {}): Exec
       const indexedAssign = line.match(/^([A-Za-z_]\w*)\[([^\]]+)\]\s*=\s*(.+)$/)
       if (indexedAssign) {
         const [, name, idxExpr, valExpr] = indexedAssign
+        // A(:) = v: every element gets v (a scalar), or the values of v in
+        // column order (a vector with as many elements), keeping A's shape.
+        if (idxExpr.trim() === ':' && variables.has(name)) {
+          const target = toPlain(parser.get(name)) as any
+          const value = toPlain(parser.evaluate(replaceBackslash(valExpr))) as any
+          const shape2d = Array.isArray(target) && Array.isArray(target[0])
+          const count = Array.isArray(target) ? (shape2d ? target.length * target[0].length : target.length) : 1
+          const values = isCollection(value) ? normalizeVector(value) : null
+          if (values && values.length !== count) throw new Error(`A(:) = v needs v to have ${count} elements (the same number as A), but it has ${values.length}.`)
+          const pick = (k: number) => (values ? values[k] : value)
+          let next: any
+          if (shape2d) {
+            next = target.map((row: any[]) => row.slice())
+            let k = 0
+            for (let c = 0; c < target[0].length; c++) for (let r = 0; r < target.length; r++) next[r][c] = pick(k++)
+          } else if (Array.isArray(target)) next = target.map((_: any, k: number) => pick(k))
+          else next = pick(0)
+          parser.set(name, next)
+          if (!hasSemicolon) logs.push(`${name} =\n${engine.formatOutput(next)}`)
+          return hasSemicolon ? null : next
+        }
         let arr = parser.get(name)
         const val = toPlain(parser.evaluate(valExpr))
 
@@ -1649,6 +1679,8 @@ export function executeScript(source: string, options: EngineOptions = {}): Exec
       }
       const result = toPlain(parser.evaluate(replaceBackslash(line)))
       parser.set("ans", result)
+      // As in MATLAB, ans is a real variable: it shows in the workspace and can be read later.
+      if (result != null && result !== "") variables.add("ans")
       if (!hasSemicolon && result != null && result !== "") logs.push(`ans =\n${engine.formatOutput(result)}`)
       return (hasSemicolon || result == null || result === "") ? null : result
     } catch (error) {

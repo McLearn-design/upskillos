@@ -377,55 +377,64 @@ function normalizeElementwiseOperators(line: string): string {
     .replace(/([A-Za-z0-9_\]\)])\s*\.\s*\/\s*/g, "$1./")
 }
 
-function replaceElementwiseBinaryOperators(line: string): string {
-  const operatorMap: Record<string, string> = { ".^": "dotPow", ".*": "dotMultiply", "./": "dotDivide" }
-  const scanLeft = (text: string, from: number) => {
-    let index = from
-    while (index >= 0 && /\s/.test(text[index])) index--
-    if (index < 0) return null
-    const end = index + 1
-    if (text[index] === ")" || text[index] === "]") {
-      const close = text[index], open = close === ")" ? "(" : "["
-      let depth = 1; index--
-      while (index >= 0 && depth > 0) {
-        if (text[index] === close) depth++
-        else if (text[index] === open) depth--
-        index--
-      }
-      let start = index + 1
-      while (start > 0 && /[\w]/.test(text[start - 1])) start--
-      return { start, end }
+// MATLAB's element-wise operators become function calls mathjs understands:
+// a .* b → dotMultiply(a, b). Each operand is scanned out of the text: a
+// number (2.5, .5, 1e-3), a name with any call or index after it, or a
+// bracketed group, plus any ^ powers attached to it, because ^ binds tighter
+// than .* in MATLAB (2 .* 3^2 is 18). .^ is converted before .* and ./ for
+// the same reason. Scanning digits only used to split 2.5 in two.
+const NUMBER_AT_END = /(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/
+const NUMBER_AT_START = /^(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/
+
+function scanOperandLeft(text: string, from: number): { start: number, end: number } | null {
+  let index = from
+  while (index >= 0 && /\s/.test(text[index])) index--
+  if (index < 0) return null
+  const end = index + 1
+  let start: number
+  if (text[index] === ")" || text[index] === "]") {
+    const close = text[index], open = close === ")" ? "(" : "["
+    let depth = 1; index--
+    while (index >= 0 && depth > 0) {
+      if (text[index] === close) depth++
+      else if (text[index] === open) depth--
+      index--
     }
-    while (index >= 0 && /[\w\]]/.test(text[index])) index--
-    return { start: index + 1, end }
+    start = index + 1
+    while (start > 0 && /\w/.test(text[start - 1])) start--
+  } else {
+    const before = text.slice(0, end)
+    const num = NUMBER_AT_END.exec(before)
+    if (num && !/[A-Za-z_]/.test(before[num.index - 1] ?? "")) start = num.index
+    else {
+      while (index >= 0 && /\w/.test(text[index])) index--
+      start = index + 1
+    }
   }
-  const scanRight = (text: string, from: number) => {
-    let index = from
+  if (start >= end) return null
+  // A base raised to this operand: in "3^2 .* x" the left operand is 3^2.
+  let k = start - 1
+  while (k >= 0 && /\s/.test(text[k])) k--
+  if (k >= 0 && text[k] === "^" && text[k - 1] !== ".") {
+    const base = scanOperandLeft(text, k - 1)
+    if (base) return { start: base.start, end }
+  }
+  return { start, end }
+}
+
+function scanOperandRight(text: string, from: number): { start: number, end: number } | null {
+  let index = from
+  while (index < text.length && /\s/.test(text[index])) index++
+  if (index >= text.length) return null
+  const start = index
+  if (text[index] === "-" || text[index] === "+") {
+    index++
     while (index < text.length && /\s/.test(text[index])) index++
-    if (index >= text.length) return null
-    const start = index
-    if (/[A-Za-z_]/.test(text[index])) {
-      while (index < text.length && /[\w]/.test(text[index])) index++
-      if (text[index] === "(") {
-        let depth = 1; index++
-        while (index < text.length && depth > 0) {
-          if (text[index] === "(") depth++
-          else if (text[index] === ")") depth--
-          index++
-        }
-      } else {
-        while (index < text.length && text[index] === "[") {
-          let depth = 1; index++
-          while (index < text.length && depth > 0) {
-            if (text[index] === "[") depth++
-            else if (text[index] === "]") depth--
-            index++
-          }
-        }
-      }
-      return { start, end: index }
-    }
-    if (text[index] === "(" || text[index] === "[") {
+  }
+  const bodyStart = index
+  if (/[A-Za-z_]/.test(text[index] ?? "")) {
+    while (index < text.length && /\w/.test(text[index])) index++
+    while (text[index] === "(" || text[index] === "[") {
       const open = text[index], close = open === "(" ? ")" : "]"
       let depth = 1; index++
       while (index < text.length && depth > 0) {
@@ -433,27 +442,49 @@ function replaceElementwiseBinaryOperators(line: string): string {
         else if (text[index] === close) depth--
         index++
       }
-      return { start, end: index }
     }
-    while (index < text.length && /[\w]/.test(text[index])) index++
-    return { start, end: index }
+  } else if (text[index] === "(" || text[index] === "[") {
+    const open = text[index], close = open === "(" ? ")" : "]"
+    let depth = 1; index++
+    while (index < text.length && depth > 0) {
+      if (text[index] === open) depth++
+      else if (text[index] === close) depth--
+      index++
+    }
+  } else {
+    const num = NUMBER_AT_START.exec(text.slice(index))
+    if (num) index += num[0].length
   }
-  let output = line, changed = true
-  while (changed) {
-    changed = false
-    let hitIndex = -1, hitToken: string | null = null
-    for (const token of Object.keys(operatorMap)) {
-      const idx = output.indexOf(token)
-      if (idx !== -1 && (hitIndex === -1 || idx < hitIndex)) { hitIndex = idx; hitToken = token }
+  if (index === bodyStart) return null
+  // Powers attached to this operand: in "x .* 3^2" the right operand is 3^2.
+  let k = index
+  while (k < text.length && /\s/.test(text[k])) k++
+  if (text[k] === "^") {
+    const power = scanOperandRight(text, k + 1)
+    if (power) return { start, end: power.end }
+  }
+  return { start, end: index }
+}
+
+function replaceElementwiseBinaryOperators(line: string): string {
+  const operatorMap: Record<string, string> = { ".^": "dotPow", ".*": "dotMultiply", "./": "dotDivide" }
+  let output = line
+  for (;;) {
+    // .^ first (it binds tighter), then the leftmost .* or ./
+    let hitIndex = output.indexOf(".^"), hitToken = ".^"
+    if (hitIndex === -1) {
+      for (const token of [".*", "./"]) {
+        const idx = output.indexOf(token)
+        if (idx !== -1 && (hitIndex === -1 || idx < hitIndex)) { hitIndex = idx; hitToken = token }
+      }
     }
-    if (hitIndex === -1 || !hitToken) break
-    const left = scanLeft(output, hitIndex - 1)
-    const right = scanRight(output, hitIndex + hitToken.length)
-    if (!left || !right || left.end <= left.start || right.end <= right.start) break
+    if (hitIndex === -1) break
+    const left = scanOperandLeft(output, hitIndex - 1)
+    const right = scanOperandRight(output, hitIndex + hitToken.length)
+    if (!left || !right) break
     const leftExpr = output.slice(left.start, left.end).trim()
     const rightExpr = output.slice(right.start, right.end).trim()
     output = output.slice(0, left.start) + `${operatorMap[hitToken]}(${leftExpr}, ${rightExpr})` + output.slice(right.end)
-    changed = true
   }
   return output
 }
@@ -515,8 +546,15 @@ function replaceIndexing(line: string, variables: Set<string>, functionNames = n
   if (variables.size === 0) return line
   const strings: string[] = []
   const masked = line.replace(/'(?:[^']|'')*'/g, m => { strings.push(m); return `\x00S${strings.length - 1}\x00` })
+  // A(:) is every element of A, column by column: a helper, because the
+  // generic A[:] below only works for a vector.
+  // On the left of an assignment (A(:) = 0) it stays an index, handled by the engine.
+  let result = masked.replace(/\b([A-Za-z_]\w*)\s*\(\s*:\s*\)/g, (match, name, offset, whole) => {
+    const isTarget = !whole.slice(0, offset).trim() && /^\s*=(?!=)/.test(whole.slice(offset + match.length))
+    return variables.has(name) && !functionNames.has(name) && !isTarget ? `colonall(${name})` : match
+  })
   // MATLAB () indexing for known variables: var(i) → var[i]
-  let result = masked.replace(/\b([A-Za-z_]\w*)\s*\(([^()]+)\)/g, (match, name, inner) => {
+  result = result.replace(/\b([A-Za-z_]\w*)\s*\(([^()]+)\)/g, (match, name, inner) => {
     if (!variables.has(name) || functionNames.has(name)) return match
     const expandedInner = inner.replace(/\bend\b/g, `length(${name})`)
     return `${name}[${expandedInner}]`

@@ -2,7 +2,7 @@
 
 # Project inventory
 
-44 courses · 231 chapters · 1310 lessons · 53 labs · 15 games
+44 courses · 231 chapters · 1310 lessons · 54 labs · 15 games
 
 ## How things are counted
 
@@ -109,6 +109,7 @@
 | Robot Arm Simulator | `robot-arm-sim` | lab | `/robot-arm-lab` |
 | SICP — JavaScript | `sicp-js` | lesson | `/learn/sicp/1-1` |
 | Sim Lab | `sim-lab` | lab | `/sim-lab` |
+| Spreadsheet Lab | `spreadsheet-lab` | lab | `/lab/spreadsheet-lab` |
 | Sprite Forge | `sprite-forge` | builder | `/lab/sprite-forge` |
 | SVG Studio | `svg-studio` | builder | `/lab/svg-studio` |
 | Tile Mapper | `tile-mapper` | builder | `/lab/tile-mapper` |
