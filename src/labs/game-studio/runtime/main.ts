@@ -13,10 +13,15 @@ import { NODE_CLASSES, Node, nodeTypeOf } from '../engine/nodes';
 import { Vec2 } from '../engine/vec2';
 import { sceneAt } from '../core/project';
 import { propsOf } from '../core/registry';
-import { CHANNEL, type FromRuntime, type LogLevel, type ToRuntime } from './protocol';
+import { CHANNEL, type FromRuntime, type LogLevel, type ToRuntime, type TrainInView } from './protocol';
 import { loadScripts, locate, type LoadedScripts } from './scripts';
 import { PhaserRenderer } from './phaserRenderer';
-import { observeGame, pressAction, type EnvSpec } from '../ml/env';
+import { GameEnv, observeGame, pressAction, type EnvSpec } from '../ml/env';
+import { evaluate } from '../ml/cem';
+import { QLearner, evaluateQ, type QTransition } from '../ml/qlearning';
+import { overlayItems } from '../ml/overlay';
+import { isQPolicy } from '../ml/brain';
+import type { DrawItem, Renderer, View } from '../engine/game';
 import { actPolicy, type AgentPolicy } from '../ml/policy';
 
 const send = (m: FromRuntime) => parent.postMessage({ channel: CHANNEL, ...m }, '*');
@@ -49,7 +54,7 @@ let paused = false;
 async function start(msg: Extract<ToRuntime, { type: 'load' }>): Promise<void> {
   lastLoad = msg;
   phaser?.destroy(true);
-  phaser = null; game = null; paused = false;
+  phaser = null; game = null; paused = false; trainer = null;
   const { project } = msg;
   const scene = sceneAt(project, msg.scene);
   if (!scene) { report({ message: `There is no scene "${msg.scene}"` }, null, null); return; }
@@ -72,8 +77,15 @@ async function start(msg: Extract<ToRuntime, { type: 'load' }>): Promise<void> {
     preload() { for (const [path, url] of urls) this.load.image(path, url); }
     create() {
       const classes = scripts!.classes;
+      if (msg.train) { void startTraining(this, msg.train, project, classes); return; }
       try {
-        game = new Game(project, scene!, new PhaserRenderer(this), {
+        const real = new PhaserRenderer(this);
+        // Watching a trained agent on a grid: its table is drawn over the game.
+        const renderer: Renderer = { frame: (items, view) => {
+          const o = agent?.spec.overlay, p = agent?.policy;
+          real.frame(o && p && isQPolicy(p) ? [...items, ...overlayItems(o, p.table, p.visits)] : items, view);
+        } };
+        game = new Game(project, scene!, renderer, {
           scriptClass: (path) => { const c = classes.get(path); return typeof c === 'function' ? (c as typeof Node) : undefined; },
           onError,
         });
@@ -84,6 +96,7 @@ async function start(msg: Extract<ToRuntime, { type: 'load' }>): Promise<void> {
       send({ type: 'running', scene: scene!.path });
     }
     update(_time: number, delta: number) {
+      if (trainer) { if (!paused) trainFrame(); return; }
       if (game && !paused) { if (agent) drive(game); game.step(Math.min(delta / 1000, 0.25)); }
     }
   };
@@ -92,6 +105,92 @@ async function start(msg: Extract<ToRuntime, { type: 'load' }>): Promise<void> {
     scene: scenes, banner: false, input: { keyboard: false }, pixelArt: s.pixelArt !== false, roundPixels: s.pixelArt !== false,
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   });
+}
+
+// ── Train in view: Q-learning inside the visible game (ml/qlearning.ts) ───
+// The learner is the one Train an agent's worker runs, one tick at a time; here it gets a few ticks per drawn frame,
+// as many game frames as the speed allows, and only the last of them is drawn. Random play's score and the final
+// score are measured headless first and last, so the view shows only training.
+interface Trainer { env: GameEnv; learner: QLearner; buffer: BufferedRenderer; real: PhaserRenderer; speed: number; credit: number; lastLive: number; finishing: boolean; headless: GameEnv; last: QTransition | null; sent: QTransition | null }
+let trainer: Trainer | null = null;
+
+/** Keeps only the last frame a burst of game steps draws, for the real renderer to show once. */
+class BufferedRenderer implements Renderer {
+  last: [DrawItem[], View] | null = null;
+  frame(items: DrawItem[], view: View): void { this.last = [items, view]; }
+}
+
+async function startTraining(scene: Phaser.Scene, t: TrainInView, project: Extract<ToRuntime, { type: 'load' }>['project'], classes: Map<string, unknown>): Promise<void> {
+  const load = async () => classes;
+  const buffer = new BufferedRenderer(), real = new PhaserRenderer(scene);
+  try {
+    const headless = await GameEnv.create(project, t.spec, load);
+    const random = evaluate(headless, 'random', 3, 7);
+    const env = await GameEnv.create(project, t.spec, load, { renderer: buffer });
+    trainer = { env, learner: new QLearner(env, t.options), buffer, real, speed: t.speed, credit: 0, lastLive: 0, finishing: false, headless, last: null, sent: null };
+    send({ type: 'trainStart', actions: env.actionNames, observation: env.observationNames, bins: env.bins, random });
+    send({ type: 'running', scene: lastLoad!.scene });
+  } catch (e) { send({ type: 'trainError', message: e instanceof Error ? e.message : String(e) }); }
+}
+
+function trainFrame(): void {
+  const t = trainer!;
+  if (t.finishing) return;
+  // Each tick plays frameSkip game frames (a reset plays none); `speed` game frames are allowed per drawn frame.
+  t.credit += t.speed;
+  const began = performance.now();
+  try {
+    while (t.credit >= 1 && performance.now() - began < 14) {
+      const before = t.learner.live.mode;
+      tickOnce(t);
+      t.credit -= before === 'reset' ? 1 : t.env.frameSkip;
+      if (t.finishing) break;
+    }
+  } catch (e) { t.finishing = true; send({ type: 'trainError', message: e instanceof Error ? e.message : String(e) }); }
+  if (t.credit > 4 * t.speed + 8) t.credit = 0;   // a slow machine does not pile up debt
+  drawTraining(t);
+  const now = performance.now();
+  if (now - t.lastLive > 150) {
+    t.lastLive = now;
+    send({ type: 'trainLive', live: t.learner.live });
+    if (t.last && t.last !== t.sent) { t.sent = t.last; send({ type: 'trainTransition', transition: t.last, live: t.learner.live }); }
+  }
+}
+
+/** One tick of the learner, and what it reports, sent on to the editor. */
+function tickOnce(t: Trainer): void {
+  const out = t.learner.tick();
+  game = t.env.running;   // the Inspector shows the episode being played
+  if (out.transition) t.last = out.transition;
+  if (out.episode) send({ type: 'trainEpisode', episode: out.episode });
+  if (out.policy) {
+    t.finishing = true;
+    const score = evaluateQ(t.headless, out.policy, 3, 7);
+    send({ type: 'trainDone', policy: out.policy, score });
+  }
+}
+
+/** Paused, one update at a time: play on to the next update (through any reset or check), draw it and report it. */
+function stepTraining(): void {
+  const t = trainer;
+  if (!t || t.finishing) return;
+  const before = t.last;
+  try { for (let k = 0; k < 100000 && t.last === before && !t.finishing; k++) tickOnce(t); }
+  catch (e) { t.finishing = true; send({ type: 'trainError', message: e instanceof Error ? e.message : String(e) }); return; }
+  drawTraining(t);
+  send({ type: 'trainLive', live: t.learner.live });
+  if (t.last && t.last !== before) { t.sent = t.last; send({ type: 'trainTransition', transition: t.last, live: t.learner.live }); }
+}
+
+/** Draw the last frame the learner's game drew, with the table over it when the spec asks. */
+function drawTraining(t: Trainer): void {
+  if (t.buffer.last) {
+    const [items, view] = t.buffer.last;
+    const o = t.env.spec.overlay;
+    if (o) { const q = t.learner.snapshot(); t.real.frame([...items, ...overlayItems(o, q.table, q.visits)], view); }
+    else t.real.frame(items, view);
+    t.buffer.last = null;
+  }
 }
 
 // ── a trained agent playing (ml/) ─────────────────────────────────────────
@@ -108,8 +207,8 @@ function drive(g: Game): void {
 }
 
 // Keys go to the engine's input map. Phaser's own keyboard is off: scripts use actions.
-window.addEventListener('keydown', (e) => { game?.input.key(e.code, true); if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault(); });
-window.addEventListener('keyup', (e) => game?.input.key(e.code, false));
+window.addEventListener('keydown', (e) => { if (trainer) return; game?.input.key(e.code, true); if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault(); });
+window.addEventListener('keyup', (e) => { if (!trainer) game?.input.key(e.code, false); });
 window.addEventListener('blur', () => game?.input.releaseAll());
 
 /** The live values of a node's registered properties, for the Inspector while running. */
@@ -130,6 +229,8 @@ addEventListener('message', (ev: MessageEvent) => {
   if (m.type === 'load') void start(m);
   else if (m.type === 'pause' || m.type === 'resume') { paused = m.type === 'pause'; game?.input.releaseAll(); send({ type: 'paused', paused }); }
   else if (m.type === 'restart' && lastLoad) void start(lastLoad);
+  else if (m.type === 'trainSpeed') { if (trainer) trainer.speed = Math.max(1, m.speed); }
+  else if (m.type === 'trainStep') stepTraining();
   else if (m.type === 'inspect') send({ type: 'state', path: m.path, props: inspect(m.path) });
   else if (m.type === 'agent') {
     if (agent && game) { pressAction(game, lastLoad!.project.input, agent.held, []); if (agent.spec.agent) game.setAgentPolicy(agent.spec.agent, null); }

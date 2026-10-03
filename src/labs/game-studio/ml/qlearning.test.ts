@@ -11,7 +11,7 @@ import { breakout } from '../examples/breakout';
 import { GameEnv, type ClassLoader, type EnvSpec, type StepResult } from './env';
 import { BREAKOUT_SPEC } from './breakout';
 import { evaluate } from './cem';
-import { binOf, evaluateQ, qLearning, stateCount, stateOf, type QEpisode, type QPolicy } from './qlearning';
+import { binOf, evaluateQ, qLearning, QLearner, stateCount, stateOf, type QEpisode, type QPolicy } from './qlearning';
 import { actPolicy } from './policy';
 
 /** Run a training generator to the end: its episodes and the policy it returns. */
@@ -87,6 +87,17 @@ const load: ClassLoader = async (project) => {
 const project = () => { const d = new Doc(newProject('Breakout')); for (const p of breakout.images) d.importAsset(p, { mime: 'image/png', ...pngSize(p) }); d.runCode('Build', breakout.code); return d.project; };
 afterAll(() => { for (const k of ['input', 'scene', 'time', 'math', 'physics', 'Vec2', 'PhysicsBody2D', ...Object.keys(NODE_CLASSES)]) delete (globalThis as Record<string, unknown>)[k]; });
 
+describe('the step-at-a-time learner', () => {
+  it('ticks through resets, learning steps and checks, and says what it is doing', () => {
+    const env = toyEnv({ observation: [{ path: 's', bins: [0.5] }] }, 2, 0, (_s, a) => ({ next: 0, reward: a, done: true }));
+    const L = new QLearner(env, { episodes: 2, checkEvery: 1, checkEpisodes: 1, epsilon: 1, epsilonEnd: 1 });
+    const modes: string[] = [];
+    let out: ReturnType<QLearner['tick']> = {};
+    while (!out.policy) { modes.push(L.live.mode); out = L.tick(); if (out.episode) modes.push(`ep${out.episode.episode}`); }
+    expect(modes).toEqual(['reset', 'learn', 'check', 'check', 'ep1', 'reset', 'learn', 'check', 'check', 'ep2', 'reset']);
+  });
+});
+
 describe('Q-learning plays Breakout', () => {
   it('from random play (about −5) to clearing most of the wall, in 100 episodes', async () => {
     const env = await GameEnv.create(project(), BREAKOUT_SPEC, load);
@@ -95,6 +106,8 @@ describe('Q-learning plays Breakout', () => {
     const { episodes, policy } = train(qLearning(env, { episodes: 100, alpha: 0.2, gamma: 0.97, epsilon: 0.3, epsilonEnd: 0.02, seed: 3, checkEvery: 10 }));
     expect(episodes).toHaveLength(100);
     expect(episodes.filter((e) => e.greedy !== undefined)).toHaveLength(10);
+    // Exactly the run the lesson quotes (and Train in view, which uses the same step-at-a-time learner, repeats).
+    expect(episodes.filter((e) => e.greedy !== undefined).map((e) => e.greedy)).toEqual([48, 44, 44, 43, 44, -5, 13, 22, -2, 48]);
     expect(episodes[0].epsilon).toBeCloseTo(0.3, 9);
     expect(episodes[99].epsilon).toBeCloseTo(0.02, 9);
     const score = evaluateQ(env, policy, 3, 7);

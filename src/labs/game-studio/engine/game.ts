@@ -45,7 +45,9 @@ export type DrawItem =
   | (DrawBase & { kind: 'sprite'; texture: string; flipX: boolean; flipY: boolean })
   | (DrawBase & { kind: 'text'; text: string; fontSize: number; color: string })
   /** A tile layer: its top-left at x, y; cells as [x, y, tile, …]; `version` changes when the cells do. */
-  | (DrawBase & { kind: 'tiles'; texture: string; tileWidth: number; tileHeight: number; margin: number; spacing: number; columns: number; cells: number[]; version: number });
+  | (DrawBase & { kind: 'tiles'; texture: string; tileWidth: number; tileHeight: number; margin: number; spacing: number; columns: number; cells: number[]; version: number })
+  /** A filled rectangle centred on x, y (drawn by learning overlays: a Q table's values over a grid). */
+  | (DrawBase & { kind: 'rect'; width: number; height: number; color: string });
 
 /** Where the camera looks: the world point at the centre of the screen, and how close. */
 export interface View { x: number; y: number; zoom: number }

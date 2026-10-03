@@ -41,7 +41,7 @@
 // While an agent trains, scripts see ai.training as true: a player script can play itself then.
 
 import type { Project, SceneData } from '../core/types';
-import { Game, MATH, decideEvery, isAgent, scriptGlobals, type AgentNode } from '../engine/game';
+import { Game, MATH, decideEvery, isAgent, scriptGlobals, type AgentNode, type Renderer } from '../engine/game';
 import { NODE_CLASSES, PhysicsBody2D, type Node } from '../engine/nodes';
 import { Vec2 } from '../engine/vec2';
 
@@ -73,6 +73,12 @@ export interface EnvSpec {
   fps?: number;
   /** The scene to play (the main scene unless given). */
   scene?: string;
+  /**
+   * Draw the Q table over the game while it trains and plays (ml/overlay.ts), for an agent whose state is a grid
+   * cell: its first two binned readings are its column and row. Each cell gets a colour for its best Q and an arrow
+   * for the greedy action.
+   */
+  overlay?: { grid: [number, number]; cell: [number, number]; origin?: [number, number]; arrows?: string[] };
 }
 
 export interface StepResult { observation: number[]; reward: number; terminated: boolean; truncated: boolean; info: { step: number; errors: string[] } }
@@ -131,20 +137,23 @@ export class GameEnv {
   /** How many numbers the agent sees. */
   observationSize = 0;
 
-  private constructor(readonly project: Project, readonly spec: EnvSpec, private classes: Map<string, unknown>, private scene: SceneData) {
+  private constructor(readonly project: Project, readonly spec: EnvSpec, private classes: Map<string, unknown>, private scene: SceneData, private renderer: Renderer) {
     this.fps = spec.fps ?? 60;
     this.frameSkip = spec.frameSkip ?? 4;
     this.maxSteps = spec.maxSteps ?? 1000;
   }
 
-  /** An environment for a project: its scripts are loaded once and reused by every episode. */
-  static async create(project: Project, spec: EnvSpec, load: ClassLoader): Promise<GameEnv> {
+  /**
+   * An environment for a project: its scripts are loaded once and reused by every episode. Headless unless given a
+   * renderer: Train in view gives the game's own, so every episode is drawn.
+   */
+  static async create(project: Project, spec: EnvSpec, load: ClassLoader, opts: { renderer?: Renderer } = {}): Promise<GameEnv> {
     const path = spec.scene ?? project.settings.mainScene;
     const scene = project.scenes.find((s) => s.path === path);
     if (!scene) throw new Error(`There is no scene "${path}" to play`);
     // A script's class extends a node class as soon as it is loaded, so those come first.
     Object.assign(globalThis, NODE_CLASSES, { Vec2, math: MATH, PhysicsBody2D });
-    const env = new GameEnv(project, spec, await load(project), scene);
+    const env = new GameEnv(project, spec, await load(project), scene, opts.renderer ?? { frame: () => {} });
     if (spec.agent) {
       // Play the first moment of an episode to meet the agent: its actions, what it sees, how often it decides.
       env.reset(0);
@@ -184,7 +193,7 @@ export class GameEnv {
     this.errors = [];
     this.within(() => {
       Object.assign(globalThis, NODE_CLASSES, { Vec2, math: MATH, PhysicsBody2D });
-      this.game = new Game(this.project, this.scene, { frame: () => {} }, {
+      this.game = new Game(this.project, this.scene, this.renderer, {
         scriptClass: (p) => this.classes.get(p) as typeof Node | undefined,
         onError: (e) => this.errors.push(`${e.file ?? e.node}: ${e.message}`),
       });

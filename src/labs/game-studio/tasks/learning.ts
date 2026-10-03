@@ -11,6 +11,8 @@ import type { GameTask, TrainingView } from './types';
 import type { EnvSpec, Reading } from '../ml/env';
 import { breakout } from '../examples/breakout';
 import { BREAKOUT_SPEC } from '../ml/breakout';
+import { cliffWalk, CLIFF_SPEC } from '../examples/cliffWalk';
+import type { QOptions } from '../ml/qlearning';
 
 /** Breakout's environment without bins: what the agent sees, does and earns, but no states yet. */
 const UNBINNED: EnvSpec = { ...BREAKOUT_SPEC, observation: BREAKOUT_SPEC.observation!.map(({ bins: _bins, ...r }) => r) };
@@ -60,7 +62,7 @@ export const LEARNING: GameTask[] = [
         check: { kind: 'editor', test: (v) => [v.training?.draft, ...(v.training?.runs ?? []).map((r) => r.spec)].some((spec) => cuts(reading(spec, 'Ball:velocity.y')).length > 0) || (v.training?.draft ? 'Add "bins": [0] to the reading with "path": "Ball:velocity.y".' : 'Open Run › Train an agent… to see the environment.') },
       },
       {
-        text: 'With Q-learning chosen, press Train: 100 episodes, α 0.2, γ 0.97, ε falling from 0.3. Watch the faint line (each episode’s return) and the blue one (the last 10 averaged) climb above random play, and the green greedy checks. Then read the table: each row a state, the green number the action it takes there.',
+        text: 'With Q-learning chosen, press Train (headless, about 15 seconds), or ▶ Train in view to watch every episode in the game, with a speed control: 100 episodes, α 0.2, γ 0.97, ε falling from 0.3. Watch the faint line (each episode’s return) and the blue one (the last 10 averaged) climb above random play, and the green greedy checks. Then read the table: each row a state, the green number the action it takes there.',
         check: { kind: 'editor', test: (v) => !!goodRun(v.training?.runs ?? []) || ((v.training?.runs ?? []).some((r) => r.method === 'q') ? 'Trained, but not on 14 states, or it did not beat random play by much: check the bins and train again.' : 'Press Train with Q-learning chosen, and wait for "Trained."') },
       },
       {
@@ -86,4 +88,86 @@ export const LEARNING: GameTask[] = [
       },
     },
   },
+
+  // ── Chapter 9, "Game AI that learns" ─────────────────────────────────────
+  {
+    id: 'td-step',
+    chain: 'Game AI that learns',
+    title: 'Step through TD updates',
+    goal: 'Watch Q-learning learn Cliff Walk one update at a time, predict updates yourself, and see what the step size α does.',
+    images: cliffWalk.images,
+    start: cliffWalk.code,
+    agent: CLIFF_SPEC,
+    steps: [
+      {
+        text: 'Open Run › Train an agent…. With Table (TD) and Q-learning, set episodes 200, α 0.5, γ 1, ε from 0.1 to 0.1, constant (the textbook\'s settings). Press ▶ Train in view, then Step: training pauses, and the panel writes out the last update with its numbers. Step through 5 updates, reading each line.',
+        check: { kind: 'editor', test: (v) => (v.training?.stepped ?? 0) >= 5 || `Stepped ${v.training?.stepped ?? 0} of 5 updates: press Step under the game while it trains in view.` },
+      },
+      {
+        text: 'Tick Predict. Before each Check, work out the target, R + γ · max Q(S′, ·), and the new Q(S, A) = Q(S, A) + α (target − Q(S, A)) from the numbers shown. Get 3 right (to within 0.01).',
+        check: { kind: 'editor', test: (v) => { const p = v.training?.predictions ?? { right: 0, total: 0 }; return p.right >= 3 || `${p.right} right of ${p.total} checked: 3 needed. Step, work it out, type both numbers, then Check.`; } },
+      },
+      {
+        text: 'Press Max and let it finish. The greedy walk (no exploring) should be the shortest, 13 moves: a return of −13. The arrows on the grid show why: along the row next to the spikes.',
+        check: { kind: 'editor', test: (v) => !!(v.training?.runs ?? []).find((r) => r.inView && textbookQ(r.options, 0.5) && r.score === -13) || 'Let a Q-learning run in view with α 0.5 and γ 1 finish: the panel says "Trained."' },
+      },
+      {
+        text: 'Now train in view again with α 0.05 instead of 0.5, the rest the same. Each update moves Q a tenth as far: after 200 episodes the greedy walk does not even reach the chest (it scores −200, the episode\'s step limit). A step size has to be big enough to learn in the time you have, and small enough not to chase noise.',
+        check: { kind: 'editor', test: (v) => !!(v.training?.runs ?? []).find((r) => r.inView && textbookQ(r.options, 0.05)) || 'Train in view once more with α 0.05, and let it finish.' },
+      },
+    ],
+    solution: '// Every step of this task is done in Run › Train an agent…',
+    done: 'You followed TD updates by hand and saw the step size at work. Back to the lesson for TD(0) and Monte Carlo.',
+    solvedEditor: {
+      training: {
+        draft: CLIFF_SPEC,
+        runs: [
+          { method: 'q', spec: CLIFF_SPEC, score: -13, random: -1751, inView: true, options: { episodes: 200, algorithm: 'q', alpha: 0.5, gamma: 1, epsilon: 0.1, epsilonEnd: 0.1, schedule: 'constant' } },
+          { method: 'q', spec: CLIFF_SPEC, score: -200, random: -1751, inView: true, options: { episodes: 200, algorithm: 'q', alpha: 0.05, gamma: 1, epsilon: 0.1, epsilonEnd: 0.1, schedule: 'constant' } },
+        ],
+        watched: false, stepped: 5, predictions: { right: 3, total: 3 },
+      },
+    },
+  },
+  {
+    id: 'explore-compare',
+    chain: 'Game AI that learns',
+    title: 'Ways to explore',
+    goal: 'Compare exploration schedules, and see an optimistic start explore with no randomness at all.',
+    images: cliffWalk.images,
+    start: cliffWalk.code,
+    agent: CLIFF_SPEC,
+    steps: [
+      {
+        text: 'Run › Train an agent… › Compare. With Q-learning, episodes 200, α 0.5, γ 1, add four settings: ε 0.1 to 0.1 constant; ε 0.3 to 0.01 linear; ε 0.3 to 0.01 exponential; and explore softmax, τ 5 to 0.1 exponential. Seeds 5, then Compare. Which earns most while still learning (late return), and do they all find the 13-move walk (greedy)?',
+        check: { kind: 'editor', test: (v) => !!(v.training?.compared ?? []).find((c) => c.seeds >= 3 && new Set(c.options.map((o) => `${o.explore ?? 'epsilon'}/${o.schedule ?? 'linear'}`)).size >= 3) || 'Compare at least three different exploration settings (ε schedules, softmax) over 3 or more seeds.' },
+      },
+      {
+        text: 'Optimism. Back on Table (TD), set ε from 0 to 0 (always greedy: never a random move) and Q₀ 0, and press ▶ Train in view at 4×. Every real return on the cliff is negative, so 0 is optimistic: any move it has not tried still looks better than one it has, and it tries them. Watch the colours spread over the grid, then let it finish: −13.',
+        check: { kind: 'editor', test: (v) => !!(v.training?.runs ?? []).find((r) => r.inView && r.options && r.options.explore !== 'softmax' && (r.options.epsilon ?? 1) === 0 && (r.options.epsilonEnd ?? 1) === 0 && !(r.options.initialQ ?? 0) && r.score === -13) || 'Train in view with ε 0 to 0 and Q₀ 0, and let it finish (it should reach −13).' },
+      },
+      {
+        text: 'Pessimism. Compare two greedy settings (ε 0 to 0) over 5 seeds: Q₀ 0, and Q₀ −100. With −100 every untried move looks worse than the walk it already knows, so it stops exploring early and keeps a longer walk on some seeds.',
+        check: { kind: 'editor', test: (v) => !!(v.training?.compared ?? []).find((c) => c.seeds >= 3 && c.options.some((o) => (o.epsilon ?? 1) === 0 && !(o.initialQ ?? 0)) && c.options.some((o) => (o.epsilon ?? 1) === 0 && (o.initialQ ?? 0) <= -50)) || 'Compare ε 0 with Q₀ 0 against ε 0 with Q₀ −100 (or lower), over 3 or more seeds.' },
+      },
+    ],
+    solution: '// Every step of this task is done in Run › Train an agent…',
+    done: 'You compared ways to explore. Back to the lesson for the bandit, UCB and why optimism works.',
+    solvedEditor: {
+      training: {
+        draft: CLIFF_SPEC,
+        runs: [{ method: 'q', spec: CLIFF_SPEC, score: -13, random: -1751, inView: true, options: { episodes: 200, algorithm: 'q', alpha: 0.5, gamma: 1, explore: 'epsilon', epsilon: 0, epsilonEnd: 0, schedule: 'linear' } }],
+        watched: false,
+        compared: [
+          { seeds: 5, options: [{ episodes: 200, epsilon: 0.1, epsilonEnd: 0.1, schedule: 'constant' }, { episodes: 200, epsilon: 0.3, epsilonEnd: 0.01, schedule: 'linear' }, { episodes: 200, epsilon: 0.3, epsilonEnd: 0.01, schedule: 'exponential' }, { episodes: 200, explore: 'softmax', temperature: 5, temperatureEnd: 0.1, schedule: 'exponential' }] },
+          { seeds: 5, options: [{ episodes: 200, epsilon: 0, epsilonEnd: 0 }, { episodes: 200, epsilon: 0, epsilonEnd: 0, initialQ: -100 }] },
+        ],
+      },
+    },
+  },
 ];
+
+/** A run with Q-learning, γ 1 and this α (the textbook's cliff settings otherwise). */
+function textbookQ(o: QOptions | undefined, alpha: number): boolean {
+  return !!o && (o.algorithm ?? 'q') === 'q' && Math.abs((o.alpha ?? 0.2) - alpha) < 1e-9 && (o.gamma ?? 0.97) === 1;
+}

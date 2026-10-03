@@ -54,7 +54,7 @@ The car speeds up throughout, so each left rectangle uses the slowest speed in i
 
 Averaging the left and right sums gives the **trapezoid rule**: join neighbouring points with straight lines instead of flat tops, so each strip is a trapezoid of area h (y_i + y_{i+1})/2. It only needs the samples themselves, which makes it the standard tool for logged data. NumPy provides it as `np.trapezoid`.
 
-How fast do the methods converge? Left and right sums have errors proportional to h, like forward differences. The midpoint and trapezoid rules have errors proportional to h², so doubling the number of strips quarters their error. Predict before running: integrating sin x from 0 to π (exactly 2), how many strips does each rule need to be accurate to 6 decimal places?
+How fast do the methods converge? Left and right sums have errors proportional to h, like forward differences. The midpoint and trapezoid rules have errors proportional to h², so doubling the number of strips quarters their error. Predict before running: integrating sin x from 0 to π (exactly 2), how many strips does each rule need for an error below 10⁻⁶?
 
 ```python
 def trapezoid(f, a, b, n):
@@ -70,7 +70,7 @@ print("np.trapezoid agrees:", math.isclose(np.trapezoid(np.sin(np.linspace(0, ma
 
 The trapezoid formula adds every sample with full weight and then removes half of each end sample, since the ends belong to only one strip.
 
-For sin x on [0, π] the left error happens to look second order too, because the function is zero at both ends, which makes the left and trapezoid sums identical here. Midpoint and trapezoid errors drop fourfold each time n doubles, and their errors have opposite signs, with the midpoint's about half as large. By n = 1000 both are within 2 × 10⁻⁶ of the exact 2. The calculus block derives these error rates and Simpson's rule, which combines the two to reach h⁴.
+For sin x on [0, π] the left error happens to look second order too, because the function is zero at both ends, which makes the left and trapezoid sums identical here. Midpoint and trapezoid errors drop fourfold each time n doubles, and their errors have opposite signs, with the midpoint's about half as large. By n = 1000 both are within 2 × 10⁻⁶ of the exact 2. Since the errors fall as 1/n², an error below 10⁻⁶ needs about 910 strips for the midpoint rule and about 1,280 for the trapezoid rule. The calculus block derives these error rates and Simpson's rule, which combines the two to reach h⁴.
 
 ## Running totals
 
@@ -225,7 +225,8 @@ for _n in ["trapezoid_total", "running_total", "energy_kwh"]:
     assert _n in dir(), f"Define {_n}."
 _attrs = {_x.attr for _x in _ast.walk(_ast.parse(_source)) if isinstance(_x, _ast.Attribute)}
 assert not (_attrs & {"trapezoid", "trapz", "cumulative_trapezoid"}), "Add up the trapezoids yourself."
-assert trapezoid_total([0, 1, 3], [0, 2, 2]) == 5.0 and type(trapezoid_total([0, 1], [1, 1])) is float, "Uneven strips: 1 + 4."
+assert trapezoid_total([0, 1, 3], [0, 2, 2]) == 5.0, "Uneven strips: 1 + 4."
+assert type(trapezoid_total([0, 1], [1, 1])) is float, "Return a plain Python float (wrap the NumPy result with float(...))."
 _t = np.sort(np.random.default_rng(52).uniform(0, 5, 400))
 assert abs(trapezoid_total(_t, _t ** 2) - (_t[-1] ** 3 - _t[0] ** 3) / 3) < 1e-3, "Close to the exact integral on dense uneven samples."
 _r = running_total([0, 1, 3], [0, 2, 2], start=10)

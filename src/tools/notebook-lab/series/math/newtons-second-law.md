@@ -117,7 +117,7 @@ The cart settles at about 37.3 m/s, where drive balances rolling resistance plus
 
 ## When the force depends on position
 
-A mass on a spring feels a force pulling it back towards rest, proportional to the stretch: F = −kx (Hooke's law). It oscillates, and with no friction its energy ½mv² + ½kx² should stay constant forever. Plain Euler fails this test: the energy grows every step, and the oscillation spirals outward. A tiny change fixes it: update the velocity first, then use the **new** velocity to update the position. This **semi-implicit Euler** method costs nothing extra and keeps the energy bounded, which is why game engines and molecular simulations use it. Predict before running: after 20 periods, how much has each method's energy changed?
+A mass on a spring feels a force pulling it back towards rest, proportional to the stretch: F = −kx (Hooke's law). It oscillates, and with no friction its energy ½mv² + ½kx² should stay constant forever. Plain Euler fails this test: the energy grows every step, and the oscillation spirals outward. A tiny change fixes it: update the velocity first, then use the **new** velocity to update the position. This **semi-implicit Euler** method costs nothing extra and keeps the energy bounded, which is why game engines use it (molecular simulations use its second-order cousin, the Verlet method). Predict before running: after 20 periods, how much has each method's energy changed?
 
 ```python
 k_s, m_s, dt = 400.0, 1.0, 0.005
@@ -141,7 +141,7 @@ print(f"semi-implicit Euler: energy changed by {100 * (energy(x2, v2) / E0 - 1):
 
 The two loops differ only in order: explicit Euler updates both from the old values; semi-implicit Euler updates v first and uses it immediately.
 
-With the same step, explicit Euler's energy is multiplied by about 270,000 in 20 periods (each step multiplies it by 1 + (k/m)Δt² = 1.01), a spring that drives itself to absurd amplitudes, while semi-implicit Euler's stays within 1%. Both methods are first order, and neither is exact, but one respects the physics of energy conservation and the other does not. Choosing a method that matches the structure of the problem matters as much as choosing a small step, a theme the ODE block develops.
+With the same step, explicit Euler's energy is multiplied by about 270,000 in 20 periods (each step multiplies it by 1 + (k/m)Δt² = 1.01), a spring that drives itself to absurd amplitudes, while semi-implicit Euler's wobbles by a few percent within each cycle but does not drift: after 20 periods it is within 1% of where it started. Both methods are first order, and neither is exact, but one respects the physics of energy conservation and the other does not. Choosing a method that matches the structure of the problem matters as much as choosing a small step, a theme the ODE block develops.
 
 ::: challenge Forces and acceleration [easy]
 Write `net_force(forces)`, the sum of a list of signed forces along a line, and `acceleration(forces, mass)`, raising `ValueError` if the mass is not positive. Then write `time_to_speed(forces, mass, v_start, v_target)`: under constant net force, how many seconds to go from `v_start` to `v_target`, rounded to 3 decimal places. Raise `ValueError` if the acceleration is zero (unless the speeds are already equal, which gives 0.0), or if the target is in the opposite direction from the acceleration (it would never be reached).
@@ -317,11 +317,11 @@ print(es[0], es[-1])
 ```python test
 for _n in ["spring_run", "period_from_run"]:
     assert _n in dir(), f"Define {_n}."
-_xe, _ee = spring_run(400, 1, 0.1, 0, 0.005, 6283, "explicit")
-_xs, _es = spring_run(400, 1, 0.1, 0, 0.005, 6283, "semi-implicit")
-assert len(_xs) == 6284 and len(_es) == 6284 and _xs[0] == 0.1 and abs(_es[0] - 2.0) < 1e-12, "Arrays include the starting state; E0 = ½ k x0² = 2 J."
+_xe, _ee = spring_run(400, 1, 0.1, 0, 0.005, 1257, "explicit")
+_xs, _es = spring_run(400, 1, 0.1, 0, 0.005, 1257, "semi-implicit")
+assert len(_xs) == 1258 and len(_es) == 1258 and _xs[0] == 0.1 and abs(_es[0] - 2.0) < 1e-12, "Arrays include the starting state; E0 = ½ k x0² = 2 J."
 assert abs(_xe[1] - 0.1) < 1e-15 and abs(_xs[1] - (0.1 - 400 * 0.1 * 0.005 * 0.005)) < 1e-15, "The first step distinguishes the methods: explicit uses the old v (0), semi-implicit the new one."
-assert _ee[-1] / _ee[0] > 2.5, f"Explicit Euler's energy should grow a lot over 20 periods; ratio {_ee[-1] / _ee[0]:.2f}."
+assert _ee[-1] / _ee[0] > 1000, f"Explicit Euler's energy should grow a lot over 20 periods; ratio {_ee[-1] / _ee[0]:.2f}."
 assert np.abs(_es / _es[0] - 1).max() < 0.06, "Semi-implicit Euler's energy must stay within a few percent throughout."
 _p = period_from_run(_xs, 0.005)
 assert abs(_p - 2 * math.pi * math.sqrt(1 / 400)) < 0.001, f"Period ≈ 2π√(m/k) = 0.3142 s; got {_p}."

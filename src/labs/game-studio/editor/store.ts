@@ -25,8 +25,10 @@ import { gameHtmlFile, gameZip, projectZip, readProjectZip } from '../core/archi
 import { loadRuntimeSource } from './runner';
 import type { EnvSpec } from '../ml/env';
 import type { CemOptions, Generation } from '../ml/cem';
-import type { QEpisode, QOptions } from '../ml/qlearning';
+import type { QEpisode, QLive, QOptions, QTransition } from '../ml/qlearning';
+import type { TrainInView } from '../runtime/protocol';
 import { isQPolicy, type AgentPolicy } from '../ml/policy';
+import type { CompareConfig, CompareRun } from '../ml/compare';
 
 import { EXAMPLES } from '../examples';
 import { sendArt } from '../../../utils/artBridge.js';
@@ -231,7 +233,7 @@ export class Store {
   // ── tasks: "Try it" from the course, and Help › Tutorials (docs/game-studio-course-plan.md) ──
 
   /** The task being done, its link back to the lesson, and its checks' latest results. */
-  task: { def: GameTask; link: TaskLink | null; results: CheckResult[]; ran: boolean; finished: boolean; runs: TrainingView['runs']; watched: boolean; saved?: string[] } | null = null;
+  task: { def: GameTask; link: TaskLink | null; results: CheckResult[]; ran: boolean; finished: boolean; runs: TrainingView['runs']; watched: boolean; saved?: string[]; stepped?: number; predictions?: { right: number; total: number }; compared?: NonNullable<TrainingView['compared']> } | null = null;
   /** The environment as typed in Run › Train an agent… (when it parses), for a task's checks. */
   trainDraft: EnvSpec | null = null;
   /** Called once when a task's every step passes (Game Studio marks the lesson's checkpoint). */
@@ -296,7 +298,7 @@ export class Store {
       // Checked as typed: open scripts count with their unsaved text (Run saves them first anyway).
       const project = JSON.parse(JSON.stringify(doc.project)) as Project;
       for (const sc of project.scripts) sc.source = this.scriptText(sc.path);
-      this.checker.postMessage({ id: ++this.checkId, taskId: t.def.id, project, editor: { ran: t.ran, training: { draft: this.trainDraft, runs: t.runs, watched: t.watched, saved: t.saved ?? [] } } });
+      this.checker.postMessage({ id: ++this.checkId, taskId: t.def.id, project, editor: { ran: t.ran, training: { draft: this.trainDraft, runs: t.runs, watched: t.watched, saved: t.saved ?? [], stepped: t.stepped ?? 0, predictions: t.predictions ?? { right: 0, total: 0 }, compared: t.compared ?? [] } } });
     }, delay);
   }
 
@@ -806,9 +808,11 @@ export class Store {
 
   // ── running ─────────────────────────────────────────────────────────────
 
-  async run(which: 'project' | 'scene', container: HTMLElement, opts: { agent?: boolean } = {}): Promise<void> {
+  async run(which: 'project' | 'scene', container: HTMLElement, opts: { agent?: boolean; train?: TrainInView } = {}): Promise<void> {
     if (!this.doc) return;
     this.watchingAgent = !!opts.agent && !!this.training.policy;
+    this.trainLive = null;
+    if (!opts.train) this.inView = false;
     // Scripts are saved into the project before running, so the game runs what you see.
     for (const path of [...this.buffers.keys()]) if (this.isScriptDirty(path)) this.saveScript(path);
     const p = this.doc.project;
@@ -825,7 +829,7 @@ export class Store {
     }
     this.output = [{ level: 'system', text: `▶ Running ${scene}` }];
     const assets = await Promise.all(p.assets.map(async (a) => ({ path: a.path, mime: a.mime, bytes: await (this.blobs.get(a.id) ?? new Blob()).arrayBuffer() })));
-    const game = await runGame({ project: p, scene, assets, container, onMessage: (m) => this.onRuntime(m) });
+    const game = await runGame({ project: p, scene, assets, container, onMessage: (m) => this.onRuntime(m), ...(opts.train ? { train: opts.train } : {}) });
     this.running = { game, scene, paused: false, live: null };
     if (this.task && !this.task.ran) { this.task = { ...this.task, ran: true }; this.scheduleCheck(0); }
     if (this.task && this.watchingAgent && !this.task.watched) { this.task = { ...this.task, watched: true }; this.scheduleCheck(0); }
@@ -839,6 +843,16 @@ export class Store {
     else if (m.type === 'error') this.output.push({ level: 'error', text: m.message, file: m.file, line: m.line, column: m.column, node: m.node });
     else if (m.type === 'paused') this.running.paused = m.paused;
     else if (m.type === 'state') this.running.live = m.props;
+    else if (m.type === 'trainStart') this.training = { ...this.training, described: { actions: m.actions, observation: m.observation, bins: m.bins }, random: m.random };
+    else if (m.type === 'trainLive') this.trainLive = m.live;
+    else if (m.type === 'trainTransition') { this.trainTransition = m.transition; this.trainLive = m.live; }
+    else if (m.type === 'trainEpisode') {
+      const e = m.episode, t = this.training;
+      const ep: QEpisode = { episode: e.episode, total: e.total, epsilon: e.epsilon, visited: e.visited, steps: e.steps, ...(e.greedy === undefined ? {} : { greedy: e.greedy }) };
+      this.training = { ...t, episodes: [...t.episodes, ep], table: e.table ?? t.table, visits: e.visits ?? t.visits };
+    }
+    else if (m.type === 'trainDone') this.trainingFinished(m.policy, m.score);
+    else if (m.type === 'trainError') { this.training = { ...this.training, running: false, error: m.message }; this.trainLive = null; }
     else if (m.type === 'running') {
       this.inspectLive();
       // Watching a trained agent: it takes the controls as soon as the game is running.
@@ -860,6 +874,57 @@ export class Store {
     /** What the agent can do and sees, by name, and its bins (from the trainer: a script agent's come from its script). */
     described: { actions: string[]; observation: string[]; bins: number[][] } | null;
   } = { running: false, method: 'q', spec: null, random: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, error: null, total: 0, described: null };
+  /** Compare: settings, each trained over the same seeds in a worker of its own, and the runs as they finish. */
+  comparison: { configs: CompareConfig[]; seeds: number[]; runs: CompareRun[]; running: boolean; error: string | null; random: number | null } = { configs: [], seeds: [1, 2, 3, 4, 5], runs: [], running: false, error: null, random: null };
+  private comparer: Worker | null = null;
+
+  /** Add a setting to the comparison (the dialog's current one), or remove one. */
+  addCompareConfig(c: CompareConfig): void { this.comparison = { ...this.comparison, configs: [...this.comparison.configs, c], runs: [] }; this.changed(); }
+  removeCompareConfig(i: number): void { this.comparison = { ...this.comparison, configs: this.comparison.configs.filter((_, k) => k !== i), runs: [] }; this.changed(); }
+  setCompareSeeds(n: number): void { this.comparison = { ...this.comparison, seeds: Array.from({ length: Math.max(1, Math.min(30, Math.round(n))) }, (_, k) => k + 1), runs: [] }; this.changed(); }
+
+  /** Train every setting with every seed, headless; the runs arrive one at a time. */
+  startCompare(spec: EnvSpec): void {
+    if (!this.doc || !this.comparison.configs.length) return;
+    this.stopCompare();
+    for (const path of [...this.buffers.keys()]) if (this.isScriptDirty(path)) this.saveScript(path);
+    this.comparison = { ...this.comparison, runs: [], running: true, error: null, random: null };
+    const w = this.comparer = new Worker(new URL('../ml/train.worker.ts', import.meta.url), { type: 'module' });
+    w.onmessage = (e: MessageEvent) => {
+      const m = e.data as { type: string; message?: string; score?: number; actions?: string[]; observation?: string[]; bins?: number[][] } & CompareRun;
+      const c = this.comparison;
+      if (m.type === 'describe') this.training = { ...this.training, described: this.training.described ?? { actions: m.actions!, observation: m.observation!, bins: m.bins! } };
+      else if (m.type === 'random') this.comparison = { ...c, random: m.score! };
+      else if (m.type === 'compareRun') this.comparison = { ...c, runs: [...c.runs, { config: m.config, seed: m.seed, returns: m.returns, greedy: m.greedy }] };
+      else if (m.type === 'compareDone') {
+        this.comparison = { ...c, running: false }; this.stopCompare(false);
+        if (this.task) { this.task = { ...this.task, compared: [...(this.task.compared ?? []), { options: c.configs.map((k) => k.options), seeds: c.seeds.length }] }; this.scheduleCheck(0); }
+      }
+      else if (m.type === 'error') { this.comparison = { ...c, running: false, error: m.message! }; this.stopCompare(false); }
+      this.changed();
+    };
+    w.onerror = (e) => { this.comparison = { ...this.comparison, running: false, error: e.message || 'The comparison stopped' }; this.stopCompare(false); this.changed(); };
+    w.postMessage({ project: JSON.parse(JSON.stringify(this.doc.project)), spec, method: 'compare', configs: this.comparison.configs, seeds: this.comparison.seeds });
+    this.changed();
+  }
+
+  stopCompare(mark = true): void {
+    this.comparer?.terminate(); this.comparer = null;
+    if (mark && this.comparison.running) { this.comparison = { ...this.comparison, running: false }; this.changed(); }
+  }
+
+  /** The dialog's table-learning settings, kept between openings. */
+  tdSettings: import('./TrainDialog').TdSettings | null = null;
+  /** Train in view: what the learner in the visible game is doing now, and how fast it plays. */
+  trainLive: QLive | null = null;
+  trainSpeed = 4;
+  /** The settings of the latest table-learning run (in the worker or in view), for a task's checks. */
+  private lastOptions: QOptions | null = null;
+  /** Train in view: the latest update, with every number in it, and the settings it was made with. */
+  trainTransition: QTransition | null = null;
+  trainOptions: QOptions | null = null;
+  /** The latest training ran in view (in the game), not in the worker. */
+  inView = false;
   /** The game running from "Watch it play": the trained agent holds the controls. */
   watchingAgent = false;
   private trainer: Worker | null = null;
@@ -889,6 +954,8 @@ export class Store {
     this.stopTraining();
     for (const path of [...this.buffers.keys()]) if (this.isScriptDirty(path)) this.saveScript(path);
     const total = job.method === 'q' ? job.options.episodes : job.options.generations;
+    this.inView = false;
+    this.lastOptions = job.method === 'q' ? job.options : null;
     this.training = { running: true, method: job.method, spec, random: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, error: null, total, described: null };
     const w = this.trainer = new Worker(new URL('../ml/train.worker.ts', import.meta.url), { type: 'module' });
     w.onmessage = (e: MessageEvent) => {
@@ -901,16 +968,60 @@ export class Store {
         const ep: QEpisode = { episode: m.episode, total: m.total, epsilon: m.epsilon, visited: m.visited, steps: m.steps, ...(m.greedy === undefined ? {} : { greedy: m.greedy }) };
         this.training = { ...t, episodes: [...t.episodes, ep], table: m.table ?? t.table, visits: m.visits ?? t.visits };
       }
-      else if (m.type === 'done') {
-        this.training = { ...t, running: false, policy: m.policy!, score: m.score!, table: isQPolicy(m.policy!) ? m.policy.table : t.table, visits: isQPolicy(m.policy!) ? m.policy.visits ?? null : t.visits };
-        this.stopTraining(false);
-        if (this.task) { this.task = { ...this.task, runs: [...this.task.runs, { method: t.method, spec, score: m.score!, random: t.random ?? 0 }] }; this.scheduleCheck(0); }
-      }
+      else if (m.type === 'done') { this.stopTraining(false); this.trainingFinished(m.policy!, m.score!); }
       else if (m.type === 'error') { this.training = { ...t, running: false, error: m.message! }; this.stopTraining(false); }
       this.changed();
     };
     w.onerror = (e) => { this.training = { ...this.training, running: false, error: e.message || 'The trainer stopped' }; this.stopTraining(false); this.changed(); };
     w.postMessage({ project: JSON.parse(JSON.stringify(this.doc.project)), spec, ...job });
+    this.changed();
+  }
+
+  /** Training finished (in the worker, or in view): keep the policy, and tell a task's checks. */
+  private trainingFinished(policy: AgentPolicy, score: number): void {
+    const t = this.training;
+    this.training = { ...t, running: false, policy, score, table: isQPolicy(policy) ? policy.table : t.table, visits: isQPolicy(policy) ? policy.visits ?? null : t.visits };
+    this.trainLive = null;
+    if (this.task && t.spec) { this.task = { ...this.task, runs: [...this.task.runs, { method: t.method, spec: t.spec, score, random: t.random ?? 0, ...(this.lastOptions ? { options: this.lastOptions } : {}), inView: this.inView }] }; this.scheduleCheck(0); }
+    this.changed();
+  }
+
+  /** Train in view: Q-learning inside the visible game, every episode drawn. `speed` is game frames per drawn frame. */
+  async trainInView(spec: EnvSpec, options: QOptions, container: HTMLElement, speed = 4): Promise<void> {
+    if (!this.doc) return;
+    this.stopTraining();
+    this.training = { running: true, method: 'q', spec, random: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, error: null, total: options.episodes, described: null };
+    this.trainSpeed = speed;
+    this.trainOptions = options;
+    this.lastOptions = options;
+    this.trainTransition = null;
+    this.inView = true;
+    await this.run('project', container, { train: { spec, options, speed } });
+    this.changed();
+  }
+
+  /** Train in view: pause (if it is not paused), then play on to the next update and show it. */
+  stepTraining(): void {
+    const r = this.running;
+    if (!r || !this.inView || !this.training.running) return;
+    if (!r.paused) { r.game.send({ type: 'pause' }); r.paused = true; }
+    r.game.send({ type: 'trainStep' });
+    if (this.task) { this.task = { ...this.task, stepped: (this.task.stepped ?? 0) + 1 }; this.scheduleCheck(); }
+    this.changed();
+  }
+
+  /** Predict's answer for one update was checked: right or not (a task can ask for a few right). */
+  notePrediction(right: boolean): void {
+    if (!this.task) return;
+    const p = this.task.predictions ?? { right: 0, total: 0 };
+    this.task = { ...this.task, predictions: { right: p.right + (right ? 1 : 0), total: p.total + 1 } };
+    this.scheduleCheck(0);
+  }
+
+  /** Train in view's speed: game frames per drawn frame (1 is real time). */
+  setTrainSpeed(speed: number): void {
+    this.trainSpeed = speed;
+    this.running?.game.send({ type: 'trainSpeed', speed });
     this.changed();
   }
 
@@ -956,6 +1067,9 @@ export class Store {
     if (!this.running) return;
     this.running.game.stop();
     this.running = null;
+    // Training in view stops with the game; what it learned so far is in the last table it reported.
+    if (this.inView && this.training.running) this.training = { ...this.training, running: false };
+    this.trainLive = null;
     this.output.push({ level: 'system', text: '■ Stopped' });
     this.changed();
   }

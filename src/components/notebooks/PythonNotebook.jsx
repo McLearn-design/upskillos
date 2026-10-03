@@ -509,9 +509,9 @@ const CellComponent = React.memo(
               <p
                 style={{
                   margin: 0,
-                  fontSize: 13,
+                  fontSize: 14,
                   color: C.muted,
-                  lineHeight: 1.65,
+                  lineHeight: 1.7,
                 }}
               >
                 {cell.prompt}
@@ -549,31 +549,45 @@ const CellComponent = React.memo(
                 style={{
                   padding:
                     !isChallenge && cell.cellTitle
-                      ? "6px 16px 10px"
-                      : "10px 16px 10px",
+                      ? "8px 22px 16px"
+                      : "16px 22px 16px",
+                  maxWidth: 860,
+                  "--nb-accent": C.blue,
+                  "--nb-strong": C.text,
+                  "--nb-code": C.purple,
+                  "--nb-code-bg": C.purpleBg,
                 }}
+                className="nb-prose"
               >
+                <style>{NB_PROSE_CSS}</style>
                 {(Array.isArray(cell.prose) ? cell.prose : [cell.prose]).map(
-                  (p, i) => {
+                  (p, i, all) => {
                     // ## Header line
                     if (typeof p === "string" && p.startsWith("## ")) {
                       return (
-                        <p
-                          key={i}
-                          style={{
-                            margin: i === 0 ? "0 0 4px" : "14px 0 4px",
-                            fontSize: 11,
-                            fontWeight: 700,
-                            letterSpacing: "0.06em",
-                            textTransform: "uppercase",
-                            color: C.blue,
-                            lineHeight: 1.4,
-                            paddingLeft: 8,
-                            borderLeft: `2px solid ${C.blue}`,
-                          }}
-                        >
-                          {p.slice(3)}
-                        </p>
+                        (() => {
+                          const learned = /^what you learned/i.test(p.slice(3));
+                          const fg = learned ? C.green : C.blue;
+                          const bg = learned ? C.greenBg : C.blueBg;
+                          return (
+                            <h3
+                              key={i}
+                              style={{
+                                margin: i === 0 ? "2px 0 12px" : "30px 0 12px",
+                                fontSize: 19,
+                                fontWeight: 650,
+                                color: fg,
+                                lineHeight: 1.35,
+                                padding: "8px 14px",
+                                borderRadius: 8,
+                                borderLeft: `4px solid ${fg}`,
+                                background: `linear-gradient(90deg, ${bg} 0%, transparent 85%)`,
+                              }}
+                            >
+                              {p.slice(3)}
+                            </h3>
+                          );
+                        })()
                       );
                     }
                     // ``` fenced code block
@@ -597,7 +611,7 @@ const CellComponent = React.memo(
                         <div
                           key={i}
                           style={{
-                            margin: i === 0 ? "0 0 4px" : "8px 0 0",
+                            margin: i === 0 ? "0 0 4px" : "14px 0 4px",
                             borderRadius: 7,
                             overflow: "hidden",
                             border: `1px solid ${C.border}`,
@@ -622,8 +636,8 @@ const CellComponent = React.memo(
                           <pre
                             style={{
                               margin: 0,
-                              padding: "10px 12px",
-                              fontSize: 12,
+                              padding: "10px 14px",
+                              fontSize: 13.5,
                               lineHeight: 1.6,
                               overflowX: "auto",
                               background: C.bg,
@@ -644,13 +658,15 @@ const CellComponent = React.memo(
                       const items = p
                         .split("\n")
                         .filter((l) => l.trim().startsWith("- "));
+                      const covers = i > 0 && typeof all[i - 1] === "string" && /lesson covers:?$/i.test(all[i - 1].trim());
                       return (
                         <ul
                           key={i}
                           style={{
-                            margin: i === 0 ? 0 : "6px 0 0",
-                            paddingLeft: 18,
-                            fontSize: 13,
+                            margin: i === 0 ? 0 : covers ? "8px 0 0" : "12px 0 0",
+                            ...(covers ? { padding: "12px 16px 12px 36px", borderRadius: 10, background: C.tealBg, border: `1px solid ${withAlpha(C.tealBd, "55")}` } : {}),
+                            paddingLeft: covers ? 36 : 24,
+                            fontSize: 15,
                             color: C.text,
                             lineHeight: 1.7,
                             listStyleType: "disc",
@@ -660,7 +676,8 @@ const CellComponent = React.memo(
                             <li
                               key={j}
                               style={{
-                                marginBottom: j < items.length - 1 ? 3 : 0,
+                                marginBottom: j < items.length - 1 ? 7 : 0,
+                                paddingLeft: 2,
                               }}
                             >
                               {parseProse(item.replace(/^[\s]*-\s*/, ""))}
@@ -680,20 +697,61 @@ const CellComponent = React.memo(
                           key={i}
                           start={parseInt(items[0], 10)}
                           style={{
-                            margin: i === 0 ? 0 : "6px 0 0",
-                            paddingLeft: 22,
-                            fontSize: 13,
+                            margin: i === 0 ? 0 : "12px 0 0",
+                            paddingLeft: 26,
+                            fontSize: 15,
                             color: C.text,
                             lineHeight: 1.7,
                             listStyleType: "decimal",
                           }}
                         >
                           {items.map((item, j) => (
-                            <li key={j} style={{ marginBottom: j < items.length - 1 ? 3 : 0 }}>
+                            <li key={j} style={{ marginBottom: j < items.length - 1 ? 7 : 0, paddingLeft: 2 }}>
                               {parseProse(item.replace(/^\s*\d+\.\s*/, ""))}
                             </li>
                           ))}
                         </ol>
+                      );
+                    }
+                    // "This lesson covers:" label
+                    if (typeof p === "string" && /^this lesson covers:?$/i.test(p.trim())) {
+                      return (
+                        <p key={i} style={{ margin: "18px 0 0", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.teal }}>
+                          {p.replace(/:$/, "")}
+                        </p>
+                      );
+                    }
+                    // "Predict before running: ..." becomes its own callout
+                    if (typeof p === "string" && p.includes("Predict before running:")) {
+                      const at = p.indexOf("Predict before running:");
+                      const before = p.slice(0, at).trim();
+                      const rest = p.slice(at + "Predict before running:".length).trim();
+                      const question = rest.charAt(0).toUpperCase() + rest.slice(1);
+                      return (
+                        <div key={i}>
+                          {before && (
+                            <p style={{ margin: i === 0 ? 0 : "14px 0 0", fontSize: 15, color: C.text, lineHeight: 1.75 }}>
+                              {parseProse(before)}
+                            </p>
+                          )}
+                          <div
+                            style={{
+                              margin: "14px 0 0",
+                              padding: "10px 14px",
+                              borderRadius: 8,
+                              background: C.amberBg,
+                              borderLeft: `4px solid ${C.amber}`,
+                              fontSize: 15,
+                              lineHeight: 1.7,
+                              color: C.text,
+                            }}
+                          >
+                            <span style={{ display: "block", marginBottom: 2, fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: C.amber }}>
+                              Predict before running
+                            </span>
+                            {parseProse(question)}
+                          </div>
+                        </div>
                       );
                     }
                     // Default: paragraph
@@ -701,10 +759,10 @@ const CellComponent = React.memo(
                       <p
                         key={i}
                         style={{
-                          margin: i === 0 ? 0 : "8px 0 0",
-                          fontSize: 13,
+                          margin: i === 0 ? 0 : "14px 0 0",
+                          fontSize: 15,
                           color: C.text,
-                          lineHeight: 1.7,
+                          lineHeight: 1.75,
                         }}
                       >
                         {parseProse(p)}
@@ -718,14 +776,14 @@ const CellComponent = React.memo(
             {cell.instructions && (
               <div
                 style={{
-                  margin: "0 16px 12px",
-                  padding: "8px 12px",
+                  margin: "0 22px 14px",
+                  padding: "10px 14px",
                   borderRadius: 8,
                   background: C.amberBg,
                   border: `1px solid ${C.amberBd}`,
-                  fontSize: 12,
+                  fontSize: 14,
                   color: C.amber,
-                  lineHeight: 1.65,
+                  lineHeight: 1.75,
                 }}
                 className="notebook-instructions"
               >
@@ -1002,6 +1060,17 @@ function fixPythonBrokenStrings(src) {
   if (pending !== null) out.push(pending);
   return out.join("\n");
 }
+
+// Inline colours for lesson prose; the values come from CSS variables set on
+// the prose container, so they follow the light/dark theme.
+const NB_PROSE_CSS = `
+.nb-prose strong { color: var(--nb-strong); font-weight: 700; }
+.nb-prose li::marker { color: var(--nb-accent); }
+.nb-prose p code, .nb-prose li code, .nb-prose div > code {
+  color: var(--nb-code); background: var(--nb-code-bg);
+  padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.88em;
+}
+`;
 
 export default function PythonNotebook({ params, onParamChange, onCellsChange }) {
   const C = useThemeColors();

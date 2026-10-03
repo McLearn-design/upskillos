@@ -24,7 +24,7 @@ export default {
 
   prerequisites: ['mg7-009'],
 
-  nextLesson: null,
+  nextLesson: 'mg9-001',
 
   hook: {
     question: 'Could Breakout learn to play itself, with no rules written for it, only a score to chase? Nobody tells it "move towards the ball". How could a table of numbers, updated one step at a time, end up clearing the wall?',
@@ -46,7 +46,7 @@ export default {
       {
         type: 'procedure',
         title: 'Procedure: Train a Q-learning agent on a game',
-        body: 'Step 1. Say what the agent sees: node paths to numbers, scaled to about −1 to 1, and differences (minus) where the difference is what decides the move. Step 2. Cut the deciding numbers into bins: a cut point at each place the right action changes. Step 3. Say what it does (input actions held for a step) and what it earns (how much each value changes). Step 4. Train: α 0.2, γ 0.97, ε from 0.3 down; watch the learning curve and the greedy checks. Step 5. Read the table: rows it visited often, and what it does there. Step 6. Watch it play, and change the states or the reward if it plays oddly.',
+        body: 'Step 1. Say what the agent sees: node paths to numbers, scaled to about −1 to 1, and differences (minus) where the difference is what decides the move. Step 2. Cut the deciding numbers into bins: a cut point at each place the right action changes. Step 3. Say what it does (input actions held for a step) and what it earns (how much each value changes). Step 4. Train: α 0.2, γ 0.97, ε from 0.3 down; watch the learning curve and the greedy checks. ▶ Train in view plays every episode in the game, from real time to as fast as it goes, and learns exactly what Train does headless. Step 5. Read the table: rows it visited often, and what it does there. Step 6. Watch it play, and change the states or the reward if it plays oddly.',
       },
       {
         type: 'warning',

@@ -186,7 +186,7 @@ Hint: The dot product is `sum(f * d for f, d in zip(force, displacement))`. Inpu
 :::
 
 ::: challenge Characterising a spring [medium]
-A test rig records displacements (metres) and forces (newtons) for a spring. Write `work_from_data(xs, forces)`, the trapezoid-rule work between the first and last displacement, as a float. Write `fit_stiffness(xs, forces)`: the least-squares stiffness k for a line **through the origin**, F = kx, which minimises Σ(Fᵢ − k xᵢ)² and works out to k = Σxᵢ Fᵢ / Σxᵢ², rounded to 1 decimal place; raise `ValueError` if all x are 0. Then write `nonlinearity_energy(xs, forces)`: the percentage by which the measured work exceeds (positive) or falls short of (negative) the work of the fitted linear spring, ½ k x_last² (using the unrounded k) over the same range, assuming the data start at x = 0; round to 2 decimal places.
+A test rig records displacements (metres) and forces (newtons) for a spring. Write `work_from_data(xs, forces)`, the trapezoid-rule work between the first and last displacement, as a float. Write `fit_stiffness(xs, forces)`: the least-squares stiffness k for a line **through the origin**, F = kx, which minimises Σ(Fᵢ − k xᵢ)² and works out to k = Σxᵢ Fᵢ / Σxᵢ², rounded to 1 decimal place; raise `ValueError` if all x are 0. Then write `nonlinearity_energy(xs, forces)`: the percentage by which the measured work exceeds (positive) or falls short of (negative) the work of the fitted linear spring, ½ k x_last² (using the unrounded k) over the same range, assuming the data start at x = 0; round to 2 decimal places. (For the stiffening die spring this comes out negative: a least-squares line through the origin is pulled up by the large, stiff end of the data, so it overestimates the energy over the whole range. Compare the lesson, which used the initial stiffness instead.)
 
 ```python starter
 def work_from_data(xs, forces):
@@ -233,7 +233,8 @@ for _n in ["work_from_data", "fit_stiffness", "nonlinearity_energy"]:
     assert _n in dir(), f"Define {_n}."
 _xs = np.array([0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20]) / 1000
 _fs = np.array([0, 212, 430, 655, 890, 1138, 1402, 1686, 1993, 2330, 2702], dtype=float)
-assert abs(work_from_data(_xs, _fs) - 24.174) < 1e-9 and type(work_from_data(_xs, _fs)) is float, f"Got {work_from_data(_xs, _fs)}."
+assert abs(work_from_data(_xs, _fs) - 24.174) < 1e-9, f"Got {work_from_data(_xs, _fs)}."
+assert type(work_from_data(_xs, _fs)) is float, "Return a plain Python float (wrap the NumPy result with float(...))."
 assert abs(work_from_data([0, 0.1, 0.2], [0, 50, 100]) - 10.0) < 1e-12, "A linear spring: ½ k x² = ½ × 500 × 0.04."
 assert fit_stiffness([0, 0.1, 0.2], [0, 50, 100]) == 500.0, "Exact linear data."
 assert fit_stiffness(_xs, _fs) == 125240.3, f"Got {fit_stiffness(_xs, _fs)}."
