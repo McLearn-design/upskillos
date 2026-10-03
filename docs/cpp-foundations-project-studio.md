@@ -50,3 +50,11 @@ npx vitest run src/labs/project-studio/cppFoundations.desktop.test.js src/labs/p
 - The pinned llvm-mingw release (20260826) was inspected: its `bin` folder contains `g++.exe`, `lldb.exe`, `mingw32-make.exe` and `libc++.dll`.
 
 **Not yet verified on Windows:** running the track in the desktop app, CMake with `-G "MinGW Makefiles"` against the app's toolchain, and `lldb` on a MinGW-built program. Running the walkthrough on Windows with `CPP_TOOLCHAIN_BIN` set to the installed toolchain covers the first two.
+
+## Learning tools added after the first track
+
+**Trace in CodeLens.** C++ lessons show a **🔬 Trace in CodeLens** button whenever a `.cpp` file is open. It hands the file to CodeLens (the same `codelens-handoff` the blog's code blocks use), which compiles it with debug information and steps through it under GDB: every line's local variables, the call stack and the heap, with **Back to Project Studio** returning to the same step. CodeLens compiles one file, so `codeLensHandoff.js` pastes in the project's own `#include "…"` headers first. Definitions in another `.cpp` file can't be traced this way. Lesson 5 uses it to show the crash: tracing the provided `inventory.cpp` stops with SIGSEGV on line 27, with `item` null and `name` `"screws"` (checked by driving `runtimes/codelens.cjs` directly with GDB 15 on Linux).
+
+CodeLens needs GDB with Python, which comes with MSYS2 and most Linux systems but not with the app-managed llvm-mingw. Without it, CodeLens says so; `lldb` in the terminal still works.
+
+**Typed input in checks.** A `run` check can type into the program: `run "./calc" stdin="3 4\n" stdout="3 + 4 = 7"`. On macOS and Linux the text is the shell's stdin. On Windows a program started by `powershell -Command` doesn't reliably read PowerShell's stdin, so the text goes through a temporary file: `Get-Content -Raw -LiteralPath <file> | <command>`. The Windows path is not yet verified on Windows.

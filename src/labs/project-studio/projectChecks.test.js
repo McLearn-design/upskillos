@@ -58,6 +58,26 @@ describe('run checks', () => {
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(path.join(root, 'hello.js'), 'console.log("Hello from Node")\n');
     fs.writeFileSync(path.join(root, 'fail.js'), 'console.error("bad things"); process.exit(3)\n');
+    // Reads two numbers from the keyboard, the way a C++ program using std::cin would.
+    fs.writeFileSync(path.join(root, 'add.js'), [
+      'let text = ""',
+      'process.stdin.on("data", (d) => { text += d })',
+      'process.stdin.on("end", () => {',
+      '  const [a, b] = text.trim().split(/\\s+/).map(Number)',
+      '  console.log(`${a} + ${b} = ${a + b}`)',
+      '})',
+    ].join('\n') + '\n');
+  });
+
+  it('types stdin= into the program', async () => {
+    const r = await check(root, [
+      'run "node add.js" stdin="3 4\\n" stdout="3 + 4 = 7"',
+      'run "node add.js" stdin="10\\n-2\\n" stdout="10 + -2 = 8"',
+      'run "node add.js" stdin="1 1\\n" stdout="1 + 1 = 3"',
+    ].join('\n'));
+    expect(r.map((x) => x.pass)).toEqual([true, true, false]);
+    expect(r[2].detail).toContain('with the input "1 1\\n"');
+    expect(r[2].detail).toContain('1 + 1 = 2');
   });
 
   it('checks the exit code and the output', async () => {

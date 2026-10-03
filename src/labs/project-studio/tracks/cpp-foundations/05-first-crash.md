@@ -101,6 +101,8 @@ The program runs until it crashes. The debugger then **stops on the exact line**
 
 **Predict, then look:** when it stops, what are `name` and `item`?
 
+**Or watch it happen.** With `inventory.cpp` open, press **🔬 Trace in CodeLens** in the toolbar. CodeLens runs the program one line at a time and records every step. Move to the last step: it stops on line 27 with a segmentation fault, and the call-stack panel shows `name` as `"screws"` and `item` as `null`. Step backwards to watch `find_item` search and give up. CodeLens uses GDB, which comes with MSYS2 and most Linux systems. The app's own compiler doesn't include it, so on that setup use `lldb` as above.
+
 ### What you should find
 
 `name` is `"screws"` and `item` is `0x0`, the null pointer. `find_item` searched the whole vector, found no screws, and returned `nullptr` to mean "not found". Then `item->quantity` tried to read memory at address 0, which no program is allowed to touch.

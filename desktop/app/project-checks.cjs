@@ -10,6 +10,7 @@
 // needs a browser (`page`) gets its evaluator injected by main.cjs.
 const { promises: fs } = require('node:fs')
 const path = require('node:path')
+const os = require('node:os')
 const { spawn } = require('node:child_process')
 
 function resolveInRoot(root, rel) {
@@ -81,7 +82,20 @@ function capture(command, args, { cwd, env, timeoutMs = 60000, input } = {}) {
 }
 
 // A command written in the lesson, run the way the learner's terminal would run it.
-function shellRun(cmd, opts) {
+// `opts.input`: text typed into the program (a `stdin=` option on a run check).
+async function shellRun(cmd, opts = {}) {
+  if (process.platform === 'win32' && opts.input != null) {
+    // A program started by `powershell -Command` doesn't reliably read PowerShell's own stdin,
+    // so pipe the text in from a file, the way a learner would type `Get-Content in.txt | ./calc`.
+    const file = path.join(os.tmpdir(), `project-check-input-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`)
+    await fs.writeFile(file, opts.input, 'utf8')
+    try {
+      const quoted = file.replace(/'/g, "''")
+      return await shellRun(`Get-Content -Raw -LiteralPath '${quoted}' | ${cmd}`, { ...opts, input: undefined })
+    } finally {
+      fs.rm(file, { force: true }).catch(() => {})
+    }
+  }
   if (process.platform === 'win32') {
     // `powershell -Command "node f.js"` exits with 1, not 3, when the program exits with 3
     // (measured on Windows PowerShell 5.1): -Command reports only whether the last command
@@ -150,9 +164,9 @@ const CHECKS = {
     return new RegExp(pattern, 'm').test(content) ? { pass: true } : { pass: false, detail: `${rel} doesn't match the expected pattern.` }
   },
 
-  // run "<command>" [exit=N] [stdout="text"] [stderr="text"] [timeout=seconds]
+  // run "<command>" [stdin="text"] [exit=N] [stdout="text"] [stderr="text"] [timeout=seconds]
   async run(ctx, [cmd], opts) {
-    const r = await shellRun(cmd, { cwd: ctx.root, env: ctx.env, timeoutMs: (Number(opts.timeout) || 60) * 1000 })
+    const r = await shellRun(cmd, { cwd: ctx.root, env: ctx.env, timeoutMs: (Number(opts.timeout) || 60) * 1000, input: opts.stdin })
     if (r.timedOut) return { pass: false, detail: `\`${cmd}\` was still running after ${Number(opts.timeout) || 60} seconds, so it was stopped.` }
     const out = normalize(r.stdout)
     const err = normalize(r.stderr)
@@ -163,7 +177,8 @@ const CHECKS = {
     if (opts.stderr != null && !(err + out).includes(normalize(opts.stderr))) problems.push(`its error output doesn't include ${JSON.stringify(opts.stderr)}`)
     if (problems.length === 0) return { pass: true }
     const shown = [out && `Output:\n${short(out)}`, err && `Errors:\n${short(err)}`].filter(Boolean).join('\n\n')
-    return { pass: false, detail: `When the check ran \`${cmd}\`, ${problems.join(', and ')}.${shown ? '\n\n' + shown : ''}` }
+    const typed = opts.stdin != null ? ` with the input ${JSON.stringify(opts.stdin)}` : ''
+    return { pass: false, detail: `When the check ran \`${cmd}\`${typed}, ${problems.join(', and ')}.${shown ? '\n\n' + shown : ''}` }
   },
 
   async 'git-repo'(ctx) {
