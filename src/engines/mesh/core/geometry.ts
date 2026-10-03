@@ -150,10 +150,42 @@ function angleSums(mesh: EditMesh, tris: Tri[], weights: Float64Array): { sum: F
  * Summed over a closed surface, K·M gives exactly 2π times the Euler characteristic
  * (Gauss–Bonnet): the defects of a cube's corners are π/2 each, 8 × π/2 = 4π.
  */
-export function gaussianCurvature(mesh: EditMesh, { integrated = false } = {}): Float64Array {
+export function gaussianCurvature(mesh: EditMesh, { integrated = false } = {}, trace?: Trace): Float64Array {
   const { tris, weights, mass } = operators(mesh);
   const { sum, boundary } = angleSums(mesh, tris, weights);
-  return Float64Array.from(sum, (s, i) => { const d = (boundary[i] ? Math.PI : 2 * Math.PI) - s; return integrated ? d : mass[i] > 1e-15 ? d / mass[i] : 0; });
+  const K = Float64Array.from(sum, (s, i) => { const d = (boundary[i] ? Math.PI : 2 * Math.PI) - s; return integrated ? d : mass[i] > 1e-15 ? d / mass[i] : 0; });
+  if (trace) {
+    const deg = (x: number) => fmt((x * 180) / Math.PI, 2);
+    const used = new Set(mesh.faces.flat());
+    trace.step({
+      phase: 'Angle sums', label: 'At every vertex: the angles of the triangles round it, added up',
+      detail: 'Flat surface round a vertex: the angles add up to exactly 360°. A cone point or dome: less. A saddle: more. The shortfall is the angle defect.',
+      field: Array.from(sum, (x) => (x * 180) / Math.PI), fieldLabel: 'angle sum (degrees)',
+    }, mesh.verts.length <= trace.snapshotLimit ? mesh : undefined);
+    // The inside vertex with the largest |defect|.
+    let at = -1, big = -1;
+    sum.forEach((x, i) => { if (!used.has(i) || boundary[i]) return; const d = Math.abs(2 * Math.PI - x); if (d > big) { big = d; at = i; } });
+    if (at >= 0) {
+      const angles = tris.flatMap(([a, b, c], t) => [[a, b, c], [b, c, a], [c, a, b]].filter(([i]) => i === at).map(([i, j, k]) => { const u = sub(mesh.verts[j], mesh.verts[i]), v = sub(mesh.verts[k], mesh.verts[i]); return weights[t] * Math.atan2(len(cross(u, v)), dot(u, v)); }));
+      const defect = 2 * Math.PI - sum[at];
+      trace.step({
+        phase: 'Angle defect', label: `v${at}: ${angles.length} angles adding up to ${deg(sum[at])}°, so the defect is 360° − ${deg(sum[at])}° = ${deg(defect)}°`,
+        detail: `K = defect / area: ${fmt(defect, 4)} radians over the vertex's area ${fmt(mass[at], 4)} = ${fmt(K[at], 4)}. Positive where the surface closes up like a dome or cone, negative at a saddle.`,
+        verts: [at], values: angles.slice(0, 12).map((a, k) => [`angle ${k + 1}`, `${deg(a)}°`] as [string, string]),
+        quiz: { prompt: `The angles round v${at} add up to ${deg(sum[at])}°. What is its angle defect, in degrees?`, answer: [(defect * 180) / Math.PI], labels: ['defect °'], rule: 'Defect = 360° − the angle sum (180° − the sum on an open edge).', tolerance: 0.05 },
+      });
+    }
+    let total = 0;
+    sum.forEach((x, i) => { if (used.has(i)) total += (boundary[i] ? Math.PI : 2 * Math.PI) - x; });
+    const V = used.size, E = mesh.edges().size, F = mesh.faces.length, chi = V - E + F;
+    trace.step({
+      phase: 'Gauss–Bonnet', label: `Total defect ${fmt(total, 4)} = ${fmt(total / Math.PI, 4)}π; 2πχ = ${fmt(2 * chi, 4)}π with χ = ${chi}`,
+      detail: 'On a closed surface the defects always add up to exactly 2π times the Euler characteristic, whatever its shape: 4π for anything shaped like a sphere, 0 for a torus. Moving vertices only moves curvature around. (With open edges, the turning of the border makes up the difference.)',
+      values: [['Σ defects', `${fmt(total / Math.PI, 4)}π`], ['χ = V − E + F', String(chi)], ['2πχ', `${fmt(2 * chi, 4)}π`]],
+      field: Array.from(K), fieldLabel: 'Gaussian curvature K',
+    });
+  }
+  return K;
 }
 
 /**
@@ -282,8 +314,12 @@ export function heatGeodesic(mesh: EditMesh, sources: number[], trace?: Trace, {
   const phi = poisson.x;
   const base = Math.min(...sources.map((s) => phi[s]));
   for (let i = 0; i < n; i++) phi[i] -= base;
+  // A Predict question: how far is one of the first source's neighbours? About one edge length.
+  const nb = (() => { for (const e of mesh.edges().values()) { if (e.a === sources[0]) return e.b; if (e.b === sources[0]) return e.a; } return -1; })();
+  const edgeLen = nb >= 0 ? len(sub(V[nb], V[sources[0]])) : 0;
   trace?.step({
     phase: 'Poisson solve', label: `Solve C φ = −∇·X: ${poisson.iterations} CG iterations, residual ${poisson.residual.toExponential(1)}`,
+    ...(nb >= 0 ? { quiz: { prompt: `v${nb} is joined to the source v${sources[0]} by an edge ${fmt(edgeLen, 4)} long. Roughly how far is it along the surface, after the shift that puts the source at 0?`, answer: [phi[nb]], labels: ['distance'], rule: 'Next to the source, the distance along the surface is about the length of the edge between them.', tolerance: 0.2 * edgeLen } } : {}),
     detail: `Conjugate gradients: each iteration moves along a new direction that is C-orthogonal to all the previous ones. Residual every 5 iterations: ${residuals.slice(0, 8).map((r) => r.toExponential(0)).join(', ')}${residuals.length > 8 ? ' …' : ''}. Shift so the sources are at 0: φ is the distance.`,
     verts: sources, field: Array.from(phi), fieldLabel: 'geodesic distance', contours: 12,
   });
@@ -344,6 +380,68 @@ export function smooth(mesh: EditMesh, { iterations = 1, lambda = 0.5, method = 
         field: moved, fieldLabel: 'distance moved this step',
       }, mesh);
     }
+  }
+  return Float64Array.from(mesh.verts, (p, i) => len(sub(p, start[i])));
+}
+
+/**
+ * Laplacian smoothing, implicit (Desbrun, Meyer, Schröder & Barr 1999): one step
+ * of the heat equation on the positions taken backwards in time, (M + tC) x' = M x,
+ * solved for x, y and z by conjugate gradients. t = strength · h², h the mean edge
+ * length, so strength is scale-free. Any t is stable: a large step flattens the
+ * bumps in one go, where explicit steps (smooth) would need many small ones or
+ * blow up. Boundary vertices, and vertices outside `only`, stay put: they move to
+ * the right-hand side. The matrices are rebuilt each iteration.
+ */
+export function smoothImplicit(mesh: EditMesh, { strength = 5, iterations = 1, only }: { strength?: number; iterations?: number; only?: number[] } = {}, trace?: Trace): Float64Array {
+  const n = mesh.verts.length, start = mesh.verts.map((v) => [...v] as Vec3);
+  const fixed = new Uint8Array(n);
+  for (const e of mesh.edges().values()) if (e.faces.length === 1) { fixed[e.a] = 1; fixed[e.b] = 1; }
+  if (only) { const keep = new Set(only); for (let i = 0; i < n; i++) if (!keep.has(i)) fixed[i] = 1; }
+  // The unknowns: the vertices that may move, numbered 0 … m−1.
+  const free: number[] = [], slot = new Int32Array(n).fill(-1);
+  for (let i = 0; i < n; i++) if (!fixed[i]) { slot[i] = free.length; free.push(i); }
+  if (!free.length) return new Float64Array(n);
+  const closed = [...mesh.edges().values()].every((e) => e.faces.length === 2), vol0 = closed ? mesh.volume() : 0;
+  for (let it = 0; it < iterations; it++) {
+    const V = mesh.verts, { C, mass } = operators(mesh), h = meanEdge(mesh), t = strength * h * h;
+    const A = new Sparse(free.length);
+    free.forEach((i, r) => { for (const [j, w] of C.rows[i]) if (slot[j] >= 0) A.add(r, slot[j], t * w); A.add(r, r, mass[i]); });
+    if (trace && it === 0) {
+      const r = free.reduce((b, i, k) => (C.get(i, i) > C.get(free[b], free[b]) ? k : b), 0), i = free[r];
+      trace.step({
+        phase: 'The system', label: `(M + tC) x' = M x: ${free.length} unknowns, t = ${fmt(strength)}·h² = ${fmt(t, 5)}`,
+        detail: `One step of the heat equation on the positions, taken implicitly: the new positions x' are the ones that, smoothed by tC, give back the old ones. Explicit smoothing (Smooth vertices) uses the old positions on the right and is only stable for small steps; this is stable for any t. ${n - free.length} vertices stay put (open edges${only ? ', or not selected' : ''}); their part of tC x' moves to the right-hand side.`,
+        verts: [i], values: [['M_i (area)', fmt(mass[i], 5)], ['C_ii (sum of weights)', fmt(C.get(i, i), 4)], ['t', fmt(t, 5)]],
+        quiz: { prompt: `Row of v${i}: its area M_i = ${fmt(mass[i], 5)}, its cotan diagonal C_ii = ${fmt(C.get(i, i), 4)}, and t = ${fmt(t, 5)}. What is the diagonal entry of M + tC?`, answer: [A.get(r, r)], labels: ['diagonal'], rule: 'M_i + t·C_ii: the area, plus t times the sum of the vertex\'s cotan weights.', tolerance: Math.max(1e-6, 0.01 * A.get(r, r)) },
+      }, n <= trace.snapshotLimit ? mesh : undefined);
+    }
+    const next = V.map((p) => [...p] as Vec3), its: number[] = [];
+    for (let c = 0; c < 3; c++) {
+      const b = Float64Array.from(free, (i) => mass[i] * V[i][c]);
+      free.forEach((i, r) => { for (const [j, w] of C.rows[i]) if (slot[j] < 0) b[r] -= t * w * V[j][c]; });
+      const sol = solveCG(A, b, { tol: 1e-10, x0: Float64Array.from(free, (i) => V[i][c]) });
+      its.push(sol.iterations);
+      free.forEach((i, r) => { next[i][c] = sol.x[r]; });
+    }
+    const moved = next.map((p, i) => len(sub(p, V[i])));
+    mesh.verts = next;
+    mesh.touch();
+    if (trace && (it === 0 || trace.detailed(1))) {
+      trace.step({
+        phase: 'Solve', label: `Step ${it + 1}: CG ${its.join(', ')} iterations for x, y, z; average move ${fmt(moved.reduce((s, v) => s + v, 0) / n, 4)}`,
+        detail: 'The same matrix for all three coordinates, three right-hand sides. Each solve starts from the current positions, which are already close to the answer.',
+        field: moved, fieldLabel: 'distance moved this step',
+      }, n <= trace.snapshotLimit ? mesh : undefined);
+    }
+  }
+  if (trace && closed) {
+    const vol = mesh.volume();
+    trace.step({
+      phase: 'Shrinkage', label: `Volume ${fmt(vol0, 4)} → ${fmt(vol, 4)} (${fmt((100 * (vol - vol0)) / vol0, 1)}%)`,
+      detail: 'Heat flow moves every vertex towards its neighbours, against its mean curvature, so a closed surface shrinks whatever the method. Implicit steps let you take one large step instead of many small ones; they do not stop the shrinking. Rescaling to the old volume, or Taubin\'s λ|μ steps (lesson 5.6), counter it.',
+      field: Array.from(mesh.verts, (p, i) => len(sub(p, start[i]))), fieldLabel: 'distance moved in total',
+    });
   }
   return Float64Array.from(mesh.verts, (p, i) => len(sub(p, start[i])));
 }

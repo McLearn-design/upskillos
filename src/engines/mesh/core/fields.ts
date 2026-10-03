@@ -86,7 +86,7 @@ export function computeField(mesh: EditMesh, spec: FieldSpec, trace?: Trace): Fi
       };
     }
     case 'gaussian': {
-      const values = gaussianCurvature(mesh);
+      const values = gaussianCurvature(mesh, {}, trace);
       return {
         values, label: FIELD_NAMES.gaussian, diverging: true, range: fieldRange(values, true, true), contours: 0,
         meaning: 'The product of the two principal curvatures. Red is dome-like (both bend the same way), blue is saddle-like, white bends in at most one direction (a cylinder, a plane).',

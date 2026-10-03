@@ -10,6 +10,7 @@ import type { Editor } from '../../../engines/mesh/core/Editor';
 import { EditMesh, type Vec3 } from '../../../engines/mesh/core/EditMesh';
 import { runScript } from '../../../engines/mesh/core/api';
 import { traceDecompose } from '../../../engines/mesh/core/transformTrace';
+import { lintShaderBody } from '../../../engines/mesh/core/shaderTrace';
 import { CHARACTER, EXAMPLES } from './examples';
 import { runPython, type PyodideLike } from '../../../engines/mesh/core/python';
 
@@ -43,6 +44,8 @@ export interface StartState {
   field: string | null;
   /** How long the GUI → code log was: steps look only at what you did after. */
   log: number;
+  /** The algorithm trace shown at the start (a step can ask for a new one). */
+  trace: unknown;
   /** How many steps the undo stack held. */
   undo: number;
 }
@@ -68,7 +71,7 @@ export function startState(e: Editor): StartState {
     position: [...o.position] as Vec3, rotation: [...o.rotation] as Vec3, scale: [...o.scale] as Vec3,
     verts: o.mesh ? o.mesh.verts.map((v) => [...v] as Vec3) : null, bones: o.bones?.length ?? 0, glsl: o.material?.glsl,
   }]));
-  return { obj: (n) => objs.get(n), field: e.field ? JSON.stringify(e.field.spec) : null, log: e.log.length, undo: e.undoStack.length };
+  return { obj: (n) => objs.get(n), field: e.field ? JSON.stringify(e.field.spec) : null, log: e.log.length, undo: e.undoStack.length, trace: e.trace };
 }
 
 // What guide checks ask.
@@ -108,6 +111,41 @@ export interface ExampleProject {
 const rigCode = EXAMPLES.find((x) => x.id === 'rig-character')!.code;
 /** The rigged character without the wave. */
 const rigOnly = rigCode.slice(0, rigCode.indexOf('\n// 8.'));
+/** The walk-cycle project's keys (on top of rigOnly): shared with the foot-sliding project. */
+const walkKeys = `
+
+// 9. A walk: 24-frame cycle, keys every 6 frames: contact, passing, contact, passing.
+//    A positive x turn swings a thigh forward (toward +z, where the character walks).
+const cycle = 24, cycles = 4
+scene.setTimeline({ start: 1, end: 1 + cycle * cycles })
+const legs = {
+  //           contact   pass     contact   pass       (frames 0, 6, 12, 18 of the cycle)
+  'Thigh.L': [0.45,     0.0,     -0.45,    -0.05],
+  'Shin.L':  [-0.05,    -0.2,    -0.35,    -0.9],
+  'Thigh.R': [-0.45,    -0.05,   0.45,     0.0],
+  'Shin.R':  [-0.35,    -0.9,    -0.05,    -0.2],
+}
+for (let c = 0; c <= cycles; c++) for (let k = 0; k < 4; k++) {
+  const f = 1 + c * cycle + k * 6
+  if (f > 1 + cycle * cycles) break
+  for (const [bone, poses] of Object.entries(legs)) rig.bone(bone).keyframe(f, { rotation: [poses[k], 0, 0], interp: 'ease' })
+}
+// Arms relaxed at the sides.
+rig.bone('UpperArm.L').keyframe(1, { rotation: [0, 0, -1.2] })
+rig.bone('UpperArm.R').keyframe(1, { rotation: [0, 0, 1.2] })
+
+// The hips: down 3 frames after each contact, up at passing. Forward at a steady 0.9 per cycle.
+const stride = 0.9
+for (let c = 0; c < cycles * 2; c++) {
+  const f = 1 + c * 12
+  rig.keyframe(f, { position: [3, 1.1, (c * stride) / 2] })
+  rig.keyframe(f + 3, { position: [3, 1.04, (c * stride) / 2 + stride / 8] })
+  rig.keyframe(f + 9, { position: [3, 1.15, (c * stride) / 2 + (3 * stride) / 8] })
+}
+rig.keyframe(1 + cycle * cycles, { position: [3, 1.1, cycles * stride] })
+for (const k of rig.animation.position) rig.setInterpolation(k.frame, 'linear')
+body.material.color = '#d9a47a'
+log('4 cycles of 24 frames; press Space')`;
 const slerpCode = EXAMPLES.find((x) => x.id === 'euler-vs-slerp')!.code;
 
 /** The island, shared by the island project and its fly-through. */
@@ -1337,6 +1375,648 @@ hill.mesh.showField('y')
 log(hill.mesh.traceColours())`,
   },
   {
+    id: 'level-sets',
+    title: 'Level sets and contours',
+    icon: '🗺️',
+    group: 'Learning',
+    desc: 'Two hills of different heights, coloured by height with contour lines, like a map. At a low level one line rings both hills; higher up it splits into two loops, then one, then none. The trace finds one level’s line triangle by triangle and joins the pieces.',
+    lang: 'js',
+    setup: { select: 'Hills', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: at each height, how many closed loops and open chains the contour has. Near the ground it runs off the edge of the grid (open); at 0.2 one loop rings both hills; at 0.5 it has split into two, one round each; at 0.9 only the tall hill reaches; at 1.3 nothing does.',
+      'In the Algorithm trace, press Play: which vertices are above the level, one triangle where the level crosses two edges (predict how far along an edge), every crossed triangle, and the pieces joined into loops.',
+      step('Heat map › Trace the iso-line (middle of the range): the level halfway up, traced on the heat map shown.', (e, s) => e.trace?.op === 'Trace the iso-line' && e.trace !== s.trace),
+      step('Heat map › Mean curvature, then trace its iso-line: at 0 it separates the domes (red) from the saddles and bowls (blue).', (e) => e.trace?.op === 'Trace the iso-line' && e.field?.spec.kind === 'mean'),
+    ],
+    code: `const hills = scene.add.grid({ name: 'Hills', size: 6, subdivisions: 36 })
+// Two hills: a tall one on the left, a lower one on the right.
+for (const v of hills.mesh.verts) v.y = 1.2 * Math.exp(-((v.x + 1.2) ** 2 + v.z ** 2) / 0.8) + 0.8 * Math.exp(-((v.x - 1.3) ** 2 + v.z ** 2) / 0.6)
+hills.mesh.showField('y')                                   // coloured by height, with contour lines
+const y = hills.mesh.verts.map((v) => v.y)
+for (const level of [0.01, 0.2, 0.5, 0.9, 1.3]) {
+  const c = hills.mesh.isoLine(y, level)
+  log('height ' + level + ':', c.loops, 'loops,', c.open, 'open,', 'length', c.length.toFixed(3))
+}
+hills.mesh.isoLine(y, 0.5)                                  // traced: the level that rings each hill separately`,
+  },
+  {
+    id: 'write-a-shader',
+    title: 'Write a shader',
+    icon: '✍️',
+    group: 'Learning',
+    desc: 'A ball with a custom shader that does not compile: a rim light written with a whole number where GLSL needs a float. MeshLab draws it with Lambert until it does. The trace shows how your few lines are wrapped into a full shader, which program lines they become, and what the checks find.',
+    lang: 'js',
+    setup: { select: 'Ball', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: where shade() sits in the program, and the problem the checks found on line 2.',
+      'In the Algorithm trace, press Play: the frame, where your lines land (predict which of your lines a compiler error points to), main(), and the checks.',
+      step('Open the Shader tab, change the 3 on line 2 to 3.0, and press Apply: the rim light appears, and the error under the code goes away.', (e) => { const g = e.scene.get('Ball')?.material.glsl; return !!g && lintShaderBody(g).length === 0; }),
+      'Then make it your own: change the rim\u2019s 0.5, or multiply base by a band of light like the toon model. The "A toon shader of your own" challenge asks for exactly that.',
+    ],
+    code: `// A custom shader: Lambert plus a rim light. Line 2 has a mistake GLSL will not accept.
+const ball = scene.add.uvSphere({ name: 'Ball', radius: 1, segments: 48, rings: 24, position: [0, 1, 0] })
+ball.smooth = true
+ball.material.color = '#4a7bd0'
+ball.material.shader = 'custom'
+ball.material.glsl = \`float d = max(dot(N, L), 0.0);
+float rim = pow(1.0 - max(dot(N, V), 0.0), 3);
+return base * (ambient + d * light) + rim * light * 0.5;\`
+const r = ball.traceShader()
+log('shade() is lines', r.bodyStart, 'to', r.bodyEnd, 'of the', r.lines, 'lines MeshLab writes')
+for (const p of r.problems) log('problem:', p)`,
+  },
+  {
+    id: 'procedural-textures',
+    title: 'Procedural textures',
+    icon: '🧱',
+    group: 'Learning',
+    desc: 'Six tiles, six textures, no image files: every texel is a formula of (u, v). Checker and stripes are floor() and parity; bricks add a half-brick shift on every other row; wood is rings from sines; grass is sines at unrelated frequencies standing in for noise. The trace works out one texel of the brick wall.',
+    lang: 'js',
+    setup: { select: 'Bricks', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: each tile\u2019s texture and the colour at the centre of one of its faces.',
+      'In the Algorithm trace, press Play: the face\u2019s UV and the repeat, the brick formula (predict the row), and the colour.',
+      step('In the Inspector, set the Bricks tile\u2019s texture repeat (×) to 2: twice as many, half-size bricks.', (e) => e.scene.objects.find((o) => o.name === 'Bricks')?.material.textureScale === 2),
+      step('Tab into edit mode on another tile, select a face (3 for face select) and use UV › Trace the texture formula.', (e, s) => e.trace?.op === 'Trace the texture formula' && e.trace !== s.trace),
+    ],
+    code: `// Six flat tiles, UVs projected from above, one texture each.
+const names = ['checker', 'grid', 'stripes', 'wood', 'grass', 'bricks']
+const tiles = names.map((tex, i) => {
+  const t = scene.add.grid({ name: tex[0].toUpperCase() + tex.slice(1), size: 1.8, subdivisions: 5, position: [(i % 3) * 2.1 - 2.1, 0, Math.floor(i / 3) * 2.1 - 1] })
+  t.mesh.unwrap({ method: 'planar' })
+  t.material.texture = tex
+  t.material.shader = 'lambert'
+  t.material.color = '#ffffff'
+  return t
+})
+for (const t of tiles) {                 // bricks last: its formula is the one traced
+  const r = t.traceTexture(6)
+  log(t.name.padEnd(8), 'face 6 at (' + r.u + ', ' + r.v + ') → (' + r.color.join(', ') + ')')
+}`,
+  },
+  {
+    id: 'debug-views',
+    title: 'Debug views',
+    icon: '🧪',
+    group: 'Learning',
+    desc: 'Two shader models that do not light anything: Normals paints each point by its normal\u2019s direction, UV by its texture coordinate. On the box one face has been flipped by mistake, and it shows the colour of the face opposite. On the globe the UV seam shows as a sudden jump in colour, where red drops from 1 to 0.',
+    lang: 'js',
+    setup: { select: 'Box', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: every face of the box with its normal and the colour the Normals view gives it. The back face should be dark yellow, (0.5, 0.5, 0); it shows (0.5, 0.5, 1), the front face\u2019s blue, because it is flipped.',
+      'In the Algorithm trace, press Play: the vectors at a vertex of the flipped face, then the encoding c = N · ½ + ½ (predict the colour).',
+      'Orbit round the globe: red grows with u, green with v, and along one meridian red drops suddenly (orange meets green). That line is the seam, where u jumps from 1 back to 0.',
+      step('Fix the box: Tab into edit mode, select its back face (3 for face select) and use Mesh › Flip normals. It turns dark yellow.', (e) => { const m = e.scene.get('Box')?.mesh; return !!m && m.faceNormal(0)[2] < -0.9; }),
+    ],
+    code: `// A box shown with the Normals model, with its back face (face 0) flipped by mistake.
+const box = scene.add.cube({ name: 'Box', size: 1.6, position: [-1.5, 1, 0] })
+box.mesh.flip([0])
+box.material.shader = 'normals'
+for (const f of box.mesh.faces) {
+  const n = f.normal.map((x) => +x.toFixed(2)), c = n.map((x) => +(x * 0.5 + 0.5).toFixed(2))
+  log('face', f.index, 'normal (' + n.join(', ') + ') → colour (' + c.join(', ') + ')')
+}
+
+// A globe shown with the UV model: cut along one meridian and unwrapped.
+const globe = scene.add.uvSphere({ name: 'Globe', radius: 1, segments: 32, rings: 16, position: [1.5, 1, 0] })
+const m = globe.mesh
+const cut = new Set(m.verts.filter((v) => v.x >= -1e-9 && Math.abs(v.z) < 1e-9).map((v) => v.index))
+m.markSeams(m.edges.filter((e) => cut.has(e.a) && cut.has(e.b)).map((e) => [e.a, e.b]))
+m.unwrap()
+globe.material.shader = 'uv'
+globe.smooth = true
+
+box.traceShading(box.mesh.faces[0].verts[0])        // a corner of the flipped face`,
+  },
+  {
+    id: 'toon-shading',
+    title: 'Stylised shading',
+    icon: '🎨',
+    group: 'Learning',
+    desc: 'A cartoon ball and a matte one under the same sun overhead. The toon shader rounds the cosine down to three flat bands and adds a rim of light at the silhouette. The trace works out one vertex\u2019s band and rim.',
+    lang: 'js',
+    setup: { select: 'Toon', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: N·L and the band the toon shader puts it in, at points from the top of the ball to its side. Every N·L from ⅔ to 1 gets the same light; the steps are what read as "cartoon". The rim is 1 at the top only because, seen from in front, the top of the ball is on its silhouette.',
+      'In the Algorithm trace, press Play: N, L and V, the ambient, the cosine law, the bands (predict the band), the rim light, and the colour.',
+      step('Tab into edit mode on "Toon", pick a vertex near its edge and use Mesh › Trace the shading: the rim light is strongest where N·V is near 0.', (e, s) => e.trace?.op === 'Trace the shading' && e.trace !== s.trace),
+    ],
+    code: `// The sun straight overhead; a toon ball and a Lambert ball side by side.
+scene.get('Light').position = [0, 8, 0]
+const make = (name, shader, x) => {
+  const b = scene.add.uvSphere({ name, radius: 0.9, segments: 36, rings: 12, position: [x, 1, 0] })
+  b.smooth = true; b.material.shader = shader; b.material.color = '#e0643c'
+  return b
+}
+make('Lambert', 'lambert', 1.2)
+const toon = make('Toon', 'toon', -1.2)
+// Points every 15° from the top of the toon ball, on the side facing the eye.
+const eye = [-1.2, 1, 6]
+for (const deg of [0, 30, 60, 75, 90, 45]) {             // 45° last: the traced one
+  const y = Math.cos(deg * Math.PI / 180)
+  const v = toon.mesh.verts.reduce((b, p) => (Math.abs(p.y - 0.9 * y) + Math.abs(p.x) < Math.abs(b.y - 0.9 * y) + Math.abs(b.x) && p.z >= 0 ? p : b))
+  const r = toon.traceShading(v.index, { eye })
+  log(String(Math.round(Math.acos(v.y / 0.9) * 180 / Math.PI)).padStart(2) + '°: N·L', r.terms['N·L'].toFixed(3), '→ band', r.terms.band.toFixed(3), '  rim', r.terms.rim.toFixed(3))
+}`,
+  },
+  {
+    id: 'pbr-materials',
+    title: 'Physically based shading',
+    icon: '🔩',
+    group: 'Learning',
+    desc: 'Six balls, one material model: rough or smooth, plastic or metal. Smooth surfaces concentrate their microfacets around the normal and give a small bright highlight; rough ones spread them out. Metals tint their reflection and have no diffuse colour. The trace works out the microfacet, Fresnel and shadowing terms at one vertex.',
+    lang: 'js',
+    setup: { select: 'Plastic 0.4', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: for each ball, the microfacet term D and the Fresnel term F at its brightest vertex. D falls fast with roughness; F is about 0.04 for plastic and the metal\u2019s own colour for metal.',
+      'In the Algorithm trace, press Play: N, L, V; the ambient; the microfacets D; Fresnel F (predict it); shadowing; and the energy split between highlight and diffuse.',
+      step('In the Inspector, set "Plastic 0.4"\u2019s metalness to 1: the coloured diffuse disappears and the highlight takes on the colour.', (e) => e.scene.objects.find((o) => o.name === 'Plastic 0.4')?.material.metalness === 1),
+    ],
+    code: `// Plastic on the front row, metal on the back; roughness 0.15, 0.4 and 0.8 left to right.
+scene.get('Light').position = [6, 6, 4]
+const eye = [0, 2, 8]
+const norm = (a) => { const l = Math.hypot(...a); return a.map((x) => x / l) }
+const L = norm([6, 6, 4])
+const balls = []
+for (const [row, metal] of [[1, 1], [0, 0]]) for (const [col, rough] of [[0, 0.15], [2, 0.8], [1, 0.4]]) {
+  const name = (metal ? 'Metal ' : 'Plastic ') + rough
+  const at = [(col - 1) * 2, 1, row ? -2 : 0]
+  const ball = scene.add.uvSphere({ name, radius: 0.8, segments: 48, rings: 24, position: at })
+  ball.smooth = true
+  ball.material.shader = 'pbr'
+  ball.material.color = '#d9a441'
+  ball.material.roughness = rough
+  ball.material.metalness = metal
+  // The vertex whose normal is closest to H, halfway between the light and the eye.
+  const score = (v) => { const V = norm(eye.map((e, k) => e - [v.x, v.y, v.z][k] - at[k])), H = norm(L.map((l, k) => l + V[k])), n = norm([v.x, v.y, v.z]); return n[0] * H[0] + n[1] * H[1] + n[2] * H[2] }
+  const peak = ball.mesh.verts.reduce((b, v) => (score(v) > score(b) ? v : b))
+  const r = ball.traceShading(peak.index, { eye })        // "Plastic 0.4" is made last, so its trace is the one shown
+  log(name.padEnd(12), 'D', r.terms.D.toFixed(3), '  F', r.terms.F.toFixed(4))
+}`,
+  },
+  {
+    id: 'highlights',
+    title: 'Highlights',
+    icon: '✨',
+    group: 'Learning',
+    desc: 'Three glossy balls, shininess 5, 40 and 200, seen from the front with the sun up to the right. The highlight sits where the normal points halfway between the light and the eye; the higher the shininess, the smaller and sharper it is. The trace works out one vertex\u2019s highlight with the half vector.',
+    lang: 'js',
+    setup: { select: 'Shininess 40', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: for each ball, the highlight s = (N·H)^shininess at its brightest vertex and at a vertex 15° away from it. At shininess 5 the highlight barely fades in 15°; at 200 it is gone. At 200 even the nearest vertex reaches only 0.87: the highlight is narrower than the gap between vertices, which is why it is computed per pixel, not per vertex.',
+      'In the Algorithm trace, press Play: N, L and V, the ambient, the cosine law, the half vector H between L and V, the highlight (predict s), the colour and its encoding.',
+      step('Orbit the view, Tab into edit mode on "Shininess 40", select a vertex and use Mesh › Trace the shading (one vertex): the highlight follows where you look from.', (e, s) => e.trace?.op === 'Trace the shading' && e.trace !== s.trace),
+      step('In the Inspector, change the shininess of "Shininess 40" to 10: a broad, soft highlight.', (e) => e.scene.objects.find((o) => o.name === 'Shininess 40')?.material.shininess === 10),
+    ],
+    code: `// The sun up and to the right; the eye in front. Three Blinn–Phong balls of different shininess.
+scene.get('Light').position = [6, 6, 4]
+const eye = [0, 1, 7]
+const norm = (a) => { const l = Math.hypot(...a); return a.map((x) => x / l) }
+const L = norm([6, 6, 4])
+for (const [i, shininess] of [[0, 5], [2, 200], [1, 40]]) {      // 40 last, so its highlight is the one traced
+  const ball = scene.add.uvSphere({ name: 'Shininess ' + shininess, radius: 0.8, segments: 48, rings: 24, position: [(i - 1) * 2, 1, 0] })
+  ball.smooth = true
+  ball.material.shader = 'blinn-phong'
+  ball.material.color = '#3b6fd4'
+  ball.material.roughness = 0.2
+  ball.material.shininess = shininess
+  // The brightest vertex: its normal closest to H, halfway between L and the direction to the eye.
+  const score = (v) => { const P = [v.x + (i - 1) * 2, v.y + 1, v.z], V = norm(eye.map((e, k) => e - P[k])), H = norm(L.map((l, k) => l + V[k])), n = norm([v.x, v.y, v.z]); return n[0] * H[0] + n[1] * H[1] + n[2] * H[2] }
+  const vs = ball.mesh.verts, peak = vs.reduce((b, v) => (score(v) > score(b) ? v : b))
+  // A vertex about 15° from it.
+  const away = vs.reduce((b, v) => { const c = (v.x * peak.x + v.y * peak.y + v.z * peak.z) / 0.64, t = Math.abs(Math.acos(Math.min(1, c)) - Math.PI / 12); const cb = (b.x * peak.x + b.y * peak.y + b.z * peak.z) / 0.64; return t < Math.abs(Math.acos(Math.min(1, cb)) - Math.PI / 12) ? v : b })
+  const far = ball.traceShading(away.index, { eye }), at = ball.traceShading(peak.index, { eye })
+  log(('shininess ' + shininess).padEnd(14), 'highlight at its peak', at.terms.s.toFixed(4), '  15° away', far.terms.s.toFixed(4))
+}`,
+  },
+  {
+    id: 'walk-sliding',
+    title: 'A walk cycle',
+    icon: '👣',
+    group: 'Learning',
+    desc: 'The rigged character\u2019s 24-frame walk, measured: where its left ankle goes on every frame, when the foot is planted (within 5 cm of its lowest point), how far it slides along the ground while planted, and whether the cycle loops back to its first pose.',
+    lang: 'js',
+    setup: { select: 'Rig', bone: 'Shin.L', trace: true, predict: true, tab: 'trace', frame: 1, view: 'all' },
+    guide: [
+      'The output panel: the frames the left foot is planted, the worst slide while planted, and the loop check. The slide is the walk\u2019s main fault: the hips move forward steadily, but the planted leg does not sweep back at the same speed.',
+      'In the Algorithm trace, press Play: the ankle\u2019s path, the contact frames, the slide, and the loop (predict the frame that must match frame 1).',
+      step('Select the Rig, pick bone Shin.R, and use Object › Trace foot sliding: the right foot, half a cycle later.', (e, s) => e.trace?.op === 'Trace foot sliding' && e.trace !== s.trace),
+      'The fix in a real walk: while a foot is down, its leg must sweep back exactly as fast as the hips move forward, so the foot stays still in the world. Animators either tune the keys until the slide is gone or pin the foot with inverse kinematics.',
+    ],
+    code: rigOnly + walkKeys + `
+const r = rig.traceFootSlide('Shin.L', 24, 0.05)          // planted: within 5 cm of its lowest point
+log('left foot planted on frames ' + r.contacts.map((c) => c[0] + '–' + c[1]).join(', '))
+log('worst slide while planted: ' + r.maxSlide.toFixed(4) + ' (frames ' + r.worstContact.join('–') + ')')
+log('pose at frame 25 against frame 1: ' + r.loopError.toFixed(5) + ' rad')`,
+  },
+  {
+    id: 'gltf-clip',
+    title: 'Animation in files',
+    icon: '📦',
+    group: 'Learning',
+    desc: 'A ball that bounces and a box that turns and grows, ready for File › Export GLB. The trace shows what the file will hold: one channel per animated property, each with a sampler of times in seconds and values (rotations as quaternions), every frame baked, LINEAR in between.',
+    lang: 'js',
+    setup: { trace: true, predict: true, tab: 'trace', frame: 1, view: 'all' },
+    guide: [
+      'The output panel: the clip’s channels, its keys per sampler, its length in seconds and its float bytes. Three animated properties make three channels; the ball’s rotation and the box’s position are not keyed, so they are not in the file.',
+      'In the Algorithm trace, press Play: the channels, the times (predict the time of frame 25), the values, the interpolation, and the bytes (predict them).',
+      step('Select the Ball, key its scale at frame 13 (Inspector, or I), then use File › Trace the glTF clip: one more channel, and the bytes grow by 4 × 49 × 4.', (e, s) => e.trace?.op === 'Trace the glTF clip' && e.trace !== s.trace && !!e.scene.get('Ball')?.anim?.scale?.length),
+      'Use File › Export GLB and drop the file into Blender or any glTF viewer: it plays the same bounce and turn at 24 fps.',
+    ],
+    code: `// A ball with position keys; a box with rotation and scale keys. 49 frames at 24 fps: two seconds.
+scene.setTimeline({ start: 1, end: 49, fps: 24 })
+const ball = scene.add.uvSphere({ name: 'Ball', radius: 0.4, segments: 16, rings: 8 })
+ball.keyframe(1, { position: [-2, 2.4, 0], interp: 'ease-in' })
+ball.keyframe(25, { position: [-2, 0.4, 0], interp: 'ease-out' })
+ball.keyframe(49, { position: [-2, 2.4, 0] })
+const box = scene.add.cube({ name: 'Box', size: 0.8 })
+box.position = [1.5, 0.4, 0]
+box.keyframe(1, { rotation: [0, 0, 0], scale: [1, 1, 1] })
+box.keyframe(49, { rotation: [0, Math.PI, 0], scale: [1.5, 1.5, 1.5] })
+const clip = scene.traceClip()
+log('channels: ' + clip.channels.join(', '))
+log(clip.frames + ' keys per sampler, ' + clip.duration + ' s, ' + clip.bytes + ' bytes of floats')`,
+  },
+  {
+    id: 'hierarchy-motion',
+    title: 'Motion through a hierarchy',
+    icon: '🖊️',
+    group: 'Learning',
+    desc: 'A two-joint arm: the shoulder and the elbow each turn 90° while a pen at the tip has no keys at all. The pen moves because its parents move, along a curve made by both turns. Baking samples that world motion into keys on a separate marker; the trace shows the samples and how far straight lines between them stray from the curve.',
+    lang: 'js',
+    setup: { select: 'Pen', trace: true, predict: true, tab: 'trace', frame: 1, view: 'all' },
+    guide: [
+      'The output panel: baking every 1, 3, 6 and 12 frames, and the worst gap between the baked straight lines and the pen\u2019s true path. Halving the step cuts the gap to about a quarter.',
+      'In the Algorithm trace, press Play: the chain from Shoulder to Pen, the samples (predict how many keys), and the check.',
+      step('Press Space to play: the orange marker, keyed every 3 frames with no parent, follows the pen.', (e) => e.frame !== 1),
+      step('Select the Pen and use Object › Trace baking world motion (every 3 frames).', (e, s) => e.trace?.op === 'Trace baking world motion' && e.trace !== s.trace),
+    ],
+    code: `// A shoulder at the origin, an elbow 1.5 along it, a pen 1.2 further: each a child of the one before.
+scene.setTimeline({ start: 1, end: 49, fps: 24 })
+// (Setting a parent keeps the world position, so each local position is set after parenting.)
+const shoulder = scene.add.cube({ name: 'Shoulder', size: 0.3, position: [0, 0.5, 0] })
+const elbow = scene.add.cube({ name: 'Elbow', size: 0.25 })
+elbow.parent = shoulder; elbow.position = [1.5, 0, 0]
+const pen = scene.add.uvSphere({ name: 'Pen', radius: 0.12, segments: 12, rings: 6 })
+pen.parent = elbow; pen.position = [1.2, 0, 0]
+// Only the joints are keyed: each turns 90° about z over the 48 frames.
+shoulder.keyframe(1, { rotation: [0, 0, 0], interp: 'linear' }); shoulder.keyframe(49, { rotation: [0, 0, Math.PI / 2], interp: 'linear' })
+elbow.keyframe(1, { rotation: [0, 0, 0], interp: 'linear' }); elbow.keyframe(49, { rotation: [0, 0, Math.PI / 2], interp: 'linear' })
+
+for (const every of [1, 6, 12]) {
+  const b = pen.traceBake(every)
+  log('every ' + String(every).padStart(2) + ' frames: ' + String(b.keys.length).padStart(2) + ' keys, worst gap ' + b.maxError.toFixed(4))
+}
+// Bake every 3 frames (traced) onto a marker with no parent.
+const baked = pen.traceBake(3)
+log('every  3 frames: ' + baked.keys.length + ' keys, worst gap ' + baked.maxError.toFixed(4))
+const marker = scene.add.uvSphere({ name: 'Baked', radius: 0.08, segments: 10, rings: 5 })
+marker.material.color = '#f59e0b'
+for (const k of baked.keys) marker.keyframe(k.frame, { position: k.value, interp: 'linear' })`,
+  },
+  {
+    id: 'quaternions',
+    title: 'Quaternions',
+    icon: '🧭',
+    group: 'Learning',
+    desc: 'A plane-shaped arrow turned by Euler angles (60°, 30°, 0°). Its orientation as a quaternion: one quaternion per axis, built from half angles, multiplied together, and read back as one turn about one axis. Also: a full turn of 360° is the quaternion −1, the same orientation as +1.',
+    lang: 'js',
+    setup: { select: 'Arrow', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: the quaternion of a turn about y by 0°, 90°, 180° and 360°. Its w is cos(half the angle): at 360° it is −1, the same orientation as at 0°.',
+      'In the Algorithm trace, press Play: one quaternion per axis (predict the x one\u2019s w), their product, and the single axis and angle.',
+      step('Change the Arrow\u2019s rotation in the Inspector and use Object › Trace the quaternion.', (e, s) => e.trace?.op === 'Trace the quaternion' && e.trace !== s.trace),
+    ],
+    code: `// One axis first: a turn about y by 0°, 90°, 180° and 360°.
+const probe = scene.add.cube({ name: 'Probe', size: 0.3, position: [3, 0.5, 0] })
+for (const deg of [0, 90, 180, 360]) {
+  probe.rotation = [0, deg * Math.PI / 180, 0]
+  log('y by ' + String(deg).padStart(3) + '°: q = (' + probe.traceQuaternion().join(', ') + ')')
+}
+probe.rotation = [0, 0, 0]
+
+// An arrow (a stretched cone) turned by Euler angles 60°, 30°, 0°: traced.
+const arrow = scene.add.cone({ name: 'Arrow', radius: 0.3, height: 1.6, position: [0, 1, 0] })
+arrow.rotation = [Math.PI / 3, Math.PI / 6, 0]
+log('Arrow: q = (' + arrow.traceQuaternion().join(', ') + ')')`,
+  },
+  {
+    id: 'slerp-turn',
+    title: 'Slerp',
+    icon: '🌀',
+    group: 'Learning',
+    desc: 'Two boxes turned between the same two keys, from upright to a tumble of (0°, 150°, 120°). The left one blends its three Euler angles separately; the right one uses slerp, along the great circle between the two orientations: the shortest turn, at a steady speed. The trace samples the slerp box halfway.',
+    lang: 'js',
+    setup: { select: 'Slerp', trace: true, predict: true, tab: 'trace', frame: 13, view: 'all' },
+    guide: [
+      'The output panel: how far each box is from its start at five frames, in degrees. The slerp box\u2019s angle grows by the same amount every 6 frames: one steady turn about one axis. The Euler box\u2019s grows unevenly, because it swings along a longer, curving route (191° of turning to end up 165° away).',
+      'In the Algorithm trace, press Play: the keys, t, the quaternions, the shortest-path check, the weights (predict the weight on q₁), and back to Euler.',
+      step('Press Space to play, and watch the two boxes: the same start and end, different paths.', (e) => e.frame !== 13),
+    ],
+    code: `// The same two rotation keys on two boxes; one interpolates Euler angles, one slerps quaternions.
+scene.setTimeline({ start: 1, end: 25, fps: 24 })
+const end = [0, 150 * Math.PI / 180, 120 * Math.PI / 180]
+const boxes = [['Euler', -1.2], ['Slerp', 1.2]].map(([name, x]) => {
+  const b = scene.add.cube({ name, size: 0.9, position: [x, 1, 0] })
+  b.keyframe(1, { rotation: [0, 0, 0], interp: 'linear' })
+  b.keyframe(25, { rotation: end, interp: 'linear' })
+  b.rotationMode = name === 'Slerp' ? 'quaternion' : 'euler'
+  return b
+})
+// How far each has turned from the start at a frame: the angle of its rotation, from its quaternion's w.
+// Euler (x, y, z) → quaternion: one quaternion per axis (half angles), multiplied qx · qy · qz.
+const mulq = (a, b) => [a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+  a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]]
+const quat = (e) => [0, 1, 2].map((i) => { const q = [0, 0, 0, Math.cos(e[i] / 2)]; q[i] = Math.sin(e[i] / 2); return q }).reduce(mulq)
+const turned = (b, f) => (2 * Math.acos(Math.min(1, Math.abs(quat(b.traceSample('rotation', f).value)[3]))) * 180 / Math.PI).toFixed(1)
+for (const b of boxes) log(b.name.padEnd(6), 'turned at frames 1, 7, 13, 19, 25:', [1, 7, 13, 19, 25].map((f) => turned(b, f)).join('°, ') + '°')
+boxes[1].traceSample('rotation', 13)             // traced: the slerp box halfway`,
+  },
+  {
+    id: 'keyframes',
+    title: 'Keyframes',
+    icon: '🎞️',
+    group: 'Learning',
+    desc: 'A box with three position keys: left at frame 1, up in the middle at frame 25, right at frame 49. Every other frame is worked out from the two keys around it. The trace samples frame 7, a quarter of the way from the first key to the second.',
+    lang: 'js',
+    setup: { select: 'Box', trace: true, predict: true, tab: 'trace', frame: 7, view: 'all' },
+    guide: [
+      'The output panel: the box\u2019s position at frames from 1 to 60. Between keys it moves in straight lines at a steady speed; after the last key it stays put.',
+      'In the Algorithm trace, press Play: the keys, how far frame 7 is between frames 1 and 25 (t), the easing (linear here), and the blend (predict the position).',
+      step('In the Timeline, scrub to another frame and use Object › Trace sampling the keys (this frame).', (e, s) => e.trace?.op === 'Trace sampling the keys' && e.trace !== s.trace && e.frame !== 7),
+      step('Insert a key of your own: move the box at frame 37 and press I. The path now bends there.', (e) => (e.scene.get('Box')?.anim?.position ?? []).some((k) => k.frame === 37)),
+    ],
+    code: `// Three keys on a box's position, all linear.
+scene.setTimeline({ start: 1, end: 60, fps: 24 })
+const box = scene.add.cube({ name: 'Box', size: 0.6 })
+box.keyframe(1, { position: [-3, 0.3, 0], interp: 'linear' })
+box.keyframe(25, { position: [0, 2.3, 0], interp: 'linear' })
+box.keyframe(49, { position: [3, 0.3, 0], interp: 'linear' })
+for (const f of [1, 13, 25, 37, 49, 60, 7]) {        // 7 last: the traced one
+  const r = box.traceSample('position', f)
+  log('frame ' + String(f).padStart(2) + ': (' + r.value.join(', ') + ')' + (r.t === null ? '   (outside the keys)' : '   t = ' + r.t))
+}`,
+  },
+  {
+    id: 'easing',
+    title: 'Interpolation and easing',
+    icon: '📉',
+    group: 'Learning',
+    desc: 'Four balls dropped from the same height in the same 12 frames, each with a different easing on its top key. Linear falls at a steady speed (wrong for gravity); ease-in starts slow and speeds up, exactly like a falling object; ease-out does the opposite; ease starts and stops gently.',
+    lang: 'js',
+    setup: { select: 'ease-in', trace: true, predict: true, tab: 'trace', frame: 7, view: 'all', play: false },
+    guide: [
+      'The output panel: each ball\u2019s height a quarter of the way and halfway through its fall. Only ease-in (s = t²) matches the free fall a real ball makes, 3 − 3t².',
+      'In the Algorithm trace, press Play: the keys, t at frame 7, and the easing (predict s for ease-in).',
+      step('Play the animation (Space): ease-in looks like a real drop; the others look pushed or slowed.', (e) => e.frame !== 7),
+      'The bouncing-ball project uses exactly this: ease-in at each top, ease-out at each bounce.',
+    ],
+    code: `// Four balls, each falling 3 m in 12 frames (frames 1 to 13). Only the easing of the top key differs.
+scene.setTimeline({ start: 1, end: 24, fps: 24 })
+const kinds = ['linear', 'ease-out', 'ease', 'ease-in']
+kinds.forEach((interp, i) => {
+  const b = scene.add.uvSphere({ name: interp, radius: 0.3, segments: 16, rings: 8 })
+  b.smooth = true
+  b.keyframe(1, { position: [i * 1.2 - 1.8, 3.3, 0], interp })
+  b.keyframe(13, { position: [i * 1.2 - 1.8, 0.3, 0], interp: 'linear' })
+})
+for (const interp of kinds) {                    // ease-in last: its trace is shown
+  const b = scene.get(interp), quarter = b.traceSample('position', 4), half = b.traceSample('position', 7)
+  log(interp.padEnd(8), 'height at t = ¼:', (quarter.value[1] - 0.3).toFixed(3), '  at t = ½:', (half.value[1] - 0.3).toFixed(3))
+}
+// Falling from rest, height = 3 − 3t² (t from 0 to 1 over the 12 frames): gravity's parabola.
+log('free fall', '  height at t = ¼:', (3 - 3 / 16).toFixed(3), '  at t = ½:', (3 - 3 / 4).toFixed(3))`,
+  },
+  {
+    id: 'cosine-law',
+    title: 'Light and the cosine law',
+    icon: '☀️',
+    group: 'Learning',
+    desc: 'A matte ball under a sun straight overhead. The light each point receives falls with the cosine of the angle between its normal and the sun: full at the top, half at 60°, none at the side. The trace works out one vertex\u2019s colour the way the fragment shader does.',
+    lang: 'js',
+    setup: { select: 'Ball', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: N·L and the screen colour at four points on the ball. The brightness falls with the cosine, not in a straight line: at 60° N·L is about ½ (0.49, because a vertex normal averages the faces around it).',
+      'In the Algorithm trace, press Play: the vectors N, L and V as arrows at the vertex, the sky-and-ground ambient, the cosine law (predict d), the colour, and its sRGB encoding for the screen.',
+      step('Drag the Light object (the sun) to one side: the lit half of the ball turns to follow it.', (e, s) => moved(e, s, 'Light')),
+      step('Tab into edit mode on "Ball", select a vertex (1 for vertex select) and use Mesh › Trace the shading (one vertex).', (e, s) => e.trace?.op === 'Trace the shading' && e.trace !== s.trace),
+    ],
+    code: `// A matte (Lambert) ball, and the sun straight overhead: L = (0, 1, 0) everywhere.
+scene.get('Light').position = [0, 8, 0]
+const ball = scene.add.uvSphere({ name: 'Ball', radius: 1, segments: 36, rings: 12, position: [0, 1, 0] })
+ball.smooth = true
+ball.material.shader = 'lambert'
+ball.material.color = '#c8c8c8'
+
+// One vertex at 0°, 30°, 60° and 90° from the top (rings every 15°), on the side facing +x.
+for (const deg of [0, 30, 90, 60]) {
+  const y = Math.cos(deg * Math.PI / 180)
+  const v = ball.mesh.verts.find((p) => Math.abs(p.y - y) < 1e-6 && p.x >= -1e-9 && Math.abs(p.z) < 1e-6).index
+  const r = ball.traceShading(v)           // 60° comes last, so it is the one traced
+  log(String(deg).padStart(2) + '°: N·L', r.terms['N·L'].toFixed(4), '  screen', r.screen.join(', '))
+}`,
+  },
+  {
+    id: 'pack-charts',
+    title: 'Straighten and pack',
+    icon: '📦',
+    group: 'Learning',
+    desc: 'A plank cut along its twelve edges into six rectangles of three sizes. After flattening, each chart is turned to its smallest box, scaled to its true area, set on shelves tallest first, and the whole layout fitted into the square. Every face then gets the same number of texels per unit of surface.',
+    lang: 'js',
+    setup: { select: 'Plank', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: how much of the texture square the charts use, and the texel density of each face (texels per unit length for a 1024 × 1024 texture): the same on all six.',
+      'In the Algorithm trace, press Play: the six charts, then packing: straighten chart 1, scale it to its true area (predict the factor), the shelves, and the fit.',
+      'The UV tab shows the layout: the two big faces, the two long thin sides and the two ends, in rows.',
+      step('In the Inspector, set the texture repeat (×) to 4: the checker squares halve, still the same size on every face.', (e) => e.scene.objects.find((o) => o.name === 'Plank')?.material.textureScale === 4),
+    ],
+    code: `// A plank: a cube stretched to 3 × 0.4 × 1.2, cut along its sharp edges into six rectangles.
+const plank = scene.add.cube({ name: 'Plank', size: 1, position: [0, 0.6, 0] })
+for (const v of plank.mesh.verts) { v.x *= 3; v.y *= 0.4; v.z *= 1.2 }
+plank.mesh.seamsFromSharp(60)
+plank.mesh.unwrap()                                 // traced: charts, LSCM, then packing
+plank.material.texture = 'checker'; plank.material.textureScale = 2
+
+const uv = plank.mesh.uv
+let used = 0
+const density = plank.mesh.faces.map((f) => {
+  const q = uv[f.index]
+  let a = 0
+  q.forEach((p, i) => { const n = q[(i + 1) % q.length]; a += p[0] * n[1] - n[0] * p[1] })
+  used += Math.abs(a) / 2
+  return 1024 * Math.sqrt(Math.abs(a) / 2 / f.area)    // texels per unit of surface length
+})
+log('square used:', (100 * used).toFixed(1) + '%')
+log('texels per unit length, face by face:', density.map((d) => d.toFixed(1)).join(', '))`,
+  },
+  {
+    id: 'measuring-distortion',
+    title: 'Measuring distortion',
+    icon: '📏',
+    group: 'Learning',
+    desc: 'A globe cut along one meridian and unwrapped. Each triangle\u2019s UV map is a 2 × 2 matrix; its singular values σ₁ and σ₂ say how much it stretches. Near the equator they are close (σ₁/σ₂ about 1.1); at a pole, where the seam ends, they are further apart (1.33), and the pole\u2019s triangles get six times as much texture per unit of surface. The trace works out one triangle and then the whole globe.',
+    lang: 'js',
+    setup: { select: 'Globe', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: σ₁, σ₂, the angle distortion σ₁/σ₂ and the area scale σ₁σ₂ of a face on the equator and a face at the north pole, then the whole globe.',
+      'The heat map is the angle distortion: blue where squares stay square, red at the poles where the seam ends.',
+      'In the Algorithm trace, press Play: the pole triangle laid flat, its Jacobian J (predict its top-left entry), the singular values, and the whole mesh.',
+      step('Tab into edit mode, select a face on the equator (3 for face select) and use UV › Trace the distortion (one face): σ₁/σ₂ about 1.1.', (e, s) => e.trace?.op === 'Trace the distortion' && e.trace !== s.trace),
+    ],
+    code: `// A globe, cut along one meridian (x ≥ 0, z = 0) and unwrapped by LSCM.
+const globe = scene.add.uvSphere({ name: 'Globe', radius: 1, segments: 32, rings: 16 })
+const m = globe.mesh
+const onMeridian = new Set(m.verts.filter((v) => v.x >= -1e-9 && Math.abs(v.z) < 1e-9).map((v) => v.index))
+m.markSeams(m.edges.filter((e) => onMeridian.has(e.a) && onMeridian.has(e.b)).map((e) => [e.a, e.b]))
+m.unwrap()
+globe.material.texture = 'checker'; globe.smooth = true
+m.showField('uv')
+
+// Two faces away from the seam: one on the equator, one at the north pole.
+const equator = m.faces.find((f) => f.verts.length === 4 && Math.abs(f.center[1]) < 0.1 && f.center[2] > 0.7).index
+const pole = m.faces.find((f) => f.verts.length === 3 && f.center[1] > 0 && f.center[2] > 0.05).index
+for (const [name, f] of [['equator', equator], ['north pole', pole]]) {     // the pole's trace comes last
+  const d = globe.traceDistortion(f)
+  log(name.padEnd(10), 'σ₁', d.sigma1, ' σ₂', d.sigma2, ' σ₁/σ₂', d.ratio, ' area σ₁σ₂', d.area)
+  if (name === 'north pole') log('whole globe: σ₁/σ₂ mean', d.meanRatio, ' worst', d.worstRatio, ' area scale varies', d.areaSpread + '×,', d.flippedCount, 'flipped')
+}`,
+  },
+  {
+    id: 'conformal-unwrap',
+    title: 'Conformal maps and LSCM',
+    icon: '📐',
+    group: 'Learning',
+    desc: 'A dome is already a disc, so it needs no seams. Unwrapped by LSCM, every checker square stays square, though squares near the rim come out bigger than at the top. Projected from above, the squares near the rim are squashed into slivers. The trace shows the pins, the conformal solve and what is kept.',
+    lang: 'js',
+    setup: { select: 'Dome', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: angle distortion (1 means squares stay square) and how much the area scale varies (largest over smallest). LSCM keeps angles almost perfectly but not areas; the projection keeps neither near the rim.',
+      'In the Algorithm trace, press Play: the chart, the two pins (predict where the second goes), the conformal solve, what it kept, and the packing.',
+      'The UV tab: select each dome to see its layout. LSCM\u2019s is a round disc with its rings spread out towards the rim.',
+      step('Select "Dome, projected" and use UV › Angle distortion heat map: red all round the rim.', (e) => showing(e, 'Dome, projected', 'uv')),
+      step('With "Dome, projected" selected, Tab into edit mode and press U (UV › Unwrap (LSCM)): its rim squares become square, and the heat map turns blue.', (e, s) => did(e, s, 'Unwrap') && (e.editObject ?? e.activeObject)?.name === 'Dome, projected'),
+    ],
+    code: `// A dome: the top half of a sphere, a pole and 8 rings of 24 down to the equator. It has one rim: a disc.
+const S = 24, R = 8, verts = [[0, 1, 0]], faces = []
+for (let i = 1; i <= R; i++) for (let j = 0; j < S; j++) {
+  const a = (Math.PI / 2) * i / R, b = 2 * Math.PI * j / S
+  verts.push([Math.sin(a) * Math.cos(b), Math.cos(a), Math.sin(a) * Math.sin(b)])
+}
+const at = (i, j) => 1 + (i - 1) * S + (j % S)
+for (let j = 0; j < S; j++) faces.push([0, at(1, j + 1), at(1, j)])
+for (let i = 1; i < R; i++) for (let j = 0; j < S; j++) faces.push([at(i, j), at(i, j + 1), at(i + 1, j + 1), at(i + 1, j)])
+const dome = scene.add.mesh({ name: 'Dome', verts, faces, position: [-1.4, 0, 0] })
+const flat = dome.duplicate(); flat.name = 'Dome, projected'; flat.position.x = 1.4
+flat.mesh.unwrap({ method: 'planar' })
+dome.mesh.unwrap()                                  // LSCM, traced
+for (const o of [dome, flat]) {
+  o.material.texture = 'checker'; o.material.textureScale = 2; o.smooth = true
+  const d = o.mesh.uvDistortion(), uv = o.mesh.uv
+  // Area scale of each face: its area in UV (the shoelace formula) over its area on the surface.
+  const scale = o.mesh.faces.map((f) => {
+    const q = uv[f.index]
+    let a = 0
+    q.forEach((p, i) => { const n = q[(i + 1) % q.length]; a += p[0] * n[1] - n[0] * p[1] })
+    return Math.abs(a) / 2 / f.area
+  })
+  log(o.name.padEnd(15), 'angle distortion: mean', (d.reduce((x, y) => x + y) / d.length).toFixed(3), ' worst', Math.max(...d).toFixed(3), '  area scale varies', (Math.max(...scale) / Math.min(...scale)).toFixed(2) + '×')
+}`,
+  },
+  {
+    id: 'uv-projection',
+    title: 'Projecting UVs',
+    icon: '📽️',
+    group: 'Learning',
+    desc: 'The quickest UVs need no seams: project. A cliff projected from above keeps its square checker on the flat ground and stretches it down the steep face. A pillar (a tube) projected around its axis keeps every angle; lids would collapse to a line, so they are left off. The trace follows one vertex, the wrap-around line and the stretch.',
+    lang: 'js',
+    setup: { select: 'Pillar', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: the mean and worst angle distortion σ₁/σ₂ of each (1 means squares stay square). Most of the cliff is 1; the steep face is not. The pillar is 1 everywhere: its sides all face the projection.',
+      'In the Algorithm trace, press Play: the axis and scale, one vertex\u2019s UV (predict it), the faces across the wrap-around line, and the stretch on every face.',
+      step('Select "Cliff" and use UV › Angle distortion heat map: the steep face is where the checker stretches.', (e) => showing(e, 'Cliff', 'uv')),
+      step('Select "Pillar" and use UV › Project from above: now the sides are what collapse.', (e, s) => did(e, s, 'Unwrap') && e.activeObject?.name === 'Pillar'),
+    ],
+    code: `// 1. Ground with a cliff (a smooth step in height across x), projected straight down.
+const cliff = scene.add.grid({ name: 'Cliff', size: 4, subdivisions: 24, position: [-2.6, 0, 0] })
+for (const v of cliff.mesh.verts) v.y = 1.2 / (1 + Math.exp(-6 * v.x))
+cliff.mesh.unwrap({ method: 'planar' })
+cliff.material.texture = 'checker'
+
+// 2. A pillar, projected around its axis. Its lids (faces 0 and 1) would collapse to a line, so they go.
+const pillar = scene.add.cylinder({ name: 'Pillar', radius: 0.6, height: 2.4, segments: 24, position: [1.8, 1.2, 0] })
+pillar.mesh.delete({ faces: [0, 1] })
+pillar.mesh.unwrap({ method: 'cylinder' })      // traced: the last projection made
+pillar.material.texture = 'checker'
+
+for (const o of [cliff, pillar]) {
+  const d = o.mesh.uvDistortion(), mean = d.reduce((a, b) => a + b) / d.length
+  log(o.name.padEnd(6), 'angle distortion: mean', mean.toFixed(3), ' worst', Math.max(...d).toFixed(3))
+}`,
+  },
+  {
+    id: 'seams-and-charts',
+    title: 'Seams and charts',
+    icon: '✂️',
+    group: 'Learning',
+    desc: 'A can cut around both rims falls into three pieces: two lids and a tube. The lids are discs and lie flat; the tube is not (it has two rims), so it needs one more cut, from rim to rim. The trace grows each piece across non-seam edges and tests whether it is a disc.',
+    lang: 'js',
+    setup: { select: 'Can', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: each piece\u2019s faces, its Euler characteristic χ and its rims. A disc has χ = 1 and one rim. The tube of "Can" has χ = 0 and two rims: not a disc.',
+      'In the Algorithm trace, press Play: the seams (predict how many pieces they make), each piece flooded across non-seam edges, the disc test, and the wedges the cuts create.',
+      '"Can, opened" has one more seam, down its side. Now every piece is a disc, and the UV tab shows its tube unrolled into a rectangle.',
+      step('Select "Can", Tab into edit mode, select one vertical edge (2 for edge select) and use UV › Mark seam.', (e, s) => did(e, s, 'Mark seams')),
+      step('UV › Trace the charts (seams → pieces) on "Can": three discs now.', (e, s) => e.trace?.op === 'Trace the charts' && e.trace !== s.trace && e.trace.steps.at(-2)!.label.startsWith('All')),
+    ],
+    code: `// A can: a 16-sided cylinder with a lid at each end. Cut around both rims (the sharp edges).
+const can = scene.add.cylinder({ name: 'Can', radius: 0.8, height: 2, segments: 16, position: [-1.4, 1, 0] })
+can.mesh.seamsFromSharp(60)
+
+// The same can with one more seam, down its side from the bottom rim to the top (vertex 0 to vertex 16).
+const opened = can.duplicate(); opened.name = 'Can, opened'; opened.position.x = 1.4
+opened.mesh.markSeams([[0, 16]])
+opened.mesh.unwrap()
+opened.material.texture = 'checker'
+
+for (const o of [opened, can]) {           // "Can" last, so its charts are the ones traced
+  log(o.name + ':')
+  for (const c of o.mesh.charts()) log('  ', c.faces, c.faces === 1 ? 'face, ' : 'faces,', 'χ =', c.chi + ',', c.boundaries, c.boundaries === 1 ? 'rim' : 'rims', c.disc ? '→ a disc' : '→ not a disc')
+}`,
+  },
+  {
+    id: 'what-uvs-are',
+    title: 'What UVs are',
+    icon: '🏁',
+    group: 'Learning',
+    desc: 'A box and a globe with a checker texture. Every face corner has a point (u, v) on the texture; a vertex on a seam has a different one in each piece, so there are more UV points (wedges) than vertices. The trace follows one face from its corners\u2019 UVs to the texel the GPU reads.',
+    lang: 'js',
+    setup: { select: 'Box', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: vertices, face corners and wedges (distinct vertex-and-UV pairs) for each object. The box\u2019s 8 vertices become 24 wedges: every corner of the box is on three pieces.',
+      'In the Algorithm trace, press Play: face 0\u2019s corners and their UVs, the wedge count, the UV at the face\u2019s centre (predict it), and the texel and checker square it reads.',
+      'The UV tab shows both layouts: the box as six squares, the globe as one piece, opened along the seam.',
+      step('Tab into edit mode on "Box", select one face (3 for face select) and use UV › Trace a texture lookup (one face).', (e, s) => e.trace?.op === 'Trace a texture lookup' && e.trace !== s.trace),
+    ],
+    code: `// 1. A box, cut along its twelve sharp edges into six squares.
+const box = scene.add.cube({ name: 'Box', size: 1.6, position: [-1.6, 1, 0] })
+box.mesh.seamsFromSharp(60)
+box.mesh.unwrap()
+box.material.texture = 'checker'
+
+// 2. A globe, cut along one meridian from pole to pole.
+const globe = scene.add.uvSphere({ name: 'Globe', radius: 1, segments: 16, rings: 8, position: [1.4, 1, 0] })
+const m = globe.mesh
+const onMeridian = new Set(m.verts.filter((v) => v.x >= -1e-9 && Math.abs(v.z) < 1e-9).map((v) => v.index))
+m.markSeams(m.edges.filter((e) => onMeridian.has(e.a) && onMeridian.has(e.b)).map((e) => [e.a, e.b]))
+m.unwrap()
+globe.material.texture = 'checker'
+
+for (const o of [globe, box]) {
+  const r = o.traceUVLookup(0)          // the box's lookup comes last, so it is the one traced
+  log(o.name.padEnd(6), r.verts, 'vertices,', r.corners, 'corners,', r.wedges, 'wedges; face 0 centre UV', r.uv.join(', '), '→ texel', r.texel.join(', '))
+}`,
+  },
+  {
     id: 'laplacian',
     title: 'The Laplacian',
     icon: '∇',
@@ -1379,6 +2059,104 @@ ball.smooth = true
 ball.mesh.showField('mean')
 const H = ball.mesh.curvature('mean')
 log('H from', Math.min(...H).toFixed(3), 'to', Math.max(...H).toFixed(3), ';', H.filter((h) => h < 0).length, 'vertices curve inward')`,
+  },
+  {
+    id: 'gaussian-curvature',
+    title: 'Gaussian curvature',
+    icon: '🍩',
+    group: 'Learning',
+    desc: 'A torus coloured by Gaussian curvature: red on the outside, where it bends like a ball, blue on the inside, where it is a saddle. The trace adds up the angles round every vertex, works out one angle defect, and checks Gauss–Bonnet: the defects of a torus add up to zero.',
+    lang: 'js',
+    setup: { select: 'Torus', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'Red round the outside (dome-like, K > 0), blue round the hole (saddle-like, K < 0), white along the top and bottom circles, where one of the two bends is zero.',
+      'In the Algorithm trace, press Play: the angle sums, one vertex’s angle defect (predict it), and the total: 0, because a torus has χ = 0.',
+      step('Add a cube from the Add menu, select it and show Heat map › Gaussian curvature with Record traces on: all the curvature sits at the 8 corners, 90° each, 720° = 4π in all.', (e) => e.trace?.op === 'Gaussian curvature' && /χ = 2/.test(e.trace.steps.at(-1)?.label ?? '')),
+      'Pull a vertex of the torus out (G) and show the heat map again: the curvature moves around, but the total stays 0.',
+    ],
+    code: `const torus = scene.add.torus({ name: 'Torus' })
+torus.smooth = true
+torus.mesh.showField('gaussian')
+const K = torus.mesh.curvature('gaussian')
+log('K from', Math.min(...K).toFixed(3), 'to', Math.max(...K).toFixed(3))`,
+  },
+  {
+    id: 'sparse-solve',
+    title: 'Sparse linear systems',
+    icon: '🧮',
+    group: 'Learning',
+    desc: 'One step of heat flowing from a point on a sphere: a linear system with one unknown per vertex. The trace shows how sparse its matrix is, why it is symmetric positive definite, how conjugate gradients solves it iteration by iteration, and how much slower the simple Jacobi method is.',
+    lang: 'js',
+    setup: { select: 'Sphere', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'In the Algorithm trace, press Play: the matrix (predict how many non-zeros one row has), the SPD check, CG’s residual iteration by iteration, and Jacobi for comparison.',
+      'The heat map in the CG step is the solution: heat spread a little way from the source vertex, coloured on a log scale.',
+      step('Tab into edit mode, select another vertex (1 for vertex select) and use Heat map › Trace the heat solve (one vertex): the iteration counts barely change.', (e) => e.trace?.op === 'Trace the heat solve' && e.selectedVerts().length === 1),
+      step('Heat map › Distance from selected vertices: the heat method of lesson 7.6, which solves two systems like this one.', (e) => e.field?.spec.kind === 'geodesic'),
+    ],
+    code: `const sphere = scene.add.uvSphere({ name: 'Sphere', radius: 1, segments: 32, rings: 16 })
+sphere.material.color = '#8fa3b8'
+const m = sphere.mesh
+// The heat source: a vertex on the equator.
+const v = m.verts.findIndex((p) => Math.abs(p.y) < 1e-9 && p.x > 0.99)
+const r = m.solveHeat(v)
+log(r.unknowns, 'unknowns,', r.nonZeros, 'non-zeros; conjugate gradients:', r.cg, 'iterations; Jacobi:', r.jacobi)`,
+  },
+  {
+    id: 'implicit-smoothing',
+    title: 'Smoothing as heat flow',
+    icon: '♨️',
+    group: 'Learning',
+    desc: 'Smoothing is heat flowing through the positions. Four copies of a bumpy sphere: five small explicit steps, three explicit steps too big to be stable (they blow up), and one implicit step, which is stable at any size. All of them shrink.',
+    lang: 'js',
+    setup: { select: 'Implicit ×1', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: each copy\'s volume and roughness (how far the radius varies, as a percentage). Five explicit steps and one implicit step smooth about as well; explicit steps of λ = 1.5 overshoot and make it rougher.',
+      'In the Algorithm trace, press Play: the system (M + tC) x\' = M x (predict a diagonal entry), the three solves, and how much the volume shrank.',
+      step('Select "Bumpy", Tab into edit mode, select all (A) and use Mesh › Smooth vertices (implicit), then raise its strength in the Adjust panel: smoother, and smaller.', (e, s) => did(e, s, 'Smooth vertices (implicit)')),
+      step('Show Heat map › Mean curvature on "Bumpy": the bumps are gone, and H is larger everywhere because the sphere shrank.', (e) => showing(e, 'Bumpy', 'mean')),
+    ],
+    code: `// Four copies of one bumpy sphere: no smoothing, explicit steps, explicit steps that are too big, one implicit step.
+let seed = 3
+const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+const bumpy = scene.add.uvSphere({ name: 'Bumpy', radius: 1, segments: 40, rings: 20, position: [-3.9, 1.2, 0] })
+for (const v of bumpy.mesh.verts) { const k = 1 + 0.08 * (rand() - 0.5); v.x *= k; v.y *= k; v.z *= k }
+const copy = (name, x) => { const o = bumpy.duplicate(); o.name = name; o.position.x = x; return o }
+const explicit = copy('Explicit ×5', -1.3)
+explicit.mesh.smooth({ iterations: 5, lambda: 0.5 })          // x ← x + λ (x̄ − x), five times
+const tooBig = copy('Explicit λ = 1.5', 1.3)
+tooBig.mesh.smooth({ iterations: 3, lambda: 1.5 })            // past the average each time: unstable
+const implicit = copy('Implicit ×1', 3.9)
+implicit.mesh.smoothImplicit({ strength: 1 })                 // (M + tC) x' = M x, t = h², traced
+for (const o of [bumpy, explicit, tooBig, implicit]) {
+  o.smooth = true
+  const r = o.mesh.verts.map((p) => Math.hypot(p.x, p.y, p.z)), mean = r.reduce((a, b) => a + b) / r.length
+  const rough = Math.sqrt(r.reduce((s, x) => s + (x - mean) ** 2, 0) / r.length) / mean
+  log(o.name.padEnd(16), 'volume', o.mesh.stats().volume.toFixed(3), '  roughness', (100 * rough).toFixed(2) + '%')
+}`,
+  },
+  {
+    id: 'geodesic-distance',
+    title: 'Distance on a surface',
+    icon: '📏',
+    group: 'Learning',
+    desc: 'How far is every point of a sphere from its north pole, walking on the surface? The heat method: let heat spread a little, keep only the direction it flows, and solve for the function with that gradient. The answers can be checked: π/2 at the equator, π at the south pole.',
+    lang: 'js',
+    setup: { select: 'Globe', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The colours and lines are distance from the north pole along the surface: equally spaced circles, like lines of latitude.',
+      'In the Algorithm trace, press Play: the cotan weights, the heat after one short step, its direction in every triangle, the divergence, and the Poisson solve (predict how far a neighbour of the pole is).',
+      step('Tab into edit mode, select two vertices far apart (1 for vertex select, Shift+click) and use Heat map › Distance from selected vertices: the distance to the nearer one.', (e) => e.field?.spec.kind === 'geodesic' && e.field.spec.sources.length >= 2),
+      'Open the "Distance on a knot" project for the same method on a twisted tube, where straight-line and surface distances differ a lot.',
+    ],
+    code: `const globe = scene.add.uvSphere({ name: 'Globe', radius: 1, segments: 32, rings: 16 })
+const m = globe.mesh
+// The north pole is vertex 0. Distance along the surface from it, by the heat method.
+m.showField('geodesic', { from: 0 })          // colour it
+const d = m.geodesic(0)                       // and get the numbers (traced)
+const south = m.verts.length - 1, equator = m.verts.findIndex((p) => Math.abs(p.y) < 1e-9)
+log('to the equator:', d[equator].toFixed(4), '(exactly π/2 = 1.5708)')
+log('to the south pole:', d[south].toFixed(4), '(exactly π = 3.1416)')`,
   },
   {
     id: 'island',
@@ -1672,6 +2450,33 @@ log(scene.objects.length, 'objects,', poses.length, 'poses keyed on 6 of them; t
 
   // ── Rigging ────────────────────────────────────────────────────────────
   {
+    id: 'bone-frames',
+    title: 'Bones and their frames',
+    icon: '🦴',
+    group: 'Learning',
+    desc: 'Three bones, each stored as a head, a tail and a roll, and each turned into a frame: its own x, y and z axes, with y along the bone. The trace builds the Arm bone’s rest matrix: its length, the shortest turn from +y, the roll, and the matrix whose columns are the axes.',
+    lang: 'js',
+    setup: { select: 'Rig', bone: 'Arm', trace: true, predict: true, tab: 'trace', view: 'all' },
+    guide: [
+      'The output panel: each bone’s length, how far +y had to turn to lie along it, and its x axis. Tilted has a roll of 90°: its x axis is turned about its length, though the bone itself has not moved.',
+      'In the Algorithm trace, press Play: the direction (predict the length), the turn (predict the angle), the roll, and the matrix. The coloured arrows are the bone’s x (red), y (green) and z (blue).',
+      step('Press Tab on the rig: Edit bones. Click the Arm’s tail and press E to extrude a new bone from it.', (e, s) => (e.scene.get('Rig')?.bones?.length ?? 0) > s.obj('Rig')!.bones),
+      step('Select the new bone and use Object › Trace the rest matrix (active bone).', (e, s) => e.trace?.op === 'Trace the rest matrix' && e.trace !== s.trace),
+    ],
+    code: `// Three bones, each a head, a tail and (optionally) a roll, in the armature's own space.
+const rig = scene.add.armature({ name: 'Rig', bones: [
+  { name: 'Spine', head: [0, 0, 0], tail: [0, 1.5, 0] },
+  { name: 'Tilted', head: [1.5, 0, 0], tail: [1.5, 1, 1], roll: Math.PI / 2 },
+  { name: 'Arm', parent: 'Spine', head: [0, 1.5, 0], tail: [0.3, 1.9, 1.2] },
+] })
+const deg = (r) => (r * 180 / Math.PI).toFixed(2)
+const v = (a) => '(' + a.map((x) => +x.toFixed(4)).join(', ') + ')'
+for (const name of ['Spine', 'Tilted', 'Arm']) {            // Arm last: the traced one
+  const r = rig.bone(name).traceRest()
+  log(name + ': length ' + +r.length.toFixed(4) + ', turned ' + deg(r.turn) + '° from +y, x axis ' + v(r.x))
+}`,
+  },
+  {
     id: 'walk-and-wave',
     title: 'Rigged character: walk and wave',
     icon: '🚶',
@@ -1855,40 +2660,7 @@ log('Camera keyed every 6 frames:', 41, 'keys; the scene camera is', scene.camer
       'Select the Rig object and look at its position keys: y dips after each contact and rises at passing; z moves forward at a steady speed (linear keys), so the walk does not surge.',
       'Frame 1 and frame 25 are the same pose, so the cycle loops. Try it yourself: add arm swing, each arm swinging opposite its leg, and key it every 6 frames.',
     ],
-    code: rigOnly + `
-
-// 9. A walk: 24-frame cycle, keys every 6 frames: contact, passing, contact, passing.
-//    A positive x turn swings a thigh forward (toward +z, where the character walks).
-const cycle = 24, cycles = 4
-scene.setTimeline({ start: 1, end: 1 + cycle * cycles })
-const legs = {
-  //           contact   pass     contact   pass       (frames 0, 6, 12, 18 of the cycle)
-  'Thigh.L': [0.45,     0.0,     -0.45,    -0.05],
-  'Shin.L':  [-0.05,    -0.2,    -0.35,    -0.9],
-  'Thigh.R': [-0.45,    -0.05,   0.45,     0.0],
-  'Shin.R':  [-0.35,    -0.9,    -0.05,    -0.2],
-}
-for (let c = 0; c <= cycles; c++) for (let k = 0; k < 4; k++) {
-  const f = 1 + c * cycle + k * 6
-  if (f > 1 + cycle * cycles) break
-  for (const [bone, poses] of Object.entries(legs)) rig.bone(bone).keyframe(f, { rotation: [poses[k], 0, 0], interp: 'ease' })
-}
-// Arms relaxed at the sides.
-rig.bone('UpperArm.L').keyframe(1, { rotation: [0, 0, -1.2] })
-rig.bone('UpperArm.R').keyframe(1, { rotation: [0, 0, 1.2] })
-
-// The hips: down 3 frames after each contact, up at passing. Forward at a steady 0.9 per cycle.
-const stride = 0.9
-for (let c = 0; c < cycles * 2; c++) {
-  const f = 1 + c * 12
-  rig.keyframe(f, { position: [3, 1.1, (c * stride) / 2] })
-  rig.keyframe(f + 3, { position: [3, 1.04, (c * stride) / 2 + stride / 8] })
-  rig.keyframe(f + 9, { position: [3, 1.15, (c * stride) / 2 + (3 * stride) / 8] })
-}
-rig.keyframe(1 + cycle * cycles, { position: [3, 1.1, cycles * stride] })
-for (const k of rig.animation.position) rig.setInterpolation(k.frame, 'linear')
-body.material.color = '#d9a47a'
-log('4 cycles of 24 frames; press Space')`,
+    code: rigOnly + walkKeys,
   },
 
   // ── Geometry & heat maps ─────────────────────────────────────────────────

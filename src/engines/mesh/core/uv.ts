@@ -25,6 +25,7 @@ import type { Modifier } from './modifiers';
 import { mirror } from './modifiers';
 import { subdivide } from './subdivision';
 import { fmt } from './trace';
+import { singularValues, triangleJacobian } from './distortionTrace';
 import type { Trace } from './trace';
 
 export type UV = [number, number];
@@ -121,6 +122,15 @@ export function lscm(m: EditMesh, trace?: Trace, label = 'chart'): UV[] {
   if (!boundary.size) throw new Error('This surface is closed: mark seams to cut it open before unwrapping');
   const [p1, p2] = pinPair(m, [...boundary]);
   const L = Math.hypot(...[0, 1, 2].map((k) => m.verts[p1][k] - m.verts[p2][k])) || 1;
+  // The first chart's pins carry a prediction; later charts' would only repeat it.
+  if (trace && (label === 'Chart 1' || label === 'chart')) {
+    trace.step({
+      phase: 'Pins', label: `${label}: pin v${p1} at (0, 0) and v${p2}, the boundary vertex farthest from it, at (${fmt(L, 4)}, 0)`,
+      detail: 'A conformal map can still be moved, turned and scaled without changing any angle, so the energy has no single minimum until something is fixed. Two pins fix all four freedoms: one point fixes the position, the second the turn and the size. Pinning them as far apart as they are on the surface keeps the scale close to 1.',
+      verts: [p1, p2], values: [['n (vertices)', String(n)], ['unknowns', String(2 * n - 4)], ['boundary vertices', String(boundary.size)]],
+      quiz: { prompt: `v${p1} is at (${m.verts[p1].map((x) => fmt(x, 3)).join(', ')}) and v${p2} at (${m.verts[p2].map((x) => fmt(x, 3)).join(', ')}). v${p1} is pinned at (0, 0) and v${p2} on the u axis, as far from it as on the surface. At what u?`, answer: [L], labels: ['u'], rule: 'The distance between the two vertices: √(Δx² + Δy² + Δz²).', tolerance: 0.002 },
+    });
+  }
   // Unknowns x = (u₀…u_{n−1}, v₀…v_{n−1}); H = [[C, −S/2], [S/2, C]].
   const pinned = new Map<number, number>([[p1, 0], [n + p1, 0], [p2, L], [n + p2, 0]]);
   const free: number[] = [];
@@ -149,6 +159,19 @@ export function lscm(m: EditMesh, trace?: Trace, label = 'chart'): UV[] {
     detail: 'Minimise E = ½(uᵀCu + vᵀCv) − ½ uᵀSv: the Dirichlet energy (how much the map stretches, as the heat maps measure it) minus the area it covers. E is zero exactly when every angle is kept. The two pins stop the chart sliding, turning or shrinking to a point.',
     values: [['residual', sol.residual.toExponential(1)], ['boundary vertices', String(boundary.size)]],
   });
+  if (trace) {
+    // Angles kept, areas not: each triangle's σ₁/σ₂ and its area scale σ₁σ₂.
+    const ratio: number[] = [], scale: number[] = [];
+    for (const f of m.faces) for (let i = 1; i + 1 < f.length; i++) {
+      const { sigma1, sigma2 } = triangleDistortion([m.verts[f[0]], m.verts[f[i]], m.verts[f[i + 1]]], [uv[f[0]], uv[f[i]], uv[f[i + 1]]]);
+      if (sigma2 > 1e-12) { ratio.push(sigma1 / sigma2); scale.push(sigma1 * sigma2); }
+    }
+    const mean = ratio.reduce((a, b) => a + b, 0) / (ratio.length || 1);
+    trace.step({
+      phase: 'Angles kept', label: `${label}: angle distortion σ₁/σ₂ mean ${fmt(mean, 4)}, worst ${fmt(Math.max(...ratio), 4)}; area scale from ${fmt(Math.min(...scale), 3)} to ${fmt(Math.max(...scale), 3)}`,
+      detail: 'Conformal means every small square maps to a square: σ₁/σ₂ = 1. LSCM gets close everywhere it can. It does not keep areas: on a curved chart some squares come out bigger than others (σ₁σ₂ varies). A flat chart would keep both.',
+    });
+  }
   return uv;
 }
 
@@ -160,17 +183,9 @@ export function lscm(m: EditMesh, trace?: Trace, label = 'chart'): UV[] {
  * (conformal); σ₁σ₂ is how much area is scaled.
  */
 export function triangleDistortion(p: [Vec3, Vec3, Vec3], t: [UV, UV, UV]): { sigma1: number; sigma2: number } {
-  const e1 = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]], e2 = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
-  const l1 = Math.hypot(e1[0], e1[1], e1[2]) || 1;
-  const x = e1.map((c) => c / l1);
-  const d = e2[0] * x[0] + e2[1] * x[1] + e2[2] * x[2];
-  const yv = [e2[0] - d * x[0], e2[1] - d * x[1], e2[2] - d * x[2]], h = Math.hypot(yv[0], yv[1], yv[2]) || 1e-12;
   // Local 2D: q0 = (0, 0), q1 = (l1, 0), q2 = (d, h). J maps local → UV: J · [q1 q2] = [t1 − t0, t2 − t0].
-  const du1 = t[1][0] - t[0][0], dv1 = t[1][1] - t[0][1], du2 = t[2][0] - t[0][0], dv2 = t[2][1] - t[0][1];
-  const a = du1 / l1, c = dv1 / l1, b = (du2 - a * d) / h, dd = (dv2 - c * d) / h;
-  // Singular values of [[a, b], [c, dd]].
-  const s1 = a * a + b * b + c * c + dd * dd, s2 = Math.sqrt(Math.max(0, (a * a + b * b - c * c - dd * dd) ** 2 + 4 * (a * c + b * dd) ** 2));
-  return { sigma1: Math.sqrt(Math.max(0, (s1 + s2) / 2)), sigma2: Math.sqrt(Math.max(0, (s1 - s2) / 2)) };
+  const [sigma1, sigma2] = singularValues(triangleJacobian(p, t).J);
+  return { sigma1, sigma2 };
 }
 
 /** Per vertex: the average angle distortion σ₁/σ₂ of the triangles around it (1 = perfect). */
@@ -222,27 +237,53 @@ export function straighten(mesh: EditMesh, uv: UV[]): UV[] {
 }
 
 /** Straighten and scale each chart to its true area, lay them out in rows, and fit the layout in [0, 1]² with a margin. */
-export function pack(chartUVs: { mesh: EditMesh; uv: UV[] }[], margin = 0.02): UV[][] {
-  const boxes = chartUVs.map(({ mesh, uv: raw }) => {
+export function pack(chartUVs: { mesh: EditMesh; uv: UV[] }[], margin = 0.02, trace?: Trace): UV[][] {
+  const bbox = (uv: UV[]) => { const us = uv.map((p) => p[0]), vs = uv.map((p) => p[1]); return (Math.max(...us) - Math.min(...us)) * (Math.max(...vs) - Math.min(...vs)); };
+  let turned = 0;
+  const boxes = chartUVs.map(({ mesh, uv: raw }, k) => {
     const uv = straighten(mesh, raw);
-    const s = Math.sqrt(area3(mesh) / (areaUV(mesh, uv) || 1));
+    if (Math.abs(bbox(uv) - bbox(raw)) > 1e-9 * Math.max(1, bbox(raw))) turned++;
+    const a3 = area3(mesh), auv = areaUV(mesh, uv), s = Math.sqrt(a3 / (auv || 1));
+    if (trace && k === 0) {
+      trace.step({
+        phase: 'Straighten', label: `Chart 1 turned to its smallest bounding box: ${fmt(bbox(raw), 4)} → ${fmt(bbox(uv), 4)}`,
+        detail: 'LSCM leaves a chart at whatever angle its pins gave it. The smallest box around a polygon always has one side along one of the polygon\'s edges, so each edge direction is tried (as rotating calipers does) and the best kept. Smaller boxes pack tighter.',
+      });
+      trace.step({
+        phase: 'True area', label: `Chart 1 covers ${fmt(a3, 4)} of surface and ${fmt(auv, 4)} of UV: scale its UVs by ${fmt(s, 4)}`,
+        detail: 'Every chart is scaled so its UV area equals its area on the surface. Then one unit of UV covers one unit of surface everywhere: equal texel density, so no part of the model is blurrier than another just because its chart came out small.',
+        quiz: { prompt: `Chart 1 covers ${fmt(a3, 4)} square units of surface, but its UVs cover ${fmt(auv, 4)}. By what factor must its UV coordinates be multiplied so the two areas match?`, answer: [s], labels: ['scale'], rule: 'Areas scale with the square of lengths: s = √(surface area / UV area).', tolerance: Math.max(0.002, 0.005 * s) },
+      });
+    }
     const scaled = uv.map(([u, v]) => [u * s, v * s] as UV);
     const us = scaled.map((p) => p[0]), vs = scaled.map((p) => p[1]);
     const u0 = Math.min(...us), v0 = Math.min(...vs);
-    return { uv: scaled.map(([u, v]) => [u - u0, v - v0] as UV), w: Math.max(...us) - u0, h: Math.max(...vs) - v0 };
+    return { uv: scaled.map(([u, v]) => [u - u0, v - v0] as UV), w: Math.max(...us) - u0, h: Math.max(...vs) - v0, area: a3 };
   });
   const totalArea = boxes.reduce((s, b) => s + (b.w + margin) * (b.h + margin), 0);
   const rowWidth = Math.max(Math.sqrt(totalArea) * 1.15, ...boxes.map((b) => b.w + margin));
   const order = boxes.map((_, i) => i).sort((a, b) => boxes[b].h - boxes[a].h);
   const at: [number, number][] = [];
-  let x = margin, y = margin, rowH = 0, maxX = 0;
+  let x = margin, y = margin, rowH = 0, maxX = 0, rows = 1;
   for (const i of order) {
     const b = boxes[i];
-    if (x + b.w + margin > rowWidth + margin && x > margin) { x = margin; y += rowH + margin; rowH = 0; }
+    if (x + b.w + margin > rowWidth + margin && x > margin) { x = margin; y += rowH + margin; rowH = 0; rows++; }
     at[i] = [x, y];
     x += b.w + margin; rowH = Math.max(rowH, b.h); maxX = Math.max(maxX, x);
   }
   const size = Math.max(maxX, y + rowH + margin);
+  if (trace) {
+    const used = boxes.reduce((s, b) => s + b.area, 0) / (size * size);
+    trace.step({
+      phase: 'Shelves', label: `${boxes.length} chart${boxes.length === 1 ? '' : 's'} (${turned} turned), tallest first, in ${rows} row${rows === 1 ? '' : 's'} up to ${fmt(rowWidth, 3)} wide`,
+      detail: `Shelf packing: sort the boxes by height, place them left to right along a shelf, and start a new shelf above when the next one will not fit. The row width is about the square root of the total area (×1.15), so the layout comes out roughly square. A gap of ${fmt(margin)} between charts stops colours bleeding across when the texture is filtered.`,
+    });
+    trace.step({
+      phase: 'Fit', label: `Scaled by 1/${fmt(size, 4)} into the square: the charts fill ${fmt(100 * used, 1)}% of it; a 1024² texture gives ${fmt(1024 / size, 1)} texels per unit of surface length`,
+      detail: 'Last, the whole layout is scaled into [0, 1]². Every chart shrinks by the same factor, so texel density stays equal across the model. The unused part of the square is wasted texture memory.',
+      values: [['layout size', fmt(size, 4)], ['square used', `${fmt(100 * used, 1)}%`], ['texels per unit length (1024²)', fmt(1024 / size, 1)]],
+    });
+  }
   return boxes.map((b, i) => b.uv.map(([u, v]) => [(u + at[i][0]) / size, (v + at[i][1]) / size] as UV));
 }
 
@@ -255,14 +296,14 @@ export function unwrap(mesh: EditMesh, seams: Set<string>, trace?: Trace): UVLay
     faces: cs[0]?.faces ?? [],
   });
   const flat = cs.map((c, i) => ({ mesh: c.mesh, uv: lscm(c.mesh, trace, `Chart ${i + 1}`) }));
-  const packed = pack(flat);
+  const packed = pack(flat, 0.02, trace);
   const faces: UV[][] = mesh.faces.map((f) => f.map(() => [0, 0] as UV));
   cs.forEach((c, ci) => c.faces.forEach((fi, k) => { faces[fi] = c.corners[k].map((w) => packed[ci][w]); }));
   const layer = { faces };
   if (trace) {
     const dist = angleDistortion(mesh, layer);
     trace.step({
-      phase: 'Pack', label: `Charts scaled to their true area and packed into the unit square; mean angle distortion ${fmt(dist.reduce((a, b) => a + b, 0) / dist.length, 4)}`,
+      phase: 'Result', label: `Charts scaled to their true area and packed into the unit square; mean angle distortion ${fmt(dist.reduce((a, b) => a + b, 0) / dist.length, 4)}`,
       detail: 'Angle distortion is σ₁/σ₂ of each triangle\'s map, 1 when angles are kept. LSCM makes it small; it cannot also keep areas where the surface is curved (the Gauss–Bonnet idea: a sphere cannot lie flat).',
       field: Array.from(dist), fieldLabel: 'angle distortion σ₁/σ₂',
     });

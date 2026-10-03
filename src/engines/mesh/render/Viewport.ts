@@ -261,6 +261,7 @@ export class Viewport {
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
       if (this.through) this.applyThrough(); else this.orbit.update();
+      const eye = this.camera.position; this.editor.viewEye = [eye.x, eye.y, eye.z];
       this.renderer.render(this.scene, this.camera);
       this.drawLabels();
     };
@@ -1369,6 +1370,14 @@ export class Viewport {
       arrow.traverse((o) => { const mat = (o as THREE.Mesh).material as THREE.Material | undefined; if (mat) mat.depthTest = false; o.renderOrder = 6; });
       G.add(arrow);
       if (a.label) this.traceLabels.push({ p: new THREE.Vector3(...a.to), text: a.label, color: a.color ?? '#38bdf8', parent: v.group });
+    }
+    const lines = tv.hide ? [] : s.lines ?? [];
+    if (lines.length) {
+      const pos: number[] = [];
+      for (const [a, b] of lines) pos.push(...a, ...b);
+      const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      G.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0xfacc15, depthTest: false })));
+      for (const [a, b] of lines.slice(0, 400)) G.add(this.tube(a, b, 0xfacc15));
     }
     // Opaque objects are drawn before transparent ones whatever their renderOrder,
     // so the see-through ghost would wash out every marker. Put the markers in the

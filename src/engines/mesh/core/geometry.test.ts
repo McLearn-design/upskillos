@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makePrimitive } from './primitives';
-import { Sparse, solveCG, operators, gaussianCurvature, meanCurvature, heatGeodesic, smooth, contours, levelsFor, cotAt } from './geometry';
+import { Sparse, solveCG, operators, gaussianCurvature, meanCurvature, heatGeodesic, smooth, smoothImplicit, contours, levelsFor, cotAt } from './geometry';
 import { Trace } from './trace';
 import { subdivide } from './subdivision';
 import type { Vec3 } from './EditMesh';
@@ -125,6 +125,42 @@ describe('smoothing and contours', () => {
     expect(m.verts[peak][1]).toBeLessThan(0.2);
     expect(moved[peak]).toBeGreaterThan(0.8);
     m.verts.forEach((p, i) => { if (Math.abs(edge0[i][0]) > 0.99 || Math.abs(edge0[i][2]) > 0.99) expect(p).toEqual(edge0[i]); });
+  });
+
+  it('implicit smoothing: one large step flattens a bump, the boundary stays, and it is traced', () => {
+    const m = makePrimitive('grid', { size: 2, subdivisions: 8 });
+    const peak = m.verts.findIndex((p) => Math.hypot(p[0], p[2]) < 1e-9);
+    m.verts[peak] = [0, 0.3, 0];
+    const edge0 = m.verts.map((p) => [...p] as Vec3);
+    const t = new Trace('Implicit smoothing');
+    smoothImplicit(m, { strength: 5 }, t);
+    expect(m.verts[peak][1]).toBeLessThan(0.06);
+    m.verts.forEach((p, i) => { if (Math.abs(edge0[i][0]) > 0.99 || Math.abs(edge0[i][2]) > 0.99) expect(p).toEqual(edge0[i]); });
+    expect(t.steps.map((s) => s.phase)).toEqual(['The system', 'Solve']);
+    expect(t.steps[0].quiz!.answer[0]).toBeGreaterThan(0);
+  });
+
+  it('implicit smoothing is stable at any step; a sphere shrinks like mean curvature flow', () => {
+    // Mean curvature flow on a unit sphere moves every point inward at the same speed, so it stays round.
+    const m = makePrimitive('uvSphere', { radius: 1, segments: 32, rings: 16 });
+    const t = new Trace('Implicit smoothing');
+    smoothImplicit(m, { strength: 2 }, t);
+    const R = m.verts.map((p) => Math.hypot(...p)), mean = sum(R) / R.length;
+    for (const r of R) expect(Math.abs(r - mean)).toBeLessThan(0.01);
+    expect(mean).toBeLessThan(1);
+    expect(t.steps.at(-1)!.phase).toBe('Shrinkage');
+    const huge = makePrimitive('uvSphere', { radius: 1, segments: 32, rings: 16 });
+    smoothImplicit(huge, { strength: 1000 });
+    for (const p of huge.verts) { expect(Math.hypot(...p)).toBeLessThan(0.05); expect(Number.isFinite(p[0])).toBe(true); }
+  });
+
+  it('only the selected vertices move', () => {
+    const m = makePrimitive('uvSphere', { segments: 16, rings: 8 });
+    const before = m.verts.map((p) => [...p] as Vec3);
+    m.verts[20] = [m.verts[20][0] * 1.3, m.verts[20][1] * 1.3, m.verts[20][2] * 1.3];
+    const moved = smoothImplicit(m, { strength: 2, only: [20] });
+    moved.forEach((d, i) => { if (i !== 20) expect(m.verts[i]).toEqual(before[i]); });
+    expect(Math.hypot(...m.verts[20])).toBeLessThan(1.3);
   });
 
   it('contours of the height of a sphere are circles at that height', () => {

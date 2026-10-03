@@ -533,6 +533,261 @@ describe('UV and material projects', () => {
     expect(e.log).toHaveLength(3);
   });
 
+  it('write a shader: a ball', () => {
+    const { e, r } = open('write-a-shader');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual(['shade() is lines 19 to 21 of the 34 lines MeshLab writes', 'problem: line 2: 3 is a whole number: in float maths write 3.0']);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Frame', 'Your code', 'main()', 'Checks']);
+    expect(e.trace!.steps[1].quiz!.answer).toEqual([3]);
+  });
+
+  it('procedural textures: six tiles', () => {
+    const { e, r } = open('procedural-textures');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual([
+      'Checker  face 6 at (0.3, 0.3) → (235, 235, 235)', 'Grid     face 6 at (0.3, 0.3) → (225, 228, 232)', 'Stripes  face 6 at (0.3, 0.3) → (255, 159, 28)',
+      'Wood     face 6 at (0.3, 0.3) → (173, 114, 62)', 'Grass    face 6 at (0.3, 0.3) → (112, 169, 62)', 'Bricks   face 6 at (0.3, 0.3) → (130, 57, 40)',
+    ]);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Repeat', 'Formula', 'Colour']);
+    expect(e.trace!.steps[1].quiz!.answer).toEqual([2]);
+  });
+
+  it('debug views: a flipped face and a seam', () => {
+    const { e, r } = open('debug-views');
+    expect(r.error).toBeNull();
+    expect(r.output[0]).toBe('face 0 normal (0, 0, 1) → colour (0.5, 0.5, 1)');
+    expect(r.output[1]).toBe('face 1 normal (0, 0, 1) → colour (0.5, 0.5, 1)');
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Vectors', 'Encode', 'Result']);
+    expect(e.trace!.steps[1].quiz!.answer).toEqual([0.5, 0.5, 1]);
+    expect(e.trace!.steps[2].label).toBe('linear (0.5, 0.5, 1) → screen (188, 188, 255)');
+  });
+
+  it('toon shading: two balls', () => {
+    const { e, r } = open('toon-shading');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual([
+      ' 0°: N·L 1.000 → band 1.000   rim 1.000', '30°: N·L 0.851 → band 0.667   rim 0.128', '60°: N·L 0.491 → band 0.333   rim 0.001',
+      '75°: N·L 0.254 → band 0.000   rim 0.000', '90°: N·L 0.000 → band 0.000   rim 0.000', '45°: N·L 0.695 → band 0.667   rim 0.018',
+    ]);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Vectors', 'Ambient', 'Cosine law', 'Bands', 'Rim', 'Colour', 'Result']);
+    expect(e.trace!.steps[3].quiz!.answer[0]).toBeCloseTo(2 / 3, 9);
+  });
+
+  it('pbr materials: six balls', () => {
+    const { e, r } = open('pbr-materials');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual([
+      'Metal 0.15   D 161.870   F 0.3712', 'Metal 0.8    D 0.767   F 0.3714', 'Metal 0.4    D 10.885   F 0.3713',
+      'Plastic 0.15 D 46.624   F 0.0400', 'Plastic 0.8  D 0.770   F 0.0403', 'Plastic 0.4  D 10.115   F 0.0401',
+    ]);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Vectors', 'Ambient', 'Microfacets (D)', 'Fresnel (F)', 'Shadowing (G)', 'Energy', 'Result']);
+    expect(e.trace!.steps[3].quiz!.answer[0]).toBeCloseTo(0.0401, 4);
+  });
+
+  it('highlights: three balls', () => {
+    const { e, r } = open('highlights');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual([
+      'shininess 5    highlight at its peak 0.9906   15° away 0.7664',
+      'shininess 200  highlight at its peak 0.8733   15° away 0.0006',
+      'shininess 40   highlight at its peak 0.9873   15° away 0.1583',
+    ]);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Vectors', 'Ambient', 'Cosine law', 'Half vector', 'Highlight', 'Colour', 'Result']);
+    expect(e.trace!.steps[4].quiz!.answer[0]).toBeCloseTo(0.9873, 4);
+  });
+
+  it('walk sliding', () => {
+    const { e, r } = open('walk-sliding');
+    expect(r.error).toBeNull();
+    expect(r.output.slice(1)).toEqual(['left foot planted on frames 4–7, 28–31, 52–55, 76–79', 'worst slide while planted: 0.1744 (frames 28–31)', 'pose at frame 25 against frame 1: 0.00000 rad']);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Path', 'Contact', 'Slide', 'Loop']);
+    expect(e.trace!.steps[3].quiz!.answer).toEqual([25]);
+  });
+
+  it('bone frames: three rest matrices', () => {
+    const { e, r } = open('bone-frames');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual([
+      'Spine: length 1.5, turned 0.00° from +y, x axis (1, 0, 0)',
+      'Tilted: length 1.4142, turned 45.00° from +y, x axis (0, 0.7071, -0.7071)',
+      'Arm: length 1.3, turned 72.08° from +y, x axis (0.9593, -0.2308, -0.1629)',
+    ]);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Direction', 'Turn', 'Roll', 'Matrix']);
+    expect(e.trace!.steps[0].quiz!.answer[0]).toBeCloseTo(1.3, 9);
+  });
+
+  it('gltf clip: channels, times and bytes', () => {
+    const { e, r } = open('gltf-clip');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual(['channels: Ball.translation, Box.rotation, Box.scale', '49 keys per sampler, 2 s, 2548 bytes of floats']);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Channels', 'Times', 'Values', 'Interpolation', 'Bytes']);
+    expect(e.trace!.steps[1].quiz!.answer).toEqual([1]);
+    expect(e.trace!.steps[4].quiz!.answer).toEqual([2548]);
+  });
+
+  it('hierarchy motion: an arm and a pen', () => {
+    const { e, r } = open('hierarchy-motion');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual(['every  1 frames: 49 keys, worst gap 0.0000', 'every  6 frames:  9 keys, worst gap 0.0302', 'every 12 frames:  5 keys, worst gap 0.1197', 'every  3 frames: 17 keys, worst gap 0.0067']);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Chain', 'Sample', 'Check']);
+    expect(e.trace!.steps[1].quiz!.answer).toEqual([17]);
+  });
+
+  it('quaternions and slerp', () => {
+    const q = open('quaternions');
+    expect(q.r.error).toBeNull();
+    expect(q.r.output).toEqual(['y by   0°: q = (0, 0, 0, 1)', 'y by  90°: q = (0, 0.7071, 0, 0.7071)', 'y by 180°: q = (0, 1, 0, 0)', 'y by 360°: q = (0, 0, 0, -1)', 'Arrow: q = (0.483, 0.2241, 0.1294, 0.8365)']);
+    expect(q.e.trace!.steps[0].quiz!.answer[0]).toBeCloseTo(Math.cos(Math.PI / 6), 9);
+    const sl = open('slerp-turn');
+    expect(sl.r.error).toBeNull();
+    expect(sl.r.output).toEqual(['Euler  turned at frames 1, 7, 13, 19, 25: 0.0°, 47.7°, 93.2°, 133.7°, 165.1°', 'Slerp  turned at frames 1, 7, 13, 19, 25: 0.0°, 41.3°, 82.6°, 123.8°, 165.1°']);
+    expect(sl.e.trace!.steps.map((x) => x.phase)).toEqual(['Keys', 'How far', 'Ease', 'Quaternions', 'Shortest path', 'Weights', 'Back to Euler']);
+    expect(sl.e.trace!.steps[5].quiz!.answer[0]).toBeCloseTo(0.6654, 4);
+  });
+
+  it('keyframes and easing', () => {
+    const k = open('keyframes');
+    expect(k.r.error).toBeNull();
+    expect(k.r.output.at(-1)).toBe('frame  7: (-2.25, 0.8, 0)   t = 0.25');
+    expect(k.e.trace!.steps.map((x) => x.phase)).toEqual(['Keys', 'How far', 'Ease', 'Blend']);
+    k.e.trace!.steps[3].quiz!.answer.forEach((x, i) => expect(x).toBeCloseTo([-2.25, 0.8, 0][i], 12));
+    const ez = open('easing');
+    expect(ez.r.error).toBeNull();
+    expect(ez.r.output.slice(3)).toEqual(['ease-in  height at t = ¼: 2.813   at t = ½: 2.250', 'free fall   height at t = ¼: 2.813   at t = ½: 2.250']);
+    expect(ez.e.trace!.steps[2].quiz!.answer[0]).toBeCloseTo(0.25, 12);
+  });
+
+  it('cosine law: a ball', () => {
+    const { e, r } = open('cosine-law');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual([
+      ' 0°: N·L 1.0000   screen 220, 221, 224', '30°: N·L 0.8506   screen 206, 207, 210',
+      '90°: N·L 0.0000   screen 75, 77, 83', '60°: N·L 0.4913   screen 167, 168, 172',
+    ]);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Vectors', 'Ambient', 'Cosine law', 'Colour', 'Result']);
+    expect(e.trace!.steps[2].quiz!.answer[0]).toBeCloseTo(0.4913, 4);
+    expect(e.trace!.steps[1].label).toBe('Ambient light (0.178, 0.19, 0.219): 75% sky, 25% ground');
+  });
+
+  it('pack charts: a plank', () => {
+    const { e, r } = open('pack-charts');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual(['square used: 40.6%', 'texels per unit length, face by face: 200.8, 200.8, 200.8, 200.8, 200.8, 200.8']);
+    const at = (phase: string) => e.trace!.steps.find((x) => x.phase === phase)!;
+    expect(at('Straighten').label).toBe('Chart 1 turned to its smallest bounding box: 2.4 → 1.2');
+    expect(at('True area').quiz!.answer[0]).toBeCloseTo(1, 9);
+    expect(at('Shelves').label).toBe('6 charts (6 turned), tallest first, in 4 rows up to 3.802 wide');
+    expect(at('Fit').label).toBe('Scaled by 1/5.1 into the square: the charts fill 40.6% of it; a 1024² texture gives 200.8 texels per unit of surface length');
+  });
+
+  it('measuring distortion: a globe', () => {
+    const { e, r } = open('measuring-distortion');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual([
+      'equator    σ₁ 0.2003  σ₂ 0.1805  σ₁/σ₂ 1.1094  area σ₁σ₂ 0.036147',
+      'north pole σ₁ 0.5503  σ₂ 0.4139  σ₁/σ₂ 1.3295  area σ₁σ₂ 0.22776',
+      'whole globe: σ₁/σ₂ mean 1.1539  worst 1.7736  area scale varies 31.6376×, 0 flipped',
+    ]);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Local frame', 'Jacobian', 'Singular values', 'Whole mesh']);
+    expect(e.trace!.steps[1].quiz!.answer[0]).toBeCloseTo(0.4345, 4);
+  });
+
+  it('conformal unwrap: a dome', () => {
+    const { e, r } = open('conformal-unwrap');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual([
+      'Dome            angle distortion: mean 1.079  worst 1.202   area scale varies 3.69×',
+      'Dome, projected angle distortion: mean 3.261  worst 10.000   area scale varies 10.24×',
+    ]);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Cut into charts', 'Pins', 'Conformal solve', 'Angles kept', 'Straighten', 'True area', 'Shelves', 'Fit', 'Result']);
+    expect(e.trace!.steps[1].quiz!.answer[0]).toBeCloseTo(2, 9);
+    expect(e.trace!.steps[3].label).toBe('Chart 1: angle distortion σ₁/σ₂ mean 1.0735, worst 1.215; area scale from 0.238 to 0.985');
+  });
+
+  it('uv projection: a cliff and a pillar', () => {
+    const { e, r } = open('uv-projection');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual(['Cliff  angle distortion: mean 1.125  worst 1.941', 'Pillar angle distortion: mean 1.003  worst 1.003']);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Direction', 'One vertex', 'Wrap', 'Stretch']);
+    expect(e.trace!.steps[1].quiz!.answer[0]).toBeCloseTo(0.5, 6);
+    expect(e.trace!.steps[1].quiz!.answer[1]).toBeCloseTo(0.6366, 4);
+    expect(e.trace!.steps[2].label).toBe('1 face straddles the line where the angle wraps round; its small u values are moved up by one turn');
+  });
+
+  it('seams and charts: a can', () => {
+    const { e, r } = open('seams-and-charts');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual([
+      'Can, opened:', '   1 face,  χ = 1, 1 rim → a disc', '   1 face,  χ = 1, 1 rim → a disc', '   16 faces, χ = 1, 1 rim → a disc',
+      'Can:', '   1 face,  χ = 1, 1 rim → a disc', '   1 face,  χ = 1, 1 rim → a disc', '   16 faces, χ = 0, 2 rims → not a disc',
+    ]);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Seams', 'Grow charts', 'Grow charts', 'Grow charts', 'Disc test', 'Wedges']);
+    expect(e.trace!.steps[0].quiz!.answer).toEqual([3]);
+    expect(e.trace!.steps[4].label).toBe('2 of 3 charts are discs; 1 needs another cut');
+  });
+
+  it('what uvs are: a box and a globe', () => {
+    const { e, r } = open('what-uvs-are');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual([
+      'Globe  114 vertices, 480 corners, 121 wedges; face 0 centre UV 0.6825, 0.3671 → texel 174, 93',
+      'Box    8 vertices, 24 corners, 24 wedges; face 0 centre UV 0.168, 0.168 → texel 43, 43',
+    ]);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Corners', 'Wedges', 'Interpolate', 'Texture lookup']);
+    expect(e.trace!.steps[2].quiz!.answer[0]).toBeCloseTo(0.168, 3);
+    expect(e.trace!.steps.at(-1)!.label).toBe('Texel (43, 43) of 256 × 256: checker square (1, 1), white');
+  });
+
+  it('level sets: two hills', () => {
+    const { e, r } = open('level-sets');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual([
+      'height 0.01: 0 loops, 1 open, length 15.109', 'height 0.2: 1 loops, 0 open, length 13.072', 'height 0.5: 2 loops, 0 open, length 8.608',
+      'height 0.9: 1 loops, 0 open, length 2.983', 'height 1.3: 0 loops, 0 open, length 0.000',
+    ]);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Classify', 'One triangle', 'Every triangle', 'Join']);
+    expect(e.trace!.steps[1].quiz!.answer[0]).toBeCloseTo(0.7079, 3);
+    expect(e.trace!.steps.at(-1)!.label).toBe('2 closed loops and 0 open chains; total length 8.6081');
+  });
+
+  it('implicit smoothing: four bumpy spheres', () => {
+    const { e, r } = open('implicit-smoothing');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual([
+      'Bumpy            volume 4.124   roughness 2.29%', 'Explicit ×5      volume 3.816   roughness 0.81%',
+      'Explicit λ = 1.5 volume 3.581   roughness 4.71%', 'Implicit ×1      volume 3.725   roughness 0.82%',
+    ]);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['The system', 'Solve', 'Shrinkage']);
+    expect(e.trace!.steps[0].quiz!.answer[0]).toBeCloseTo(0.2496, 3);
+    expect(e.trace!.steps[2].label).toBe('Volume 4.1241 → 3.7246 (-9.7%)');
+  });
+
+  it('geodesic: distance on a globe', () => {
+    const { e, r } = open('geodesic-distance');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual(['to the equator: 1.5645 (exactly π/2 = 1.5708)', 'to the south pole: 3.1290 (exactly π = 3.1416)']);
+    const steps = e.trace!.steps;
+    expect(steps.at(-1)!.phase).toBe('Poisson solve');
+    expect(steps.at(-1)!.quiz!.answer[0]).toBeCloseTo(0.1951, 3);
+  });
+
+  it('sparse solve: heat on a sphere', () => {
+    const { e, r } = open('sparse-solve');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual(['482 unknowns, 4258 non-zeros; conjugate gradients: 45 iterations; Jacobi: 310']);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['The matrix', 'Symmetric positive definite', 'Conjugate gradients', 'Jacobi, for comparison']);
+    expect(e.trace!.steps[0].quiz!.answer).toEqual([9]);
+  });
+
+  it('gaussian curvature: a torus', () => {
+    const { e, r } = open('gaussian-curvature');
+    expect(r.error).toBeNull();
+    expect(r.output).toEqual(['K from -5.256 to 3.229']);
+    expect(e.trace!.steps.map((x) => x.phase)).toEqual(['Angle sums', 'Angle defect', 'Gauss–Bonnet']);
+    expect(e.trace!.steps[2].label).toBe('Total defect 0 = 0π; 2πχ = 0π with χ = 0');
+    expect(e.trace!.steps[1].quiz!.answer[0]).toBeCloseTo(-3.88, 2);
+  });
+
   it('mean curvature: a dented ball', () => {
     const { e, r } = open('mean-curvature');
     expect(r.error).toBeNull();
@@ -870,6 +1125,41 @@ describe('guide steps that tick themselves', () => {
     'Use Edit › Trace the undo stack': (e) => { const b = obj(e, 'Box'); e.setSmooth(b.id, true); e.setSmooth(b.id, false); e.setSmooth(b.id, true); expect(e.traceUndo()).toBe(true); },
     'Change Box three ways': (e) => { const b = obj(e, 'Box'); e.setSmooth(b.id, true); e.setTransform(b.id, 'position', 0, 1.5); e.setTransform(b.id, 'rotation', 1, 0.5); },
     'Use Script › Trace the GUI → code log': (e) => { const b = obj(e, 'Box'); e.setSmooth(b.id, true); e.setTransform(b.id, 'position', 0, 1.5); traceReplay(e); },
+    'Select "Bumpy", Tab into edit mode, select all (A) and use Mesh › Smooth vertices (implicit)': (e) => { const m = obj(e, 'Bumpy').mesh!; edit(e, 'Bumpy', 'vert', m.verts.map((_, i) => i)); expect(e.smoothImplicit()).toBe(true); },
+    'Show Heat map › Mean curvature on "Bumpy"': (e) => { e.selectObject(obj(e, 'Bumpy').id); expect(e.showField({ kind: 'mean' })).toBe(true); },
+    'Heat map › Trace the iso-line (middle of the range): the level halfway up': (e) => { expect(e.traceContourOf()).toBe(true); },
+    'Heat map › Mean curvature, then trace its iso-line': (e) => { expect(e.showField({ kind: 'mean' })).toBe(true); expect(e.traceContourOf()).toBe(true); },
+    'Open the Shader tab, change the 3 on line 2 to 3.0': (e) => { const o = obj(e, 'Ball'); e.setMaterial(o.id, { glsl: o.material.glsl!.replace(', 3);', ', 3.0);') }); },
+    'In the Inspector, set the Bricks tile': (e) => { e.setMaterial(obj(e, 'Bricks').id, { textureScale: 2 }); },
+    'Tab into edit mode on another tile, select a face': (e) => { edit(e, 'Wood', 'face', [3]); expect(e.traceTextureOf()).toBe(true); },
+    'Select the Ball, key its scale at frame 13': (e) => { e.selectObject(obj(e, 'Ball').id); e.setFrame(13); expect(e.insertKey(['scale'])).toBe(true); expect(e.traceClipOf()).toBe(true); },
+    'Select the Rig, pick bone Shin.R': (e) => { e.selectObject(obj(e, 'Rig').id); e.activeBone = 'Shin.R'; expect(e.traceFootSlideOf(24)).toBe(true); },
+    'Press Space to play: the orange marker': (e) => { e.setFrame(25); },
+    'Select the Pen and use Object › Trace baking world motion': (e) => { e.selectObject(obj(e, 'Pen').id); expect(e.traceBakeOf(3)).toBe(true); },
+    'Change the Arrow': (e) => { const a = obj(e, 'Arrow'); e.selectObject(a.id); expect(e.traceQuaternionOf()).toBe(true); },
+    'Press Space to play, and watch the two boxes': (e) => { e.setFrame(20); },
+    'In the Timeline, scrub to another frame and use Object › Trace sampling the keys': (e) => { e.selectObject(obj(e, 'Box').id); e.setFrame(20); expect(e.traceSampleOf()).toBe(true); },
+    'Insert a key of your own: move the box at frame 37': (e) => { e.selectObject(obj(e, 'Box').id); e.setFrame(37); expect(e.insertKey(['position'])).toBe(true); },
+    'Play the animation (Space)': (e) => { e.setFrame(12); },
+    'Fix the box: Tab into edit mode, select its back face': (e) => { edit(e, 'Box', 'face', [0]); expect(e.flip()).toBe(true); },
+    'Tab into edit mode on "Toon", pick a vertex near its edge': (e) => { edit(e, 'Toon', 'vert', [200]); expect(e.traceShadingOf()).toBe(true); },
+    'In the Inspector, set "Plastic 0.4"': (e) => { e.setMaterial(obj(e, 'Plastic 0.4').id, { metalness: 1 }); },
+    'Orbit the view, Tab into edit mode on "Shininess 40"': (e) => { edit(e, 'Shininess 40', 'vert', [300]); expect(e.traceShadingOf()).toBe(true); },
+    'In the Inspector, change the shininess of "Shininess 40" to 10': (e) => { e.setMaterial(obj(e, 'Shininess 40').id, { shininess: 10 }); },
+    'Tab into edit mode on "Ball", select a vertex (1 for vertex select) and use Mesh › Trace the shading': (e) => { edit(e, 'Ball', 'vert', [5]); expect(e.traceShadingOf()).toBe(true); },
+    'In the Inspector, set the texture repeat (×) to 4': (e) => { e.setMaterial(obj(e, 'Plank').id, { textureScale: 4 }); },
+    'Tab into edit mode, select a face on the equator (3 for face select) and use UV › Trace the distortion': (e) => { const m = obj(e, 'Globe').mesh!; edit(e, 'Globe', 'face', [m.faces.findIndex((_, i) => m.faces[i].length === 4 && Math.abs(m.faceCenter(i)[1]) < 0.1 && m.faceCenter(i)[2] > 0.7)]); expect(e.traceDistortionOf()).toBe(true); },
+    'Select "Dome, projected" and use UV › Angle distortion heat map': (e) => { e.selectObject(obj(e, 'Dome, projected').id); expect(e.showField({ kind: 'uv' })).toBe(true); },
+    'With "Dome, projected" selected, Tab into edit mode and press U': (e) => { edit(e, 'Dome, projected', 'face', []); expect(e.unwrap()).toBe(true); },
+    'Select "Cliff" and use UV › Angle distortion heat map': (e) => { e.selectObject(obj(e, 'Cliff').id); expect(e.showField({ kind: 'uv' })).toBe(true); },
+    'Select "Pillar" and use UV › Project from above': (e) => { e.selectObject(obj(e, 'Pillar').id); expect(e.unwrap('planar')).toBe(true); },
+    'Select "Can", Tab into edit mode, select one vertical edge': (e) => { edit(e, 'Can', 'edge', ['0-16']); e.markSeams(true); },
+    'UV › Trace the charts (seams → pieces) on "Can"': (e) => { e.selectObject(obj(e, 'Can').id); runScript(e, `scene.get('Can').mesh.markSeams([[0, 16]])`); expect(e.traceChartsOf()).toBe(true); },
+    'Tab into edit mode on "Box", select one face (3 for face select) and use UV › Trace a texture lookup': (e) => { edit(e, 'Box', 'face', [2]); expect(e.traceUVLookupOf()).toBe(true); },
+    'Tab into edit mode, select two vertices far apart': (e) => { edit(e, 'Globe', 'vert', [0, e.activeObject!.mesh!.verts.length - 1]); expect(e.showDistanceFromSelection()).toBe(true); },
+    'Tab into edit mode, select another vertex (1 for vertex select) and use Heat map › Trace the heat solve': (e) => { edit(e, 'Sphere', 'vert', [40]); expect(e.traceSolveOf()).toBe(true); },
+    'Heat map › Distance from selected vertices: the heat method': (e) => { edit(e, 'Sphere', 'vert', [40]); expect(e.showDistanceFromSelection()).toBe(true); },
+    'Add a cube from the Add menu, select it and show Heat map › Gaussian curvature': (e) => { const c = e.addPrimitive('cube'); e.selectObject(c.id); expect(e.showField({ kind: 'gaussian' })).toBe(true); },
     'Tab into edit mode, select one vertex in the dent': (e) => { const m = e.activeObject!.mesh!; edit(e, 'Dented ball', 'vert', [m.verts.findIndex((p) => p[0] > 0.3 && p[0] < 0.5 && Math.abs(p[1]) < 0.2)]); expect(e.traceLaplacianOf()).toBe(true); },
     'Heat map › Gaussian curvature: the next lesson': (e) => { expect(e.showField({ kind: 'gaussian' })).toBe(true); },
     'Tab into edit mode, select a vertex near a pole': (e) => { const m = e.activeObject!.mesh!; edit(e, 'Sphere', 'vert', [m.verts.findIndex((p) => p[1] > 1.8 && p[1] < 1.99)]); expect(e.traceLaplacianOf()).toBe(true); },
@@ -908,6 +1198,8 @@ describe('guide steps that tick themselves', () => {
     'Select Character and use Heat map › Bone weights': (e) => { e.activeBone = 'Spine'; expect(e.showField({ kind: 'weight', bone: 'Spine' }, obj(e, 'Character').id)).toBe(true); },
     'Brush Draw, Value 1': (e) => { e.beginStroke(); e.strokeDab(chest(e)); e.endStroke(); },
     'Turn on X-mirror': (e) => { e.paint = { ...e.paint, mirror: true }; for (let k = 0; k < 2; k++) { e.beginStroke(); e.strokeDab(chest(e)); e.endStroke(); } },
+    'Press Tab on the rig: Edit bones. Click the Arm': (e) => { e.selectObject(obj(e, 'Rig').id); e.enterBoneEdit(); e.selectJoint({ bone: 'Arm', part: 'tail' }); expect(e.extrudeBone()).toBe(true); },
+    'Select the new bone and use Object › Trace the rest matrix': (e) => { e.selectObject(obj(e, 'Rig').id); e.activeBone = obj(e, 'Rig').bones!.at(-1)!.name; expect(e.traceRestMatrixOf()).toBe(true); },
     'Pause (Space) and press Tab on the rig': (e) => { runScript(e, `scene.get('Tentacle rig').addBone({ name: 'Seg 6', parent: 'Seg 5', head: [0, 2.5, 0], tail: [0, 3, 0] })`); },
     'Still in Edit bones, set Roll to 90': (e) => { e.selectObject(obj(e, 'Tentacle rig').id); e.enterBoneEdit(); e.setBone('Seg 1', { roll: Math.PI / 2 }); },
     'Ctrl+Tab for pose mode: bend a segment': (e) => { e.selectObject(obj(e, 'Tentacle rig').id); e.enterPose(); e.setBonePose('Seg 2', [0.4, 0, 0]); },
@@ -917,6 +1209,7 @@ describe('guide steps that tick themselves', () => {
     'Tab into edit mode on "Bumpy"': (e) => { edit(e, 'Bumpy', 'vert', [0, 1, 2, 3]); expect(e.smoothVerts(5, 0.5)).toBe(true); },
     'Try it yourself: Tab into edit mode on a new cube': (e) => { runScript(e, `scene.add.cube({ name: 'Mine' }).mesh.seamsFromSharp(60)`); edit(e, 'Mine', 'face', [0, 1, 2, 3, 4, 5]); expect(e.unwrap()).toBe(true); },
     'The Shader tab shows the selected sphere': (e) => { runScript(e, `scene.get('Custom').material.glsl = 'return base * 0.5;'`); },
+    'Drag the Light object (the sun) to one side': (e) => { runScript(e, `scene.get('Light').position = [4, 6, 0]`); },
     'Move the Light object': (e) => { runScript(e, `scene.get('Light').position = [2, 6, 1]`); },
     'In the inspector, turn the mirror and subdivision': (e) => { const c = obj(e, 'Character'); e.updateModifier(c.id, 0, { enabled: false }); },
     'Heat map › Mean curvature: the smooth body': (e) => { expect(e.showField({ kind: 'mean' }, obj(e, 'Character').id)).toBe(true); },

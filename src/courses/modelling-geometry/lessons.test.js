@@ -52,6 +52,32 @@ import lesson65, { checkUVVerts } from './6-subdivision/005-subdividing-uvs.js';
 import lesson71, { checkDiverging } from './7-geometry-on-a-surface/001-fields-and-colour-maps.js';
 import lesson72, { checkCotan } from './7-geometry-on-a-surface/002-the-laplacian.js';
 import lesson73, { checkCurvatures } from './7-geometry-on-a-surface/003-mean-curvature.js';
+import lesson74, { checkDefects } from './7-geometry-on-a-surface/004-gaussian-curvature.js';
+import lesson75, { checkStorage } from './7-geometry-on-a-surface/005-sparse-linear-systems.js';
+import lesson76, { checkTube } from './7-geometry-on-a-surface/006-distance-on-a-surface.js';
+import lesson77, { checkZigzag } from './7-geometry-on-a-surface/007-smoothing-as-heat-flow.js';
+import lesson78, { checkContourSegment } from './7-geometry-on-a-surface/008-level-sets-and-contours.js';
+import lesson81, { checkWedges } from './8-uvs/001-what-uvs-are.js';
+import lesson82, { checkSeamCount } from './8-uvs/002-seams-and-charts.js';
+import lesson83, { checkRoof } from './8-uvs/003-projection.js';
+import lesson84, { checkConformal } from './8-uvs/004-conformal-maps-and-lscm.js';
+import lesson85, { checkSigmas } from './8-uvs/005-measuring-distortion.js';
+import lesson86, { checkTexels } from './8-uvs/006-straighten-and-pack.js';
+import lesson91, { checkLambertPixel } from './9-shading-and-textures/001-light-and-the-cosine-law.js';
+import lesson92, { checkShininess } from './9-shading-and-textures/002-highlights.js';
+import lesson93, { checkFresnel } from './9-shading-and-textures/003-physically-based-shading.js';
+import lesson94, { checkBandEdge } from './9-shading-and-textures/004-stylised-shading.js';
+import lesson95, { checkDecode } from './9-shading-and-textures/005-debug-views.js';
+import lesson96, { checkBrick } from './9-shading-and-textures/006-procedural-textures.js';
+import lesson97, { checkErrorLine } from './9-shading-and-textures/007-write-a-shader.js';
+import lesson101, { checkKeyValue } from './10-animation/001-keyframes.js';
+import lesson102, { checkFallFrames } from './10-animation/002-interpolation-and-easing.js';
+import lesson103, { checkQuat } from './10-animation/003-quaternions.js';
+import lesson104, { checkSlerpWeight } from './10-animation/004-slerp.js';
+import lesson105, { checkTip } from './10-animation/005-motion-through-a-hierarchy.js';
+import lesson106, { checkWalkSpeed } from './10-animation/006-a-walk-cycle.js';
+import lesson107, { checkClipBytes } from './10-animation/007-animation-in-files.js';
+import lesson111, { checkBoneTurn } from './11-rigging-and-skinning/001-bones.js';
 import { evalExpr } from '../../engines/mesh/core/expr';
 
 // fileURLToPath, not .pathname: on Windows a file URL keeps a leading slash
@@ -2342,5 +2368,991 @@ describe('lesson 7.3: mean curvature', () => {
     expect(at(2, 1)).toMatch(/1\/r/);
     expect(at(0.5, 2)).toMatch(/along its axis/);
     expect(at(0.5, 0.25)).toMatch(/1\/r = 2/);
+  });
+});
+
+describe('lesson 7.4: Gaussian curvature', () => {
+  const cells = lesson74.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const src = cell.startCode.split('// ── drawing')[0];
+    const out = [], shown = [];
+    new Function('console', 'show', src)({ log: (...a) => out.push(a.join(' ')) }, (m) => shown.push(m));
+    return { out, shown };
+  };
+
+  it('defects and Gauss–Bonnet', () => {
+    expect(run(cells[0]).out.at(-1)).toBe('5 squares round a vertex: angles add up to 450°, defect -90°: too much angle, it ruffles into a saddle');
+    const b = run(cells[1]).out;
+    expect(b.slice(0, 3).every((l) => l.includes('= 720°;') && l.endsWith('2πχ = 720°'))).toBe(true);
+    expect(b[3]).toMatch(/total 0°; χ = 0$/);
+    expect(run(cells[2]).out).toEqual(['sphere of radius 1: K mean 1.0174, total defect 720°', 'sphere of radius 2: K mean 0.2544, total defect 720°']);
+  });
+
+  it('K against H, the torus, and the engine\'s total', async () => {
+    expect(run(cells[3]).out[0]).toMatch(/^saddle centre: angles add up to 360\.5715°, K = -3\.9801/);
+    expect(run(cells[4]).out[0]).toBe('K from -2.1919 (inside) to 1.06 (outside); the defects add up to 0°');
+    const { makePrimitive } = await import('../../engines/mesh/core/primitives');
+    const { gaussianCurvature } = await import('../../engines/mesh/core/geometry');
+    const total = (m) => Array.from(gaussianCurvature(m, { integrated: true })).reduce((a, b) => a + b, 0);
+    expect(total(makePrimitive('cube'))).toBeCloseTo(4 * Math.PI, 9);
+    expect(total(makePrimitive('torus'))).toBeCloseTo(0, 9);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (v, t) => checkDefects(`const answer = { vertex: ${v}, total: ${t} }`).message;
+    expect(checkDefects(challenge.solutionCode).pass).toBe(true);
+    expect(checkDefects(challenge.startCode).pass).toBe(false);
+    expect(at(60, -720)).toMatch(/negative/);
+    expect(at(420, -720)).toMatch(/angle sum/);
+    expect(at(-60, 720)).toMatch(/sphere/);
+    expect(at(-60, -360)).toMatch(/360° per unit/);
+  });
+});
+
+describe('lesson 7.5: sparse linear systems', () => {
+  const cells = lesson75.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')) }, document);
+    return out;
+  };
+
+  it('sparsity, SPD, and CG against Jacobi', () => {
+    expect(run(cells[0]).at(-1)).toBe('counted for N = 10: 460 non-zeros');
+    expect(run(cells[1])[0]).toMatch(/^symmetric: true; .* > 0$/);
+    expect(run(cells[2]).slice(0, 2)).toEqual(['CG: 26 iterations; residual after 1, 5, 10, 20: 4.0e-1, 2.8e-2, 9.1e-4, 4.6e-7', 'Jacobi: 72 iterations']);
+  });
+
+  it('how the counts grow', () => {
+    expect(run(cells[3])).toEqual([
+      'heat step, 10 × 10: CG 22, Jacobi 66', 'heat step, 20 × 20: CG 26, Jacobi 72', 'heat step, 40 × 40: CG 27, Jacobi 72',
+      'Poisson, 10 × 10: CG 33, Jacobi 414', 'Poisson, 20 × 20: CG 63, Jacobi 1463', 'Poisson, 40 × 40: CG 121, Jacobi 5360',
+    ]);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (d, s) => checkStorage(`const answer = { dense: ${d}, sparse: ${s} }`).message;
+    expect(checkStorage(challenge.solutionCode).pass).toBe(true);
+    expect(checkStorage('const answer = { dense: 10000000000, sparse: 700_000 }').pass).toBe(true);
+    expect(checkStorage(challenge.startCode).pass).toBe(false);
+    expect(at('2e5', 700000)).toMatch(/n × n/);
+    expect(at('1e10', 600000)).toMatch(/diagonal/);
+    expect(at('1e10', '1e5')).toMatch(/one per row/);
+  });
+});
+
+describe('lesson 7.6: distance on a surface', () => {
+  const cells = lesson76.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('edge paths staircase; the heat method does not', () => {
+    expect(run(cells[0])[0]).toBe('corner (1, −1): along edges 2, straight line 1.4142');
+    expect(run(cells[2])).toEqual(['corner (1, −1): heat method 1.4642, exact 1.4142; along edges it was 2', 'over all 441 vertices: mean error 0.0217, worst 0.0659']);
+  });
+
+  it('a sphere and a wall', () => {
+    expect(run(cells[3])[0]).toBe('equator: 1.5645 (π/2 = 1.5708); south pole: 3.129 (π = 3.1416)');
+    expect(run(cells[4])[0]).toBe('the point straight across the wall: straight line 1, along the sheet 2.4259');
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (e) => checkTube(`const distance = ${e}`).message;
+    expect(checkTube(challenge.solutionCode).pass).toBe(true);
+    expect(checkTube('const distance = 5.0862').pass).toBe(true);
+    expect(checkTube(challenge.startCode).pass).toBe(false);
+    expect(at('Math.hypot(2, 4)')).toMatch(/through the air/);
+    expect(at('Math.PI + 4')).toMatch(/round the rim/);
+    expect(at('Math.hypot(2 * Math.PI, 4)')).toMatch(/half way round/);
+  });
+});
+
+describe('lesson 7.7: smoothing as heat flow', () => {
+  const cells = lesson77.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('explicit and implicit factors on the ring', () => {
+    expect(run(cells[0])).toEqual(['k = 1: size 0.9904, formula 1 − λ(1 − cos θ) = 0.9904', 'k = 4: size 0.8536, formula 1 − λ(1 − cos θ) = 0.8536', 'k = 16: size 0, formula 1 − λ(1 − cos θ) = 0']);
+    expect(run(cells[1]).at(-1)).toBe('λ = 1.5: factor per step -2, size after 10 steps 1024');
+    expect(run(cells[2])[1]).toBe('λ = 1.5: zigzag × 0.25 (1 / (1 + 2λ) = 0.25), one bump × 0.972');
+  });
+
+  it('a sphere shrinks, and the picture\'s numbers', () => {
+    expect(run(cells[3])).toEqual(['1 step of t = 0.1: radius 0.8334', '4 steps of t = 0.025: radius 0.7955', '16 steps of t = 0.0063: radius 0.7806', 'the flow itself: radius 0.7746']);
+    expect(run(cells[4])[0]).toBe('roughness: bumpy 2.2931%, explicit λ = 2 ×3 8.5239%, implicit ×1 0.7631%');
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (l, f) => checkZigzag(`const answer = { explicitLimit: ${l}, implicitFactor: ${f} }`).message;
+    expect(checkZigzag(challenge.solutionCode).pass).toBe(true);
+    expect(checkZigzag('const answer = { explicitLimit: 1, implicitFactor: 0.142857 }').pass).toBe(true);
+    expect(checkZigzag(challenge.startCode).pass).toBe(false);
+    expect(at(0.5, '1 / 7')).toMatch(/goes to zero/);
+    expect(at(1, -5)).toMatch(/explicit factor/);
+    expect(at(1, 0.25)).toMatch(/forgets/);
+  });
+});
+
+describe('lesson 7.8: level sets and contours', () => {
+  const cells = lesson78.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('an edge, a triangle\'s cases, and the saddle', () => {
+    expect(run(cells[0])[0]).toBe('t = 0.375, the point 0.75, 0');
+    expect(run(cells[1]).at(-1)).toBe('cases by crossed edges: {"0":2,"2":6}');
+    expect(run(cells[3])).toEqual([
+      'diagonal A–C: segments AB to BC; CD to DA. The high corners are joined',
+      'diagonal B–D: segments AB to DA; BC to CD. The high corners are separated',
+    ]);
+  });
+
+  it('the two hills match the MeshLab project and its engine', async () => {
+    const { makePrimitive } = await import('../../engines/mesh/core/primitives');
+    const { traceContour } = await import('../../engines/mesh/core/contourTrace');
+    const out = run(cells[2]);
+    const m = makePrimitive('grid', { size: 6, subdivisions: 36 });
+    m.verts = m.verts.map(([x, , z]) => [x, 1.2 * Math.exp(-((x + 1.2) ** 2 + z ** 2) / 0.8) + 0.8 * Math.exp(-((x - 1.3) ** 2 + z ** 2) / 0.6), z]);
+    [0.01, 0.2, 0.5, 0.9, 1.3].forEach((L, k) => {
+      const e = traceContour(m, m.verts.map((p) => p[1]), L);
+      expect(out[k]).toBe(`height ${L}: ${e.crossed} segments, ${e.loops} loops, ${e.open} open, length ${+e.length.toFixed(4)}`);
+    });
+    expect(run(cells[4])[0]).toBe('loops at heights 0.1 … 1.2: 1 1 2 2 2 2 2 1 1 1 1 0');
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (e) => checkContourSegment(`const length = ${e}`).message;
+    expect(checkContourSegment(challenge.solutionCode).pass).toBe(true);
+    expect(checkContourSegment('const length = 1.6771').pass).toBe(true);
+    expect(checkContourSegment(challenge.startCode).pass).toBe(false);
+    expect(at('Math.sqrt(2)')).toMatch(/midpoints/);
+    expect(at('Math.hypot(1.25, 0.5)')).toMatch(/first end/);
+    expect(at('Math.hypot(0.75, 0.5)')).toMatch(/wrong end/);
+  });
+});
+
+describe('lesson 8.1: what UVs are', () => {
+  const cells = lesson81.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('wedges, barycentric weights and lookups', () => {
+    expect(run(cells[0])).toEqual(['vertices 8, corners 24', 'atlas: 24 wedges; whole texture on each face: 19 wedges']);
+    expect(run(cells[1])).toEqual(['weights 0.2, 0.5, 0.3 (they add to 1)', 'UV at P: 0.56, 0.36']);
+    expect(run(cells[2])).toEqual(['(0.3, 0.6): nearest 90, bilinear 83', '(1.3, 0.6): nearest 90, bilinear 83', '(0.375, 0.625): nearest 90, bilinear 90']);
+  });
+
+  it('the challenge agrees with the engine, and each slip is named', async () => {
+    const { makePrimitive } = await import('../../engines/mesh/core/primitives');
+    const { unwrap } = await import('../../engines/mesh/core/uv');
+    const { traceUVLookup } = await import('../../engines/mesh/core/uvLookup');
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const m = makePrimitive('uvSphere', { radius: 1, segments: 16, rings: 8 });
+    const on = new Set(m.verts.flatMap((p, i) => (p[0] >= -1e-9 && Math.abs(p[2]) < 1e-9 ? [i] : [])));
+    const seams = new Set([...m.edges().values()].filter((e) => on.has(e.a) && on.has(e.b)).map((e) => EditMesh.edgeKey(e.a, e.b)));
+    expect(traceUVLookup(m, unwrap(m, seams), 0).wedges).toBe(121);
+    const at = (x) => checkWedges(`const wedges = ${x}`).message;
+    expect(checkWedges(challenge.solutionCode).pass).toBe(true);
+    expect(checkWedges(challenge.startCode).pass).toBe(false);
+    expect(at(123)).toMatch(/poles/);
+    expect(at(114)).toMatch(/one UV on each side/);
+    expect(at(480)).toMatch(/face corners/);
+  });
+});
+
+describe('lesson 8.2: seams and charts', () => {
+  const cells = lesson82.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('the disc test on a cube, a net, a tube and a torus', () => {
+    expect(run(cells[0])).toEqual([
+      '12 seams: 6 charts, 1 face: W 4, E 4, χ 1, 1 rim (disc) each',
+      'no seams: 6 faces: W 8, E 12, χ 2, 0 rims (not a disc)',
+      'one seam (edge 0-1): 6 faces: W 8, E 13, χ 1, 1 rim (disc)',
+    ]);
+    expect(run(cells[1])[1]).toBe('6 faces: W 14, E 19, χ 1, 1 rim (disc)');
+    expect(run(cells[2]).slice(1)).toEqual([
+      'tube, one seam from rim to rim (0-8): 8 faces: W 18, E 25, χ 1, 1 rim (disc)',
+      'torus, no seams: 32 faces: W 32, E 64, χ 0, 0 rims (not a disc)',
+      'torus, one loop round the tube: 32 faces: W 36, E 68, χ 0, 2 rims (not a disc)',
+      'torus, both loops: 32 faces: W 45, E 76, χ 1, 1 rim (disc)',
+    ]);
+    expect(run(cells[3])).toEqual(['flat corners (wedges): 14 for 8 vertices']);
+  });
+
+  it('the notebook agrees with the engine on the net', async () => {
+    const { makePrimitive } = await import('../../engines/mesh/core/primitives');
+    const { charts } = await import('../../engines/mesh/core/uv');
+    const m = makePrimitive('cube');
+    const keep = new Set(['6-7', '4-5', '4-7', '5-6', '2-3']);
+    // The engine's cube numbers its vertices differently: match edges by their positions.
+    const pos = (i) => m.verts[i].map((x) => Math.sign(x));
+    const nb = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]];
+    const toNb = (i) => nb.findIndex((p) => p.every((x, k) => x === pos(i)[k]));
+    const seams = new Set([...m.edges().keys()].filter((k) => { const [a, b] = k.split('-').map(Number).map(toNb); return !keep.has(a < b ? `${a}-${b}` : `${b}-${a}`); }));
+    const cs = charts(m, seams);
+    expect(cs.length).toBe(1);
+    expect(cs[0].mesh.verts.length).toBe(14);
+    expect(cs[0].mesh.topology()).toMatchObject({ chi: 1, boundaryLoops: 1 });
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkSeamCount(`const seams = ${x}`).message;
+    expect(checkSeamCount(challenge.solutionCode).pass).toBe(true);
+    expect(checkSeamCount('const seams = 5').pass).toBe(true);
+    expect(checkSeamCount(challenge.startCode).pass).toBe(false);
+    expect(at('12 - 8')).toMatch(/one join too many/);
+    expect(at(7)).toMatch(/kept edges/);
+    expect(at(12)).toMatch(/8 separate/);
+  });
+});
+
+describe('lesson 8.3: projection', () => {
+  const cells = lesson83.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: (_, k) => (k === 'createImageData' ? (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }) : () => {}), set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('stretch is 1/cos θ, the wrap fix, and three projections of a sphere', () => {
+    expect(run(cells[0])[3]).toBe('60°: σ₁ 1, σ₂ 0.5, σ₁/σ₂ 2 (1/cos θ = 2)');
+    expect(run(cells[1])[1]).toBe('face 7: u from 0.9688 to 0.0313 (width 0.9375); after the fix 0.9688 to 1.0313 (width 0.0625)');
+    expect(run(cells[2])).toEqual([
+      'from above: median 1.5809, 95% of faces under 10.2512, worst 10.2512',
+      'around (cylinder): median 1.839, 95% of faces under 52.6305, worst 52.6305',
+      'box (by the normal): median 1.1393, 95% of faces under 1.4653, worst 1.5809',
+    ]);
+    expect(run(cells[3])[0]).toMatch(/^pixels on the spheres: \d+$/);
+  });
+
+  it('the notebook\'s 1/cos θ matches the engine\'s projection', async () => {
+    const { makePrimitive } = await import('../../engines/mesh/core/primitives');
+    const { traceUVProjection } = await import('../../engines/mesh/core/projection');
+    const { angleDistortion } = await import('../../engines/mesh/core/uv');
+    const m = makePrimitive('grid', { size: 2, subdivisions: 2 });
+    const th = Math.PI / 6;
+    m.verts = m.verts.map(([x, y, z]) => [x, y * Math.cos(th) - z * Math.sin(th), y * Math.sin(th) + z * Math.cos(th)]);
+    for (const d of angleDistortion(m, traceUVProjection(m, 'planar').layer)) expect(d).toBeCloseTo(1 / Math.cos(th), 9);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (e) => checkRoof(`const ratio = ${e}`).message;
+    expect(checkRoof(challenge.solutionCode).pass).toBe(true);
+    expect(checkRoof('const ratio = 1.1547').pass).toBe(true);
+    expect(checkRoof(challenge.startCode).pass).toBe(false);
+    expect(at('Math.cos(Math.PI / 6)')).toMatch(/other way/);
+    expect(at(2)).toMatch(/sin 30/);
+    expect(at('1 / Math.cos(30)')).toMatch(/radians/);
+  });
+});
+
+describe('lesson 8.4: conformal maps and LSCM', () => {
+  const cells = lesson84.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('Cauchy–Riemann and the conformal energy', () => {
+    expect(run(cells[0])).toEqual([
+      'turn 30°, scale 2: (a − d)² + (b + c)² = 0, σ₁/σ₂ = 1, det 4',
+      'shear by 0.5: (a − d)² + (b + c)² = 0.25, σ₁/σ₂ = 1.6404, det 1',
+      'squash y by half: (a − d)² + (b + c)² = 0.25, σ₁/σ₂ = 2, det 0.5',
+      'mirror in x: (a − d)² + (b + c)² = 4, σ₁/σ₂ = 1, det -1',
+    ]);
+    expect(run(cells[1])).toEqual(['u = x, v = z: E_D 4, A 4, E 0', 'u = x + 0.5 z, v = z: E_D 4.5, A 4, E 0.5', 'u = 2x, v = 2z: E_D 16, A 16, E 0']);
+  });
+
+  it('the notebook\'s LSCM matches the engine on the dome', async () => {
+    const out = run(cells[2]);
+    expect(out[0]).toMatch(/^LSCM, \d+ CG iterations: angle distortion mean 1.0735, worst 1.215; area scale varies 4.1368×$/);
+    expect(out[1]).toBe('projected from above: angle distortion mean 2.8619, worst 10.2895; area scale varies 10.2391×');
+    expect(run(cells[3])[0]).toMatch(/^one pin: the UVs span 0 /);
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { lscm } = await import('../../engines/mesh/core/uv');
+    const { Trace } = await import('../../engines/mesh/core/trace');
+    const S = 24, R = 8, V = [[0, 1, 0]], F = [];
+    for (let i = 1; i <= R; i++) for (let j = 0; j < S; j++) { const a = (Math.PI / 2) * i / R, b = 2 * Math.PI * j / S; V.push([Math.sin(a) * Math.cos(b), Math.cos(a), Math.sin(a) * Math.sin(b)]); }
+    const at = (i, j) => 1 + (i - 1) * S + (j % S);
+    for (let j = 0; j < S; j++) F.push([0, at(1, j + 1), at(1, j)]);
+    for (let i = 1; i < R; i++) for (let j = 0; j < S; j++) F.push([at(i, j), at(i, j + 1), at(i + 1, j + 1), at(i + 1, j)]);
+    const t = new Trace('Unwrap (LSCM)');
+    lscm(new EditMesh(V, F), t, 'Chart 1');
+    expect(t.steps.at(-1).label).toBe('Chart 1: angle distortion σ₁/σ₂ mean 1.0735, worst 1.215; area scale from 0.238 to 0.985');
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (b, d) => checkConformal(`const answer = { b: ${b}, d: ${d} }`).message;
+    expect(checkConformal(challenge.solutionCode).pass).toBe(true);
+    expect(checkConformal(challenge.startCode).pass).toBe(false);
+    expect(at(0.8, -0.6)).toMatch(/reflection/);
+    expect(at(0.8, 0.6)).toMatch(/symmetric/);
+    expect(at(0, 0.6)).toMatch(/d is right/);
+  });
+});
+
+describe('lesson 8.5: measuring distortion', () => {
+  const cells = lesson85.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('the Jacobian, singular values and measures', () => {
+    expect(run(cells[0])[0]).toBe('J = [[0.2, 0], [0, 0.3]]');
+    expect(run(cells[1])).toEqual(['measured on the ellipse: longest 1.2808, shortest 0.7808', 'from JᵀJ: σ₁ 1.2808, σ₂ 0.7808; σ₁σ₂ = 1 = det J = 1']);
+    expect(run(cells[2])).toEqual([
+      'turn and double: σ₁/σ₂ 1, area 4, not flipped, stretch 2', 'squash and stretch: σ₁/σ₂ 4, area 1, not flipped, stretch 2',
+      'turn only: σ₁/σ₂ 1, area 1, not flipped, stretch 1', 'mirror: σ₁/σ₂ 1, area 1, flipped, stretch 1',
+    ]);
+    expect(run(cells[3])[2]).toBe('φ ≈ 61.875°: mean σ₁/σ₂ 2.1356, 1/cos φ = 2.1214');
+    expect(run(cells[4])).toEqual(['worst σ₁/σ₂: from above 14.1368, stereographic 1']);
+  });
+
+  it('the notebook\'s singular values match the engine\'s', async () => {
+    const { singularValues, triangleJacobian } = await import('../../engines/mesh/core/distortionTrace');
+    const { J } = triangleJacobian([[0, 0, 0], [2, 0, 0], [0.5, 0, 1]], [[0.1, 0.1], [0.5, 0.1], [0.2, 0.4]]);
+    expect(J.flat().map((x) => +x.toFixed(9))).toEqual([0.2, 0, 0, 0.3]);
+    expect(singularValues([[1, 0.5], [0, 1]]).map((x) => +x.toFixed(4))).toEqual([1.2808, 0.7808]);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (a, b) => checkSigmas(`const answer = { angle: ${a}, area: ${b} }`).message;
+    expect(checkSigmas(challenge.solutionCode).pass).toBe(true);
+    expect(checkSigmas(challenge.startCode).pass).toBe(false);
+    expect(at(1, 1)).toMatch(/zero/);
+    expect(at(2, 1)).toMatch(/ratio/);
+    expect(at(4, 2.5)).toMatch(/product/);
+    expect(at(4, -1)).toMatch(/not flipped/);
+  });
+});
+
+describe('lesson 8.6: straighten and pack', () => {
+  const cells = lesson86.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('the smallest box, true area and shelves', () => {
+    const box = run(cells[0]);
+    expect(box[0]).toBe('as it is: 2.7383 × 2.6526 = 7.2636');
+    expect(box.at(-1)).toBe('smallest: turn by 144.4725°, area 3.6868');
+    expect(run(cells[1])[0]).toBe('A: scale 2, UV area after 2 = surface area');
+    expect(run(cells[2])).toEqual(['in the order given: 46.2822% of the square used', 'tallest first: 73.9904% used']);
+    expect(run(cells[3])).toEqual(['5 shelves; 73.9904% of the square used']);
+  });
+
+  it('the engine straightens to the same smallest box', async () => {
+    const { EditMesh } = await import('../../engines/mesh/core/EditMesh');
+    const { straighten } = await import('../../engines/mesh/core/uv');
+    const t = (p, a) => [p[0] * Math.cos(a) - p[1] * Math.sin(a), p[0] * Math.sin(a) + p[1] * Math.cos(a)];
+    const uv = [[0, 0], [3, 0], [3.4, 1.1], [0.3, 0.8]].map((p) => t(p, Math.PI / 6));
+    const m = new EditMesh(uv.map(([u, v]) => [u, 0, v]), [[0, 1, 2, 3]]);
+    const out = straighten(m, uv), us = out.map((p) => p[0]), vs = out.map((p) => p[1]);
+    expect((Math.max(...us) - Math.min(...us)) * (Math.max(...vs) - Math.min(...vs))).toBeCloseTo(3.6868, 4);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkTexels(`const texels = ${x}`).message;
+    expect(checkTexels(challenge.solutionCode).pass).toBe(true);
+    expect(checkTexels('const texels = 128').pass).toBe(true);
+    expect(checkTexels(challenge.startCode).pass).toBe(false);
+    expect(at(512)).toMatch(/texel density/);
+    expect(at('2048 * 4')).toMatch(/divide 2048 by 4/);
+    expect(at('2048 / 4 / 0.25')).toMatch(/whole texture/);
+  });
+});
+
+describe('lesson 9.1: light and the cosine law', () => {
+  const cells = lesson91.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: (_, k) => (k === 'createImageData' ? (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }) : () => {}), set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('the cosine law, Lambert and sRGB', () => {
+    expect(run(cells[0])[2]).toBe('60°: 0.5 of the rays (cos θ = 0.5)');
+    expect(run(cells[1])[1]).toBe('tilted 60°: N·L 0.5, d 0.5, colour 0.36');
+    expect(run(cells[2])[1]).toBe('linear 0.5 → screen 188 (without encoding: 128)');
+    expect(run(cells[3])[0]).toMatch(/^pixels shaded: \d+$/);
+  });
+
+  it('the notebook\'s encoding and Lambert agree with the engine\'s shading trace', async () => {
+    const { shadePoint, toSRGB } = await import('../../engines/mesh/core/shadingTrace');
+    expect(Math.round(255 * toSRGB(0.6))).toBe(203);
+    const r = shadePoint({ model: 'lambert', P: [0, 0, 0], N: [0, 0.6, 0.8], L: [0, 1, 0], eye: [0, 0, 5], light: [1, 1, 1], base: [1, 1, 1] });
+    expect(r.terms['N·L']).toBeCloseTo(0.6, 12);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (d, sc) => checkLambertPixel(`const answer = { d: ${d}, screen: ${sc} }`).message;
+    expect(checkLambertPixel(challenge.solutionCode).pass).toBe(true);
+    expect(checkLambertPixel(challenge.startCode).pass).toBe(false);
+    expect(at(0.8, 203)).toMatch(/z component/);
+    expect(at(0.6, 153)).toMatch(/without the sRGB/);
+    expect(at(0.6, 83)).toMatch(/decodes/);
+  });
+});
+
+describe('lesson 9.2: highlights', () => {
+  const cells = lesson92.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: (_, k) => (k === 'createImageData' ? (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }) : () => {}), set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('R and H, the width, the colour and the picture', () => {
+    expect(run(cells[0])[3]).toBe('eye at 60°: R to V 20°, N to H 10°');
+    expect(run(cells[1])[2]).toBe('shininess 40: half brightness 10.6357° from the centre');
+    expect(run(cells[2])).toEqual(['plastic: (1.24, 0.68, 0.68)  →  screen (255, 215, 215)', 'metal:   (0.48, 0.06, 0.06)  →  screen (184, 69, 69)']);
+    const peaks = run(cells[3])[0].replace('brightest highlight on each: ', '').split(', ').map(Number);
+    for (const p of peaks) expect(p).toBeGreaterThan(0.97);
+  });
+
+  it('the notebook\'s highlight matches the engine\'s', async () => {
+    const { shadePoint } = await import('../../engines/mesh/core/shadingTrace');
+    const r = shadePoint({ model: 'blinn-phong', P: [0, 0, 0], N: [0, 1, 0], L: [-Math.sin(0.7), Math.cos(0.7), 0], eye: [Math.sin(1.0) * 5, Math.cos(1.0) * 5, 0], light: [1, 1, 1], base: [1, 1, 1], shininess: 40 });
+    expect(r.terms['N·H']).toBeCloseTo(Math.cos(0.15), 9);
+    expect(r.terms.s).toBeCloseTo(Math.pow(Math.cos(0.15), 40), 9);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkShininess(`const n = ${x}`).message;
+    expect(checkShininess(challenge.solutionCode).pass).toBe(true);
+    expect(checkShininess('const n = 45').pass).toBe(true);
+    expect(checkShininess(challenge.startCode).pass).toBe(false);
+    expect(at('Math.log(0.5) / Math.log(Math.cos(10))')).toMatch(/radians/);
+    expect(at('Math.log(Math.cos(10 * Math.PI / 180)) / Math.log(0.5)')).toMatch(/Upside down/);
+  });
+});
+
+describe('lesson 9.3: physically based shading', () => {
+  const cells = lesson93.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: (_, k) => (k === 'createImageData' ? (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }) : () => {}), set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('GGX, Fresnel and energy', () => {
+    expect(run(cells[0])[1]).toBe('roughness 0.4: D at 0° 12.434, at 10° 2.6956, at 30° 0.1124; total 1');
+    expect(run(cells[1])[3]).toBe('80°: plastic 0.4099, silver 0.9693');
+    expect(run(cells[2])).toEqual(['roughness 0.15: 1.0006 of the light reflected', 'roughness 0.4: 0.9677 of the light reflected', 'roughness 0.8: 0.5552 of the light reflected']);
+    expect(run(cells[3])).toEqual(['drawn: 2 rows × 3 roughnesses']);
+  });
+
+  it('the notebook\'s terms match the engine\'s shading trace', async () => {
+    const { shadePoint } = await import('../../engines/mesh/core/shadingTrace');
+    const r = shadePoint({ model: 'pbr', P: [0, 0, 0], N: [0, 1, 0], L: [0, 1, 0], eye: [0, 5, 0], light: [1, 1, 1], base: [0.5, 0.5, 0.5], roughness: 0.4, metalness: 0 });
+    expect(r.terms.D).toBeCloseTo(12.434, 3);
+    expect(r.terms.F).toBeCloseTo(0.04, 9);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkFresnel(`const F75 = ${x}`).message;
+    expect(checkFresnel(challenge.solutionCode).pass).toBe(true);
+    expect(checkFresnel(challenge.startCode).pass).toBe(false);
+    expect(at(0.04)).toMatch(/F₀/);
+    expect(at('0.04 + 0.96 * Math.pow(Math.cos(75 * Math.PI / 180), 5)')).toMatch(/not of V·H/);
+    expect(at('0.04 + Math.pow(1 - Math.cos(75 * Math.PI / 180), 5)')).toMatch(/0.96/);
+    expect(at('Math.cos(75)')).toMatch(/radians/);
+  });
+});
+
+describe('lesson 9.4: stylised shading', () => {
+  const cells = lesson94.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: (_, k) => (k === 'createImageData' ? (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }) : () => {}), set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('bands, rim, outline and the picture', () => {
+    const bands = run(cells[0]);
+    expect(bands[1]).toBe('d 0.99: 3 bands → 0.6667, 4 bands → 0.75');
+    expect(bands.at(-1)).toBe('3-band edges at 70.5288°, 48.1897° from the light');
+    expect(run(cells[1])[3]).toBe('N at 60° from V (N·V 0.5): rim 0.0625');
+    expect(run(cells[2])[1]).toBe("threshold 0.25: outline from radius 0.9682 out, 3.1754% of the radius, 6.25% of the disc's area");
+    expect(run(cells[3])).toEqual(['light levels on the toon ball: 0, 0.3333, 0.6667']);
+  });
+
+  it('the notebook\'s band matches the engine\'s toon shader', async () => {
+    const { shadePoint } = await import('../../engines/mesh/core/shadingTrace');
+    const r = shadePoint({ model: 'toon', P: [0, 0, 0], N: [0, 1, 0], L: [Math.sin(1.05), Math.cos(1.05), 0], eye: [0, 0, 5], light: [1, 1, 1], base: [1, 1, 1], bands: 3 });
+    expect(r.terms.band).toBeCloseTo(Math.floor(Math.cos(1.05) * 3) / 3, 12);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkBandEdge(`const degrees = ${x}`).message;
+    expect(checkBandEdge(challenge.solutionCode).pass).toBe(true);
+    expect(checkBandEdge('const degrees = 41.4').pass).toBe(true);
+    expect(checkBandEdge(challenge.startCode).pass).toBe(false);
+    expect(at('Math.acos(0.75)')).toMatch(/radians/);
+    expect(at(67.5)).toMatch(/equal steps of angle/);
+    expect(at('Math.acos(0.25) * 180 / Math.PI')).toMatch(/darkest/);
+  });
+});
+
+describe('lesson 9.5: debug views', () => {
+  const cells = lesson95.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: (_, k) => (k === 'createImageData' ? (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }) : () => {}), set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('encoding, a flipped face, a seam and precision', () => {
+    expect(run(cells[0])[0]).toBe('up: N (0, 1, 0) → colour (0.5, 1, 0.5) → back to (0, 1, 0)');
+    expect(run(cells[1]).slice(0, 2)).toEqual(['face 0: colour (0.5, 0.5, 1)  ← points inward: flipped', 'face 1: colour (0.5, 0.5, 1)']);
+    expect(run(cells[2])[0]).toBe('between corners 11 and 12: red 0.9167 → 0  ← a seam');
+    expect(run(cells[3])).toEqual(['worst error over 20 000 directions: 0.3785°']);
+    expect(run(cells[4])).toEqual(['drawn']);
+  });
+
+  it('the notebook\'s encoding matches the engine\'s Normals model', async () => {
+    const { shadePoint } = await import('../../engines/mesh/core/shadingTrace');
+    const r = shadePoint({ model: 'normals', P: [0, 0, 0], N: [-0.6, 0.8, 0], L: [0, 1, 0], eye: [0, 0, 5], light: [1, 1, 1], base: [1, 1, 1] });
+    r.color.forEach((c, k) => expect(c).toBeCloseTo([0.2, 0.9, 0.5][k], 12));
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x, y, z) => checkDecode(`const N = { x: ${x}, y: ${y}, z: ${z} }`).message;
+    expect(checkDecode(challenge.solutionCode).pass).toBe(true);
+    expect(checkDecode('const N = { x: 0.7071, y: -0.7071, z: 0 }').pass).toBe(true);
+    expect(checkDecode(challenge.startCode).pass).toBe(false);
+    expect(at(0.5, -0.5, 0)).toMatch(/normalise/);
+    expect(at(0.75, 0.25, 0.5)).toMatch(/colour itself/);
+  });
+});
+
+describe('lesson 9.6: procedural textures', () => {
+  const cells = lesson96.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: (_, k) => (k === 'createImageData' ? (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }) : () => {}), set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('checker, bricks, tiling and the picture', () => {
+    expect(run(cells[0]).at(-1)).toBe('cell (3, 5): white');
+    const bricks = run(cells[1]);
+    expect(bricks[0]).toBe('BBBBBB|BBBBBBBBBBB|BBBBBBBBBBB|BBBBBBBBBBB|BBBBB');
+    expect(bricks.at(-1)).toBe('v = 0.3 is in row 2');
+    expect(run(cells[2])).toEqual([
+      'checker: largest difference one square on 206 ← a visible join', 'stripes: largest difference one square on 0 (tiles)',
+      'bricks: largest difference one square on 0 (tiles)', 'wood: largest difference one square on 50 ← a visible join',
+      'grass: largest difference one square on 1 (tiles)',
+    ]);
+    expect(run(cells[3])).toEqual(['drawn: checker, stripes, bricks, wood, grass']);
+  });
+
+  it('the notebook\'s formulas are the engine\'s texels', async () => {
+    const { texelColor } = await import('../../engines/mesh/core/shading');
+    const tex = new Function(cells[0].startCode.split('const CHECKER')[0].replace(/console\.log[^\n]*\n?/g, '') + '; return tex')();
+    for (const name of ['checker', 'stripes', 'bricks', 'wood', 'grass']) for (const [u, v] of [[0.1, 0.2], [0.37, 0.81], [0.93, 0.44]]) expect(tex[name](u, v)).toEqual(texelColor(name, u, v));
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (r, b) => checkBrick(`const answer = { row: ${r}, brick: ${b} }`).message;
+    expect(checkBrick(challenge.solutionCode).pass).toBe(true);
+    expect(checkBrick(challenge.startCode).pass).toBe(false);
+    expect(at(3, 2)).toMatch(/no repeat/);
+    expect(at(6, 1)).toMatch(/no half-brick shift/);
+  });
+});
+
+describe('lesson 9.7: write a shader', () => {
+  const cells = lesson97.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: (_, k) => (k === 'createImageData' ? (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }) : () => {}), set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('shade(), error lines, floats and tone mapping', () => {
+    expect(run(cells[0])[2]).toBe('edge-on to the eye: (0.43, 0.37, 0.362)');
+    expect(run(cells[1]).slice(0, 2)).toEqual(['your body starts on program line 8', "line 2 of your code: 'pow' : no matching overloaded function found"]);
+    expect(run(cells[2]).filter((l) => l.startsWith('✗'))).toEqual(['✗ float d = max(dot(N, L), 0);', '✗ vec3 c = base * 2;', '✗ float s = pow(d, 40);']);
+    expect(run(cells[3])[4]).toBe('linear 3: clipped 255, Reinhard 225');
+    expect(run(cells[4])).toEqual(['brightest linear value: 2.2829']);
+  });
+
+  it('the notebook\'s float rule agrees with MeshLab\'s checks', async () => {
+    const { lintShaderBody } = await import('../../engines/mesh/core/shaderTrace');
+    expect(lintShaderBody('float s = pow(d, 40);\nreturn base * s;').map((x) => x.line)).toEqual([1]);
+    expect(lintShaderBody('float s = pow(d, 40.0);\nreturn base * s;')).toEqual([]);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkErrorLine(`const yourLine = ${x}`).message;
+    expect(checkErrorLine(challenge.solutionCode).pass).toBe(true);
+    expect(checkErrorLine('const yourLine = 6').pass).toBe(true);
+    expect(checkErrorLine(challenge.startCode).pass).toBe(false);
+    expect(at(5)).toMatch(/add 1/);
+    expect(at(24)).toMatch(/whole program/);
+  });
+});
+
+describe('lesson 10.1: keyframes', () => {
+  const cells = lesson101.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('sampling, time and search', () => {
+    expect(run(cells[0]).slice(1, 2)).toEqual(['frame 7: x = -2.25']);
+    expect(run(cells[0]).at(-1)).toBe('frame 60: x = 3');
+    expect(run(cells[1])[0]).toBe('24 fps: frames 1 → 49 take 2 s');
+    expect(run(cells[2])[1]).toBe('frame 1001: walking 501 checks, binary search 10');
+    expect(run(cells[3])).toEqual(['keys at frames 1, 25, 49']);
+  });
+
+  it('the notebook\'s sample matches the engine\'s', async () => {
+    const { sampleKeys } = await import('../../engines/mesh/core/animation');
+    const keys = [{ frame: 1, value: [-3, 0.3, 0], interp: 'linear' }, { frame: 25, value: [0, 2.3, 0], interp: 'linear' }, { frame: 49, value: [3, 0.3, 0], interp: 'linear' }];
+    expect(sampleKeys(keys, 7).value[0]).toBeCloseTo(-2.25, 12);
+    expect(sampleKeys(keys, 60).value).toEqual([3, 0.3, 0]);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkKeyValue(`const angle = ${x}`).message;
+    expect(checkKeyValue(challenge.solutionCode).pass).toBe(true);
+    expect(checkKeyValue(challenge.startCode).pass).toBe(false);
+    expect(at(18)).toMatch(/add the first key/);
+    expect(at('92 * 16 / 40')).toMatch(/counts from the first key/);
+  });
+});
+
+describe('lesson 10.2: interpolation and easing', () => {
+  const cells = lesson102.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('easings, gravity and slopes', () => {
+    expect(run(cells[0])[1]).toBe('ease-in  0  0.0625  0.25  0.5625  1');
+    expect(run(cells[1])).toEqual(['linear    worst error 0.75 m', 'ease-in   worst error 0 m', 'ease-out  worst error 1.5 m', 'ease      worst error 0.8886 m']);
+    expect(run(cells[2]).at(-1)).toBe('top of a throw: arriving 0, leaving 0');
+    expect(run(cells[3])).toEqual(['drawn']);
+  });
+
+  it('the notebook\'s easings are the engine\'s', async () => {
+    const { ease } = await import('../../engines/mesh/core/animation');
+    for (const t of [0.1, 0.37, 0.8]) {
+      expect(ease(t, 'ease-in')).toBeCloseTo(t * t, 12);
+      expect(ease(t, 'ease-out')).toBeCloseTo(1 - (1 - t) ** 2, 12);
+      expect(ease(t, 'ease')).toBeCloseTo(t * t * (3 - 2 * t), 12);
+    }
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkFallFrames(`const frames = ${x}`).message;
+    expect(checkFallFrames(challenge.solutionCode).pass).toBe(true);
+    expect(checkFallFrames('const frames = 17').pass).toBe(true);
+    expect(checkFallFrames(challenge.startCode).pass).toBe(false);
+    expect(at(12)).toMatch(/√\(2h\/g\)/);
+    expect(at('Math.sqrt(2 * 2.45 / 9.8) * 24')).toMatch(/Round/);
+  });
+});
+
+describe('lesson 10.3: quaternions', () => {
+  const cells = lesson103.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('half angles, combining, no lock, and the picture', () => {
+    expect(run(cells[0]).slice(1, 2)).toEqual(['y by 90°: q = (0, 0.7071, 0, 0.7071)']);
+    expect(run(cells[0])[4]).toBe('y by 360°: q = (0, 0, 0, -1)');
+    expect(run(cells[1])[0]).toBe('q = (0.5, 0.5, -0.5, 0.5): one turn of 120° about (0.5774, 0.5774, -0.5774)');
+    expect(run(cells[2])[2]).toBe('(0°, 90°, 30°):  (0.183, 0.683, 0.183, 0.683)  ← the same as the first: only x + z counted');
+    expect(run(cells[3])).toEqual(['the tip at 120°: (0, 1, 0) (x goes to y)']);
+  });
+
+  it('the notebook\'s quaternions match three.js (through the engine)', async () => {
+    const { eulerToQuat } = await import('../../engines/mesh/core/animation');
+    const q = eulerToQuat([10 * Math.PI / 180, Math.PI / 2, 20 * Math.PI / 180]);
+    [0.183, 0.683, 0.183, 0.683].forEach((x, i) => expect(q[i]).toBeCloseTo(x, 3));
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkQuat(`const q = [${x}]`).message;
+    expect(checkQuat(challenge.solutionCode).pass).toBe(true);
+    expect(checkQuat('const q = [0, 0, -0.866, -0.5]').pass).toBe(true);
+    expect(checkQuat(challenge.startCode).pass).toBe(false);
+    expect(at('0, 0, Math.sin(2 * Math.PI / 3), Math.cos(2 * Math.PI / 3)')).toMatch(/half the angle/);
+    expect(at('0, 0, 0.5, 0.866')).toMatch(/swapped/);
+    expect(at('0.866, 0, 0, 0.5')).toMatch(/z place/);
+  });
+});
+
+describe('lesson 10.4: slerp', () => {
+  const cells = lesson104.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('even and shortest, the short way, the weights', () => {
+    expect(run(cells[0])).toEqual([
+      'Euler angles     turns per step: 47.6838°, 47.6838°, 47.6838°, 47.6838°; in all 190.7352°',
+      'lerp (straight)  turns per step: 35.1629°, 47.4017°, 47.4017°, 35.1629°; in all 165.1292°',
+      'slerp            turns per step: 41.2823°, 41.2823°, 41.2823°, 41.2823°; in all 165.1292°',
+      'the end is 165.1291° from the start: no route can turn less',
+    ]);
+    expect(run(cells[1]).slice(1)).toEqual(['halfway, without the check: y = 150°  (the long way: 150°)', 'halfway, with the check:    y = -30°  (the short way: −30°, same as 330°)']);
+    expect(run(cells[2])[1]).toBe('θ = 60°: weights at s = ½ are 0.5774 and 0.5774 (sum 1.1547)');
+  });
+
+  it('the notebook\'s slerp matches the engine\'s', async () => {
+    const { slerp, eulerToQuat } = await import('../../engines/mesh/core/animation');
+    const q0 = eulerToQuat([0, 0, 0]), q1 = eulerToQuat([0, 150 * Math.PI / 180, 120 * Math.PI / 180]);
+    expect(2 * Math.acos(Math.abs(slerp(q0, q1, 0.25).q[3])) * 180 / Math.PI).toBeCloseTo(41.2823, 3);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x) => checkSlerpWeight(`const weight = ${x}`).message;
+    expect(checkSlerpWeight(challenge.solutionCode).pass).toBe(true);
+    expect(checkSlerpWeight(challenge.startCode).pass).toBe(false);
+    expect(at(0.25)).toMatch(/straight blend/);
+    expect(at('Math.sin(0.75 * Math.PI / 2)')).toMatch(/weight on q₀/);
+  });
+});
+
+describe('lesson 10.5: motion through a hierarchy', () => {
+  const cells = lesson105.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('composing, the curve and baking', () => {
+    expect(run(cells[0]).at(-1)).toBe('frame 49: pen at (-1.2, 2)');
+    expect(run(cells[1])).toEqual(['path 5.5523, straight line 4.1785']);
+    expect(run(cells[2])).toEqual(['every 1 frames: 49 keys, worst gap 0', 'every 3 frames: 17 keys, worst gap 0.0067', 'every 6 frames: 9 keys, worst gap 0.0303', 'every 12 frames: 5 keys, worst gap 0.1197']);
+    expect(run(cells[3])).toEqual(['drawn']);
+  });
+
+  it('the notebook\'s arm agrees with the engine\'s worldAt', async () => {
+    const { Scene } = await import('../../engines/mesh/core/Scene');
+    const { worldAt } = await import('../../engines/mesh/core/animTrace');
+    const scene = new Scene();
+    const sh = scene.add({ name: 'Shoulder', position: [0, 0.5, 0] }), el = scene.add({ name: 'Elbow', position: [1.5, 0, 0] }), pen = scene.add({ name: 'Pen', position: [1.2, 0, 0] });
+    el.parent = sh.id; pen.parent = el.id;
+    for (const o of [sh, el]) o.anim = { rotation: [{ frame: 1, value: [0, 0, 0], interp: 'linear' }, { frame: 49, value: [0, 0, Math.PI / 2], interp: 'linear' }] };
+    const e = worldAt(scene, pen, 25).elements;
+    expect(e[12]).toBeCloseTo(1.0607, 4);
+    expect(e[13]).toBeCloseTo(2.7607, 4);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (x, y) => checkTip(`const tip = { x: ${x}, y: ${y} }`).message;
+    expect(checkTip(challenge.solutionCode).pass).toBe(true);
+    expect(checkTip(challenge.startCode).pass).toBe(false);
+    expect(at('Math.sqrt(3) + 0.5', '1 + Math.sqrt(3) / 2')).toMatch(/relative/);
+    expect(at('Math.sqrt(3)', 1)).toMatch(/That is the elbow/);
+  });
+});
+
+describe('lesson 10.6: a walk cycle', () => {
+  const cells = lesson106.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('poses, the loop, sliding and the strobe', () => {
+    expect(run(cells[0])).toEqual(['frame 0: left foot height 0, right foot height 0', 'frame 3: left foot height 0, right foot height 0.2335', 'frame 6: left foot height 0, right foot height 0.2298', 'frame 9: left foot height 0, right foot height 0.0247']);
+    expect(run(cells[1])).toContain('frame 50 plays frame 2');
+    expect(run(cells[1])).toContain('frame 25 plays frame 1');
+    expect(run(cells[2])).toEqual(['sweep ±0.06 rad: the foot slides 0.1201', 'sweep ±0.12 rad: the foot slides 0.0006', 'sweep ±0.24 rad: the foot slides 0.2354']);
+    expect(run(cells[3])).toEqual(['poses drawn: 9; the foot touches the ground at x = 0.225 and 1.125 (one stride apart)']);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (v) => checkWalkSpeed(`const speed = ${v}`).message;
+    expect(checkWalkSpeed(challenge.solutionCode).pass).toBe(true);
+    expect(checkWalkSpeed(challenge.startCode).pass).toBe(false);
+    expect(at('0.45')).toMatch(/one step/);
+    expect(at('0.9 / 24')).toMatch(/per frame/);
+    expect(at('0.9 * 24')).toMatch(/one second/);
+  });
+});
+
+describe('lesson 10.7: animation in files', () => {
+  const cells = lesson107.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('channels, bytes, baking and the picture', () => {
+    expect(run(cells[0])[0]).toBe('3 channels');
+    expect(run(cells[1])).toEqual(['49 keys, from 0 s to 2 s', 'translation: 196 + 588 = 784 bytes', 'rotation: 196 + 784 = 980 bytes', 'scale: 196 + 588 = 784 bytes', 'total 2548 bytes']);
+    expect(run(cells[2])).toEqual(['a key every 24 frames: 2 keys, worst error 0.5', 'a key every 4 frames: 7 keys, worst error 0.0139', 'a key every frame: 25 keys, worst error 0.0009']);
+    expect(run(cells[3])).toEqual(['baked keys drawn: 13']);
+  });
+
+  it('the notebook\'s bytes agree with MeshLab\'s traceClip of the gltf-clip project', async () => {
+    const { PROJECTS } = await import('../../labs/mesh-lab/core/projects');
+    expect(PROJECTS.find((p) => p.id === 'gltf-clip').code).toContain("scene.setTimeline({ start: 1, end: 49, fps: 24 })");
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (v) => checkClipBytes(`const bytes = ${v}`).message;
+    expect(checkClipBytes(challenge.solutionCode).pass).toBe(true);
+    expect(checkClipBytes(challenge.startCode).pass).toBe(false);
+    expect(at('20 * 4 * 61 * 4 + 4 * 61 * 3')).toMatch(/input/);
+    expect(at('20 * 4 * 60 * 5 + 4 * 60 * 4')).toMatch(/61 keys/);
+    expect(at('20 * 4 * 61 * 4 + 4 * 61 * 4')).toMatch(/quaternion/);
+    expect(at('25376 / 4')).toMatch(/counts floats/);
+    expect(at('20 * 4 * 61 * 5')).toMatch(/root/);
+  });
+});
+
+describe('lesson 11.1: bones', () => {
+  const cells = lesson111.intuition.visualizations[0].props.lesson.cells;
+  const challenge = cells.find((c) => c.type === 'challenge');
+  const run = (cell) => {
+    const out = [];
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    const document = { createElement: () => ({ style: {}, getContext: () => ctx }), body: { appendChild: () => {} } };
+    new Function('console', 'document', cell.startCode)({ log: (...a) => out.push(a.join(' ')), error: () => {} }, document);
+    return out;
+  };
+
+  it('direction, turn, roll, matrix and the picture', () => {
+    expect(run(cells[0])).toEqual(['tail − head = (0.3, 0.4, 1.2), length 1.3', 'unit direction (0.2308, 0.3077, 0.9231)']);
+    expect(run(cells[1])[0]).toBe('turned 72.0798° from +y');
+    expect(run(cells[1])[2]).toBe('lengths 1, 1, 1; x·y 0, y·z 0, z·x 0');
+    expect(run(cells[2])).toEqual(['roll 0°: x (1, 0, 0), y (0, 0.7071, 0.7071), z (0, -0.7071, 0.7071); tail (1.5, 1, 1)', 'roll 90°: x (0, 0.7071, -0.7071), y (0, 0.7071, 0.7071), z (1, 0, 0); tail (1.5, 1, 1)']);
+    expect(run(cells[3]).slice(-2)).toEqual(["tail in the bone's frame: (0, 1.3, 0)", 'halfway along the bone, (0, 0.65, 0), in the armature: (0.15, 1.7, 0.6)']);
+    expect(run(cells[4])).toEqual(['bones drawn: 3']);
+  });
+
+  it('the notebook\'s frames agree with MeshLab\'s restMatrix', async () => {
+    const { restMatrix } = await import('../../engines/mesh/core/armature');
+    const e = restMatrix({ name: 'Arm', parent: null, head: [0, 1.5, 0], tail: [0.3, 1.9, 1.2], pose: [0, 0, 0] }).elements;
+    expect(run(cells[1])[1]).toBe(`x (${[e[0], e[1], e[2]].map((x) => +x.toFixed(4)).join(', ')})  y (${[e[4], e[5], e[6]].map((x) => +x.toFixed(4)).join(', ')})  z (${[e[8], e[9], e[10]].map((x) => +x.toFixed(4)).join(', ')})`);
+    const t = restMatrix({ name: 'Tilted', parent: null, head: [1.5, 0, 0], tail: [1.5, 1, 1], pose: [0, 0, 0], roll: Math.PI / 2 }).elements;
+    expect(run(cells[2])[1]).toContain(`x (${[t[0], t[1], t[2]].map((x) => +(Math.abs(x) < 1e-9 ? 0 : x).toFixed(4)).join(', ')})`);
+  });
+
+  it('the challenge: each slip is named', () => {
+    const at = (v) => checkBoneTurn(`const degrees = ${v}`).message;
+    expect(checkBoneTurn(challenge.solutionCode).pass).toBe(true);
+    expect(checkBoneTurn(challenge.startCode).pass).toBe(false);
+    expect(checkBoneTurn('const degrees = 53.13').pass).toBe(true);
+    expect(at('Math.acos(0.6)')).toMatch(/radians/);
+    expect(at('Math.acos(0.8) * 180 / Math.PI')).toMatch(/horizontal/);
+    expect(at('Math.acos(-0.6) * 180 / Math.PI')).toMatch(/reflex/);
+    expect(at('Math.acos(3) * 180 / Math.PI')).toMatch(/unit direction/);
   });
 });

@@ -15,6 +15,7 @@ import { heatGeodesic } from '../../../engines/mesh/core/geometry';
 import { Box3, Vector3 } from 'three';
 import { EXAMPLES } from './examples';
 import { fmt } from '../../../engines/mesh/core/trace';
+import { lintShaderBody } from '../../../engines/mesh/core/shaderTrace';
 
 export interface Check { label: string; ok: boolean; detail?: string }
 
@@ -127,6 +128,38 @@ body.paintWeights('Spine', { points: chest, brush: 'draw', value: 1, strength: 1
         { label: 'Left chest: the left arm\'s weight under 10%', ok: chestL < 0.1, detail: `${fmt(chestL * 100, 1)}%` },
         { label: 'Right chest: the right arm\'s weight under 10%', ok: chestR < 0.1, detail: `${fmt(chestR * 100, 1)}%` },
         { label: 'The hands still follow the forearms (over 85%)', ok: handL > 0.85 && handR > 0.85, detail: `${fmt(handL * 100, 0)}%, ${fmt(handR * 100, 0)}%` },
+      ];
+    },
+  },
+  {
+    id: 'toon-shader',
+    title: 'A toon shader of your own',
+    icon: '🖌️',
+    brief: 'Give the ball a custom shader: light in 4 flat bands, and a black outline where the surface turns edge-on to the eye (N·V below 0.3). Write it in the Shader tab; it must also pass MeshLab\'s checks.',
+    select: 'Ball',
+    setup: `const ball = scene.add.uvSphere({ name: 'Ball', radius: 1, segments: 48, rings: 24, position: [0, 1, 0] })
+ball.smooth = true
+ball.material.color = '#e0643c'`,
+    hints: [
+      'In the Inspector set Shader to Custom; the Shader tab then shows the body of shade(N, L, V, uv, base, light).',
+      'Bands: float d = floor(max(dot(N, L), 0.0) * 4.0) / 4.0; then use d where Lambert uses max(dot(N, L), 0.0).',
+      'Outline: if (dot(N, V) < 0.3) return vec3(0.0); before the lit colour. Remember 4.0 and 0.0, not 4 and 0.',
+    ],
+    solution: `const b = scene.get('Ball')
+b.material.shader = 'custom'
+b.material.glsl = \`float d = floor(max(dot(N, L), 0.0) * 4.0) / 4.0;
+if (dot(N, V) < 0.3) return vec3(0.0);
+return base * (ambient + d * light);\``,
+    check(e) {
+      const b = e.scene.get('Ball');
+      const glsl = b?.material.shader === 'custom' ? b.material.glsl ?? '' : '';
+      const code = glsl.replace(/\/\/.*$/gm, '');
+      const problems = glsl ? lintShaderBody(glsl) : [];
+      return [
+        { label: 'The ball uses a custom shader', ok: !!glsl },
+        { label: 'Light is cut into 4 bands (floor of N·L times 4.0, over 4.0)', ok: /floor\s*\(/.test(code) && /dot\s*\(\s*N\s*,\s*L\s*\)/.test(code) && /\b4\.0\b/.test(code) },
+        { label: 'An outline where N·V is below 0.3', ok: /dot\s*\(\s*N\s*,\s*V\s*\)\s*<\s*0\.3\b/.test(code) },
+        { label: 'It passes the checks (brackets, semicolons, floats, a return)', ok: !!glsl && problems.length === 0, detail: problems.slice(0, 2).map((p) => `line ${p.line}: ${p.message}`).join('; ') || undefined },
       ];
     },
   },

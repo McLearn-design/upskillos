@@ -41,6 +41,8 @@ export interface TraceStep {
   faces?: number[];
   points?: TracePoint[];
   arrows?: TraceArrow[];
+  /** Line segments to draw over the mesh, such as an iso-line (hidden until a prediction is answered). */
+  lines?: [Vec3, Vec3][];
   /** Name/value pairs shown beside the step. */
   values?: [string, string][];
   /** The mesh as it stands after this step (small meshes only). */

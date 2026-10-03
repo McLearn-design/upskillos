@@ -77,3 +77,36 @@ describe('GLB export of a rigged character', () => {
     expect(all).toBeLessThan(1e-5);
   });
 });
+
+describe('traceClip agrees with the GLB file', () => {
+  it('the same channels, key counts and float bytes as GLTFExporter writes', async () => {
+    const { traceClip } = await import('../../../engines/mesh/core/animTrace');
+    const { Trace } = await import('../../../engines/mesh/core/trace');
+    const { EXAMPLES } = await import('../core/examples');
+    for (const script of [
+      `scene.setTimeline({ start: 1, end: 25, fps: 24 })
+       const c = scene.get('Cube')
+       c.keyframe(1, { position: [0, 0, 0], rotation: [0, 0, 0] })
+       c.keyframe(25, { position: [6, 0, 0], rotation: [0, Math.PI, 0] })`,
+      EXAMPLES.find((x) => x.id === 'rig-character')!.code,
+    ]) {
+      const e = new Editor(); e.newScene();
+      expect(runScript(e, script).error).toBeNull();
+      const t = new Trace('x');
+      const r = traceClip(e.scene, t);
+      const glb = new Uint8Array(await exportGLB(e.scene));
+      const len = new DataView(glb.buffer).getUint32(12, true);
+      const json = JSON.parse(new TextDecoder().decode(glb.slice(20, 20 + len)));
+      const anim = json.animations[0];
+      expect(anim.channels.length).toBe(r.channels.length);
+      expect(anim.channels.map((c: { target: { path: string } }) => c.target.path).sort()).toEqual(r.channels.map((c) => c.path).sort());
+      const floats = (i: number) => json.accessors[i].count * ({ SCALAR: 1, VEC3: 3, VEC4: 4 } as Record<string, number>)[json.accessors[i].type];
+      expect(anim.samplers.every((s: { input: number; interpolation: string }) => json.accessors[s.input].count === r.frames && s.interpolation === 'LINEAR')).toBe(true);
+      expect(anim.samplers.reduce((n: number, s: { input: number; output: number }) => n + 4 * (floats(s.input) + floats(s.output)), 0)).toBe(r.bytes);
+      expect(json.accessors[anim.samplers[0].input].max[0]).toBeCloseTo(r.duration, 6);
+      // GLTFExporter writes a time accessor per sampler (traceClip counts each one).
+      expect(new Set(anim.samplers.map((s: { input: number }) => s.input)).size).toBe(anim.samplers.length);
+      expect(t.steps.map((s) => s.phase)).toEqual(['Channels', 'Times', 'Values', 'Interpolation', 'Bytes']);
+    }
+  });
+});

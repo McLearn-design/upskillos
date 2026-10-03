@@ -35,10 +35,13 @@ interface Mesh {
   /** Mean curvature H (1/r on a sphere of radius r) or Gaussian K (angle defect ÷ area), one per vertex. */ curvature(kind?: 'mean' | 'gaussian'): number[];
   /** Distance along the surface from the given vertices, by the heat method. */ geodesic(from: number | number[]): number[];
   /** Laplacian smoothing: move each vertex λ of the way to its neighbours' average, repeatedly. Boundary stays. */ smooth(opts?: { verts?: number[]; iterations?: number; lambda?: number; method?: 'uniform' | 'cotan' }): Mesh;
+  /** The pieces the seams cut the surface into (traced): faces, V, E, F, χ, boundary loops, and whether each is a disc. */ charts(): { faces: number; V: number; E: number; F: number; chi: number; boundaries: number; disc: boolean }[];
+  /** The iso-line where a per-vertex field equals level (traced): how many triangles it crosses, closed loops, open chains, total length. */ isoLine(values: number[], level: number): { crossed: number; loops: number; open: number; length: number };
+  /** Implicit smoothing: one backward heat step (M + tC) x' = M x, t = strength · h²; stable for any strength. Boundary stays. */ smoothImplicit(opts?: { verts?: number[]; strength?: number; iterations?: number }): Mesh;
   /** The cotan Laplacian: per vertex, [neighbour, weight] pairs (the diagonal is the vertex itself), and its area. */ laplacian(): { rows: [number, number][][]; mass: number[] };
   /** UV seams: edges where the surface is cut to lie flat. */ markSeams(edges: [number, number][]): Mesh; clearSeams(edges?: [number, number][]): Mesh; readonly seams: [number, number][];
   /** Mark every edge sharper than this angle as a seam. */ seamsFromSharp(degrees?: number): Mesh;
-  /** Flatten onto the UV square: LSCM per chart (default) or a projection from above. */ unwrap(opts?: { method?: 'lscm' | 'planar' }): Mesh;
+  /** Flatten onto the UV square: LSCM per chart (default), a projection from above (planar) or around the y axis (cylinder). */ unwrap(opts?: { method?: 'lscm' | 'planar' | 'cylinder' }): Mesh;
   /** [u, v] per face corner, or null. */ readonly uv: [number, number][][] | null; uvDistortion(): number[];
   /** Colour the mesh as a heat map. */ showField(what: 'geodesic' | 'mean' | 'gaussian' | 'x' | 'y' | 'z' | 'weight' | 'uv' | number[], opts?: { from?: number | number[]; /** Same as from (from is a keyword in Python). */ source?: number | number[]; label?: string }): Mesh;
 }

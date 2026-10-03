@@ -22,7 +22,7 @@ import { exportOBJ, parseOBJ } from './formats';
 import { traceExpr } from './expr';
 import { traceAxes, traceDecompose, traceEuler, traceDeterminant, traceTransform, traceWorld } from './transformTrace';
 import { Recorder, brief, instrument, type Recording } from './recorder';
-import { gaussianCurvature, heatGeodesic, meanCurvature, operators, smooth as smoothMesh } from './geometry';
+import { gaussianCurvature, heatGeodesic, meanCurvature, operators, smooth as smoothMesh, smoothImplicit } from './geometry';
 import { traceVertexNormal } from './normals';
 import { rayFromPixel, tracePick } from './pickRay';
 import { traceScreenPick } from './screenPick';
@@ -32,7 +32,7 @@ import { CHANNELS, INTERPS, cloneAnimation, hasKeys, removeBoneKey, removeKey, s
 import { boneLength, limitWeights, orderBones, posedEnds, type Bone } from './armature';
 import { applyBonePatch, bindSkin, evaluatedMesh, removeBone, skinnedSource, skinSource } from './evaluate';
 import { BRUSHES, DEFAULT_PAINT, dab, neighbourLists, type PaintSettings } from './weightPaint';
-import { angleDistortion, planarUV, sharpEdges, traceUVSubdivision, unwrap as unwrapMesh, uvFits } from './uv';
+import { angleDistortion, sharpEdges, traceUVSubdivision, unwrap as unwrapMesh, uvFits } from './uv';
 import { bevelEdges, dissolveEdges, dissolveFaces, dissolveVerts, insetRegion } from './modelling';
 import { SHADER_MODELS, TEXTURES, type ShaderModel, type TextureName } from './shading';
 import { DEFAULT_CAMERA, lookAtRotation, traceDepth, traceLookAt, traceOutline, traceProjection, traceView } from './camera';
@@ -43,6 +43,17 @@ import { traceValence } from './valence';
 import { traceColourMap } from './fields';
 import { limitPosition } from './limit';
 import { traceVertexLaplacian } from './laplacianTrace';
+import { traceHeatSolve } from './sparseTrace';
+import { traceContour } from './contourTrace';
+import { traceUVLookup } from './uvLookup';
+import { traceCharts } from './chartTrace';
+import { traceUVProjection } from './projection';
+import { traceDistortion } from './distortionTrace';
+import { shadePoint } from './shadingTrace';
+import { traceTexture } from './textureTrace';
+import { traceShaderAssembly } from './shaderTrace';
+import { tracePose, traceRestMatrix } from './boneTrace';
+import { traceBake, traceClip, traceFootSlide, traceQuaternion, traceSample } from './animTrace';
 
 type Vec3Handle = { x: number; y: number; z: number; set(x: number, y: number, z: number): Vec3Handle; toArray(): Vec3 };
 
@@ -186,8 +197,14 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       /** How vertex v's smooth normal is built: faces, weights (area or angle), the average; auto smooth splits (traced with Record traces on). */
       vertexNormal(v: number, opts: { weight?: 'area' | 'angle'; sharp?: number | null } = {}) { return traceVertexNormal(m(), Number(v), { weight: opts.weight ?? 'area', sharp: opts.sharp === undefined ? o.autoSmooth ?? null : opts.sharp }, trace('Trace the vertex normal', o)); },
       smooth(opts: { verts?: number[]; iterations?: number; lambda?: number; method?: 'uniform' | 'cotan' } = {}) { smoothMesh(m(), { iterations: opts.iterations ?? 5, lambda: opts.lambda ?? 0.5, method: opts.method ?? 'uniform', only: opts.verts }, trace('Smooth', o)); return api; },
+      /** Implicit smoothing: (M + tC) x' = M x with t = strength · h², stable for any strength (traced with Record traces on). */
+      smoothImplicit(opts: { verts?: number[]; strength?: number; iterations?: number } = {}) { smoothImplicit(m(), { strength: opts.strength ?? 1, iterations: opts.iterations ?? 1, only: opts.verts }, trace('Implicit smoothing', o)); return api; },
       /** The cotan Laplacian as rows of [neighbour, weight] pairs, and each vertex's area (mass). */
       laplacian() { const { C, mass } = operators(m()); return { rows: C.rows.map((r) => [...r.entries()]), mass: Array.from(mass) }; },
+      /** One heat step from vertex v, (M + tC) u = δ, solved by CG (and Jacobi for comparison); traced with Record traces on. */
+      solveHeat: (v: number) => { const r = traceHeatSolve(m(), Number(v), trace('Trace the heat solve', o)); return { unknowns: r.n, nonZeros: r.nonZeros, cg: r.cgIterations, jacobi: r.jacobiIterations }; },
+      /** The iso-line where a per-vertex field equals level, traced with Record traces on: loops, open chains, length. */
+      isoLine: (values: ArrayLike<number>, level: number) => { const v = Array.from(values, Number); if (v.length !== m().verts.length) throw new Error(`isoLine: give one value per vertex (${m().verts.length})`); const r = traceContour(m(), v, Number(level), trace('Trace the iso-line', o)); return { crossed: r.crossed, loops: r.loops, open: r.open, length: r.length }; },
       /** The Laplacian at vertex v, traced with Record traces on: umbrella, cotan weights, area, and Δx (length 2H). */
       laplacianAt: (v: number) => { const r = traceVertexLaplacian(m(), Number(v), trace('Trace the Laplacian', o)); if (typeof r === 'string') throw new Error(r); return { weights: r.weights, area: r.area, H: r.H, delta: r.cotan }; },
       /** Colour the mesh by a field: "geodesic" (with from), "mean", "gaussian", "x", "y", "z", or your own values. */
@@ -218,8 +235,13 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       },
       get seams() { return (o.seams ?? []).map((k) => k.split('-').map(Number)); },
       seamsFromSharp(degrees = 60) { o.seams = [...new Set([...(o.seams ?? []), ...sharpEdges(m(), degrees)])]; return api; },
-      unwrap(opts: { method?: 'lscm' | 'planar' } = {}) {
-        o.uv = opts.method === 'planar' ? planarUV(m()) : unwrapMesh(m(), new Set(o.seams ?? []), trace('Unwrap (LSCM)', o));
+      /** The pieces the seams cut the surface into, each tested for being a disc (traced with Record traces on). */
+      charts() { return traceCharts(m(), new Set(o.seams ?? []), trace('Trace the charts', o)).map((c) => ({ faces: c.faces.length, V: c.V, E: c.E, F: c.F, chi: c.chi, boundaries: c.boundaries, disc: c.disc })); },
+      /** UVs: "lscm" (the default) flattens each chart the seams cut; "planar" projects from above; "cylinder" projects around the y axis (traced). */
+      unwrap(opts: { method?: 'lscm' | 'planar' | 'cylinder' } = {}) {
+        const method = opts.method ?? 'lscm';
+        if (method !== 'lscm' && method !== 'planar' && method !== 'cylinder') throw new Error(`unwrap: unknown method "${method}". Use "lscm", "planar" or "cylinder"`);
+        o.uv = method === 'lscm' ? unwrapMesh(m(), new Set(o.seams ?? []), trace('Unwrap (LSCM)', o)) : traceUVProjection(m(), method, trace(method === 'planar' ? 'Project from above' : 'Project around', o)).layer;
         return api;
       },
       /** UVs per face corner: uv[f][i] = [u, v] of corner i of face f (null if none, or if the mesh changed since). */
@@ -259,6 +281,14 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
         return bh;
       },
       deleteKeyframe(frame: number) { if (o.anim) { removeBoneKey(o.anim, b.name, frame); if (!hasKeys(o.anim)) o.anim = undefined; } return bh; },
+      /** The rest matrix B from head, tail and roll (traced with Record traces on): its length, its turn from +y (radians) and its axes. */
+      traceRest() {
+        const r = traceRestMatrix(b, trace('Trace the rest matrix', o));
+        const e = r.matrix.elements;
+        return { length: r.length, turn: r.turn, x: [e[0], e[1], e[2]], y: [e[4], e[5], e[6]], z: [e[8], e[9], e[10]] };
+      },
+      /** Pose this bone down its chain (traced with Record traces on): the chain, and where its tail is posed. */
+      tracePose() { const r = tracePose(o.bones!, b.name, trace('Trace posing the bone', o)); return { chain: r.chain, tail: r.tail }; },
       toString: () => `Bone "${b.name}"`,
     };
     return bh;
@@ -362,6 +392,69 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
         const shown = evaluatedMesh(scene(), o);
         const r = traceSilhouette(shown, [local.x, local.y, local.z], trace('Trace the silhouette', o));
         return { faces: shown.faces.length, front: r.front.length, edges: r.edges.length };
+      },
+      /** Trace how a channel's keys give its value at a frame (with Record traces on): the keys, t, the easing, the blend or slerp. */
+      traceSample(channel: 'position' | 'rotation' | 'scale' = 'position', frame?: number) {
+        if (!o.anim?.[channel]?.length) throw new Error(`${o.name} has no ${channel} keys`);
+        const f = frame === undefined ? scene().timeline.frame : Number(frame);
+        const r = traceSample(o.anim, channel, f, trace('Trace sampling the keys', o));
+        return { value: r.value.map((x) => +x.toFixed(4)), t: r.t === undefined ? null : +r.t.toFixed(4), s: r.s === undefined ? null : +r.s.toFixed(4) };
+      },
+      /** Trace baking this object's world motion (through its parents) into position keys every few frames. Returns the keys and the worst gap; changes nothing. */
+      traceBake(every = 3) {
+        const r = traceBake(scene(), o, Number(every), trace('Trace baking world motion', o));
+        return { keys: r.keys.map((k) => ({ frame: k.frame, value: k.value.map((x) => +x.toFixed(4)) })), maxError: +r.maxError.toFixed(5), worstFrame: r.worstFrame };
+      },
+      /** Trace how far a bone's tail (a foot) slides while on the ground, and whether the cycle loops (with Record traces on). */
+      traceFootSlide(bone = 'Shin.L', cycle = 24, ground = 0.05) {
+        const r = traceFootSlide(scene(), o, String(bone), Number(cycle), Number(ground), trace('Trace foot sliding', o));
+        return { contacts: r.contacts, maxSlide: +r.maxSlide.toFixed(4), worstContact: r.worstContact, loopError: +r.loopError.toFixed(5) };
+      },
+      /** Trace turning this object's Euler rotation into a quaternion (with Record traces on). Returns [x, y, z, w]. */
+      traceQuaternion() { return traceQuaternion(o.rotation, trace('Trace the quaternion', o)).map((x) => +x.toFixed(4)); },
+      /** Trace how this object's shader is assembled (with Record traces on): where the shade() body lands, and the checks. */
+      traceShader() {
+        const model = o.material.shader ?? 'pbr';
+        if (model === 'pbr') throw new Error('PBR is three.js\'s own shader; trace another model');
+        const r = traceShaderAssembly(model, o.material.glsl || undefined, !o.smooth, trace('Trace assembling the shader', o));
+        return { lines: r.lines, bodyStart: r.bodyStart, bodyEnd: r.bodyEnd, problems: r.lint.map((x) => `line ${x.line}: ${x.message}`) };
+      },
+      /** Trace the material's texture formula at the centre of face f (with Record traces on): the repeat, the formula, the colour. */
+      traceTexture(face = 0) {
+        if (!o.mesh || !o.uv || !uvFits(o.mesh, o.uv)) throw new Error(`${o.name} has no UVs: unwrap it first`);
+        const tex = o.material.texture;
+        if (!tex || tex === 'none') throw new Error(`${o.name} has no texture`);
+        const f = o.uv.faces[Math.round(Number(face))];
+        if (!f) throw new Error(`traceTexture: there is no face ${face}`);
+        const r = traceTexture(tex, [f.reduce((s, p) => s + p[0], 0) / f.length, f.reduce((s, p) => s + p[1], 0) / f.length], o.material.textureScale ?? 1, trace('Trace the texture formula', o));
+        return { u: +r.u.toFixed(4), v: +r.v.toFixed(4), color: r.color };
+      },
+      /** Trace the shading at vertex v with the object's shader model (with Record traces on): the screen colour and the terms. The eye is the viewport's camera unless given. */
+      traceShading(v = 0, opts: { eye?: Vec3 } = {}) {
+        if (!o.mesh) throw new Error(`${o.name} has no mesh`);
+        const i = Math.round(Number(v));
+        if (!(i >= 0 && i < o.mesh.verts.length)) throw new Error(`traceShading: there is no vertex ${v}`);
+        const inv = scene().worldMatrix(o).clone().invert();
+        const eye = opts.eye ? (Array.from(opts.eye, Number) as Vec3) : undefined;
+        const r = shadePoint(editor.shadingInputs(o, i, eye), trace('Trace the shading', o), { draw: (p) => new Vector3(...p).applyMatrix4(inv).toArray() as Vec3 });
+        return { screen: r.srgb, linear: r.color.map((x) => +x.toFixed(4)), terms: Object.fromEntries(Object.entries(r.terms).map(([k, x]) => [k, +x.toFixed(4)])) };
+      },
+      /** Trace the UV distortion of face f's first triangle, then of the whole mesh (with Record traces on). */
+      traceDistortion(face = 0) {
+        if (!o.mesh || !o.uv || !uvFits(o.mesh, o.uv)) throw new Error(`${o.name} has no UVs: unwrap it first`);
+        const f = Math.round(Number(face));
+        if (!(f >= 0 && f < o.mesh.faces.length)) throw new Error(`traceDistortion: there is no face ${face}`);
+        const r = traceDistortion(o.mesh, o.uv, f, trace('Trace the distortion', o));
+        const k = (x: number) => (Number.isFinite(x) ? +x.toFixed(4) : Infinity);
+        return { sigma1: k(r.sigma1), sigma2: k(r.sigma2), ratio: k(r.ratio), area: +r.area.toFixed(6), flipped: r.flipped, meanRatio: k(r.meanRatio), worstRatio: k(r.worstRatio), flippedCount: r.flippedCount, areaSpread: k(r.areaSpread) };
+      },
+      /** Trace a texture lookup at the centre of face f (with Record traces on): corner UVs, wedges, interpolation, texel. */
+      traceUVLookup(face = 0) {
+        if (!o.mesh || !o.uv || !uvFits(o.mesh, o.uv)) throw new Error(`${o.name} has no UVs: unwrap it first`);
+        const f = Math.round(Number(face));
+        if (!(f >= 0 && f < o.mesh.faces.length)) throw new Error(`traceUVLookup: there is no face ${face}`);
+        const r = traceUVLookup(o.mesh, o.uv, f, o.material?.textureScale ?? 1, trace('Trace a texture lookup', o));
+        return { verts: r.verts, corners: r.corners, wedges: r.wedges, uv: r.uv.map((x) => +x.toFixed(4)), texel: r.texel, square: r.square, white: r.white };
       },
       /** Trace subdividing this object's UVs smoothly (with Record traces on), and compare distortion with linear UVs. */
       traceUVSubdivision(levels = 2) {
@@ -522,6 +615,11 @@ export function makeApi(editor: Editor, print: (s: string) => void) {
       const start = Math.round(t.start ?? cur.start), end = Math.round(t.end ?? cur.end), fps = Math.round(t.fps ?? cur.fps);
       if (!(end > start) || !(fps >= 1)) throw new Error('setTimeline: need end > start and fps ≥ 1');
       scene().timeline = { start, end, fps, frame: Math.min(end, Math.max(start, cur.frame)) };
+    },
+    /** What Export GLB writes for the animation (traced with Record traces on): its channels, keys per sampler, seconds and float bytes. */
+    traceClip() {
+      const r = traceClip(scene(), trace('Trace the glTF clip'));
+      return { channels: r.channels.map((c) => `${c.node}.${c.path}`), frames: r.frames, duration: r.duration, bytes: r.bytes };
     },
     clear() { scene().objects = []; },
   };

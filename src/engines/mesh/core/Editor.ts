@@ -10,17 +10,17 @@
 // The GUI and scripts share this path, so undo, the log and traces behave the
 // same however a change was made.
 
-import { Vector3 } from 'three';
+import { Matrix3, Vector3 } from 'three';
 import { EditMesh, type Vec3 } from './EditMesh';
 import { Scene, type SceneJSON, type SceneObject } from './Scene';
 import { makePrimitive, type PrimitiveParams, type PrimitiveType } from './primitives';
 import { defaultModifier, evaluate, mirror, onMirrorPlane, type Modifier } from './modifiers';
 import { applyBonePatch, bindSkin, evaluatedMesh, removeBone, skinnedSource, skinSource, skinState } from './evaluate';
 import { catmullClark } from './subdivision';
-import { Trace } from './trace';
+import { Trace, fmt, fmtV } from './trace';
 import { traceAxes, traceDecompose, traceEuler, traceDeterminant, traceTransform, traceWorld } from './transformTrace';
 import { computeField, traceColourMap, type FieldResult, type FieldSpec } from './fields';
-import { smooth as smoothMesh } from './geometry';
+import { smooth as smoothMesh, smoothImplicit as smoothMeshImplicit } from './geometry';
 import { traceVertexNormal } from './normals';
 import { rayFromPixel, tracePick, type Pickable } from './pickRay';
 import { traceScreenPick, type ScreenPoint } from './screenPick';
@@ -28,11 +28,22 @@ import { traceSilhouette } from './silhouette';
 import { traceValence } from './valence';
 import { limitPosition } from './limit';
 import { traceVertexLaplacian } from './laplacianTrace';
+import { traceHeatSolve } from './sparseTrace';
+import { traceContour } from './contourTrace';
+import { traceUVLookup } from './uvLookup';
+import { traceCharts } from './chartTrace';
+import { traceUVProjection } from './projection';
+import { traceDistortion } from './distortionTrace';
+import { hexToLinear, shadePoint } from './shadingTrace';
+import { traceTexture } from './textureTrace';
+import { traceShaderAssembly } from './shaderTrace';
+import { tracePose, traceRestMatrix } from './boneTrace';
+import { traceBake, traceClip, traceFootSlide, traceQuaternion, traceSample } from './animTrace';
 import { SNAP, traceAxisDrag } from './gizmoDrag';
 import { CHANNELS, hasKeys, posesAt, removeBoneKey, removeKey, setBoneKey, setKey, transformAt, type Channel, type Interp } from './animation';
 import { cloneBones, limitWeights, moveJoint, orderBones, type Bone, type JointSel } from './armature';
 import { DEFAULT_PAINT, dab, neighbourLists, type PaintSettings } from './weightPaint';
-import { angleDistortion, planarUV, sharpEdges, traceUVSubdivision, unwrap as unwrapMesh, uvFits } from './uv';
+import { angleDistortion, sharpEdges, traceUVSubdivision, unwrap as unwrapMesh, uvFits } from './uv';
 import { faceTriangles } from './triangulate';
 import { bevelEdges, dissolveEdges, dissolveFaces, dissolveVerts, insetRegion } from './modelling';
 import { DEFAULT_CAMERA, lookAtRotation, traceDepth, traceLookAt, traceOutline, traceProjection, traceView } from './camera';
@@ -83,6 +94,8 @@ export class Editor {
   /** The heat map being shown, if any. It is a view, not part of the scene: not saved, not undone. */
   field: FieldView | null = null;
   showContours = true;
+  /** Where the viewport's camera is (the viewport sets it every frame): the eye the shading trace looks from. */
+  viewEye: Vec3 | null = null;
   /** The bone being posed (pose mode) or shown in the inspector. */
   activeBone: string | null = null;
   /** Animation playback is running (the loop lives in the UI; this is the switch). */
@@ -439,6 +452,224 @@ export class Editor {
     const r = traceUVSubdivision(o.mesh, o.uv, levels, trace);
     this.trace = trace; this.traceTarget = o.id; this.emit('trace');
     this.message = `UVs subdivided ${levels}×: distortion ${r.linear.mean.toFixed(2)} linear, ${r.smooth.mean.toFixed(2)} smooth`;
+    this.emit('select');
+    return true;
+  }
+
+  /** The inputs of shade() at one vertex of an object, in world space: the vertex, its normal, the sun, the eye. */
+  shadingInputs(o: SceneObject, v: number, eyeAt?: Vec3) {
+    const m = o.mesh!, W = this.scene.worldMatrix(o);
+    const P = new Vector3(...m.verts[v]).applyMatrix4(W);
+    // Smooth objects use the vertex normal; flat ones the normal of the first face at the vertex (what the shader sees there).
+    const f = m.faces.findIndex((face) => face.includes(v));
+    const n0 = o.smooth || f < 0 ? m.vertexNormal(v) : m.faceNormal(f);
+    const N = new Vector3(...n0).applyMatrix3(new Matrix3().setFromMatrix4(W)).normalize();
+    const sun = this.scene.objects.find((x) => x.kind === 'light');
+    const sp = sun ? new Vector3().setFromMatrixPosition(this.scene.worldMatrix(sun)) : new Vector3(0, 1, 0);
+    const L = sp.lengthSq() > 0 ? sp.normalize() : new Vector3(0, 1, 0);
+    const light = hexToLinear(sun?.light?.color ?? '#ffffff').map((x) => x * (sun?.light?.intensity ?? 2.5) * 0.4) as [number, number, number];
+    const cam = this.scene.objects.find((x) => x.kind === 'camera');
+    const eye: Vec3 = eyeAt ?? this.viewEye ?? (cam ? new Vector3().setFromMatrixPosition(this.scene.worldMatrix(cam)).toArray() as Vec3 : [4, 3, 5]);
+    const mat = o.material, corner = f >= 0 ? m.faces[f].indexOf(v) : -1;
+    const uv = o.uv && uvFits(m, o.uv) && f >= 0 ? o.uv.faces[f][corner].map((x) => x * (mat.textureScale ?? 1)) as [number, number] : null;
+    return {
+      model: mat.shader ?? 'pbr', P: P.toArray() as Vec3, N: N.toArray() as Vec3, eye, L: L.toArray() as Vec3, light, base: hexToLinear(mat.color),
+      uv, shininess: mat.shininess ?? 40, specular: 0.9 * (1 - mat.roughness), bands: 3, roughness: mat.roughness, metalness: mat.metalness,
+    };
+  }
+
+  /** Trace how the active object's keys give its value at the current frame (the first channel with keys, or the one given). */
+  traceSampleOf(channel?: Channel): boolean {
+    const o = this.activeObject;
+    const ch = channel ?? CHANNELS.find((c) => (o?.anim?.[c]?.length ?? 0) > 0);
+    if (!o?.anim || !ch || !o.anim[ch]?.length) { this.say('Trace sampling the keys: select an object with keyframes (I inserts one)'); return false; }
+    const trace = new Trace('Trace sampling the keys');
+    const r = traceSample(o.anim, ch, this.frame, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${ch} at frame ${this.frame}: (${r.value.map((x) => fmt(x, 3)).join(', ')})`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace baking the active object's world motion into keys every few frames (read-only: nothing is changed). */
+  traceBakeOf(every = 3): boolean {
+    const o = this.activeObject;
+    if (!o) { this.say('Trace baking world motion: select an object'); return false; }
+    const trace = new Trace('Trace baking world motion');
+    const r = traceBake(this.scene, o, every, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${r.keys.length} keys every ${every} frames; worst gap ${fmt(r.maxError, 4)} at frame ${r.worstFrame}`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace foot sliding for the active bone's tail (default Shin.L) on the active armature, over a cycle of `cycle` frames. */
+  traceFootSlideOf(cycle = 24): boolean {
+    const o = this.activeObject;
+    if (!o?.bones?.length) { this.say('Trace foot sliding: select an armature (a rig with bones)'); return false; }
+    const bone = this.activeBone && o.bones.some((b) => b.name === this.activeBone) ? this.activeBone : o.bones.some((b) => b.name === 'Shin.L') ? 'Shin.L' : o.bones[0].name;
+    const trace = new Trace('Trace foot sliding');
+    const r = traceFootSlide(this.scene, o, bone, cycle, 0.05, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${bone}: worst slide ${fmt(r.maxSlide, 4)} while planted; loop error ${fmt(r.loopError, 4)}`;
+    this.emit('select');
+    return true;
+  }
+
+  /** The active armature and its active bone (or its first), for the bone traces. */
+  private tracedBone(what: string): { o: SceneObject; bone: Bone } | undefined {
+    const o = this.activeObject;
+    if (!o?.bones?.length) { this.say(`${what}: select an armature (Add › Armature)`); return undefined; }
+    return { o, bone: o.bones.find((b) => b.name === this.activeBone) ?? o.bones[0] };
+  }
+
+  /** Trace building the active bone's rest matrix from its head, tail and roll. */
+  traceRestMatrixOf(): boolean {
+    const t = this.tracedBone('Trace the rest matrix');
+    if (!t) return false;
+    const trace = new Trace('Trace the rest matrix');
+    const r = traceRestMatrix(t.bone, trace);
+    this.trace = trace; this.traceTarget = t.o.id; this.emit('trace');
+    this.message = `${t.bone.name}: length ${fmt(r.length, 4)}, turned ${fmt((r.turn * 180) / Math.PI, 2)}° from +y`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace posing the active bone: its chain from the root, then its skin matrix. */
+  tracePoseOf(): boolean {
+    const t = this.tracedBone('Trace posing the bone');
+    if (!t) return false;
+    const trace = new Trace('Trace posing the bone');
+    const r = tracePose(t.o.bones!, t.bone.name, trace);
+    this.trace = trace; this.traceTarget = t.o.id; this.emit('trace');
+    this.message = `${t.bone.name}: posed tail ${fmtV(r.tail)} (chain ${r.chain.join(' → ')})`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace what Export GLB writes for the animation: channels, samplers, times, bytes. */
+  traceClipOf(): boolean {
+    const trace = new Trace('Trace the glTF clip');
+    const r = traceClip(this.modelScene, trace);
+    this.trace = trace; this.traceTarget = null; this.emit('trace');
+    this.message = r.channels.length ? `glTF clip: ${r.channels.length} channels, ${r.frames} keys each, ${r.bytes} bytes` : 'glTF clip: nothing is keyed';
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace turning the active object's Euler rotation into a quaternion. */
+  traceQuaternionOf(): boolean {
+    const o = this.activeObject;
+    if (!o) { this.say('Trace the quaternion: select an object'); return false; }
+    const trace = new Trace('Trace the quaternion');
+    const q = traceQuaternion(o.rotation, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `q = (${q.map((x) => fmt(x, 3)).join(', ')})`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace how the active object's shader is assembled: the frame, where its shade() body lands, main(), and checks. */
+  traceShaderOf(): boolean {
+    const o = this.activeObject;
+    if (!o?.mesh) { this.say('Trace assembling the shader: select a mesh'); return false; }
+    const model = o.material.shader ?? 'pbr';
+    if (model === 'pbr') { this.say('PBR is three.js\'s own shader: choose Lambert, Blinn–Phong, Toon, Normals, UV or Custom in the Inspector'); return false; }
+    const trace = new Trace('Trace assembling the shader');
+    const r = traceShaderAssembly(model, o.material.glsl || undefined, !o.smooth, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `shade() is lines ${r.bodyStart}–${r.bodyEnd} of ${r.lines}; ${r.lint.length ? `${r.lint.length} problem${r.lint.length === 1 ? '' : 's'} found` : 'no problems found'}`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace the texture formula at the centre of the one selected face (its UV, the repeat, the formula, the colour). */
+  traceTextureOf(): boolean {
+    const o = this.editObject;
+    const faces = this.mode === 'edit' ? this.selectedFaces() : [];
+    if (!o?.mesh || faces.length !== 1) { this.say('Trace the texture formula: Tab into edit mode and select one face (3 for face select)'); return false; }
+    if (!uvFits(o.mesh, o.uv)) { this.say(`${o.name} has no UVs that fit its mesh: UV › Unwrap first`); return false; }
+    const tex = o.material.texture;
+    if (!tex || tex === 'none') { this.say(`${o.name} has no texture: choose one in the Inspector`); return false; }
+    const f = o.uv!.faces[faces[0]], uv: [number, number] = [f.reduce((s, p) => s + p[0], 0) / f.length, f.reduce((s, p) => s + p[1], 0) / f.length];
+    const trace = new Trace('Trace the texture formula');
+    const r = traceTexture(tex, uv, o.material.textureScale ?? 1, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${tex} at (${fmt(r.u, 3)}, ${fmt(r.v, 3)}): (${r.color.join(', ')})`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace the shading at the one selected vertex, with the object's shader model. */
+  traceShadingOf(): boolean {
+    const o = this.editObject;
+    const verts = this.mode === 'edit' ? this.selectedVerts() : [];
+    if (!o?.mesh || verts.length !== 1) { this.say('Trace the shading: Tab into edit mode and select one vertex (1 for vertex select)'); return false; }
+    const trace = new Trace('Trace the shading');
+    if (o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    // The overlay is drawn in the object's own space: map world points back into it.
+    const inv = this.scene.worldMatrix(o).clone().invert();
+    const r = shadePoint(this.shadingInputs(o, verts[0]), trace, { draw: (p) => new Vector3(...p).applyMatrix4(inv).toArray() as Vec3 });
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${o.material.shader ?? 'pbr'} at v${verts[0]}: screen colour (${r.srgb.join(', ')})`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace the UV distortion of the one selected face (its first triangle), then of the whole mesh. */
+  traceDistortionOf(): boolean {
+    const o = this.editObject;
+    const faces = this.mode === 'edit' ? this.selectedFaces() : [];
+    if (!o?.mesh || faces.length !== 1) { this.say('Trace the distortion: Tab into edit mode and select one face (3 for face select)'); return false; }
+    if (!uvFits(o.mesh, o.uv)) { this.say(`${o.name} has no UVs that fit its mesh: UV › Unwrap first`); return false; }
+    const trace = new Trace('Trace the distortion');
+    if (o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const r = traceDistortion(o.mesh, o.uv!, faces[0], trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `Face ${faces[0]}: σ₁/σ₂ = ${Number.isFinite(r.ratio) ? fmt(r.ratio, 3) : '∞'}, area scale ${fmt(r.area, 4)}; mesh mean ${fmt(r.meanRatio, 3)}`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace cutting the active mesh into charts along its seams, and test each chart for being a disc. */
+  traceChartsOf(): boolean {
+    const o = this.activeObject;
+    if (!o?.mesh) { this.say('Trace the charts: select a mesh'); return false; }
+    const trace = new Trace('Trace the charts');
+    if (o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const r = traceCharts(o.mesh, new Set(o.seams ?? []), trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    const bad = r.filter((c) => !c.disc).length;
+    this.message = `${r.length} chart${r.length === 1 ? '' : 's'}; ${bad ? `${bad} not a disc: cut again` : 'all discs'}`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace a texture lookup at the centre of the one selected face: its corners' UVs, wedges, interpolation, texel. */
+  traceUVLookupOf(): boolean {
+    const o = this.editObject;
+    const faces = this.mode === 'edit' ? this.selectedFaces() : [];
+    if (!o?.mesh || faces.length !== 1) { this.say('Trace a texture lookup: Tab into edit mode and select one face (3 for face select)'); return false; }
+    if (!uvFits(o.mesh, o.uv)) { this.say(`${o.name} has no UVs that fit its mesh: UV › Unwrap first`); return false; }
+    const trace = new Trace('Trace a texture lookup');
+    if (o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const r = traceUVLookup(o.mesh, o.uv!, faces[0], o.material?.textureScale ?? 1, trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `Face ${faces[0]}: UV (${fmt(r.uv[0], 3)}, ${fmt(r.uv[1], 3)}), texel (${r.texel.join(', ')}); ${r.verts} vertices, ${r.wedges} wedges`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace solving one heat step from the selected vertex: the sparse SPD matrix, conjugate gradients, Jacobi. */
+  traceSolveOf(): boolean {
+    const o = this.editObject;
+    const verts = this.mode === 'edit' ? this.selectedVerts() : [];
+    if (!o?.mesh || verts.length !== 1) { this.say('Trace the heat solve: Tab into edit mode and select one vertex (the heat source)'); return false; }
+    const trace = new Trace('Trace the heat solve');
+    if (o.mesh.verts.length <= trace.snapshotLimit) trace.before = o.mesh.toSnapshot();
+    const r = traceHeatSolve(o.mesh, verts[0], trace);
+    this.trace = trace; this.traceTarget = o.id; this.emit('trace');
+    this.message = `${r.n} unknowns, ${r.nonZeros} non-zeros: CG ${r.cgIterations} iterations, Jacobi ${r.jacobiIterations}`;
     this.emit('select');
     return true;
   }
@@ -1407,7 +1638,7 @@ export class Editor {
       spec = { kind: 'uv', values: Array.from(angleDistortion(o.mesh, o.uv)) };
     }
     const mesh = this.fieldMesh(o, spec);
-    const trace = this.traceEnabled && spec.kind === 'geodesic' ? new Trace('Heat method') : this.traceEnabled && spec.kind === 'mean' ? new Trace('Mean curvature') : undefined;
+    const trace = this.traceEnabled && spec.kind === 'geodesic' ? new Trace('Heat method') : this.traceEnabled && spec.kind === 'mean' ? new Trace('Mean curvature') : this.traceEnabled && spec.kind === 'gaussian' ? new Trace('Gaussian curvature') : undefined;
     if (trace && mesh.verts.length <= trace.snapshotLimit) trace.before = mesh.toSnapshot();
     this.field = { objectId: o.id, spec, mesh, result: computeField(mesh, spec, trace) };
     if (trace && trace.steps.length) { this.trace = trace; this.traceTarget = o.id; this.emit('trace'); }
@@ -1427,6 +1658,19 @@ export class Editor {
     traceColourMap(this.field.mesh, this.field.result, trace);
     this.trace = trace; this.traceTarget = this.field.objectId; this.emit('trace');
     this.message = `${this.field.result.label}: traced from value to colour`;
+    this.emit('select');
+    return true;
+  }
+
+  /** Trace one iso-line of the heat map shown: by default at the middle of its colour range (0 for curvature). */
+  traceContourOf(level?: number): boolean {
+    if (!this.field) { this.say('Trace the iso-line: show a heat map first (Heat map menu)'); return false; }
+    const { mesh, result } = this.field, L = level ?? (result.range[0] + result.range[1]) / 2;
+    const trace = new Trace('Trace the iso-line');
+    if (mesh.verts.length <= trace.snapshotLimit) trace.before = mesh.toSnapshot();
+    const r = traceContour(mesh, result.values, L, trace);
+    this.trace = trace; this.traceTarget = this.field.objectId; this.emit('trace');
+    this.message = `${result.label} = ${fmt(L, 4)}: ${r.loops} closed loop(s), ${r.open} open chain(s), length ${fmt(r.length, 4)}`;
     this.emit('select');
     return true;
   }
@@ -1472,6 +1716,17 @@ export class Editor {
       return `${ref(o)}.mesh.smooth({ verts: ${lit(verts)}, iterations: ${n}, lambda: ${lit(l)} })`;
     }, 'Smooth');
     if (ok) this.remember('Smooth vertices', { iterations: n, lambda: l }, (p) => this.smoothVerts(p.iterations, p.lambda));
+    return ok;
+  }
+
+  /** Implicit smoothing of the selected vertices: one backward heat step, (M + tC) x' = M x, t = strength · h². */
+  smoothImplicit(strength = 1, iterations = 1): boolean {
+    const n = Math.max(1, Math.min(20, Math.round(iterations))), s = Math.max(0, Math.min(100, strength));
+    const ok = this.meshOp('Smooth vertices (implicit)', 'verts', (o, m, verts, t) => {
+      smoothMeshImplicit(m, { strength: s, iterations: n, only: verts as number[] }, t);
+      return `${ref(o)}.mesh.smoothImplicit({ verts: ${lit(verts)}, strength: ${lit(s)}, iterations: ${n} })`;
+    }, 'Implicit smoothing');
+    if (ok) this.remember('Smooth vertices (implicit)', { strength: s, iterations: n }, (p) => this.smoothImplicit(p.strength, p.iterations));
     return ok;
   }
 
@@ -1759,16 +2014,16 @@ export class Editor {
   }
 
   /** Unwrap: LSCM on each chart cut by the seams (or a flat projection from above). Adds a checker texture if there is none. */
-  unwrap(method: 'lscm' | 'planar' = 'lscm'): boolean {
+  unwrap(method: 'lscm' | 'planar' | 'cylinder' = 'lscm'): boolean {
     const o = this.uvObject();
     if (!o) return false;
-    const trace = this.traceEnabled && method === 'lscm' ? new Trace('Unwrap (LSCM)') : undefined;
+    const trace = this.traceEnabled ? new Trace(method === 'lscm' ? 'Unwrap (LSCM)' : method === 'planar' ? 'Project from above' : 'Project around') : undefined;
     if (trace && o.mesh!.verts.length <= trace.snapshotLimit) trace.before = o.mesh!.toSnapshot();
     let layer;
-    try { layer = method === 'planar' ? planarUV(o.mesh!) : unwrapMesh(o.mesh!, new Set(o.seams ?? []), trace); }
+    try { layer = method === 'lscm' ? unwrapMesh(o.mesh!, new Set(o.seams ?? []), trace) : traceUVProjection(o.mesh!, method, trace).layer; }
     catch (e) { this.say(e instanceof Error ? e.message : String(e)); return false; }
     const addTexture = !o.material.texture || o.material.texture === 'none';
-    this.run('Unwrap', `${ref(o)}.mesh.unwrap(${method === 'planar' ? '{ method: "planar" }' : ''})${addTexture ? `\n${ref(o)}.material.texture = "checker"` : ''}`, () => {
+    this.run('Unwrap', `${ref(o)}.mesh.unwrap(${method !== 'lscm' ? `{ method: "${method}" }` : ''})${addTexture ? `\n${ref(o)}.material.texture = "checker"` : ''}`, () => {
       o.uv = layer;
       if (addTexture) o.material = { ...o.material, texture: 'checker' };
     });

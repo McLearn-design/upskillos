@@ -38,38 +38,51 @@ return base * (0.25 + d * light) + s * light * 0.5;`;
 // ── procedural textures ───────────────────────────────────────────────────
 
 /** An RGBA texture, `size` × `size`, drawn by a formula per pixel (repeatable, no image files). */
+/** The colour (0–255 sRGB) of a procedural texture at (u, v) in the unit square: one formula per texture. */
+export function texelColor(name: TextureName, u: number, v: number): [number, number, number] {
+  if (name === 'checker') {
+    // 8 × 8 squares; each row tinted so orientation and stretching are easy to read.
+    const on = (Math.floor(u * 8) + Math.floor(v * 8)) % 2 === 0;
+    const row = Math.floor(v * 8) / 7;
+    return on ? [235, 235, 235] : [Math.round(40 + 180 * row), 70, Math.round(220 - 150 * row)];
+  }
+  if (name === 'grid') {
+    const line = Math.min(Math.abs(u * 8 - Math.round(u * 8)), Math.abs(v * 8 - Math.round(v * 8))) < 0.04;
+    return line ? [30, 30, 36] : [225, 228, 232];
+  }
+  if (name === 'bricks') {
+    const rows = 8, cols = 4, ry = v * rows, row = Math.floor(ry);
+    const rx = u * cols + (row % 2) * 0.5;
+    const mortar = ry - row < 0.08 || rx - Math.floor(rx) < 0.04;
+    // Each brick its own shade; taken modulo the 4 bricks and 8 rows, so a half brick split by the repeat keeps one shade.
+    const shade = 0.85 + 0.15 * Math.sin((row % 8) * 12.9898 + (Math.floor(rx) % 4) * 78.233);
+    return mortar ? [200, 196, 188] : [Math.round(168 * shade), Math.round(74 * shade), Math.round(52 * shade)];
+  }
+  if (name === 'wood') {
+    // Rings: distance from an axis off the square, wobbled by a sine. Not periodic, so it does not tile: with a
+    // texture scale above 1 the copies meet at a visible join.
+    const r = Math.hypot(u - 0.5, (v - 0.5) * 0.25 + 1.2) * 24 + 0.8 * Math.sin(u * 13) + 0.4 * Math.sin(v * 31);
+    const t = 0.5 + 0.5 * Math.sin(r * 2 * Math.PI);
+    return [Math.round(150 + 50 * t), Math.round(98 + 35 * t), Math.round(52 + 22 * t)];
+  }
+  if (name === 'grass') {
+    // Speckled greens: products of sines stand in for noise. Each sine turns a whole number of times across the
+    // square (2π × an integer), so the pattern matches itself at the edges and tiles without a join.
+    const T = 2 * Math.PI;
+    const n = Math.sin(T * (15 * u + 2 * v)) * Math.sin(T * (12 * v - u)) + 0.5 * Math.sin(T * 34 * (u + v)) * Math.sin(T * 28 * (u - v));
+    const t = 0.5 + 0.35 * n;
+    return [Math.round(70 + 60 * t), Math.round(120 + 70 * t), Math.round(45 + 25 * t)];
+  }
+  if (name === 'stripes') return Math.floor(u * 10) % 2 ? [255, 159, 28] : [36, 40, 48];
+  return [255, 255, 255];
+}
+
+/** An RGBA texture, `size` × `size`, drawn by a formula per pixel (repeatable, no image files). */
 export function textureRGBA(name: TextureName, size = 256): Uint8Array {
   const px = new Uint8Array(size * size * 4);
-  const put = (i: number, r: number, g: number, b: number) => { px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255; };
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const u = (x + 0.5) / size, v = (y + 0.5) / size, i = (y * size + x) * 4;
-    if (name === 'checker') {
-      // 8 × 8 squares; each row tinted so orientation and stretching are easy to read.
-      const on = (Math.floor(u * 8) + Math.floor(v * 8)) % 2 === 0;
-      const row = Math.floor(v * 8) / 7;
-      on ? put(i, 235, 235, 235) : put(i, Math.round(40 + 180 * row), 70, Math.round(220 - 150 * row));
-    } else if (name === 'grid') {
-      const line = Math.min(Math.abs(u * 8 - Math.round(u * 8)), Math.abs(v * 8 - Math.round(v * 8))) < 0.04;
-      line ? put(i, 30, 30, 36) : put(i, 225, 228, 232);
-    } else if (name === 'bricks') {
-      const rows = 8, cols = 4, ry = v * rows, row = Math.floor(ry);
-      const rx = u * cols + (row % 2) * 0.5;
-      const mortar = ry - row < 0.08 || rx - Math.floor(rx) < 0.04;
-      const shade = 0.85 + 0.15 * Math.sin(row * 12.9898 + Math.floor(rx) * 78.233);
-      mortar ? put(i, 200, 196, 188) : put(i, Math.round(168 * shade), Math.round(74 * shade), Math.round(52 * shade));
-    } else if (name === 'wood') {
-      // Rings: distance from an axis off the square, wobbled by a sine.
-      const r = Math.hypot(u - 0.5, (v - 0.5) * 0.25 + 1.2) * 24 + 0.8 * Math.sin(u * 13) + 0.4 * Math.sin(v * 31);
-      const t = 0.5 + 0.5 * Math.sin(r * 2 * Math.PI);
-      put(i, Math.round(150 + 50 * t), Math.round(98 + 35 * t), Math.round(52 + 22 * t));
-    } else if (name === 'grass') {
-      // Speckled greens: two sine patterns at odd frequencies stand in for noise (repeatable, seamless).
-      const n = Math.sin(u * 91.7 + v * 13.3) * Math.sin(v * 77.1 - u * 7.9) + 0.5 * Math.sin((u + v) * 211.3) * Math.sin((u - v) * 173.9);
-      const t = 0.5 + 0.35 * n;
-      put(i, Math.round(70 + 60 * t), Math.round(120 + 70 * t), Math.round(45 + 25 * t));
-    } else if (name === 'stripes') {
-      Math.floor(u * 10) % 2 ? put(i, 255, 159, 28) : put(i, 36, 40, 48);
-    } else put(i, 255, 255, 255);
+    const c = texelColor(name, (x + 0.5) / size, (y + 0.5) / size), i = (y * size + x) * 4;
+    px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = 255;
   }
   return px;
 }
