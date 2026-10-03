@@ -12,7 +12,7 @@ const api = () => (typeof window !== 'undefined' ? window.openCalcDesktop?.termi
 
 let nextKey = 1;
 
-export default function TerminalPanel({ root, visible, C }) {
+export default function TerminalPanel({ root, projectKey, visible, C }) {
   const [tabs, setTabs] = useState(() => [{ key: nextKey++, label: 'Terminal 1', status: 'starting' }]);
   const [active, setActive] = useState(tabs[0].key);
 
@@ -71,7 +71,7 @@ export default function TerminalPanel({ root, visible, C }) {
         {tabs.map((t) => (
           <TerminalSession
             key={t.key}
-            root={root}
+            root={root} projectKey={projectKey}
             visible={visible && t.key === active}
             onStatus={(status, shell) => setStatus(t.key, status, shell)}
             C={C}
@@ -92,7 +92,7 @@ function statusText(tab) {
 
 // One shell and its screen. Kept mounted while its tab is hidden, so a running program (a dev
 // server) keeps running and its output is still there when you switch back.
-function TerminalSession({ root, visible, onStatus, C }) {
+function TerminalSession({ root, projectKey, visible, onStatus, C }) {
   const hostRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
@@ -148,7 +148,7 @@ function TerminalSession({ root, visible, onStatus, C }) {
     onStatusRef.current('starting');
     setError(null);
     try { fitRef.current?.fit(); } catch {}
-    t.start({ cols: term.cols, rows: term.rows }).then((res) => {
+    t.start({ cols: term.cols, rows: term.rows, projectKey }).then((res) => {
       if (cancelled) {
         if (res.ok) t.kill(res.id);
         return;
@@ -166,7 +166,7 @@ function TerminalSession({ root, visible, onStatus, C }) {
       if (idRef.current) t.kill(idRef.current);
       idRef.current = null;
     };
-  }, [root, generation]);
+  }, [root, projectKey, generation]);
 
   useEffect(() => {
     if (!hostRef.current) return undefined;

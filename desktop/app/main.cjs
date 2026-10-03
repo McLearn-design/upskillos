@@ -302,18 +302,19 @@ ipcMain.handle('desktop:stop-run', async (_event, runId) => {
 // Real files in a folder the user explicitly picked. See project-fs.cjs for
 // why this doesn't go through the backend's /api/dev-fs.
 
-ipcMain.handle('project:pick', async () => projectFs.pickFolder(app, mainWindow))
-ipcMain.handle('project:get', async () => projectFs.getProject(app))
-ipcMain.handle('project:tree', async () => projectFs.tree(app))
-ipcMain.handle('project:read', async (_event, relPath) => projectFs.readFile(app, relPath))
-ipcMain.handle('project:write', async (_event, relPath, content) => projectFs.writeFile(app, relPath, content))
-ipcMain.handle('project:mkdir', async (_event, relPath) => projectFs.mkdir(app, relPath))
-ipcMain.handle('project:delete', async (_event, relPath) => projectFs.remove(app, relPath))
-ipcMain.handle('project:rename', async (_event, fromRel, toRel) => projectFs.rename(app, fromRel, toRel))
+ipcMain.handle('project:pick', async (_event, scope) => projectFs.pickFolder(app, mainWindow, scope))
+ipcMain.handle('project:get', async (_event, scope) => projectFs.getProject(app, scope))
+ipcMain.handle('project:tree', async (_event, scope) => projectFs.tree(app, scope))
+ipcMain.handle('project:read', async (_event, relPath, scope) => projectFs.readFile(app, relPath, scope))
+ipcMain.handle('project:write', async (_event, relPath, content, scope) => projectFs.writeFile(app, relPath, content, scope))
+ipcMain.handle('project:create', async (_event, relPath, scope) => projectFs.createFile(app, relPath, scope))
+ipcMain.handle('project:mkdir', async (_event, relPath, scope) => projectFs.mkdir(app, relPath, scope))
+ipcMain.handle('project:delete', async (_event, relPath, scope) => projectFs.remove(app, relPath, scope))
+ipcMain.handle('project:rename', async (_event, fromRel, toRel, scope) => projectFs.rename(app, fromRel, toRel, scope))
 
-ipcMain.handle('project:run', async (_event, runtime, relPath) => {
+ipcMain.handle('project:run', async (_event, runtime, relPath, scope) => {
   const emit = (payload) => mainWindow?.webContents.send('desktop:script-output', payload)
-  return projectFs.runProjectFile(app, RUNTIMES, runtime, relPath, emit)
+  return projectFs.runProjectFile(app, RUNTIMES, runtime, relPath, emit, scope)
 })
 
 // Folders the app installed tools into, added to the PATH of terminals and step checks so the
@@ -324,15 +325,16 @@ async function learnerToolPaths() {
 
 // A lesson step's checks (project-checks.cjs). Commands run with the same fresh PATH a new
 // terminal gets, so a tool the learner just installed is found.
-ipcMain.handle('project:check', async (_event, checks) => {
-  const { root } = await projectFs.getProject(app)
+ipcMain.handle('project:check', async (_event, checks, scope) => {
+  const { root } = await projectFs.getProject(app, scope)
   return projectChecks.runChecks(root, checks, { env: await terminal.shellEnv({ extraPath: await learnerToolPaths() }), evalInPage })
 })
 
 // A real terminal in the project folder (terminal.cjs).
 const terminalOwners = new Set()
 ipcMain.handle('terminal:start', async (event, opts) => {
-  const { root } = await projectFs.getProject(app)
+  const { root } = await projectFs.getProject(app, opts?.projectKey)
+  if (opts?.projectKey && !root) return { ok: false, reason: 'No project folder is open for this track' }
   const sender = event.sender
   const owner = sender.id
   // A reload or navigation to another page doesn't run the page's cleanup code, so close

@@ -1,5 +1,5 @@
 // project-fs.cjs
-// Real filesystem access, scoped to ONE folder the user explicitly picked.
+// Real filesystem access, scoped to a folder explicitly picked for each track.
 //
 // Why this exists rather than reusing the backend's /api/dev-fs: that API
 // has only ping/list/read/write, its `list` is single-level and
@@ -59,31 +59,39 @@ function resolveInRoot(root, relPath) {
   return resolved
 }
 
-async function getProject(app) {
+async function getProject(app, scope) {
   const cfg = await loadConfig(app)
-  const root = cfg.projectRoot || null
-  if (!root) return { root: null }
+  if (scope != null && !/^[a-zA-Z0-9_-]+$/.test(scope)) throw new Error('Invalid project key')
+  const root = (scope == null ? cfg.projectRoot : cfg.projects?.[scope]) || null
+  if (!root) return { root: null, scope }
   // A remembered folder can be deleted or on a disconnected drive between
   // sessions — report that rather than handing back a dead path.
-  if (!(await pathExists(root))) return { root: null, missing: cfg.projectRoot }
-  return { root }
+  if (!(await pathExists(root))) return { root: null, missing: root, scope }
+  return { root, scope }
 }
 
-async function pickFolder(app, mainWindow) {
+async function pickFolder(app, mainWindow, scope) {
+  if (scope != null && !/^[a-zA-Z0-9_-]+$/.test(scope)) throw new Error('Invalid project key')
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Choose a project folder',
+    title: scope ? `Choose a folder for ${scope}` : 'Choose a project folder',
     properties: ['openDirectory', 'createDirectory'],
   })
   if (result.canceled || !result.filePaths?.length) return { ok: false, canceled: true }
 
   const root = result.filePaths[0]
   const cfg = await loadConfig(app)
-  await saveConfig(app, { ...cfg, projectRoot: root })
-  return { ok: true, root }
+  if (scope != null) {
+    const samePath = value => path.resolve(value).toLowerCase() === path.resolve(root).toLowerCase()
+    if (Object.entries(cfg.projects || {}).some(([key, value]) => key !== scope && samePath(value))) {
+      return { ok: false, reason: 'That folder belongs to another Project Studio track. Choose a separate folder for this project.' }
+    }
+    await saveConfig(app, { ...cfg, projects: { ...cfg.projects, [scope]: root } })
+  } else await saveConfig(app, { ...cfg, projectRoot: root })
+  return { ok: true, root, scope }
 }
 
-async function tree(app) {
-  const { root } = await getProject(app)
+async function tree(app, scope) {
+  const { root } = await getProject(app, scope)
   if (!root) return { ok: false, reason: 'No project folder is open' }
 
   async function walk(absDir, relDir) {
@@ -111,8 +119,8 @@ async function tree(app) {
   }
 }
 
-async function readFile(app, relPath) {
-  const { root } = await getProject(app)
+async function readFile(app, relPath, scope) {
+  const { root } = await getProject(app, scope)
   try {
     const abs = resolveInRoot(root, relPath)
     if (!(await pathExists(abs))) return { ok: true, content: '', missing: true }
@@ -122,8 +130,8 @@ async function readFile(app, relPath) {
   }
 }
 
-async function writeFile(app, relPath, content) {
-  const { root } = await getProject(app)
+async function writeFile(app, relPath, content, scope) {
+  const { root } = await getProject(app, scope)
   try {
     const abs = resolveInRoot(root, relPath)
     await fs.mkdir(path.dirname(abs), { recursive: true })
@@ -134,8 +142,20 @@ async function writeFile(app, relPath, content) {
   }
 }
 
-async function mkdir(app, relPath) {
-  const { root } = await getProject(app)
+async function createFile(app, relPath, scope) {
+  const { root } = await getProject(app, scope)
+  try {
+    const abs = resolveInRoot(root, relPath)
+    await fs.mkdir(path.dirname(abs), { recursive: true })
+    await fs.writeFile(abs, '', { flag: 'wx' })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, reason: e.code === 'EEXIST' ? `${relPath} already exists. Choose another name; existing work was not changed.` : String(e.message) }
+  }
+}
+
+async function mkdir(app, relPath, scope) {
+  const { root } = await getProject(app, scope)
   try {
     await fs.mkdir(resolveInRoot(root, relPath), { recursive: true })
     return { ok: true }
@@ -144,8 +164,8 @@ async function mkdir(app, relPath) {
   }
 }
 
-async function remove(app, relPath) {
-  const { root } = await getProject(app)
+async function remove(app, relPath, scope) {
+  const { root } = await getProject(app, scope)
   try {
     const abs = resolveInRoot(root, relPath)
     if (abs === root) return { ok: false, reason: 'Refusing to delete the project root' }
@@ -156,16 +176,21 @@ async function remove(app, relPath) {
   }
 }
 
-async function rename(app, fromRel, toRel) {
-  const { root } = await getProject(app)
+async function rename(app, fromRel, toRel, scope) {
+  const { root } = await getProject(app, scope)
   try {
     const absFrom = resolveInRoot(root, fromRel)
     const absTo = resolveInRoot(root, toRel)
+    if (absFrom === absTo) return { ok: true }
+    if (!(await fs.stat(absFrom)).isFile()) return { ok: false, reason: 'Rename currently supports files only' }
     await fs.mkdir(path.dirname(absTo), { recursive: true })
-    await fs.rename(absFrom, absTo)
+    // Exclusive link creation avoids rename() overwriting an existing target.
+    await fs.link(absFrom, absTo)
+    try { await fs.unlink(absFrom) }
+    catch (error) { await fs.unlink(absTo).catch(() => {}); throw error }
     return { ok: true }
   } catch (e) {
-    return { ok: false, reason: String(e?.message ?? e) }
+    return { ok: false, reason: e.code === 'EEXIST' ? `${toRel} already exists. Existing work was not changed.` : String(e?.message ?? e) }
   }
 }
 
@@ -178,8 +203,8 @@ async function rename(app, fromRel, toRel) {
 // afterward.
 const runningProcs = new Map()
 
-async function runProjectFile(app, runtimes, runtimeKey, relPath, onOutput) {
-  const { root } = await getProject(app)
+async function runProjectFile(app, runtimes, runtimeKey, relPath, onOutput, scope) {
+  const { root } = await getProject(app, scope)
   if (!root) return { ok: false, reason: 'No project folder is open' }
 
   const mod = runtimes[runtimeKey]
@@ -237,6 +262,6 @@ function killProjectRun(runId) {
 }
 
 module.exports = {
-  pickFolder, getProject, tree, readFile, writeFile, mkdir, remove, rename,
+  pickFolder, getProject, tree, readFile, writeFile, createFile, mkdir, remove, rename,
   runProjectFile, killProjectRun, killAllProjectRuns,
 }

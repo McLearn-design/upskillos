@@ -40,16 +40,17 @@ contextBridge.exposeInMainWorld('openCalcDesktop', {
   // Project filesystem — real files in a folder the user picked, used by
   // the Project Studio lab. See desktop/app/project-fs.cjs.
   project: {
-    pick:   ()                  => ipcRenderer.invoke('project:pick'),
-    get:    ()                  => ipcRenderer.invoke('project:get'),
-    tree:   ()                  => ipcRenderer.invoke('project:tree'),
-    read:   (relPath)           => ipcRenderer.invoke('project:read', relPath),
-    write:  (relPath, content)  => ipcRenderer.invoke('project:write', relPath, content),
-    mkdir:  (relPath)           => ipcRenderer.invoke('project:mkdir', relPath),
-    remove: (relPath)           => ipcRenderer.invoke('project:delete', relPath),
-    rename: (fromRel, toRel)    => ipcRenderer.invoke('project:rename', fromRel, toRel),
-    run:    (runtime, relPath)  => ipcRenderer.invoke('project:run', runtime, relPath),
-    check:  (checks)            => ipcRenderer.invoke('project:check', checks),
+    pick:   (scope) => ipcRenderer.invoke('project:pick', scope),
+    get:    (scope) => ipcRenderer.invoke('project:get', scope),
+    tree:   (scope) => ipcRenderer.invoke('project:tree', scope),
+    read:   (relPath, scope) => ipcRenderer.invoke('project:read', relPath, scope),
+    write:  (relPath, content, scope) => ipcRenderer.invoke('project:write', relPath, content, scope),
+    create: (relPath, scope) => ipcRenderer.invoke('project:create', relPath, scope),
+    mkdir:  (relPath, scope) => ipcRenderer.invoke('project:mkdir', relPath, scope),
+    remove: (relPath, scope) => ipcRenderer.invoke('project:delete', relPath, scope),
+    rename: (fromRel, toRel, scope) => ipcRenderer.invoke('project:rename', fromRel, toRel, scope),
+    run:    (runtime, relPath, scope) => ipcRenderer.invoke('project:run', runtime, relPath, scope),
+    check:  (checks, scope) => ipcRenderer.invoke('project:check', checks, scope),
   },
 
   // A real shell in the project folder. See desktop/app/terminal.cjs.

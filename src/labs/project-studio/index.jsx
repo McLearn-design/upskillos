@@ -33,10 +33,10 @@ export default function ProjectStudio() {
   const C = useThemeColors();
   const { themeStyles } = useGlobalTheme();
   const monacoTheme = themeStyles?.monaco || (C.dark ? 'open-calc-dark' : 'open-calc-light');
-  const fs = useProjectFs();
   const progress = useProgress();
 
   const [trackKey, setTrackKey] = useState(() => (TRACKS[progress.position.trackKey] ? progress.position.trackKey : TRACK_KEYS[0] ?? null));
+  const fs = useProjectFs(trackKey);
   const lessons = useMemo(() => (trackKey ? TRACKS[trackKey] ?? [] : []), [trackKey]);
   const [lessonId, setLessonId] = useState(() => progress.position.lessonId ?? lessons[0]?.id ?? null);
   const lesson = useMemo(() => lessons.find((l) => l.id === lessonId) ?? lessons[0], [lessons, lessonId]);
@@ -61,6 +61,8 @@ export default function ProjectStudio() {
   // treated as authoritative — without this, an untouched stale buffer
   // silently overwrites whatever changed on disk underneath it.
   const loadedRef = useRef({});
+  const projectIdentityRef = useRef(null);
+  projectIdentityRef.current = `${trackKey}:${fs.root}`;
 
   const [output, setOutput] = useState([]);
   const [running, setRunning] = useState(false);
@@ -76,19 +78,25 @@ export default function ProjectStudio() {
 
   // A new project folder means none of the open buffers belong to it any more.
   useEffect(() => {
+    Object.values(saveTimers.current).forEach(clearTimeout);
+    saveTimers.current = {};
+    setSaving(false);
+    setConflict(null);
     setOpenFiles([]);
     setActiveFile(null);
     setBuffers({});
     setCheckStates({});
     loadedRef.current = {};
-  }, [fs.root]);
+  }, [fs.root, trackKey]);
 
   // ── open / edit / save ───────────────────────────────────────────────────
   const openFile = useCallback(async (rel) => {
     setOpenFiles((prev) => (prev.includes(rel) ? prev : [...prev, rel]));
     setActiveFile(rel);
     if (buffers[rel] === undefined) {
+      const identity = projectIdentityRef.current;
       const content = await fs.readFile(rel);
+      if (identity !== projectIdentityRef.current) return;
       loadedRef.current[rel] = content;
       setBuffers((prev) => ({ ...prev, [rel]: content }));
     }
@@ -109,11 +117,13 @@ export default function ProjectStudio() {
     clearTimeout(saveTimers.current[activeFile]);
     setSaving(true);
     const file = activeFile;
+    const identity = projectIdentityRef.current;
     saveTimers.current[file] = setTimeout(async () => {
       // Re-check disk before writing. If it no longer matches what we loaded,
       // something outside the lab changed it, and blindly writing our buffer
       // would destroy that work.
       const onDisk = await fs.readFile(file);
+      if (identity !== projectIdentityRef.current) return;
       if (onDisk !== loadedRef.current[file] && onDisk !== content) {
         setConflict(file);
         setSaving(false);
@@ -129,7 +139,9 @@ export default function ProjectStudio() {
   // Discard our buffer and take whatever is on disk now.
   const reloadFromDisk = useCallback(async (rel) => {
     clearTimeout(saveTimers.current[rel]);
+    const identity = projectIdentityRef.current;
     const content = await fs.readFile(rel);
+    if (identity !== projectIdentityRef.current) return;
     loadedRef.current[rel] = content;
     setBuffers((prev) => ({ ...prev, [rel]: content }));
     setConflict(null);
@@ -171,7 +183,7 @@ export default function ProjectStudio() {
     setProvidedError(null);
     try {
       if (!(await flushActive())) throw new Error('Resolve the open file conflict before creating the provided file.');
-      await createProvidedFiles(window.openCalcDesktop.project, [
+      await createProvidedFiles(fs.api, [
         ...getSupportFiles(trackKey, lesson.meta.support),
         { file: step.file, content: step.target, preserveExisting: Boolean(lesson.meta.support) },
       ]);
@@ -214,6 +226,7 @@ export default function ProjectStudio() {
     const sync = async () => {
       if (busy) return;
       busy = true;
+      const identity = projectIdentityRef.current;
       try {
         fs.refresh();
         for (const rel of openFilesRef.current) {
@@ -221,6 +234,7 @@ export default function ProjectStudio() {
           // Edited here and not yet written (or written and diverged): leave it alone.
           if (buf === undefined || buf !== loadedRef.current[rel]) continue;
           const onDisk = await fs.readFile(rel);
+          if (identity !== projectIdentityRef.current) return;
           if (onDisk !== loadedRef.current[rel] && buffersRef.current[rel] === loadedRef.current[rel]) {
             loadedRef.current[rel] = onDisk;
             setBuffers((prev) => ({ ...prev, [rel]: onDisk }));
@@ -266,7 +280,7 @@ export default function ProjectStudio() {
     stopRequestedRef.current = false;
     if (lesson.meta.support) {
       try {
-        await createProvidedFiles(window.openCalcDesktop.project, getSupportFiles(trackKey, lesson.meta.support));
+        await createProvidedFiles(fs.api, getSupportFiles(trackKey, lesson.meta.support));
         await fs.refresh();
       } catch (error) {
         setOutput([{ stream: 'stderr', text: error.message }]);
@@ -322,7 +336,7 @@ export default function ProjectStudio() {
       setCheckStates((prev) => ({ ...prev, [id]: { ...prev[id], running: false, error: 'A file changed on disk while it was open here. Choose which version to keep (above), then check again.' } }));
       return;
     }
-    const res = await window.openCalcDesktop.project.check(step.checks);
+    const res = await fs.api.check(step.checks);
     fs.refresh();
     if (!res?.ok) {
       setCheckStates((prev) => ({ ...prev, [id]: { running: false, results: null, error: res?.reason || 'The checks could not run.' } }));
@@ -339,18 +353,18 @@ export default function ProjectStudio() {
   }, [progress]);
 
   // ── new file / folder / delete ───────────────────────────────────────────
-  const newFile = useCallback(async () => {
-    const rel = window.prompt('New file (path relative to the project root):');
-    if (!rel) return;
-    await fs.writeFile(rel, '');
-    await fs.refresh();
-    openFile(rel);
+  const newFile = useCallback(async (rel) => {
+    const identity = projectIdentityRef.current;
+    const result = await fs.api.create(rel);
+    if (!result.ok) return result;
+    // File creation is complete. Opening the editor must not keep + disabled.
+    void fs.refresh().catch(error => setProvidedError(error.message));
+    if (identity === projectIdentityRef.current) void openFile(rel).catch(error => setProvidedError(error.message));
+    return result;
   }, [fs, openFile]);
 
-  const newFolder = useCallback(async () => {
-    const rel = window.prompt('New folder (path relative to the project root):');
-    if (!rel) return;
-    await fs.mkdir(rel);
+  const newFolder = useCallback(async (rel) => {
+    return fs.mkdir(rel);
   }, [fs]);
 
   const deleteEntry = useCallback(async (rel) => {
@@ -373,7 +387,43 @@ export default function ProjectStudio() {
   }, [bottomHeight]);
 
   const selectLesson = useCallback((id) => { setLessonId(id); setStepIndex(0); }, []);
-  const selectTrack = useCallback((key) => { setTrackKey(key); setLessonId(TRACKS[key][0]?.id); setStepIndex(0); }, []);
+  const flushProject = useCallback(async () => {
+    for (const [file, content] of Object.entries(buffers)) {
+      clearTimeout(saveTimers.current[file]);
+      if (content === loadedRef.current[file]) continue;
+      const disk = await fs.readFile(file);
+      if (disk !== loadedRef.current[file] && disk !== content) { setConflict(file); return false; }
+      const result = await fs.writeFile(file, content);
+      if (!result.ok) { setProvidedError(result.reason || `Could not save ${file}.`); return false; }
+      loadedRef.current[file] = content;
+    }
+    setSaving(false);
+    return true;
+  }, [buffers, fs]);
+  const renameFile = useCallback(async (from, to) => {
+    if (!(await flushProject())) return { ok: false, reason: 'Resolve the file conflict or save error before renaming.' };
+    const identity = projectIdentityRef.current;
+    const result = await fs.api.rename(from, to);
+    if (!result.ok) return result;
+    if (identity !== projectIdentityRef.current) return result;
+    clearTimeout(saveTimers.current[from]);
+    if (loadedRef.current[from] !== undefined) { loadedRef.current[to] = loadedRef.current[from]; delete loadedRef.current[from]; }
+    setBuffers(prev => { const next = { ...prev }; if (from in next) { next[to] = next[from]; delete next[from]; } return next; });
+    setOpenFiles(prev => [...new Set(prev.map(file => file === from ? to : file))]);
+    setActiveFile(prev => prev === from ? to : prev);
+    void fs.refresh().catch(error => setProvidedError(error.message));
+    return result;
+  }, [flushProject, fs]);
+  const selectTrack = useCallback(async (key) => {
+    if (!(await flushProject())) return;
+    if (running) { await stopProject(); if (startingRunRef.current) return; }
+    setTrackKey(key); setLessonId(TRACKS[key][0]?.id); setStepIndex(0);
+  }, [flushProject, running, stopProject]);
+  const pickProject = useCallback(async () => {
+    if (!(await flushProject())) return;
+    if (running) { await stopProject(); if (startingRunRef.current) return; }
+    await fs.pick();
+  }, [flushProject, running, stopProject, fs]);
   const goPrev = useCallback(() => setStepIndex((i) => Math.max(0, i - 1)), []);
   const goNext = useCallback(() => setStepIndex((i) => Math.min((lesson?.steps.length ?? 1) - 1, i + 1)), [lesson]);
 
@@ -487,6 +537,7 @@ export default function ProjectStudio() {
       </div>
 
       {lesson?.runtime === 'cpp' && <CppProjectRuntime C={C} />}
+      {fs.root && fs.error && <p role="alert" style={{ padding: '6px 12px', color: C.amber }}>{fs.error}</p>}
 
       {conflict && (
         <div
@@ -518,9 +569,10 @@ export default function ProjectStudio() {
             activeFile={activeFile}
             onOpen={openFile}
             onDelete={deleteEntry}
+            onRename={renameFile}
             onNewFile={newFile}
             onNewFolder={newFolder}
-            onPick={fs.pick}
+            onPick={pickProject}
             C={C}
           />
         </div>
@@ -562,7 +614,7 @@ export default function ProjectStudio() {
               ))}
             </div>
             <div style={{ flex: 1, minHeight: 0 }}>
-              <TerminalPanel root={fs.root} visible={bottomTab === 'terminal'} C={C} />
+              <TerminalPanel root={fs.root} projectKey={trackKey} visible={bottomTab === 'terminal'} C={C} />
               {bottomTab === 'output' && (
                 <OutputPanel lines={output} running={running} onClear={() => setOutput([])} C={C} fill />
               )}
@@ -598,7 +650,7 @@ function ChooseFolder({ fs, C }) {
     <Centered C={C}>
       <h2 style={{ margin: '0 0 8px', fontSize: 18, color: C.text }}>Choose a project folder</h2>
       <p style={{ margin: '0 0 16px', fontSize: 13, color: C.hint, lineHeight: 1.7, maxWidth: 520 }}>
-        Pick (or create) an empty folder anywhere on your machine. Everything you build here lives in
+        Each Project Studio track remembers its own folder. Pick a separate empty folder for a new project, or select this project's existing folder to resume. Everything you build here lives in
         that folder as ordinary files — you can open it in another editor, put it under git, and publish
         it whenever you want. It's your project, not app data.
         {fs.missing && (
@@ -611,6 +663,7 @@ function ChooseFolder({ fs, C }) {
       >
         Choose folder…
       </button>
+      {fs.error && <p role="alert" style={{ color: C.amber }}>{fs.error}</p>}
     </Centered>
   );
 }

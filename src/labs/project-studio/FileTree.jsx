@@ -4,9 +4,9 @@
 // but that one renders an in-memory Record<path,string> with no
 // persistence — this renders actual directory entries off disk, so it
 // carries folders, nesting, and create/delete against real paths.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-function Node({ node, depth, activeFile, onOpen, onDelete, C }) {
+function Node({ node, depth, activeFile, onOpen, onDelete, onRename, C }) {
   const [open, setOpen] = useState(depth < 2);
   const isActive = node.type === 'file' && node.rel === activeFile;
 
@@ -45,7 +45,7 @@ function Node({ node, depth, activeFile, onOpen, onDelete, C }) {
           () => setOpen((o) => !o),
         )}
         {open && node.children?.map((child) => (
-          <Node key={child.rel} node={child} depth={depth + 1} activeFile={activeFile} onOpen={onOpen} onDelete={onDelete} C={C} />
+          <Node key={child.rel} node={child} depth={depth + 1} activeFile={activeFile} onOpen={onOpen} onDelete={onDelete} onRename={onRename} C={C} />
         ))}
       </div>
     );
@@ -56,6 +56,7 @@ function Node({ node, depth, activeFile, onOpen, onDelete, C }) {
       <span style={{ width: 10 }} />
       <span style={{ opacity: 0.8 }}>📄</span>
       <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{node.name}</span>
+      <button onClick={event => { event.stopPropagation(); onRename(node.rel); }} title={`Rename ${node.name}`} aria-label={`Rename ${node.name}`} style={{ border: 'none', background: 'transparent', color: isActive ? '#fff' : C.text, cursor: 'pointer', fontSize: 11 }}>Rename</button>
       <button
         onClick={(e) => { e.stopPropagation(); onDelete(node.rel); }}
         title={`Delete ${node.name}`}
@@ -71,7 +72,26 @@ function Node({ node, depth, activeFile, onOpen, onDelete, C }) {
   );
 }
 
-export default function FileTree({ entries, root, activeFile, onOpen, onDelete, onNewFile, onNewFolder, onPick, C }) {
+export default function FileTree({ entries, root, activeFile, onOpen, onDelete, onRename, onNewFile, onNewFolder, onPick, C }) {
+  const [creating, setCreating] = useState(null);
+  const [name, setName] = useState('');
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [renameFrom, setRenameFrom] = useState(null);
+  useEffect(() => { setCreating(null); setName(''); setError(null); }, [root]);
+  const begin = kind => { setCreating(kind); setName(''); setError(null); };
+  const beginRename = rel => { if (busy) return; setRenameFrom(rel); setCreating('rename'); setName(rel); setError(null); };
+  const submit = async event => {
+    event.preventDefault();
+    if (!name.trim() || busy) return;
+    setBusy(true); setError(null);
+    try {
+      const result = creating === 'rename' ? await onRename(renameFrom, name.trim()) : await (creating === 'file' ? onNewFile : onNewFolder)(name.trim());
+      if (!result?.ok) throw new Error(result?.reason || 'Could not create the item.');
+      setCreating(null); setName('');
+    } catch (failure) { setError(failure.message); }
+    finally { setBusy(false); }
+  };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div
@@ -86,9 +106,26 @@ export default function FileTree({ entries, root, activeFile, onOpen, onDelete, 
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.muted, flex: 1 }}>
           Explorer
         </span>
-        <button onClick={onNewFile} title="New file" style={iconBtn(C)}>＋</button>
-        <button onClick={onNewFolder} title="New folder" style={iconBtn(C)}>📁</button>
+        <button onClick={() => begin('file')} disabled={!root || busy} title="New file" aria-label="New file" style={iconBtn(C)}>＋</button>
+        <button onClick={() => begin('folder')} disabled={!root || busy} title="New folder" aria-label="New folder" style={iconBtn(C)}>📁</button>
       </div>
+
+      {creating && (
+        <form onSubmit={submit} style={{ padding: 8, borderBottom: `1px solid ${C.border}` }}>
+          <label style={{ display: 'block', fontSize: 12, color: C.text }}>
+            {creating === 'rename' ? `Rename ${renameFrom}` : creating === 'file' ? 'New file name' : 'New folder name'}
+            <input autoFocus value={name} disabled={busy} onChange={event => setName(event.target.value)}
+              onKeyDown={event => { if (event.key === 'Escape' && !busy) setCreating(null); }}
+              placeholder={creating === 'file' ? 'main.cpp or src/player.cpp' : 'src'}
+              style={{ width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 6, borderRadius: 4, background: C.surface2, color: C.text, border: `1px solid ${C.border}` }} />
+          </label>
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <button type="submit" disabled={busy || !name.trim()} style={{ padding: '4px 8px', borderRadius: 4, border: `1px solid ${C.border}`, background: C.surface2, color: C.text }}>{busy ? 'Working…' : creating === 'rename' ? 'Rename' : 'Create'}</button>
+            <button type="button" disabled={busy} onClick={() => setCreating(null)} style={{ padding: '4px 8px', borderRadius: 4, border: `1px solid ${C.border}`, background: C.surface2, color: C.text }}>Cancel</button>
+          </div>
+          {error && <p role="alert" style={{ fontSize: 12, color: C.amber }}>{error}</p>}
+        </form>
+      )}
 
       <div
         onClick={onPick}
@@ -117,7 +154,7 @@ export default function FileTree({ entries, root, activeFile, onOpen, onDelete, 
           </p>
         )}
         {entries.map((node) => (
-          <Node key={node.rel} node={node} depth={0} activeFile={activeFile} onOpen={onOpen} onDelete={onDelete} C={C} />
+          <Node key={node.rel} node={node} depth={0} activeFile={activeFile} onOpen={onOpen} onDelete={onDelete} onRename={beginRename} C={C} />
         ))}
       </div>
     </div>
