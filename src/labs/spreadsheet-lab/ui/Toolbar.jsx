@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   AlignCenter, AlignLeft, AlignRight, Baseline, Bold, BookOpen, Code2, DecimalsArrowLeft, DecimalsArrowRight, Download,
-  ChartColumnBig, ChevronDown, Eraser, FilePlus2, Italic, PaintBucket, PanelRight, Redo2, Underline, Undo2, Upload, Waypoints,
+  ChartColumnBig, ChevronDown, Eraser, FilePlus2, Highlighter, Italic, PaintBucket, PanelRight, Redo2, Underline, Undo2, Upload, Waypoints,
 } from 'lucide-react'
 import { PRESET_FORMATS } from '../engine/format.js'
 
@@ -41,7 +41,7 @@ function Palette({ label, icon, colors, onPick, onClear }) {
 
 const Divider = () => <div className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
 
-export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onClearFormat, onUndo, onRedo, inspectorOpen, onToggleInspector, onNew, onOpenTour, onImport, onExport, onInsertCode, onInsertChart, onSort, onToggleFilter, filterOn, onRemoveDuplicates, tracing, onToggleTracing }) {
+export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onClearFormat, onUndo, onRedo, inspectorOpen, onToggleInspector, onNew, onOpenTour, onImport, onExport, onInsertCode, onInsertChart, onColourRules, onSort, onToggleFilter, filterOn, onRemoveDuplicates, tracing, onToggleTracing }) {
   const [codeMenu, setCodeMenu] = useState(false)
   const [dataMenu, setDataMenu] = useState(false)
   const style = cell?.style ?? {}
@@ -72,6 +72,7 @@ export default function Toolbar({ wb, cell, onStyle, onFormat, onDecimals, onCle
       <Button label="Align centre" active={style.align === 'center'} onClick={() => onStyle({ align: style.align === 'center' ? undefined : 'center' })}><AlignCenter size={15} /></Button>
       <Button label="Align right" active={style.align === 'right'} onClick={() => onStyle({ align: style.align === 'right' ? undefined : 'right' })}><AlignRight size={15} /></Button>
       <Button label="Clear formatting" onClick={onClearFormat}><Eraser size={15} /></Button>
+      <Button label="Colour rules (conditional formatting): colour cells by their values" onClick={onColourRules}><Highlighter size={15} /></Button>
       <Divider />
       <div className="relative">
         <button type="button" onClick={() => setCodeMenu((o) => !o)} onPointerDown={(e) => e.preventDefault()}

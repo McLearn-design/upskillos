@@ -44,6 +44,8 @@ export class Sheet {
     this.charts = []
     // An AutoFilter: { source: 'A1:D20', hidden: { [column offset]: [value keys] } } or null.
     this.filter = null
+    // Conditional formatting rules (engine/conditional.js), in order.
+    this.rules = []
   }
 
   // The last row and column that hold anything, so whole-column references
@@ -697,7 +699,7 @@ export class Workbook {
   // These change many cells at once, so their undo restores a snapshot.
   snapshot() {
     return this.sheets.map((s) => ({
-      id: s.id, name: s.name, colWidths: { ...s.colWidths }, rowHeights: { ...s.rowHeights }, charts: s.charts.map((c) => ({ ...c })), filter: s.filter,
+      id: s.id, name: s.name, colWidths: { ...s.colWidths }, rowHeights: { ...s.rowHeights }, charts: s.charts.map((c) => ({ ...c })), filter: s.filter, rules: s.rules.map((r) => ({ ...r })),
       cells: [...s.cells].map(([k, c]) => [k, { input: c.input, format: c.format, style: c.style, code: c.code }]),
     }))
   }
@@ -710,6 +712,7 @@ export class Workbook {
       sheet.rowHeights = { ...d.rowHeights }
       sheet.charts = (d.charts ?? []).map((c) => ({ ...c }))
       sheet.filter = d.filter ?? null
+      sheet.rules = (d.rules ?? []).map((r) => ({ ...r }))
       return sheet
     })
     snap.forEach((d, i) => { for (const [k, c] of d.cells) { const p = keyToPos(k); this.writeCell(this.sheets[i], p.row, p.col, c) } })
@@ -785,6 +788,9 @@ export class Workbook {
         }
         target.filter = source.includes('#REF!') ? null : { source, hidden }
       }
+      target.rules = target.rules
+        .map((r) => ({ ...r, source: adjust('=' + r.source, { formulaSheet: target.name, sheetName: target.name, at, count }).slice(1) }))
+        .filter((r) => !r.source.includes('#REF!'))
     })
   }
 
@@ -867,6 +873,15 @@ export class Workbook {
     this.notify()
   }
 
+  // ── Conditional formatting ───────────────────────────────────────────
+  setRules(sheetId, rules, { record = true } = {}) {
+    const sheet = this.sheet(sheetId)
+    if (!sheet) return
+    if (record) this.pushHistory({ type: 'rules', sheetId, rules: sheet.rules })
+    sheet.rules = rules
+    this.notify()
+  }
+
   // ── Undo / redo ───────────────────────────────────────────────────────
   pushHistory(entry) {
     this.undoStack.push(entry)
@@ -893,6 +908,9 @@ export class Workbook {
     } else if (entry.type === 'filter') {
       const sheet = this.sheet(entry.sheetId)
       if (sheet) { to.push({ type: 'filter', sheetId: sheet.id, filter: sheet.filter }); this.setFilter(sheet.id, entry.filter, { record: false }) }
+    } else if (entry.type === 'rules') {
+      const sheet = this.sheet(entry.sheetId)
+      if (sheet) { to.push({ type: 'rules', sheetId: sheet.id, rules: sheet.rules }); this.setRules(sheet.id, entry.rules, { record: false }) }
     } else if (entry.type === 'addSheet') {
       const index = this.sheets.findIndex((s) => s.id === entry.sheetId)
       const [sheet] = this.sheets.splice(index, 1)
@@ -923,6 +941,7 @@ export class Workbook {
         rowHeights: s.rowHeights,
         ...(s.charts.length ? { charts: s.charts } : {}),
         ...(s.filter ? { filter: s.filter } : {}),
+        ...(s.rules.length ? { rules: s.rules } : {}),
         cells: Object.fromEntries([...s.cells].map(([k, c]) => [k, Object.fromEntries(Object.entries({ input: c.input || undefined, format: c.format, style: c.style, code: c.code }).filter(([, v]) => v !== undefined))])),
       })),
     }
@@ -936,6 +955,7 @@ export class Workbook {
       sheet.rowHeights = { ...s.rowHeights }
       sheet.charts = Array.isArray(s.charts) ? s.charts.map((c) => ({ ...c })) : []
       sheet.filter = s.filter?.source ? { source: s.filter.source, hidden: s.filter.hidden ?? {} } : null
+      sheet.rules = Array.isArray(s.rules) ? s.rules.filter((r) => r?.source && r.kind).map((r) => ({ ...r })) : []
       wb.sheets.push(sheet)
     }
     if (!wb.sheets.length) wb.sheets.push(new Sheet('Sheet1'))

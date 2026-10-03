@@ -34,7 +34,7 @@ function indexAt(starts, pos) {
 
 export default function Grid({
   wb, sheet, version, sel, onSelect, editing, renderEditor, pointMode, onPoint,
-  refHighlights = [], traces = null, hiddenRows = null, filter = null, onFilterButton, charts = [], chartValues, selectedChart = null, onSelectChart, onChangeChart, onDeleteChart, onStartEdit, onFill, onContextMenu, onKeyDown, gridRef,
+  refHighlights = [], traces = null, conditional = null, hiddenRows = null, filter = null, onFilterButton, charts = [], chartValues, selectedChart = null, onSelectChart, onChangeChart, onDeleteChart, onStartEdit, onFill, onContextMenu, onKeyDown, gridRef,
 }) {
   const scrollerRef = useRef(null)
   const [scroll, setScroll] = useState({ top: 0, left: 0 })
@@ -230,7 +230,8 @@ export default function Grid({
       const shown = displayCell(value, cell?.format)
       const style = cell?.style ?? {}
       const align = style.align ?? shown.align
-      let width = cols[c + 1] - cols[c]
+      const ownWidth = cols[c + 1] - cols[c]
+      let width = ownWidth
       let overflow = false
       // Text spills over empty cells to its right, as in Excel.
       if (shown.kind === 'text' && align === 'left') {
@@ -239,6 +240,7 @@ export default function Grid({
         if (k > c + 1) { width = cols[k] - cols[c]; overflow = true }
       }
       const spilled = sheet.spillOwner.has(key) && sheet.spillOwner.get(key) !== key
+      const fx = conditional?.(r, c)
       cells.push(
         <div
           key={key}
@@ -246,15 +248,17 @@ export default function Grid({
           style={{
             left: cols[c], top: rows[r], width, height: rows[r + 1] - rows[r],
             textAlign: align,
-            fontWeight: style.bold ? 700 : undefined,
+            fontWeight: style.bold || fx?.bold ? 700 : undefined,
             fontStyle: style.italic ? 'italic' : undefined,
             textDecoration: style.underline ? 'underline' : undefined,
-            color: style.color ?? (shown.color ? FORMAT_COLORS[shown.color] : textOn(style.fill)),
-            background: style.fill,
+            color: fx?.color ?? style.color ?? (shown.color ? FORMAT_COLORS[shown.color] : textOn(style.fill)),
+            // A fill covers the cell itself, even when its text runs on into the next cells.
+            background: (fx?.fill ?? style.fill) && (overflow ? `linear-gradient(${fx?.fill ?? style.fill}, ${fx?.fill ?? style.fill}) 0 0 / ${ownWidth}px 100% no-repeat, var(--ss-bg)` : fx?.fill ?? style.fill),
           }}
           title={shown.kind === 'error' ? value.detail || value.code : undefined}
         >
-          {shown.text}
+          {fx?.bar !== undefined && <span className="ss-data-bar" style={{ width: Math.max(0, (ownWidth - 6) * fx.bar) }} />}
+          <span className="ss-cell-text">{shown.text}</span>
           {cell?.kind === 'code' && <span className="ss-code-badge">{CODE_BADGE[cell.code.lang]}</span>}
         </div>,
       )

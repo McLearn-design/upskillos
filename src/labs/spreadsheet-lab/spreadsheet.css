@@ -136,3 +136,8 @@
 .ss-filter-button:hover { border-color: var(--ss-select-border); color: var(--ss-text); }
 .ss-filter-button.is-active { background: var(--ss-select-border); border-color: var(--ss-select-border); color: #ffffff; }
 .ss-row-filtered { color: var(--ss-select-border); font-weight: 600; }
+
+/* Data bars (conditional formatting) */
+.ss-data-bar { position: absolute; left: 3px; top: 4px; bottom: 4px; border-radius: 2px; background: var(--ss-series-1); opacity: 0.35; pointer-events: none; }
+.ss-cell-text { position: relative; }
+.dark .ss-root .ss-data-bar { opacity: 0.55; }

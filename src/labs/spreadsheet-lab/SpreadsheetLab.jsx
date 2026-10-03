@@ -14,6 +14,7 @@ import Grid, { DEFAULT_COL_W, DEFAULT_ROW_H } from './ui/Grid.jsx'
 import { CHART_TYPES, currentRegion, recommendChart } from './engine/chart.js'
 import { hiddenRows, looksLikeHeader, removeDuplicates, sortRows } from './engine/data.js'
 import FilterMenu from './ui/FilterMenu.jsx'
+import { ruleEffect, ruleStats } from './engine/conditional.js'
 import FormulaInput from './ui/FormulaInput.jsx'
 import Inspector from './ui/Inspector.jsx'
 import Toolbar from './ui/Toolbar.jsx'
@@ -164,6 +165,33 @@ export default function SpreadsheetLab() {
     wb.setFilter(sheet.id, next)
     setFilterMenu(null)
     focusGrid()
+  }
+
+  // ── Conditional formatting ───────────────────────────────────────────
+  // Each rule's statistics (lowest, highest, average…) are worked out once per
+  // change; the grid then asks for the effect on each cell it draws.
+  const conditional = useMemo(() => {
+    const prepared = sheet.rules.map((rule) => {
+      const rg = parseRange(rule.source)
+      if (!rg) return null
+      return { rule, rg, stats: ruleStats(rule, (wb.rangeValues(sheet, rule.source) ?? []).flat()) }
+    }).filter(Boolean)
+    if (!prepared.length) return null
+    return (r, c) => {
+      let out = null
+      for (const p of prepared) {
+        if (r < p.rg.r1 || r > p.rg.r2 || c < p.rg.c1 || c > p.rg.c2) continue
+        const fx = ruleEffect(p.rule, wb.valueAt(sheet, r, c), p.stats)
+        if (fx) out = out ? { ...fx, ...out } : fx // the rule higher in the list wins
+      }
+      return out
+    }
+  }, [sheet.rules, version, sheet]) // eslint-disable-line react-hooks/exhaustive-deps
+  const addRule = (rule) => {
+    const rg = clipped(range)
+    const source = formatRange(rg)
+    wb.setRules(sheet.id, [...sheet.rules, { ...rule, id: 'rule' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), source }])
+    setNotice('Added the rule to ' + source + '. It is checked again whenever the values change.')
   }
 
   // ── Charts ───────────────────────────────────────────────────────────
@@ -634,6 +662,7 @@ export default function SpreadsheetLab() {
         onExport={exportCSV}
         onInsertCode={(lang) => setCode(sel.active.row, sel.active.col, lang, LANGUAGES[lang].starter)}
         onInsertChart={insertChart}
+        onColourRules={() => { setInspectorOpen(true); setInspectorTab('rules') }}
         onSort={sortBy} onToggleFilter={toggleFilter} filterOn={!!sheet.filter} onRemoveDuplicates={dedupe}
         tracing={tracing} onToggleTracing={() => { setTracing((t) => !t); focusGrid() }}
       />
@@ -687,6 +716,7 @@ export default function SpreadsheetLab() {
             onPoint={(rg) => insertReference(rg)}
             refHighlights={refHighlights}
             traces={traces}
+            conditional={conditional}
             hiddenRows={hidden} filter={filterRange && { ...filterRange, hidden: sheet.filter.hidden }}
             onFilterButton={(col, rect) => { const p = toRoot(rect.left, rect.bottom); setFilterMenu({ col, anchor: { left: p.x, bottom: p.y }, bounds: rootSize() }) }}
             charts={sheet.charts} chartValues={chartValues} selectedChart={selectedChart}
@@ -722,6 +752,10 @@ export default function SpreadsheetLab() {
           <Inspector wb={wb} sheet={sheet} sel={sel} version={version} tab={inspectorTab} onTab={setInspectorTab} runtime={runtime}
             onApplyCode={(source) => wb.setCells([{ sheetId: sheet.id, row: sel.active.row, col: sel.active.col, code: { lang: activeCell.code.lang, source } }])}
             chart={chart} chartValues={chartValues}
+            rules={sheet.rules} ruleTarget={formatRange(clipped(range))}
+            onAddRule={addRule}
+            onRemoveRule={(id) => wb.setRules(sheet.id, sheet.rules.filter((r) => r.id !== id))}
+            onSelectRule={(r) => { const rg = parseRange(r.source); if (rg) setSel({ active: { row: rg.r1, col: rg.c1 }, anchor: { row: rg.r1, col: rg.c1 }, focus: { row: rg.r2, col: rg.c2 } }) }}
             onChangeChart={(id, patch) => wb.updateChart(sheet.id, id, patch)}
             onDeleteChart={deleteChart}
             onMakeCode={(lang, source) => {

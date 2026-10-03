@@ -415,3 +415,19 @@ describe('filter', () => {
     expect(wb.sheets[0].filter.source).toBe('B2:D9')
   })
 })
+
+describe('conditional formatting rules', () => {
+  it('are undoable, saved, and move with rows', () => {
+    const wb = new Workbook()
+    const id = wb.sheets[0].id
+    wb.setRules(id, [{ id: 'r1', source: 'B2:B9', kind: 'scale' }])
+    wb.insertRows(id, 0, 1)
+    expect(wb.sheets[0].rules[0].source).toBe('B3:B10')
+    wb.deleteCols(id, 1, 1)
+    expect(wb.sheets[0].rules).toEqual([])
+    wb.undo()
+    expect(wb.sheets[0].rules[0].source).toBe('B3:B10')
+    const back = Workbook.fromJSON(JSON.parse(JSON.stringify(wb.toJSON())))
+    expect(back.sheets[0].rules).toEqual([{ id: 'r1', source: 'B3:B10', kind: 'scale' }])
+  })
+})
