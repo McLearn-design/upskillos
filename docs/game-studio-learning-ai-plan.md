@@ -136,26 +136,29 @@ real bottleneck is measuring each lesson's claims (training runs over seeds), no
   - on the cliff it shows Fig. 6.4's shape.
 - **Browser:** `cliff.acceptance.mjs` 8/8 (in `npm run game:acceptance`).
 
-**Lesson 9.1, in progress (stopped 2026-10-03 at the end of a session):**
-- **Done:** the Game Studio task `td-step` (`tasks/learning.ts`, chain "Game AI that learns"): step 5 updates,
-  predict 3, finish (−13), retrain with α 0.05 (−200).
-  - Its pictures are made, and all 4 steps tick (`tutorials.shots.mjs td-step`).
-  - Editor checks now see Steps, Predict answers, each run's settings, and comparisons.
-- **Fixed:** the task panel now stops above the training strip; it had covered Predict's Check button.
-- **Not done:** the lesson text and notebook.
-  - Verified cells are drafted (in the session scratchpad: random walk, MC vs TD(0), one Q update, error curves,
-    TD(0) challenge).
-  - Measured results to quote:
-    - true values 1/6 … 5/6;
-    - one episode C→D→C→B→A→B→A changes every visited state under Monte Carlo, and only A under TD(0);
-    - error after 100 episodes: TD α 0.1 0.054, α 0.05 0.035; MC α 0.03 0.090, α 0.01 0.094;
-    - cliff greedy returns at α 0.5, 200 episodes: Q −13, SARSA −17, Expected SARSA −15, Double Q −17;
-    - Q with α 0.05: −200.
-  - Write it into course-sources/making-games.yaml as chapter 9 (folder 9-game-ai-that-learns, id mg9-001), set
-    mg8-001's nextLesson, and add a lesson test.
+**Lesson 9.1, "Learning from Every Step": done (2026-10-03).**
+- `src/courses/making-games/9-game-ai-that-learns/001-learning-from-every-step.js`, from the YAML (chapter 9).
+- **Notebook:** the random walk; one episode learned by every-visit MC and by TD(0); error curves over 100 runs
+  (TD α 0.1: 0.054, α 0.05: 0.035; MC α 0.03: 0.090, α 0.01: 0.094); one Q-learning update; the TD(0) challenge,
+  which checks itself.
+- **Try it:** the `td-step` task (its pictures made; all 4 steps tick).
+- **Checks:** `courses/making-games/td.test.js` pins every printed number. The browser probe ran every cell and
+  opened the Try it card. mg8-001's nextLesson is mg9-001.
+- **The task panel** now stops above the training strip (it had covered Predict's Check).
+
+**Lesson 9.2, "Exploration": done (2026-10-03).**
+- `002-exploration.js`.
+- **Notebook,** on the 10-armed bandit over 200 runs: greedy reaches the best arm 42% of the time against ε 0.1's
+  82%. Optimistic greedy ends highest (1.41), then UCB (1.39) and softmax (1.36). Also the incremental average and
+  constant-α weights, the reward curves, and the ε-greedy probabilities challenge.
+- **Try it:** the `explore-compare` task, 3 steps that tick in shots.
+  - Cliff, 5 seeds, late return: ε 0.1 constant −43.4 ± 7.2; linear −25.9 ± 8.1; exponential −16.7 ± 2.1;
+    softmax −13 ± 0.
+  - Greedy ε 0: Q₀ 0 gives −13 on every seed; Q₀ −100 gives a greedy return of −14.2 ± 1.1.
+- **Test:** `explore.test.js`.
 
 **Next:**
-- the lessons above, finishing 9.1;
+- the lessons above, from 9.3;
 - then step 2 (shared brains, a scripted opponent), the NPC overlay, and linear Q in Game Studio.
 
 **Earlier list, kept for reference:**

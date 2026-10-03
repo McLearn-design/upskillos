@@ -129,6 +129,42 @@ export const LEARNING: GameTask[] = [
       },
     },
   },
+  {
+    id: 'explore-compare',
+    chain: 'Game AI that learns',
+    title: 'Ways to explore',
+    goal: 'Compare exploration schedules, and see an optimistic start explore with no randomness at all.',
+    images: cliffWalk.images,
+    start: cliffWalk.code,
+    agent: CLIFF_SPEC,
+    steps: [
+      {
+        text: 'Run › Train an agent… › Compare. With Q-learning, episodes 200, α 0.5, γ 1, add four settings: ε 0.1 to 0.1 constant; ε 0.3 to 0.01 linear; ε 0.3 to 0.01 exponential; and explore softmax, τ 5 to 0.1 exponential. Seeds 5, then Compare. Which earns most while still learning (late return), and do they all find the 13-move walk (greedy)?',
+        check: { kind: 'editor', test: (v) => !!(v.training?.compared ?? []).find((c) => c.seeds >= 3 && new Set(c.options.map((o) => `${o.explore ?? 'epsilon'}/${o.schedule ?? 'linear'}`)).size >= 3) || 'Compare at least three different exploration settings (ε schedules, softmax) over 3 or more seeds.' },
+      },
+      {
+        text: 'Optimism. Back on Table (TD), set ε from 0 to 0 (always greedy: never a random move) and Q₀ 0, and press ▶ Train in view at 4×. Every real return on the cliff is negative, so 0 is optimistic: any move it has not tried still looks better than one it has, and it tries them. Watch the colours spread over the grid, then let it finish: −13.',
+        check: { kind: 'editor', test: (v) => !!(v.training?.runs ?? []).find((r) => r.inView && r.options && r.options.explore !== 'softmax' && (r.options.epsilon ?? 1) === 0 && (r.options.epsilonEnd ?? 1) === 0 && !(r.options.initialQ ?? 0) && r.score === -13) || 'Train in view with ε 0 to 0 and Q₀ 0, and let it finish (it should reach −13).' },
+      },
+      {
+        text: 'Pessimism. Compare two greedy settings (ε 0 to 0) over 5 seeds: Q₀ 0, and Q₀ −100. With −100 every untried move looks worse than the walk it already knows, so it stops exploring early and keeps a longer walk on some seeds.',
+        check: { kind: 'editor', test: (v) => !!(v.training?.compared ?? []).find((c) => c.seeds >= 3 && c.options.some((o) => (o.epsilon ?? 1) === 0 && !(o.initialQ ?? 0)) && c.options.some((o) => (o.epsilon ?? 1) === 0 && (o.initialQ ?? 0) <= -50)) || 'Compare ε 0 with Q₀ 0 against ε 0 with Q₀ −100 (or lower), over 3 or more seeds.' },
+      },
+    ],
+    solution: '// Every step of this task is done in Run › Train an agent…',
+    done: 'You compared ways to explore. Back to the lesson for the bandit, UCB and why optimism works.',
+    solvedEditor: {
+      training: {
+        draft: CLIFF_SPEC,
+        runs: [{ method: 'q', spec: CLIFF_SPEC, score: -13, random: -1751, inView: true, options: { episodes: 200, algorithm: 'q', alpha: 0.5, gamma: 1, explore: 'epsilon', epsilon: 0, epsilonEnd: 0, schedule: 'linear' } }],
+        watched: false,
+        compared: [
+          { seeds: 5, options: [{ episodes: 200, epsilon: 0.1, epsilonEnd: 0.1, schedule: 'constant' }, { episodes: 200, epsilon: 0.3, epsilonEnd: 0.01, schedule: 'linear' }, { episodes: 200, epsilon: 0.3, epsilonEnd: 0.01, schedule: 'exponential' }, { episodes: 200, explore: 'softmax', temperature: 5, temperatureEnd: 0.1, schedule: 'exponential' }] },
+          { seeds: 5, options: [{ episodes: 200, epsilon: 0, epsilonEnd: 0 }, { episodes: 200, epsilon: 0, epsilonEnd: 0, initialQ: -100 }] },
+        ],
+      },
+    },
+  },
 ];
 
 /** A run with Q-learning, γ 1 and this α (the textbook's cliff settings otherwise). */

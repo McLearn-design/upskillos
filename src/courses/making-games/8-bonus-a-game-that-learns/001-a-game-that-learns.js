@@ -24,7 +24,7 @@ export default {
 
   prerequisites: ['mg7-009'],
 
-  nextLesson: null,
+  nextLesson: 'mg9-001',
 
   hook: {
     question: 'Could Breakout learn to play itself, with no rules written for it, only a score to chase? Nobody tells it "move towards the ball". How could a table of numbers, updated one step at a time, end up clearing the wall?',

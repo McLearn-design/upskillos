@@ -54,10 +54,21 @@ const failed = await withGameStudio(5182, async ({ page, t, check, answer }) => 
       await ui.run(); mark(page.locator('iframe[title="Running game"]'));
     },
     // Run › Train an agent…: the table-learning settings, typed in.
-    td: async ({ algorithm = 'q', episodes, alpha, gamma, from, to, schedule }) => {
+    td: async ({ algorithm = 'q', episodes, alpha, gamma, from, to, schedule, explore, q0 }) => {
       await t('train-algorithm').selectOption(algorithm);
+      if (explore) await t('train-explore').selectOption(explore);
       if (schedule) await t('train-schedule').selectOption(schedule);
+      if (q0 !== undefined) await t('train-initial-q').fill(String(q0));
       for (const [id, v] of [['train-episodes', episodes], ['train-alpha', alpha], ['train-gamma', gamma], ['train-epsilon', from], ['train-epsilon-end', to]]) if (v !== undefined) await t(id).fill(String(v));
+    },
+    // Compare: add each setting, then run them all over `seeds` seeds and wait for the table.
+    compare: async (settings, seeds) => {
+      await t('train-method-compare').click();
+      for (const st of settings) { await ui.td(st); await t('compare-add').click(); }
+      await t('compare-seeds').fill(String(seeds));
+      await t('compare-start').click();
+      await page.getByTestId('compare-status').filter({ hasText: 'Done:' }).waitFor({ timeout: 600000 });
+      mark(t('compare-view'));
     },
     // Train in view, paused: Step to the next update, and wait until the trace shows it.
     step: async () => {
@@ -213,6 +224,41 @@ const failed = await withGameStudio(5182, async ({ page, t, check, answer }) => 
       () => ui.board('tetris-finish', 0),
       () => ui.board('tetris-finish', 1),
       async () => { await t('file-scenes/main.scene').click(); await ui.label('Next', 92, 'Next'); await ui.board('tetris-finish', 2); },
+    ],
+    // Game AI that learns, 9.2: exploration schedules compared, optimism in view, optimism against pessimism.
+    'explore-compare': [
+      async () => {
+        await t('menu-Run').click(); await t('item-Train an agent…').click();
+        const base = { algorithm: 'q', episodes: 200, alpha: 0.5, gamma: 1, q0: 0 };
+        await ui.compare([
+          { ...base, explore: 'epsilon', from: 0.1, to: 0.1, schedule: 'constant' },
+          { ...base, explore: 'epsilon', from: 0.3, to: 0.01, schedule: 'linear' },
+          { ...base, explore: 'epsilon', from: 0.3, to: 0.01, schedule: 'exponential' },
+          { ...base, explore: 'softmax', from: 5, to: 0.1, schedule: 'exponential' },
+        ], 5);
+      },
+      async () => {
+        await t('train-method-q').click();
+        await ui.td({ algorithm: 'q', explore: 'epsilon', from: 0, to: 0, schedule: 'constant', q0: 0 });
+        await t('train-in-view').click();
+        await page.getByTestId('train-hud-status').filter({ hasText: /Episode \d+ of 200/ }).waitFor({ timeout: 60000 });
+        await t('train-speed-4').click();
+        await page.waitForTimeout(4000);
+        await t('train-speed-1024').click();
+        await page.getByTestId('train-hud-status').filter({ hasText: 'Trained.' }).waitFor({ timeout: 300000 });
+        mark(page.getByTestId('train-hud'));
+      },
+      async () => {
+        await ui.stop();
+        await t('menu-Run').click(); await t('item-Train an agent…').click();
+        // A fresh comparison: remove the earlier settings first.
+        await t('train-method-compare').click();
+        while (await page.locator('[data-testid="compare-table"] button').count()) await page.locator('[data-testid="compare-table"] button').first().click();
+        await ui.compare([
+          { algorithm: 'q', explore: 'epsilon', from: 0, to: 0, schedule: 'constant', q0: 0 },
+          { algorithm: 'q', explore: 'epsilon', from: 0, to: 0, schedule: 'constant', q0: -100 },
+        ], 5);
+      },
     ],
     // Game AI that learns, 9.1: step through updates, predict three, finish, then a small α.
     'td-step': [
