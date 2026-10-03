@@ -73,6 +73,8 @@ export interface TrainingView {
   runs: { method: 'q' | 'cem'; spec: EnvSpec; score: number; random: number }[];
   /** "Watch it play" has run the game with a trained agent at the controls. */
   watched: boolean;
+  /** Brains saved from the dialog since the task started, by path. */
+  saved?: string[];
 }
 
 /** What an editor check can look at. */

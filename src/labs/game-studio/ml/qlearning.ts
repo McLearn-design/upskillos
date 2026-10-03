@@ -20,37 +20,12 @@
 
 import { seeded, type GameEnv, type Reading } from './env';
 import { episode } from './cem';
+import { actQ, stateCount, stateOf, type QPolicy } from './brain';
 
-/** A Q table over binned states. `visits[s]` counts the updates made from state s: a row updated rarely holds a
- *  rough estimate, however confident its numbers look. */
-export interface QPolicy { kind: 'q'; bins: number[][]; table: number[][]; visits?: number[] }
-
-/** Which bin a value falls in: how many of the (increasing) cut points are below it. */
-export function binOf(value: number, cuts: number[]): number {
-  let i = 0;
-  while (i < cuts.length && value >= cuts[i]) i++;
-  return i;
-}
+export { actQ, binOf, greedy, stateCount, stateOf, type QPolicy } from './brain';
 
 /** The cut points of each reading ([] for a reading that is not part of the state). */
 export const binsOf = (readings: Reading[]): number[][] => readings.map((r) => r.bins ?? []);
-
-/** How many states the bins make: the product of (cuts + 1) over the binned readings. */
-export const stateCount = (bins: number[][]): number => bins.reduce((n, c) => (c.length ? n * (c.length + 1) : n), 1);
-
-/** The state an observation is in: its readings' bins combined, the first reading the most significant. */
-export function stateOf(observation: number[], bins: number[][]): number {
-  let s = 0;
-  bins.forEach((cuts, i) => { if (cuts.length) s = s * (cuts.length + 1) + binOf(observation[i], cuts); });
-  return s;
-}
-
-/** The greedy action in a state: the first of the highest Q values. */
-export function greedy(row: number[]): number {
-  let best = 0;
-  for (let a = 1; a < row.length; a++) if (row[a] > row[best]) best = a;
-  return best;
-}
 
 /** The greedy action with ties broken at random (as the ML Lab's Q-learning does): an untried state's row is all
  *  zeros, and always taking the first action there would make the agent's exploration lopsided. */
@@ -59,9 +34,6 @@ function greedyRandomTies(row: number[], rand: () => number): number {
   row.forEach((q, a) => { if (q === best) ties.push(a); });
   return ties[Math.floor(rand() * ties.length)];
 }
-
-/** The action a Q policy takes for an observation. */
-export const actQ = (policy: QPolicy, observation: number[]): number => greedy(policy.table[stateOf(observation, policy.bins)]);
 
 export interface QOptions {
   episodes: number;
@@ -92,7 +64,7 @@ export function evaluateQ(env: GameEnv, policy: QPolicy, episodes: number, seed:
 
 /** Train, one episode at a time (so a page can draw the learning curve as it goes). */
 export function* qLearning(env: GameEnv, opts: QOptions): Generator<QEpisode, QPolicy> {
-  const bins = binsOf(env.spec.observation);
+  const bins = env.bins;
   if (!bins.some((c) => c.length)) throw new Error('Q-learning needs bins on at least one observation reading, to turn the numbers into states');
   const S = stateCount(bins), A = env.actionCount;
   const alpha = opts.alpha ?? 0.2, gamma = opts.gamma ?? 0.97, e0 = opts.epsilon ?? 0.3, e1 = opts.epsilonEnd ?? 0.02;

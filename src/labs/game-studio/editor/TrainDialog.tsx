@@ -7,7 +7,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { Store, TrainMethod } from './store';
 import { Btn, C, useStore } from './kit';
 import { Modal } from './Dialogs';
-import type { EnvSpec, Reading } from '../ml/env';
+import type { EnvSpec } from '../ml/env';
 import type { QEpisode } from '../ml/qlearning';
 import { isQPolicy } from '../ml/policy';
 
@@ -67,17 +67,19 @@ function QCurve({ episodes, random, total }: { episodes: QEpisode[]; random: num
   );
 }
 
-/** A reading's short name: its property, as a difference when it has `minus`. */
-const shortName = (r: Reading) => `${r.path.replace(/^.*?:/, '')}${r.minus ? ' − ' + r.minus.replace(/^(.*?):.*$/, '$1') : ''}`;
 /** Bin i of cut points [c₁ … cₖ] in words: below c₁, between two cuts, or from cₖ up. */
 const binText = (cuts: number[], i: number) => (i === 0 ? `< ${cuts[0]}` : i === cuts.length ? `≥ ${cuts[i - 1]}` : `${cuts[i - 1]} to ${cuts[i]}`);
+/** A name to show: a node path's property, without the node (Ball:position.x − … → position.x − Paddle). */
+const shortName = (name: string) => name.replace(/^[^:\s]*:/, '').replace(/ − ([^:]*):.*$/, ' − $1');
+
+type Described = { actions: string[]; observation: string[]; bins: number[][] };
 
 /** The Q table: one row per state (a bin of each binned reading), one column per action; the highest is what it does. */
-function QTable({ spec, table, visits }: { spec: EnvSpec; table: number[][]; visits: number[] | null }) {
-  const binned = spec.observation.map((r, i) => ({ r, i })).filter((x) => x.r.bins?.length);
+function QTable({ described, table, visits }: { described: Described; table: number[][]; visits: number[] | null }) {
+  const binned = described.bins.map((cuts, i) => ({ cuts, name: described.observation[i] ?? `seen ${i + 1}` })).filter((x) => x.cuts.length);
   const decode = (s: number) => {
     const out: number[] = [];
-    for (let k = binned.length - 1; k >= 0; k--) { const n = binned[k].r.bins!.length + 1; out[k] = s % n; s = Math.floor(s / n); }
+    for (let k = binned.length - 1; k >= 0; k--) { const n = binned[k].cuts.length + 1; out[k] = s % n; s = Math.floor(s / n); }
     return out;
   };
   const cell: React.CSSProperties = { padding: '1px 6px', textAlign: 'right' };
@@ -86,8 +88,8 @@ function QTable({ spec, table, visits }: { spec: EnvSpec; table: number[][]; vis
       <table data-testid="train-qtable" style={{ fontSize: 11, fontFamily: C.mono, borderCollapse: 'collapse', color: C.text, width: '100%' }}>
         <thead><tr style={{ position: 'sticky', top: 0, background: C.panel2 }}>
           <td style={{ color: C.faint, padding: '1px 6px' }}>s</td>
-          {binned.map(({ r }) => <td key={r.path + (r.minus ?? '')} style={{ color: C.faint, padding: '1px 6px' }}>{shortName(r)}</td>)}
-          {spec.actions.map((a, i) => <td key={i} style={{ ...cell, color: C.faint }}>Q(s, {a.join('+') || 'nothing'})</td>)}
+          {binned.map((b) => <td key={b.name} style={{ color: C.faint, padding: '1px 6px' }}>{shortName(b.name)}</td>)}
+          {described.actions.map((a, i) => <td key={i} style={{ ...cell, color: C.faint }}>Q(s, {a})</td>)}
           {visits && <td style={{ ...cell, color: C.faint }} title="Updates made from this state: a row updated rarely holds a rough estimate">visits</td>}
         </tr></thead>
         <tbody>{table.map((row, s) => {
@@ -95,7 +97,7 @@ function QTable({ spec, table, visits }: { spec: EnvSpec; table: number[][]; vis
           return (
             <tr key={s} style={{ color: untried ? C.faint : C.text }} title={untried ? 'Never updated: the agent has not been in this state' : undefined}>
               <td style={{ padding: '1px 6px', color: C.faint }}>{s}</td>
-              {binned.map(({ r }, k) => <td key={k} style={{ padding: '1px 6px' }}>{binText(r.bins!, bins[k])}</td>)}
+              {binned.map((b, k) => <td key={k} style={{ padding: '1px 6px' }}>{binText(b.cuts, bins[k])}</td>)}
               {row.map((q, a) => <td key={a} style={{ ...cell, color: !untried && a === best ? C.ok : undefined, fontWeight: !untried && a === best ? 700 : 400 }}>{q.toFixed(2)}</td>)}
               {visits && <td style={{ ...cell, color: C.faint }}>{visits[s]}</td>}
             </tr>
@@ -105,6 +107,9 @@ function QTable({ spec, table, visits }: { spec: EnvSpec; table: number[][]; vis
     </div>
   );
 }
+
+/** Where to save a brain: brains/ and the agent's name (or the project's), lower case. */
+const brainPathFor = (spec: EnvSpec | null, project: string) => `brains/${((spec?.agent ?? project).split('/').pop() ?? 'agent').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '') || 'agent'}.json`;
 
 export function TrainDialog({ store, onClose, onWatch }: { store: Store; onClose: () => void; onWatch: () => void }) {
   useStore(store);
@@ -120,7 +125,12 @@ export function TrainDialog({ store, onClose, onWatch }: { store: Store; onClose
   const parsed = useMemo((): { spec: EnvSpec } | { error: string } => {
     try {
       const spec = JSON.parse(text) as EnvSpec;
-      if (!Array.isArray(spec.actions) || !Array.isArray(spec.observation) || !Array.isArray(spec.reward)) return { error: 'It needs actions, observation and reward lists.' };
+      if (typeof spec.agent === 'string') {
+        // A script agent: its script says what it sees, does and earns; the spec gives the bins.
+        if (method === 'q' && !(Array.isArray(spec.bins) && spec.bins.some((c) => Array.isArray(c) && c.length))) return { error: 'Q-learning needs "bins": a list of cut points for each number the agent\'s observe() returns ([] for one that is not binned).' };
+        return { spec };
+      }
+      if (!Array.isArray(spec.actions) || !Array.isArray(spec.observation) || !Array.isArray(spec.reward)) return { error: 'It needs actions, observation and reward lists, or "agent": the path of a node whose script has observe() and act().' };
       if (method === 'q' && !spec.observation.some((o) => o.bins?.length)) return { error: 'Q-learning needs "bins" on at least one observation reading: the cut points that turn its numbers into states.' };
       return { spec };
     } catch (e) { return { error: `Not valid JSON: ${e instanceof Error ? e.message : String(e)}` }; }
@@ -138,6 +148,8 @@ export function TrainDialog({ store, onClose, onWatch }: { store: Store; onClose
     </label>
   );
   const spec = t.spec ?? ('spec' in parsed ? parsed.spec : null);
+  const [brainPath, setBrainPath] = useState(() => brainPathFor(t.spec, store.doc?.project.name ?? 'agent'));
+  const savedBrain = store.doc?.project.brains?.find((b) => b.path === brainPath);
   const shown = t.method;   // what the curve and results show: the run that happened, not the radio
   const lastGen = t.generations.at(-1), lastEp = t.episodes.at(-1);
   const lastCheck = [...t.episodes].reverse().find((e) => e.greedy !== undefined);
@@ -193,28 +205,40 @@ export function TrainDialog({ store, onClose, onWatch }: { store: Store; onClose
             ? <QCurve episodes={t.episodes} random={t.random} total={t.total || episodes} />
             : <CemCurve points={t.generations} random={t.random} total={t.total || generations} />}
           <div data-testid="train-status" style={{ fontSize: 12, color: t.error ? C.warn : C.dim, margin: '6px 0' }}>{status}</div>
-          {shown === 'q' && t.table && spec && (
+          {shown === 'q' && t.table && t.described && (
             <>
               <div style={{ fontSize: 11, color: C.faint, fontWeight: 700, margin: '8px 0 4px' }}>
                 {t.running ? 'THE TABLE AT THE LAST CHECK' : 'WHAT IT LEARNED'} (each row a state, each column an action; Q(s, a) is the return it expects; it plays the green one)
               </div>
-              <QTable spec={spec} table={t.table} visits={t.visits} />
+              <QTable described={t.described} table={t.table} visits={t.visits} />
             </>
           )}
-          {shown === 'cem' && t.policy && !isQPolicy(t.policy) && spec && (
+          {shown === 'cem' && t.policy && !isQPolicy(t.policy) && t.described && (
             <>
               <div style={{ fontSize: 11, color: C.faint, fontWeight: 700, margin: '8px 0 4px' }}>WHAT IT LEARNED (the weights: for each action, a score from what it sees; it takes the highest)</div>
               <table data-testid="train-weights" style={{ fontSize: 11, fontFamily: C.mono, borderCollapse: 'collapse', color: C.text }}>
-                <thead><tr><td style={{ color: C.faint, paddingRight: 8 }}>action</td>{spec.observation.map((o, i) => <td key={i} style={{ color: C.faint, padding: '0 6px' }} title={o.minus ? `${o.path} − ${o.minus}` : o.path}>{o.path.replace(/^.*?:/, '')}{o.minus ? ' −…' : ''}</td>)}<td style={{ color: C.faint, padding: '0 6px' }}>bias</td></tr></thead>
-                <tbody>{t.policy.weights.map((w, a) => <tr key={a}><td style={{ paddingRight: 8 }}>{(spec.actions[a] ?? []).join('+') || 'nothing'}</td>{w.map((v, i) => <td key={i} style={{ padding: '0 6px', textAlign: 'right', color: v >= 0 ? C.ok : C.warn }}>{v.toFixed(2)}</td>)}</tr>)}</tbody>
+                <thead><tr><td style={{ color: C.faint, paddingRight: 8 }}>action</td>{t.described.observation.map((o, i) => <td key={i} style={{ color: C.faint, padding: '0 6px' }} title={o}>{shortName(o)}</td>)}<td style={{ color: C.faint, padding: '0 6px' }}>bias</td></tr></thead>
+                <tbody>{t.policy.weights.map((w, a) => <tr key={a}><td style={{ paddingRight: 8 }}>{t.described!.actions[a] ?? a}</td>{w.map((v, i) => <td key={i} style={{ padding: '0 6px', textAlign: 'right', color: v >= 0 ? C.ok : C.warn }}>{v.toFixed(2)}</td>)}</tr>)}</tbody>
               </table>
             </>
           )}
           {t.policy && !t.running && (
-            <div style={{ marginTop: 10 }}>
-              <Btn testid="train-watch" onClick={onWatch}>▶ Watch it play</Btn>
-              <span style={{ fontSize: 11, color: C.faint, marginLeft: 8 }}>Runs the game with the agent at the controls. ■ Stop ends it.</span>
-            </div>
+            <>
+              <div style={{ marginTop: 10 }}>
+                <Btn testid="train-watch" onClick={onWatch}>▶ Watch it play</Btn>
+                <span style={{ fontSize: 11, color: C.faint, marginLeft: 8 }}>Runs the game with the agent at the controls. ■ Stop ends it.</span>
+              </div>
+              <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: C.dim }}>
+                <input data-testid="train-brain-path" value={brainPath} onChange={(e) => setBrainPath(e.target.value)} onKeyDown={(e) => e.stopPropagation()} spellCheck={false}
+                  style={{ width: 190, background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 3, padding: '2px 4px', fontFamily: C.mono, fontSize: 11 }} />
+                <Btn testid="train-save-brain" onClick={() => store.saveBrain(brainPath)}>{savedBrain ? 'Replace brain' : 'Save as brain'}</Btn>
+              </div>
+              <div style={{ fontSize: 11, color: C.faint, marginTop: 4 }}>
+                {t.spec?.agent
+                  ? <>Saved in the project and exported with the game. In {t.spec.agent}'s script, <code>brain = '{brainPath}'</code> makes the game use it.</>
+                  : <>Saved in the project and exported with the game. A script can ask it what to do: <code>ai.act('{brainPath}', numbers)</code>.</>}
+              </div>
+            </>
           )}
         </div>
       </div>

@@ -25,9 +25,12 @@ function train(run: Generator<QEpisode, QPolicy>): { episodes: QEpisode[]; polic
 /** A tiny environment from a step function, shaped like GameEnv (only what qLearning uses). */
 function toyEnv(spec: Partial<EnvSpec>, actionCount: number, start: number, step: (state: number, action: number) => { next: number; reward: number; done: boolean }): GameEnv {
   let s = start, steps = 0;
+  const observation = spec.observation ?? [];
   return {
     spec: { actions: [], observation: [], reward: [], ...spec } as EnvSpec,
     actionCount,
+    bins: observation.map((o) => o.bins ?? []),
+    observationSize: observation.length,
     reset: () => { s = start; steps = 0; return { observation: [s], info: { step: 0, errors: [] } }; },
     step: (a: number): StepResult => { const r = step(s, a); s = r.next; steps++; return { observation: [s], reward: r.reward, terminated: r.done, truncated: !r.done && steps >= 50, info: { step: steps, errors: [] } }; },
   } as unknown as GameEnv;
@@ -37,7 +40,7 @@ describe('states from numbers', () => {
   it('a value\'s bin is how many cut points are below it; readings combine like digits', () => {
     const cuts = [-0.25, -0.1, -0.03, 0.03, 0.1, 0.25];
     expect([-0.5, -0.25, -0.05, 0, 0.05, 0.2, 0.9].map((v) => binOf(v, cuts))).toEqual([0, 1, 2, 3, 4, 5, 6]);
-    const bins = BREAKOUT_SPEC.observation.map((o) => o.bins ?? []);
+    const bins = BREAKOUT_SPEC.observation!.map((o) => o.bins ?? []);
     expect(stateCount(bins)).toBe(14);
     // across bin 5 (0.1 to 0.25), going down (velocity.y ≥ 0, bin 1): 5 × 2 + 1.
     expect(stateOf([0.2, 0.5, -0.3, 0.9], bins)).toBe(11);

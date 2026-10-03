@@ -29,6 +29,9 @@ const failed = await withGameStudio(5189, async ({ page, t, check }) => {
   check('The Q-learning agent averages far more than random play (40+ bricks against a loss)', tq.method === 'q' && tq.score >= 40 && tq.random < 0 && tq.episodes === 100 && tq.checks === 10, JSON.stringify(tq));
   const rows = await page.getByTestId('train-qtable').locator('tbody tr').count();
   check('It shows what it learned: the Q table, a row for each of the 14 states and a value for each action', rows === 14, String(rows));
+  await t('train-save-brain').click();
+  const saved = await page.evaluate(() => { const st = window.__gameStudio.store; const b = st.doc.project.brains; return { n: b.length, path: b[0]?.path, rows: b[0]?.policy.table.length, actions: b[0]?.actions, code: st.doc.log.at(-1).code.slice(0, 40) }; });
+  check('Save as brain puts it in the project (brains/, exported with the game), as a line of GUI → code', saved.n === 1 && saved.rows === 14 && saved.code.startsWith('project.saveBrain("brains/') && saved.actions.join() === 'jump+move_left,jump+move_right', JSON.stringify(saved));
 
   await t('train-watch').click();
   await page.locator('iframe[title="Running game"]').waitFor({ timeout: 20000 });

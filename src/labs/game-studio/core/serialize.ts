@@ -10,6 +10,7 @@ import { trackTarget } from './animation';
 import { expandScene, expandSceneRoot } from './instances';
 import { checkProp, isNodeType, propDef, propValue } from './registry';
 import { walk } from './project';
+import { brainProblem, checkProjectPath } from './api';
 import { tileId, tilesetGrid, tilesetProblem } from './tiles';
 
 /** Deterministic: the same project always gives the same text (keys in the model's own order). */
@@ -27,6 +28,8 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // Format 3 adds instances, overrides, groups and connections on nodes (Phase 7): all optional, so
   // nothing changes, but an older Game Studio would show instances as empty nodes.
   2: (p) => ({ ...p, formatVersion: 3 }),
+  // Format 4 adds brains, trained agents (ml/). Older projects have none.
+  3: (p) => { const { brains, ...rest } = p; return { ...rest, formatVersion: 4, brains: Array.isArray(brains) ? brains : [] }; },
 };
 
 export function migrate(raw: Record<string, unknown>): Record<string, unknown> {
@@ -48,6 +51,13 @@ export function problems(p: Project): string[] {
   const out: string[] = [];
   const ids = new Set<string>();
   const scripts = new Set(p.scripts.map((s) => s.path));
+  const brainPaths = new Set<string>();
+  for (const b of p.brains ?? []) {
+    const bad = checkProjectPath(b.path, 'brains', /\.json$/) ?? brainProblem(b);
+    if (bad) out.push(bad);
+    if (brainPaths.has(b.path)) out.push(`There are two brains at "${b.path}"`);
+    brainPaths.add(b.path);
+  }
   const assets = new Set(p.assets.map((a) => a.path));
   if (p.settings.mainScene && !p.scenes.some((s) => s.path === p.settings.mainScene)) out.push(`The main scene "${p.settings.mainScene}" does not exist`);
   const tilesets = new Map<string, TilesetData>();

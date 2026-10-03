@@ -13,7 +13,7 @@ import { breakout } from '../examples/breakout';
 import { BREAKOUT_SPEC } from '../ml/breakout';
 
 /** Breakout's environment without bins: what the agent sees, does and earns, but no states yet. */
-const UNBINNED: EnvSpec = { ...BREAKOUT_SPEC, observation: BREAKOUT_SPEC.observation.map(({ bins: _bins, ...r }) => r) };
+const UNBINNED: EnvSpec = { ...BREAKOUT_SPEC, observation: BREAKOUT_SPEC.observation!.map(({ bins: _bins, ...r }) => r) };
 const ACROSS = [-0.25, -0.1, -0.03, 0.03, 0.1, 0.25], COARSE = [-0.1, 0.1];
 
 const reading = (spec: EnvSpec | null | undefined, path: string, minus?: string): Reading | undefined =>
@@ -77,10 +77,10 @@ export const LEARNING: GameTask[] = [
     done: 'You trained an agent with Q-learning. Back to the lesson for why the update works, and what the table holds.',
     solvedEditor: {
       training: {
-        draft: { ...UNBINNED, observation: UNBINNED.observation.map((r, i) => (i === 0 ? { ...r, bins: COARSE } : i === 3 ? { ...r, bins: [0] } : r)) },
+        draft: { ...UNBINNED, observation: UNBINNED.observation!.map((r, i) => (i === 0 ? { ...r, bins: COARSE } : i === 3 ? { ...r, bins: [0] } : r)) },
         runs: [
-          { method: 'q', spec: { ...UNBINNED, observation: UNBINNED.observation.map((r, i) => (i === 0 ? { ...r, bins: ACROSS } : i === 3 ? { ...r, bins: [0] } : r)) }, score: 48, random: -5.3 },
-          { method: 'q', spec: { ...UNBINNED, observation: UNBINNED.observation.map((r, i) => (i === 0 ? { ...r, bins: COARSE } : i === 3 ? { ...r, bins: [0] } : r)) }, score: 34, random: -5.3 },
+          { method: 'q', spec: { ...UNBINNED, observation: UNBINNED.observation!.map((r, i) => (i === 0 ? { ...r, bins: ACROSS } : i === 3 ? { ...r, bins: [0] } : r)) }, score: 48, random: -5.3 },
+          { method: 'q', spec: { ...UNBINNED, observation: UNBINNED.observation!.map((r, i) => (i === 0 ? { ...r, bins: COARSE } : i === 3 ? { ...r, bins: [0] } : r)) }, score: 34, random: -5.3 },
         ],
         watched: true,
       },

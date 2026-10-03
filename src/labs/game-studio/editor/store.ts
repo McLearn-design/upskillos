@@ -231,7 +231,7 @@ export class Store {
   // ── tasks: "Try it" from the course, and Help › Tutorials (docs/game-studio-course-plan.md) ──
 
   /** The task being done, its link back to the lesson, and its checks' latest results. */
-  task: { def: GameTask; link: TaskLink | null; results: CheckResult[]; ran: boolean; finished: boolean; runs: TrainingView['runs']; watched: boolean } | null = null;
+  task: { def: GameTask; link: TaskLink | null; results: CheckResult[]; ran: boolean; finished: boolean; runs: TrainingView['runs']; watched: boolean; saved?: string[] } | null = null;
   /** The environment as typed in Run › Train an agent… (when it parses), for a task's checks. */
   trainDraft: EnvSpec | null = null;
   /** Called once when a task's every step passes (Game Studio marks the lesson's checkpoint). */
@@ -256,7 +256,7 @@ export class Store {
     this.guide = null;
     this.task = { def, link, results: def.steps.map(() => 'Not checked yet'), ran: false, finished: false, runs: [], watched: false };
     // A task that trains an agent starts from its own environment, not one left from earlier training.
-    if (def.agent) { this.stopTraining(); this.training = { ...this.training, spec: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, random: null, error: null, total: 0 }; this.trainDraft = null; }
+    if (def.agent) { this.stopTraining(); this.training = { ...this.training, spec: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, random: null, error: null, total: 0, described: null }; this.trainDraft = null; }
     this.say(`Task: ${def.title}. The steps are beside the viewport.`);
     this.scheduleCheck(0);
     return true;
@@ -296,7 +296,7 @@ export class Store {
       // Checked as typed: open scripts count with their unsaved text (Run saves them first anyway).
       const project = JSON.parse(JSON.stringify(doc.project)) as Project;
       for (const sc of project.scripts) sc.source = this.scriptText(sc.path);
-      this.checker.postMessage({ id: ++this.checkId, taskId: t.def.id, project, editor: { ran: t.ran, training: { draft: this.trainDraft, runs: t.runs, watched: t.watched } } });
+      this.checker.postMessage({ id: ++this.checkId, taskId: t.def.id, project, editor: { ran: t.ran, training: { draft: this.trainDraft, runs: t.runs, watched: t.watched, saved: t.saved ?? [] } } });
     }, delay);
   }
 
@@ -857,7 +857,9 @@ export class Store {
     /** Q-learning: the table at the latest check (and how often each state was updated), to show while it trains. */
     table: number[][] | null; visits: number[] | null;
     policy: AgentPolicy | null; score: number | null; error: string | null; total: number;
-  } = { running: false, method: 'q', spec: null, random: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, error: null, total: 0 };
+    /** What the agent can do and sees, by name, and its bins (from the trainer: a script agent's come from its script). */
+    described: { actions: string[]; observation: string[]; bins: number[][] } | null;
+  } = { running: false, method: 'q', spec: null, random: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, error: null, total: 0, described: null };
   /** The game running from "Watch it play": the trained agent holds the controls. */
   watchingAgent = false;
   private trainer: Worker | null = null;
@@ -887,12 +889,13 @@ export class Store {
     this.stopTraining();
     for (const path of [...this.buffers.keys()]) if (this.isScriptDirty(path)) this.saveScript(path);
     const total = job.method === 'q' ? job.options.episodes : job.options.generations;
-    this.training = { running: true, method: job.method, spec, random: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, error: null, total };
+    this.training = { running: true, method: job.method, spec, random: null, generations: [], episodes: [], table: null, visits: null, policy: null, score: null, error: null, total, described: null };
     const w = this.trainer = new Worker(new URL('../ml/train.worker.ts', import.meta.url), { type: 'module' });
     w.onmessage = (e: MessageEvent) => {
-      const m = e.data as { type: string; score?: number; policy?: AgentPolicy; message?: string } & Generation & QEpisode;
+      const m = e.data as { type: string; score?: number; policy?: AgentPolicy; message?: string; actions?: string[]; observation?: string[]; bins?: number[][] } & Generation & QEpisode;
       const t = this.training;
-      if (m.type === 'random') this.training = { ...t, random: m.score! };
+      if (m.type === 'describe') this.training = { ...t, described: { actions: m.actions!, observation: m.observation!, bins: m.bins! } };
+      else if (m.type === 'random') this.training = { ...t, random: m.score! };
       else if (m.type === 'generation') this.training = { ...t, generations: [...t.generations, { generation: m.generation, best: m.best, eliteMean: m.eliteMean, mean: m.mean, champion: m.champion }], policy: m.champion };
       else if (m.type === 'episode') {
         const ep: QEpisode = { episode: m.episode, total: m.total, epsilon: m.epsilon, visited: m.visited, steps: m.steps, ...(m.greedy === undefined ? {} : { greedy: m.greedy }) };
@@ -909,6 +912,23 @@ export class Store {
     w.onerror = (e) => { this.training = { ...this.training, running: false, error: e.message || 'The trainer stopped' }; this.stopTraining(false); this.changed(); };
     w.postMessage({ project: JSON.parse(JSON.stringify(this.doc.project)), spec, ...job });
     this.changed();
+  }
+
+  /** Save the trained agent as a brain in the project (an undo step, and a line of GUI → code). */
+  saveBrain(path: string): boolean {
+    const t = this.training;
+    if (!this.doc || !t.policy || !t.described || t.running) { this.say('Train an agent first'); return false; }
+    const ok = this.act((d) => {
+      d.saveBrain(path, {
+        actions: t.described!.actions, observation: t.described!.observation, method: t.method, policy: JSON.parse(JSON.stringify(t.policy)),
+        trained: { steps: t.total, score: Math.round((t.score ?? 0) * 1000) / 1000, random: Math.round((t.random ?? 0) * 1000) / 1000 },
+      });
+      return true;
+    });
+    if (!ok) return false;
+    this.say(t.spec?.agent ? `Saved ${path}. Give ${t.spec.agent}'s script brain = '${path}' and the game uses it.` : `Saved ${path}.`);
+    if (this.task) { this.task = { ...this.task, saved: [...(this.task.saved ?? []), path] }; this.scheduleCheck(0); }
+    return true;
   }
 
   /** The dialog's environment as typed: a task's checks look at it (adding bins, say). */
