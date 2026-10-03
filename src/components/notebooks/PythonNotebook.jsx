@@ -509,9 +509,9 @@ const CellComponent = React.memo(
               <p
                 style={{
                   margin: 0,
-                  fontSize: 13,
+                  fontSize: 14,
                   color: C.muted,
-                  lineHeight: 1.65,
+                  lineHeight: 1.7,
                 }}
               >
                 {cell.prompt}
@@ -549,8 +549,9 @@ const CellComponent = React.memo(
                 style={{
                   padding:
                     !isChallenge && cell.cellTitle
-                      ? "6px 16px 10px"
-                      : "10px 16px 10px",
+                      ? "8px 22px 16px"
+                      : "16px 22px 16px",
+                  maxWidth: 860,
                 }}
               >
                 {(Array.isArray(cell.prose) ? cell.prose : [cell.prose]).map(
@@ -558,22 +559,20 @@ const CellComponent = React.memo(
                     // ## Header line
                     if (typeof p === "string" && p.startsWith("## ")) {
                       return (
-                        <p
+                        <h3
                           key={i}
                           style={{
-                            margin: i === 0 ? "0 0 4px" : "14px 0 4px",
-                            fontSize: 11,
-                            fontWeight: 700,
-                            letterSpacing: "0.06em",
-                            textTransform: "uppercase",
+                            margin: i === 0 ? "2px 0 10px" : "28px 0 10px",
+                            fontSize: 19,
+                            fontWeight: 650,
                             color: C.blue,
-                            lineHeight: 1.4,
-                            paddingLeft: 8,
-                            borderLeft: `2px solid ${C.blue}`,
+                            lineHeight: 1.35,
+                            paddingBottom: 6,
+                            borderBottom: `1px solid ${withAlpha(C.blueBd, "55")}`,
                           }}
                         >
                           {p.slice(3)}
-                        </p>
+                        </h3>
                       );
                     }
                     // ``` fenced code block
@@ -597,7 +596,7 @@ const CellComponent = React.memo(
                         <div
                           key={i}
                           style={{
-                            margin: i === 0 ? "0 0 4px" : "8px 0 0",
+                            margin: i === 0 ? "0 0 4px" : "14px 0 4px",
                             borderRadius: 7,
                             overflow: "hidden",
                             border: `1px solid ${C.border}`,
@@ -622,8 +621,8 @@ const CellComponent = React.memo(
                           <pre
                             style={{
                               margin: 0,
-                              padding: "10px 12px",
-                              fontSize: 12,
+                              padding: "10px 14px",
+                              fontSize: 13.5,
                               lineHeight: 1.6,
                               overflowX: "auto",
                               background: C.bg,
@@ -648,9 +647,9 @@ const CellComponent = React.memo(
                         <ul
                           key={i}
                           style={{
-                            margin: i === 0 ? 0 : "6px 0 0",
-                            paddingLeft: 18,
-                            fontSize: 13,
+                            margin: i === 0 ? 0 : "12px 0 0",
+                            paddingLeft: 24,
+                            fontSize: 15,
                             color: C.text,
                             lineHeight: 1.7,
                             listStyleType: "disc",
@@ -660,7 +659,8 @@ const CellComponent = React.memo(
                             <li
                               key={j}
                               style={{
-                                marginBottom: j < items.length - 1 ? 3 : 0,
+                                marginBottom: j < items.length - 1 ? 7 : 0,
+                                paddingLeft: 2,
                               }}
                             >
                               {parseProse(item.replace(/^[\s]*-\s*/, ""))}
@@ -680,16 +680,16 @@ const CellComponent = React.memo(
                           key={i}
                           start={parseInt(items[0], 10)}
                           style={{
-                            margin: i === 0 ? 0 : "6px 0 0",
-                            paddingLeft: 22,
-                            fontSize: 13,
+                            margin: i === 0 ? 0 : "12px 0 0",
+                            paddingLeft: 26,
+                            fontSize: 15,
                             color: C.text,
                             lineHeight: 1.7,
                             listStyleType: "decimal",
                           }}
                         >
                           {items.map((item, j) => (
-                            <li key={j} style={{ marginBottom: j < items.length - 1 ? 3 : 0 }}>
+                            <li key={j} style={{ marginBottom: j < items.length - 1 ? 7 : 0, paddingLeft: 2 }}>
                               {parseProse(item.replace(/^\s*\d+\.\s*/, ""))}
                             </li>
                           ))}
@@ -701,10 +701,10 @@ const CellComponent = React.memo(
                       <p
                         key={i}
                         style={{
-                          margin: i === 0 ? 0 : "8px 0 0",
-                          fontSize: 13,
+                          margin: i === 0 ? 0 : "14px 0 0",
+                          fontSize: 15,
                           color: C.text,
-                          lineHeight: 1.7,
+                          lineHeight: 1.75,
                         }}
                       >
                         {parseProse(p)}
@@ -718,14 +718,14 @@ const CellComponent = React.memo(
             {cell.instructions && (
               <div
                 style={{
-                  margin: "0 16px 12px",
-                  padding: "8px 12px",
+                  margin: "0 22px 14px",
+                  padding: "10px 14px",
                   borderRadius: 8,
                   background: C.amberBg,
                   border: `1px solid ${C.amberBd}`,
-                  fontSize: 12,
+                  fontSize: 14,
                   color: C.amber,
-                  lineHeight: 1.65,
+                  lineHeight: 1.75,
                 }}
                 className="notebook-instructions"
               >
